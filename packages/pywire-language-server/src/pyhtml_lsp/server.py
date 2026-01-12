@@ -74,6 +74,9 @@ class PyHTMLDocument:
         # Add event handler validation
         self.diagnostics.extend(self._validate_event_handlers())
         
+        # Track directive ranges (for multi-line directives)
+        self.directive_ranges = self._find_directive_ranges()
+        
         # Extract routes info
         self.routes = self._extract_routes()
 
@@ -84,27 +87,62 @@ class PyHTMLDocument:
                 return i
         return None
         
+    def _find_directive_ranges(self) -> Dict[str, tuple]:
+        """Find start/end lines for multi-line directives."""
+        ranges = {}
+        i = 0
+        while i < len(self.lines):
+            stripped = self.lines[i].strip()
+            if stripped.startswith('!path'):
+                start = i
+                # Check if opens a brace but doesn't close it
+                if '{' in stripped and '}' not in stripped:
+                    # Multi-line: find closing brace
+                    while i < len(self.lines) and '}' not in self.lines[i]:
+                        i += 1
+                ranges['path'] = (start, i)
+                break
+            i += 1
+        return ranges
+
     def _extract_routes(self) -> Dict[str, str]:
-        """Extract route names and patterns from !path directive."""
+        """Extract route names and patterns from !path directive, handling multi-line dicts."""
         routes = {}
+        collecting = False
+        content_lines = []
+        
         for line in self.lines:
             stripped = line.strip()
             if stripped.startswith('!path '):
-                # Try to parse
-                content = stripped[6:].strip()
-                try:
-                    # Simple dict parse using ast
-                    tree = ast.parse(content, mode='eval')
-                    if isinstance(tree.body, ast.Dict):
-                        for k, v in zip(tree.body.keys, tree.body.values):
-                            if isinstance(k, ast.Constant):
-                                routes[k.value] = v.value if isinstance(v, ast.Constant) else ''
-                    elif isinstance(tree.body, ast.Constant):
-                        # String path
-                        routes['main'] = tree.body.value
-                except:
-                    pass
-                break
+                rest = stripped[6:].strip()
+                if '{' in rest:
+                    collecting = True
+                    content_lines.append(rest)
+                    if '}' in rest:
+                        # Single-line dict
+                        collecting = False
+                        break
+                else:
+                    # Single string path
+                    content_lines.append(rest)
+                    break
+            elif collecting:
+                content_lines.append(stripped)
+                if '}' in stripped:
+                    break
+        
+        if content_lines:
+            content = ' '.join(content_lines)
+            try:
+                tree = ast.parse(content, mode='eval')
+                if isinstance(tree.body, ast.Dict):
+                    for k, v in zip(tree.body.keys, tree.body.values):
+                        if isinstance(k, ast.Constant):
+                            routes[k.value] = v.value if isinstance(v, ast.Constant) else ''
+                elif isinstance(tree.body, ast.Constant):
+                    routes['main'] = tree.body.value
+            except:
+                pass
         return routes
 
     def _validate(self) -> List[Diagnostic]:
@@ -139,32 +177,109 @@ class PyHTMLDocument:
         return diagnostics
 
     def _validate_event_handlers(self) -> List[Diagnostic]:
-        """Validate Python syntax in event handler attributes"""
+        """Validate Python syntax in event handler and directive attributes"""
         diagnostics = []
         for i, line in enumerate(self.lines):
             if self.separator_line and i >= self.separator_line:
                 break
-            for m in re.finditer(r'@\w+="([^"]*)"', line):
-                value = m.group(1)
+            for m in re.finditer(r'([@$]\w+)="([^"]*)"', line):
+                attr_name = m.group(1)
+                value = m.group(2)
+                value_start = m.start(2)
+                value_end = m.end(2)
+                
                 if not value:
+                    # Some attributes require a value
+                    if attr_name in ('$if', '$show', '$for', '$bind'):
+                        diagnostics.append(Diagnostic(
+                            range=Range(
+                                start=Position(line=i, character=m.start(1)),
+                                end=Position(line=i, character=m.end(1))
+                            ),
+                            message=f"{attr_name} requires a value",
+                            severity=DiagnosticSeverity.Error,
+                            source='pyhtml'
+                        ))
                     continue
-                try:
-                    ast.parse(value, mode='eval')
-                except SyntaxError:
-                    try:
-                        ast.parse(value, mode='exec')
-                    except SyntaxError as e:
-                        value_start = m.start(1)
-                        value_end = m.end(1)
+                
+                # Validate based on attribute type
+                if attr_name == '$for':
+                    # Validate $for="item in items" syntax
+                    if ' in ' not in value:
                         diagnostics.append(Diagnostic(
                             range=Range(
                                 start=Position(line=i, character=value_start),
                                 end=Position(line=i, character=value_end)
                             ),
-                            message=f"Invalid Python syntax in event handler: {e.msg}",
+                            message="$for syntax error: expected 'item in collection'",
                             severity=DiagnosticSeverity.Error,
                             source='pyhtml'
                         ))
+                    else:
+                        # Validate the iterable part is valid Python
+                        parts = value.split(' in ', 1)
+                        if len(parts) == 2:
+                            try:
+                                ast.parse(parts[1], mode='eval')
+                            except SyntaxError as e:
+                                diagnostics.append(Diagnostic(
+                                    range=Range(
+                                        start=Position(line=i, character=value_start),
+                                        end=Position(line=i, character=value_end)
+                                    ),
+                                    message=f"Invalid iterable expression: {e.msg}",
+                                    severity=DiagnosticSeverity.Error,
+                                    source='pyhtml'
+                                ))
+                
+                elif attr_name == '$bind':
+                    # Validate $bind value is an assignable target
+                    try:
+                        # Try to parse as assignment target
+                        ast.parse(f"{value} = None", mode='exec')
+                    except SyntaxError:
+                        diagnostics.append(Diagnostic(
+                            range=Range(
+                                start=Position(line=i, character=value_start),
+                                end=Position(line=i, character=value_end)
+                            ),
+                            message="$bind value must be an assignable target (variable name)",
+                            severity=DiagnosticSeverity.Error,
+                            source='pyhtml'
+                        ))
+                
+                elif attr_name in ('$if', '$show', '$key'):
+                    # Validate as Python expression
+                    try:
+                        ast.parse(value, mode='eval')
+                    except SyntaxError as e:
+                        diagnostics.append(Diagnostic(
+                            range=Range(
+                                start=Position(line=i, character=value_start),
+                                end=Position(line=i, character=value_end)
+                            ),
+                            message=f"Invalid Python expression: {e.msg}",
+                            severity=DiagnosticSeverity.Error,
+                            source='pyhtml'
+                        ))
+                
+                elif attr_name.startswith('@'):
+                    # Event handler - validate as expression or statement
+                    try:
+                        ast.parse(value, mode='eval')
+                    except SyntaxError:
+                        try:
+                            ast.parse(value, mode='exec')
+                        except SyntaxError as e:
+                            diagnostics.append(Diagnostic(
+                                range=Range(
+                                    start=Position(line=i, character=value_start),
+                                    end=Position(line=i, character=value_end)
+                                ),
+                                message=f"Invalid Python syntax in event handler: {e.msg}",
+                                severity=DiagnosticSeverity.Error,
+                                source='pyhtml'
+                            ))
         return diagnostics
     
     def get_section(self, line: int) -> str:
@@ -203,7 +318,7 @@ class PyHTMLDocument:
         if line >= len(self.lines):
             return None
         line_text = self.lines[line]
-        for m in re.finditer(r'(@\w+)="([^"]*)"', line_text):
+        for m in re.finditer(r'([@$]\w+)="([^"]*)"', line_text):
             attr_start = m.start(1)
             attr_end = m.end(1)
             value_start = m.start(2)
@@ -221,23 +336,65 @@ class PyHTMLDocument:
         return None
 
     def get_interpolation_at(self, line: int, char: int) -> Optional[dict]:
-        """Return interpolation info if cursor is on one: {type, name, value, col_offset, char_in_value}"""
+        """Return interpolation info if cursor is on one: {type, name, value, col_offset, char_in_value}
+        
+        Uses balanced brace matching to handle nested braces in f-strings.
+        """
         if line >= len(self.lines):
             return None
         line_text = self.lines[line]
-        # Regex for {variable}
-        for m in re.finditer(r'\{([^}]+)\}', line_text):
-            full_start = m.start(0)
-            full_end = m.end(0)
-            value_start = m.start(1)
-            value_end = m.end(1)
-            if full_start <= char <= full_end:
+        
+        # Find all balanced brace pairs using stack-based matching
+        interpolations = []
+        i = 0
+        while i < len(line_text):
+            if line_text[i] == '{':
+                # Start of potential interpolation
+                start = i
+                depth = 1
+                i += 1
+                in_string = None  # Track if we're inside a string
+                
+                while i < len(line_text) and depth > 0:
+                    c = line_text[i]
+                    
+                    # Handle string literals (ignore braces inside strings)
+                    if c in ('"', "'") and (i == 0 or line_text[i-1] != '\\'):
+                        if in_string is None:
+                            in_string = c
+                        elif in_string == c:
+                            in_string = None
+                    elif in_string is None:
+                        if c == '{':
+                            depth += 1
+                        elif c == '}':
+                            depth -= 1
+                    i += 1
+                
+                if depth == 0:
+                    # Found balanced braces
+                    end = i  # Points after closing }
+                    value_start = start + 1
+                    value_end = end - 1
+                    interpolations.append({
+                        'start': start,
+                        'end': end,
+                        'value_start': value_start,
+                        'value_end': value_end,
+                        'value': line_text[value_start:value_end]
+                    })
+            else:
+                i += 1
+        
+        # Find which interpolation contains the cursor
+        for interp in interpolations:
+            if interp['value_start'] <= char <= interp['value_end']:
                 return {
                     'type': 'interpolation',
-                    'name': m.group(1), # The variable name/expression
-                    'value': m.group(1),
-                    'col_offset': value_start,
-                    'char_in_value': char - value_start
+                    'name': interp['value'],
+                    'value': interp['value'],
+                    'col_offset': interp['value_start'],
+                    'char_in_value': char - interp['value_start']
                 }
         return None
 
@@ -478,9 +635,17 @@ def hover(ls: LanguageServer, params: HoverParams) -> Optional[Hover]:
     if not doc:
         return None
     
-    # Check if hovering over !path directive
+    # Check if hovering over !path directive (single-line or multi-line)
     line_text = doc.lines[position.line].strip()
-    if line_text.startswith('!path'):
+    in_path_directive = line_text.startswith('!path')
+    
+    # Also check if within multi-line !path range
+    if not in_path_directive and 'path' in doc.directive_ranges:
+        start, end = doc.directive_ranges['path']
+        if start <= position.line <= end:
+            in_path_directive = True
+    
+    if in_path_directive:
         return Hover(contents="""**!path Directive**
 
 Define routes for this page.
@@ -519,14 +684,23 @@ Define routes for this page.
         
         if attr and attr['type'] == 'name':
             # Hover on attribute name - provide documentation
-            if attr['name'] == '@click':
-                return Hover(contents="**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click=\"change_name\"` or `@click=\"count += 1\"`")
-            elif attr['name'] == '@submit':
-                return Hover(contents="**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.")
-            elif attr['name'] == '@change':
-                return Hover(contents="**@change**\n\nChange event handler. Value can be a function name or Python expression.")
-            else:
+            hover_docs = {
+                '@click': "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click=\"change_name\"` or `@click=\"count += 1\"`",
+                '@submit': "**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.",
+                '@change': "**@change**\n\nChange event handler. Value can be a function name or Python expression.",
+                '@input': "**@input**\n\nInput event handler. Value can be a function name or Python expression.",
+                '$if': "**$if**\n\nConditional rendering. Element is excluded from DOM when condition is falsy.\n\nExample: `$if=\"is_admin\"`",
+                '$show': "**$show**\n\nConditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.\n\nExample: `$show=\"is_visible\"`",
+                '$for': "**$for**\n\nLoop directive. Repeats the element for each item in a collection.\n\n**Syntax:**\n- `$for=\"item in items\"`\n- `$for=\"index, item in enumerate(items)\"`\n- `$for=\"key, value in dict.items()\"`",
+                '$key': "**$key**\n\nStable key for loops. Provides a unique identifier for efficient DOM diffing.\n\nExample: `$key=\"item.id\"`",
+                '$bind': "**$bind**\n\nTwo-way data binding. Binds an input element's value to a Python variable.\n\nExample: `$bind=\"username\"`"
+            }
+            if attr['name'] in hover_docs:
+                return Hover(contents=hover_docs[attr['name']])
+            elif attr['name'].startswith('@'):
                 return Hover(contents=f"**{attr['name']}**\n\nEvent handler attribute.")
+            elif attr['name'].startswith('$'):
+                return Hover(contents=f"**{attr['name']}**\n\nDirective attribute.")
         
         target = None
         if attr and attr['type'] == 'value':
@@ -558,6 +732,29 @@ Define routes for this page.
                     
                     content = f"**{best.name}** ({type_info}){assignment_info}\n\n{docstring or desc}"
                     return Hover(contents=content)
+                
+                # No Jedi definitions found - check for injected framework variables
+                variable_docs = {
+                    'params': "**params**\n\nDictionary containing URL path parameters captured from the route. For example, if route is `/user/:id`, `params['id']` will be available.",
+                    'query': "**query**\n\nDictionary containing URL query parameters. For example value of `/page?q=search` is in `query['q']`.",
+                    'path': "**path**\n\nDictionary mapping route names to booleans, indicating which route is currently active. E.g. `path['main']` is True.",
+                    'url': "**url**\n\nURL Helper object. Use `url['name'].format(...)` to generate URLs for defined routes."
+                }
+                
+                # Extract the word at cursor position from the expression
+                expr = target['value']
+                char_pos = target['char_in_value']
+                # Find word boundaries
+                word_start = char_pos
+                while word_start > 0 and (expr[word_start-1].isidentifier() or expr[word_start-1] == '_'):
+                    word_start -= 1
+                word_end = char_pos
+                while word_end < len(expr) and (expr[word_end].isidentifier() or expr[word_end] == '_'):
+                    word_end += 1
+                word = expr[word_start:word_end]
+                
+                if word in variable_docs:
+                    return Hover(contents=variable_docs[word])
                 
                 # Fallback to help() if no definition found
                 python_source = doc.get_python_source()
@@ -663,23 +860,55 @@ def completions(ls: LanguageServer, params: CompletionParams) -> CompletionList:
                     label='$if',
                     kind=CompletionItemKind.Property,
                     detail='Conditional rendering',
-                    documentation='Render element only if condition is true'
+                    documentation='Render element only if condition is true.\n\nExample: `$if="is_admin"`'
+                ),
+                CompletionItem(
+                    label='$show',
+                    kind=CompletionItemKind.Property,
+                    detail='Conditional visibility',
+                    documentation='Show/hide element with CSS (stays in DOM).\n\nExample: `$show="is_visible"`'
                 ),
                 CompletionItem(
                     label='$for',
                     kind=CompletionItemKind.Property,
-                    detail='Loop over collection'
+                    detail='Loop over collection',
+                    documentation='Repeat element for each item.\n\nExamples:\n- `$for="item in items"`\n- `$for="item, idx in items"`\n- `$for="k, v in dict.items()"`'
+                ),
+                CompletionItem(
+                    label='$key',
+                    kind=CompletionItemKind.Property,
+                    detail='Stable key for loops',
+                    documentation='Unique key for efficient DOM diffing in loops.\n\nExample: `$key="item.id"`'
+                ),
+                CompletionItem(
+                    label='$bind',
+                    kind=CompletionItemKind.Property,
+                    detail='Two-way data binding',
+                    documentation='Bind input value to a variable.\n\nExample: `$bind="username"`'
                 ),
                 CompletionItem(
                     label='@click',
                     kind=CompletionItemKind.Event,
                     detail='Click event handler',
-                    documentation='Example: @click="change_name"'
+                    documentation='Example: `@click="handle_click"` or `@click="count += 1"`'
                 ),
                 CompletionItem(
                     label='@submit',
                     kind=CompletionItemKind.Event,
-                    detail='Form submit handler'
+                    detail='Form submit handler',
+                    documentation='Example: `@submit="handle_submit"`'
+                ),
+                CompletionItem(
+                    label='@change',
+                    kind=CompletionItemKind.Event,
+                    detail='Change event handler',
+                    documentation='Example: `@change="on_select_change"`'
+                ),
+                CompletionItem(
+                    label='@input',
+                    kind=CompletionItemKind.Event,
+                    detail='Input event handler',
+                    documentation='Example: `@input="on_input"`'
                 ),
             ]
     
@@ -785,7 +1014,7 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
             break
         
         # Find all @click="..." patterns
-        for m in re.finditer(r'(@\w+)="([^"]*)"', line_text):
+        for m in re.finditer(r'([@$]\w+)="([^"]*)"', line_text):
             value = m.group(2)
             value_start = m.start(2)
             
