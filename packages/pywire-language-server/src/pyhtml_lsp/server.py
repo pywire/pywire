@@ -182,26 +182,91 @@ class PyHTMLDocument:
         for i, line in enumerate(self.lines):
             if self.separator_line and i >= self.separator_line:
                 break
-            for m in re.finditer(r'([@$]\w+)="([^"]*)"', line):
-                attr_name = m.group(1)
+            # Update regex to support dots in attribute names (for modifiers)
+            for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line):
+                full_attr_name = m.group(1)
                 value = m.group(2)
                 value_start = m.start(2)
                 value_end = m.end(2)
                 
                 if not value:
                     # Some attributes require a value
-                    if attr_name in ('$if', '$show', '$for', '$bind'):
+                    if full_attr_name in ('$if', '$show', '$for', '$bind'):
                         diagnostics.append(Diagnostic(
                             range=Range(
                                 start=Position(line=i, character=m.start(1)),
                                 end=Position(line=i, character=m.end(1))
                             ),
-                            message=f"{attr_name} requires a value",
+                            message=f"{full_attr_name} requires a value",
                             severity=DiagnosticSeverity.Error,
                             source='pyhtml'
                         ))
                     continue
                 
+                # Check for event handlers with modifiers
+                if full_attr_name.startswith('@'):
+                    parts = full_attr_name[1:].split('.')
+                    event_name = parts[0]
+                    modifiers = parts[1:]
+                    
+                    # Validate modifiers
+                    valid_modifiers = {
+                        'prevent', 'stop', 'self',  # Logic
+                        'enter', 'escape', 'space', 'tab', 'up', 'down', 'left', 'right',  # Keys
+                        'shift', 'alt', 'ctrl', 'meta', 'cmd',  # System
+                        'debounce', 'throttle',  # Performance
+                        'window', 'outside'  # Global/Outside
+                    }
+                    
+                    for mod in modifiers:
+                        # Handle modifiers with arguments (e.g. debounce.500ms)
+                        # Actually the current spec says syntax is .debounce.500ms
+                        # So '500ms' would be a separate part in the split if we split by dot.
+                        # Wait, the prompt says: ".debounce" or ".debounce.500ms"
+                        # If we split '@click.debounce.500ms' by '.', we get ['click', 'debounce', '500ms']
+                        
+                        if mod in valid_modifiers:
+                            continue
+                            
+                        # Check if it's a time argument (e.g. 500ms, 1s)
+                        if re.match(r'^\d+(ms|s)$', mod):
+                            continue
+                            
+                        # Check if it is a key alias or fallback
+                        # The spec says: "Fallback: If a modified key ... doesn't match ... falls back to e.code"
+                        # This implies we can use key names.
+                        # For now, let's warn on unknown modifiers unless it looks like a key or time
+                        
+                        # Warning for unknown modifier
+                        diagnostics.append(Diagnostic(
+                            range=Range(
+                                start=Position(line=i, character=m.start(1) + 1 + full_attr_name.index(mod)),
+                                end=Position(line=i, character=m.start(1) + 1 + full_attr_name.index(mod) + len(mod))
+                            ),
+                            message=f"Unknown modifier '{mod}'",
+                            severity=DiagnosticSeverity.Warning,
+                            source='pyhtml'
+                        ))
+
+                    # Event handler - validate as expression or statement
+                    try:
+                        ast.parse(value, mode='eval')
+                    except SyntaxError:
+                        try:
+                            ast.parse(value, mode='exec')
+                        except SyntaxError as e:
+                            diagnostics.append(Diagnostic(
+                                range=Range(
+                                    start=Position(line=i, character=value_start),
+                                    end=Position(line=i, character=value_end)
+                                ),
+                                message=f"Invalid Python syntax in event handler: {e.msg}",
+                                severity=DiagnosticSeverity.Error,
+                                source='pyhtml'
+                            ))
+                    continue
+
+                attr_name = full_attr_name
                 # Validate based on attribute type
                 if attr_name == '$for':
                     # Validate $for="item in items" syntax
@@ -318,7 +383,7 @@ class PyHTMLDocument:
         if line >= len(self.lines):
             return None
         line_text = self.lines[line]
-        for m in re.finditer(r'([@$]\w+)="([^"]*)"', line_text):
+        for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line_text):
             attr_start = m.start(1)
             attr_end = m.end(1)
             value_start = m.start(2)
@@ -698,6 +763,17 @@ Define routes for this page.
             if attr['name'] in hover_docs:
                 return Hover(contents=hover_docs[attr['name']])
             elif attr['name'].startswith('@'):
+                # Handle modifiers in hover
+                parts = attr['name'].split('.')
+                base_event = parts[0]
+                if base_event in hover_docs:
+                    base_docs = hover_docs[base_event]
+                    # Append modifier info
+                    if len(parts) > 1:
+                        mods = ', '.join(f"`.{m}`" for m in parts[1:])
+                        base_docs += f"\n\n**Modifiers used:** {mods}"
+                    return Hover(contents=base_docs)
+                
                 return Hover(contents=f"**{attr['name']}**\n\nEvent handler attribute.")
             elif attr['name'].startswith('$'):
                 return Hover(contents=f"**{attr['name']}**\n\nDirective attribute.")
@@ -1014,7 +1090,7 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
             break
         
         # Find all @click="..." patterns
-        for m in re.finditer(r'([@$]\w+)="([^"]*)"', line_text):
+        for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line_text):
             value = m.group(2)
             value_start = m.start(2)
             
