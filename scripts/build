@@ -1,0 +1,11 @@
+#!/bin/sh -e
+
+set -x
+
+# Build Docs
+cd docs && pnpm build
+cd -
+
+# Build Client
+cd pyhtml/src/pyhtml/client && pnpm build
+cd -

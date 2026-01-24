@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -ex
+
+# Run Python tests
+uv run pytest --cov=pyhtml $@
+
+# Run client tests
+cd pyhtml/src/pyhtml/client && pnpm test
+cd -
+
+if [ -z $GITHUB_ACTIONS ]; then
+    scripts/coverage
+fi

@@ -1,0 +1,4 @@
+#!/bin/sh -e
+
+echo "sync-version is currently a stub."
+exit 0
