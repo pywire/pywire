@@ -269,7 +269,7 @@ class PyHTMLDocument:
                 attr_name = full_attr_name
                 # Validate based on attribute type
                 if attr_name == '$for':
-                    # Validate $for="item in items" syntax
+                    # Validate $for={item in items} syntax
                     if ' in ' not in value:
                         diagnostics.append(Diagnostic(
                             range=Range(
@@ -750,15 +750,15 @@ Define routes for this page.
         if attr and attr['type'] == 'name':
             # Hover on attribute name - provide documentation
             hover_docs = {
-                '@click': "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click=\"change_name\"` or `@click=\"count += 1\"`",
+                '@click': "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click={change_name}` or `@click={count += 1}`",
                 '@submit': "**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.",
                 '@change': "**@change**\n\nChange event handler. Value can be a function name or Python expression.",
                 '@input': "**@input**\n\nInput event handler. Value can be a function name or Python expression.",
-                '$if': "**$if**\n\nConditional rendering. Element is excluded from DOM when condition is falsy.\n\nExample: `$if=\"is_admin\"`",
-                '$show': "**$show**\n\nConditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.\n\nExample: `$show=\"is_visible\"`",
-                '$for': "**$for**\n\nLoop directive. Repeats the element for each item in a collection.\n\n**Syntax:**\n- `$for=\"item in items\"`\n- `$for=\"index, item in enumerate(items)\"`\n- `$for=\"key, value in dict.items()\"`",
-                '$key': "**$key**\n\nStable key for loops. Provides a unique identifier for efficient DOM diffing.\n\nExample: `$key=\"item.id\"`",
-                '$bind': "**$bind**\n\nTwo-way data binding. Binds an input element's value to a Python variable.\n\nExample: `$bind=\"username\"`"
+                '$if': "**$if**\n\nConditional rendering. Element is excluded from DOM when condition is falsy.\n\nExample: `$if={is_admin}`",
+                '$show': "**$show**\n\nConditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.\n\nExample: `$show={is_visible}`",
+                '$for': "**$for**\n\nLoop directive. Repeats the element for each item in a collection.\n\n**Syntax:**\n- `$for={item in items}`\n- `$for={index, item in enumerate(items)}`\n- `$for={key, value in dict.items()}`",
+                '$key': "**$key**\n\nStable key for loops. Provides a unique identifier for efficient DOM diffing.\n\nExample: `$key={item.id}`",
+                '$bind': "**$bind**\n\nTwo-way data binding. Binds an input element's value to a Python variable.\n\nExample: `$bind={username}`"
             }
             if attr['name'] in hover_docs:
                 return Hover(contents=hover_docs[attr['name']])
@@ -936,55 +936,55 @@ def completions(ls: LanguageServer, params: CompletionParams) -> CompletionList:
                     label='$if',
                     kind=CompletionItemKind.Property,
                     detail='Conditional rendering',
-                    documentation='Render element only if condition is true.\n\nExample: `$if="is_admin"`'
+                    documentation='Render element only if condition is true.\n\nExample: `$if={is_admin}`'
                 ),
                 CompletionItem(
                     label='$show',
                     kind=CompletionItemKind.Property,
                     detail='Conditional visibility',
-                    documentation='Show/hide element with CSS (stays in DOM).\n\nExample: `$show="is_visible"`'
+                    documentation='Show/hide element with CSS (stays in DOM).\n\nExample: `$show={is_visible}`'
                 ),
                 CompletionItem(
                     label='$for',
                     kind=CompletionItemKind.Property,
                     detail='Loop over collection',
-                    documentation='Repeat element for each item.\n\nExamples:\n- `$for="item in items"`\n- `$for="item, idx in items"`\n- `$for="k, v in dict.items()"`'
+                    documentation='Repeat element for each item.\n\nExamples:\n- `$for={item in items}`\n- `$for={item, idx in items}`\n- `$for={k, v in dict.items()}`'
                 ),
                 CompletionItem(
                     label='$key',
                     kind=CompletionItemKind.Property,
                     detail='Stable key for loops',
-                    documentation='Unique key for efficient DOM diffing in loops.\n\nExample: `$key="item.id"`'
+                    documentation='Unique key for efficient DOM diffing in loops.\n\nExample: `$key={item.id}`'
                 ),
                 CompletionItem(
                     label='$bind',
                     kind=CompletionItemKind.Property,
                     detail='Two-way data binding',
-                    documentation='Bind input value to a variable.\n\nExample: `$bind="username"`'
+                    documentation='Bind input value to a variable.\n\nExample: `$bind={username}`'
                 ),
                 CompletionItem(
                     label='@click',
                     kind=CompletionItemKind.Event,
                     detail='Click event handler',
-                    documentation='Example: `@click="handle_click"` or `@click="count += 1"`'
+                    documentation='Example: `@click={handle_click}` or `@click={count += 1}`'
                 ),
                 CompletionItem(
                     label='@submit',
                     kind=CompletionItemKind.Event,
                     detail='Form submit handler',
-                    documentation='Example: `@submit="handle_submit"`'
+                    documentation='Example: `@submit={handle_submit}`'
                 ),
                 CompletionItem(
                     label='@change',
                     kind=CompletionItemKind.Event,
                     detail='Change event handler',
-                    documentation='Example: `@change="on_select_change"`'
+                    documentation='Example: `@change={on_select_change}`'
                 ),
                 CompletionItem(
                     label='@input',
                     kind=CompletionItemKind.Event,
                     detail='Input event handler',
-                    documentation='Example: `@input="on_input"`'
+                    documentation='Example: `@input={on_input}`'
                 ),
             ]
     
@@ -1089,7 +1089,7 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
         if doc.separator_line and line_num >= doc.separator_line:
             break
         
-        # Find all @click="..." patterns
+        # Find all @click={...} patterns
         for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line_text):
             value = m.group(2)
             value_start = m.start(2)
