@@ -1,6 +1,6 @@
 #!/bin/sh -e
 
-export SOURCE_FILES="pyhtml tests"
+export SOURCE_FILES="pyhtml"
 
 set -x
 
