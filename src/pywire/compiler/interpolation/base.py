@@ -10,7 +10,9 @@ class InterpolationParser(ABC):
     """Base class for parsing interpolations - can swap Jinja for custom later."""
 
     @abstractmethod
-    def parse(self, text: str, line: int, col: int) -> List[Union[str, InterpolationNode]]:
+    def parse(
+        self, text: str, line: int, col: int
+    ) -> List[Union[str, InterpolationNode]]:
         """
         Parse text with interpolations into mix of strings and InterpolationNodes.
         Returns: ['Hello, ', InterpolationNode(expr='name'), '!']

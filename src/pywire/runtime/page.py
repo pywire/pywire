@@ -2,7 +2,17 @@
 
 import inspect
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Dict, List, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    Union,
+)
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -118,7 +128,9 @@ class BasePage:
         self.error_detail: Optional[str] = None
         self.error_trace: Optional[str] = None
 
-    def register_slot(self, layout_id: str, slot_name: str, renderer: Callable[..., Any]) -> None:
+    def register_slot(
+        self, layout_id: str, slot_name: str, renderer: Callable[..., Any]
+    ) -> None:
         """Register a content renderer for a slot in a specific layout."""
         self.slots[layout_id][slot_name] = renderer
 
@@ -215,7 +227,9 @@ class BasePage:
 
         return Response(html, media_type="text/html")
 
-    async def handle_event(self, event_name: str, event_data: dict[str, Any]) -> Response:
+    async def handle_event(
+        self, event_name: str, event_data: dict[str, Any]
+    ) -> Response:
         """Handle client event (from @click, etc.)."""
 
         # Retrieve handler

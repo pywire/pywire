@@ -54,9 +54,13 @@ class DevErrorMiddleware:
         # (optional refinement)
 
         frames = self._get_frames(tb)
-        is_framework_error = self._is_framework_error(frames[-1]["filename"]) if frames else False
+        is_framework_error = (
+            self._is_framework_error(frames[-1]["filename"]) if frames else False
+        )
 
-        html_content = self._generate_html(exc_type, exc_msg, frames, is_framework_error)
+        html_content = self._generate_html(
+            exc_type, exc_msg, frames, is_framework_error
+        )
         return HTMLResponse(html_content, status_code=500)
 
     def _render_compile_error(self, exc: PyWireSyntaxError) -> HTMLResponse:
@@ -91,7 +95,9 @@ class DevErrorMiddleware:
                 f"<span class='code'>{html.escape(content)}</span></div>"
             )
 
-        short_path = self._shorten_path(exc.file_path) if exc.file_path else "unknown file"
+        short_path = (
+            self._shorten_path(exc.file_path) if exc.file_path else "unknown file"
+        )
 
         return HTMLResponse(
             f"""
@@ -206,7 +212,11 @@ class DevErrorMiddleware:
         return path
 
     def _generate_html(
-        self, exc_type: str, exc_msg: str, frames: List[Dict[str, Any]], is_framework_error: bool
+        self,
+        exc_type: str,
+        exc_msg: str,
+        frames: List[Dict[str, Any]],
+        is_framework_error: bool,
     ) -> str:
         # GitHub issue URL generation
         issue_title = urllib.parse.quote(f"Bug: {exc_type}: {exc_msg}")

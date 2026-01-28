@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-import msgpack  # type: ignore
+import msgpack
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -48,7 +48,9 @@ class HTTPTransportHandler:
         """Periodically clean up expired sessions."""
         while True:
             await asyncio.sleep(60)  # Check every minute
-            expired = [sid for sid, session in self.sessions.items() if session.is_expired()]
+            expired = [
+                sid for sid, session in self.sessions.items() if session.is_expired()
+            ]
             for sid in expired:
                 del self.sessions[sid]
             if expired:
@@ -98,7 +100,9 @@ class HTTPTransportHandler:
             if hasattr(page_class, "__routes__"):
                 url_helper = URLHelper(page_class.__routes__)
 
-            session.page = page_class(request, params, query, path=path_info, url=url_helper)
+            session.page = page_class(
+                request, params, query, path=path_info, url=url_helper
+            )
 
             if hasattr(self.app, "get_user"):
                 session.page.user = self.app.get_user(request)
@@ -200,7 +204,9 @@ class HTTPTransportHandler:
                 if hasattr(page_class, "__routes__"):
                     url_helper = URLHelper(page_class.__routes__)
 
-                session.page = page_class(request, params, query, path=path_info, url=url_helper)
+                session.page = page_class(
+                    request, params, query, path=path_info, url=url_helper
+                )
 
                 # Run load hook
                 if hasattr(session.page, "on_load"):
@@ -216,7 +222,8 @@ class HTTPTransportHandler:
             html = bytes(response.body).decode("utf-8")
 
             return Response(
-                msgpack.packb({"type": "update", "html": html}), media_type="application/x-msgpack"
+                msgpack.packb({"type": "update", "html": html}),
+                media_type="application/x-msgpack",
             )
 
         except Exception as e:

@@ -70,7 +70,10 @@ class CodeGenerator:
                         targets=[ast.Name(id=target_name, ctx=ast.Store())],
                         value=ast.Call(
                             func=ast.Name(id="load_component", ctx=ast.Load()),
-                            args=[ast.Constant(value=path), ast.Constant(value=parsed.file_path)],
+                            args=[
+                                ast.Constant(value=path),
+                                ast.Constant(value=parsed.file_path),
+                            ],
                             keywords=[],
                         ),
                     )
@@ -130,7 +133,9 @@ class CodeGenerator:
             module_body.extend(self._extract_user_classes(parsed.python_ast))
 
         # Extract method names early for binding logic
-        known_methods, known_vars, async_methods = self._collect_global_names(parsed.python_ast)
+        known_methods, known_vars, async_methods = self._collect_global_names(
+            parsed.python_ast
+        )
 
         # Include explicit variable assignments
         known_vars.update(self._extract_user_variables(parsed.python_ast))
@@ -147,7 +152,13 @@ class CodeGenerator:
 
         # Page class
         page_class = self._generate_page_class(
-            parsed, handlers, known_methods, known_vars, known_imports, async_methods, component_map
+            parsed,
+            handlers,
+            known_methods,
+            known_vars,
+            known_imports,
+            async_methods,
+            component_map,
         )
         module_body.append(page_class)
 
@@ -334,7 +345,9 @@ class CodeGenerator:
 
         # Generate form validation schemas and wrappers
         # MUST happen before render generation as it updates EventAttributes to point to wrappers
-        form_validation_methods = self._generate_form_validation_methods(parsed, all_globals)
+        form_validation_methods = self._generate_form_validation_methods(
+            parsed, all_globals
+        )
         class_body.extend(form_validation_methods)
         # Generate _render_template method AND binding methods
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
@@ -411,7 +424,8 @@ class CodeGenerator:
             ast.Assign(
                 targets=[ast.Name(id="INIT_HOOKS", ctx=ast.Store())],
                 value=ast.List(
-                    elts=[ast.Constant(value=h) for h in final_init_hooks], ctx=ast.Load()
+                    elts=[ast.Constant(value=h) for h in final_init_hooks],
+                    ctx=ast.Load(),
                 ),
             )
         )
@@ -454,7 +468,9 @@ class CodeGenerator:
                 elif isinstance(node, ast.Assign):
                     for target in node.targets:
                         for child in ast.walk(target):
-                            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
+                            if isinstance(child, ast.Name) and isinstance(
+                                child.ctx, ast.Store
+                            ):
                                 variables.add(child.id)
                 elif isinstance(node, ast.AnnAssign):
                     if isinstance(node.target, ast.Name):
@@ -540,7 +556,9 @@ class CodeGenerator:
                                 attr.handler_name = method_name
 
                             except Exception as e:
-                                print(f"Error compiling handler '{attr.handler_name}': {e}")
+                                print(
+                                    f"Error compiling handler '{attr.handler_name}': {e}"
+                                )
 
                 visit_nodes(node.children)
 
@@ -548,7 +566,10 @@ class CodeGenerator:
         return handlers
 
     def _transform_inline_code(
-        self, code: str, known_methods: Set[str] = set(), async_methods: Set[str] = set()
+        self,
+        code: str,
+        known_methods: Set[str] = set(),
+        async_methods: Set[str] = set(),
     ) -> Tuple[List[ast.stmt], List[str]]:
         """Transform inline code: lift arguments and prefix globals with self."""
         import builtins
@@ -568,7 +589,9 @@ class CodeGenerator:
                     unbound = False
                     for child in ast.walk(arg):
                         if isinstance(child, ast.Name):
-                            if child.id not in known_methods and child.id not in dir(builtins):
+                            if child.id not in known_methods and child.id not in dir(
+                                builtins
+                            ):
                                 unbound = True
                                 break
 
@@ -587,7 +610,9 @@ class CodeGenerator:
                 # Transform known methods and globals to self.X
                 if node.id in known_methods:
                     return ast.Attribute(
-                        value=ast.Name(id="self", ctx=ast.Load()), attr=node.id, ctx=node.ctx
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr=node.id,
+                        ctx=node.ctx,
                     )
                 return node
 
@@ -629,7 +654,10 @@ class CodeGenerator:
                 # Check for form with @submit that has validation schema
                 if node.tag and node.tag.lower() == "form":
                     for attr in node.special_attributes:
-                        if isinstance(attr, EventAttribute) and attr.event_type == "submit":
+                        if (
+                            isinstance(attr, EventAttribute)
+                            and attr.event_type == "submit"
+                        ):
                             if attr.validation_schema and attr.validation_schema.fields:
                                 form_id = form_count
                                 form_count += 1
@@ -672,7 +700,9 @@ class CodeGenerator:
             keywords = []
 
             if rules.required:
-                keywords.append(ast.keyword(arg="required", value=ast.Constant(value=True)))
+                keywords.append(
+                    ast.keyword(arg="required", value=ast.Constant(value=True))
+                )
             if rules.required_expr:
                 expr_ast = self.template_codegen._transform_expr(
                     rules.required_expr, set(), known_globals
@@ -682,46 +712,68 @@ class CodeGenerator:
                     ast.keyword(arg="required_expr", value=ast.Constant(value=expr_str))
                 )
             if rules.pattern:
-                keywords.append(ast.keyword(arg="pattern", value=ast.Constant(value=rules.pattern)))
+                keywords.append(
+                    ast.keyword(arg="pattern", value=ast.Constant(value=rules.pattern))
+                )
             if rules.minlength is not None:
                 keywords.append(
-                    ast.keyword(arg="minlength", value=ast.Constant(value=rules.minlength))
+                    ast.keyword(
+                        arg="minlength", value=ast.Constant(value=rules.minlength)
+                    )
                 )
             if rules.maxlength is not None:
                 keywords.append(
-                    ast.keyword(arg="maxlength", value=ast.Constant(value=rules.maxlength))
+                    ast.keyword(
+                        arg="maxlength", value=ast.Constant(value=rules.maxlength)
+                    )
                 )
             if rules.min_value:
                 keywords.append(
-                    ast.keyword(arg="min_value", value=ast.Constant(value=rules.min_value))
+                    ast.keyword(
+                        arg="min_value", value=ast.Constant(value=rules.min_value)
+                    )
                 )
             if rules.min_expr:
                 expr_ast = self.template_codegen._transform_expr(
                     rules.min_expr, set(), known_globals
                 )
                 expr_str = ast.unparse(expr_ast)
-                keywords.append(ast.keyword(arg="min_expr", value=ast.Constant(value=expr_str)))
+                keywords.append(
+                    ast.keyword(arg="min_expr", value=ast.Constant(value=expr_str))
+                )
             if rules.max_value:
                 keywords.append(
-                    ast.keyword(arg="max_value", value=ast.Constant(value=rules.max_value))
+                    ast.keyword(
+                        arg="max_value", value=ast.Constant(value=rules.max_value)
+                    )
                 )
             if rules.max_expr:
                 expr_ast = self.template_codegen._transform_expr(
                     rules.max_expr, set(), known_globals
                 )
                 expr_str = ast.unparse(expr_ast)
-                keywords.append(ast.keyword(arg="max_expr", value=ast.Constant(value=expr_str)))
+                keywords.append(
+                    ast.keyword(arg="max_expr", value=ast.Constant(value=expr_str))
+                )
             if rules.step:
-                keywords.append(ast.keyword(arg="step", value=ast.Constant(value=rules.step)))
+                keywords.append(
+                    ast.keyword(arg="step", value=ast.Constant(value=rules.step))
+                )
             if rules.input_type != "text":
                 keywords.append(
-                    ast.keyword(arg="input_type", value=ast.Constant(value=rules.input_type))
+                    ast.keyword(
+                        arg="input_type", value=ast.Constant(value=rules.input_type)
+                    )
                 )
             if rules.title:
-                keywords.append(ast.keyword(arg="title", value=ast.Constant(value=rules.title)))
+                keywords.append(
+                    ast.keyword(arg="title", value=ast.Constant(value=rules.title))
+                )
             if rules.max_size is not None:
                 keywords.append(
-                    ast.keyword(arg="max_size", value=ast.Constant(value=rules.max_size))
+                    ast.keyword(
+                        arg="max_size", value=ast.Constant(value=rules.max_size)
+                    )
                 )
             if rules.allowed_types:
                 keywords.append(
@@ -735,12 +787,16 @@ class CodeGenerator:
                 )
 
             field_rules_call = ast.Call(
-                func=ast.Name(id="FieldRules", ctx=ast.Load()), args=[], keywords=keywords
+                func=ast.Name(id="FieldRules", ctx=ast.Load()),
+                args=[],
+                keywords=keywords,
             )
 
             field_items.append((ast.Constant(value=field_name), field_rules_call))
 
-        schema_dict = ast.Dict(keys=[k for k, v in field_items], values=[v for k, v in field_items])
+        schema_dict = ast.Dict(
+            keys=[k for k, v in field_items], values=[v for k, v in field_items]
+        )
 
         schema_call = ast.Call(
             func=ast.Name(id="FormValidationSchema", ctx=ast.Load()),
@@ -750,10 +806,16 @@ class CodeGenerator:
 
         if schema.model_name:
             schema_call.keywords.append(
-                ast.keyword(arg="model_name", value=ast.Constant(value=schema.model_name))
+                ast.keyword(
+                    arg="model_name", value=ast.Constant(value=schema.model_name)
+                )
             )
 
-        return [ast.Assign(targets=[ast.Name(id=schema_name, ctx=ast.Store())], value=schema_call)]
+        return [
+            ast.Assign(
+                targets=[ast.Name(id=schema_name, ctx=ast.Store())], value=schema_call
+            )
+        ]
 
     def _generate_form_wrapper(
         self,
@@ -790,7 +852,9 @@ class CodeGenerator:
                 targets=[ast.Name(id="form_data", ctx=ast.Store())],
                 value=ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id="kwargs", ctx=ast.Load()), attr="get", ctx=ast.Load()
+                        value=ast.Name(id="kwargs", ctx=ast.Load()),
+                        attr="get",
+                        ctx=ast.Load(),
                     ),
                     args=[ast.Constant(value="formData"), ast.Dict(keys=[], values=[])],
                     keywords=[],
@@ -975,7 +1039,9 @@ class CodeGenerator:
                     test=ast.UnaryOp(
                         op=ast.Not(),
                         operand=ast.Attribute(
-                            value=ast.Name(id="self", ctx=ast.Load()), attr="errors", ctx=ast.Load()
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="errors",
+                            ctx=ast.Load(),
                         ),
                     ),
                     body=pydantic_block,
@@ -987,7 +1053,9 @@ class CodeGenerator:
         body.append(
             ast.If(
                 test=ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()), attr="errors", ctx=ast.Load()
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="errors",
+                    ctx=ast.Load(),
                 ),
                 body=[ast.Return(value=None)],
                 orelse=[],
@@ -997,7 +1065,9 @@ class CodeGenerator:
         # Call original handler - need to check if it's async
         handler_call = ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id="self", ctx=ast.Load()), attr=original_handler, ctx=ast.Load()
+                value=ast.Name(id="self", ctx=ast.Load()),
+                attr=original_handler,
+                ctx=ast.Load(),
             ),
             args=[ast.Name(id="cleaned_data", ctx=ast.Load())],
             keywords=[],
@@ -1027,7 +1097,9 @@ class CodeGenerator:
         stmts: List[ast.stmt] = []
 
         # Get path directive
-        path_directive = cast(Optional[PathDirective], parsed.get_directive_by_type(PathDirective))
+        path_directive = cast(
+            Optional[PathDirective], parsed.get_directive_by_type(PathDirective)
+        )
         if path_directive:
             # assert isinstance(path_directive, PathDirective)
             pass
@@ -1056,7 +1128,9 @@ class CodeGenerator:
         stmts.append(
             ast.Assign(
                 targets=[ast.Name(id="__sibling_paths__", ctx=ast.Store())],
-                value=ast.List(elts=[ast.Constant(value=p) for p in paths], ctx=ast.Load()),
+                value=ast.List(
+                    elts=[ast.Constant(value=p) for p in paths], ctx=ast.Load()
+                ),
             )
         )
 
@@ -1105,7 +1179,9 @@ class CodeGenerator:
             # Add to init_args
             for name, type_hint, default_val in props_directive.args:
                 # Annotation
-                annotation = ast.parse(type_hint, mode="eval").body if type_hint else None
+                annotation = (
+                    ast.parse(type_hint, mode="eval").body if type_hint else None
+                )
 
                 # Default
                 if default_val is not None:
@@ -1140,7 +1216,9 @@ class CodeGenerator:
             kw_defaults: List[Optional[ast.expr]] = []
 
             for name, type_hint, default_val in props_directive.args:
-                annotation = ast.parse(type_hint, mode="eval").body if type_hint else None
+                annotation = (
+                    ast.parse(type_hint, mode="eval").body if type_hint else None
+                )
                 kwonlyargs.append(ast.arg(arg=name, annotation=annotation))
 
                 if default_val is not None:
@@ -1172,7 +1250,9 @@ class CodeGenerator:
                 value=ast.Call(
                     func=ast.Attribute(
                         value=ast.Call(
-                            func=ast.Name(id="super", ctx=ast.Load()), args=[], keywords=[]
+                            func=ast.Name(id="super", ctx=ast.Load()),
+                            args=[],
+                            keywords=[],
                         ),
                         attr="__init__",
                         ctx=ast.Load(),
@@ -1184,7 +1264,11 @@ class CodeGenerator:
                         ast.Name(id="path", ctx=ast.Load()),
                         ast.Name(id="url", ctx=ast.Load()),
                     ],
-                    keywords=[ast.keyword(arg=None, value=ast.Name(id="kwargs", ctx=ast.Load()))],
+                    keywords=[
+                        ast.keyword(
+                            arg=None, value=ast.Name(id="kwargs", ctx=ast.Load())
+                        )
+                    ],
                 )
             )
         ]
@@ -1336,7 +1420,9 @@ class CodeGenerator:
 
         if top_level_statements:
             self._has_top_level_init = True
-            transformed.append(self._generate_top_level_init(top_level_statements, known_globals))
+            transformed.append(
+                self._generate_top_level_init(top_level_statements, known_globals)
+            )
 
         return transformed
 
@@ -1393,9 +1479,13 @@ class CodeGenerator:
             returns=None,
         )
 
-        return cast(ast.AsyncFunctionDef, self._transform_to_method(wrapper, combined_globals))
+        return cast(
+            ast.AsyncFunctionDef, self._transform_to_method(wrapper, combined_globals)
+        )
 
-    def _transform_to_method(self, node: Any, known_methods: Optional[Set[str]] = None) -> Any:
+    def _transform_to_method(
+        self, node: Any, known_methods: Optional[Set[str]] = None
+    ) -> Any:
         """Transform a function into a method (add self, handle globals)."""
         # 1. Add self argument if not present
         if not (node.args.args and node.args.args[0].arg == "self"):
@@ -1422,7 +1512,9 @@ class CodeGenerator:
                 def visit_Name(self, n: ast.Name) -> ast.AST:
                     if n.id in global_vars:
                         return ast.Attribute(
-                            value=ast.Name(id="self", ctx=ast.Load()), attr=n.id, ctx=n.ctx
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=n.id,
+                            ctx=n.ctx,
                         )
                     return n
 
@@ -1467,7 +1559,9 @@ class CodeGenerator:
                             )
                         ],
                         keywords=[
-                            ast.keyword(arg="media_type", value=ast.Constant(value="text/html"))
+                            ast.keyword(
+                                arg="media_type", value=ast.Constant(value="text/html")
+                            )
                         ],
                     )
                 )
@@ -1537,7 +1631,9 @@ class CodeGenerator:
 
             parent_layout_path = layout_directive.layout_path
             if not Path(parent_layout_path).is_absolute():
-                base_dir = Path(parsed.file_path).parent if parsed.file_path else Path.cwd()
+                base_dir = (
+                    Path(parsed.file_path).parent if parsed.file_path else Path.cwd()
+                )
                 parent_layout_path = str((base_dir / parent_layout_path).resolve())
             else:
                 parent_layout_path = str(Path(parent_layout_path).resolve())
@@ -1555,7 +1651,11 @@ class CodeGenerator:
                 test=ast.Call(
                     func=ast.Name(id="hasattr", ctx=ast.Load()),
                     args=[
-                        ast.Call(func=ast.Name(id="super", ctx=ast.Load()), args=[], keywords=[]),
+                        ast.Call(
+                            func=ast.Name(id="super", ctx=ast.Load()),
+                            args=[],
+                            keywords=[],
+                        ),
                         ast.Constant(value="_init_slots"),
                     ],
                     keywords=[],
@@ -1565,7 +1665,9 @@ class CodeGenerator:
                         value=ast.Call(
                             func=ast.Attribute(
                                 value=ast.Call(
-                                    func=ast.Name(id="super", ctx=ast.Load()), args=[], keywords=[]
+                                    func=ast.Name(id="super", ctx=ast.Load()),
+                                    args=[],
+                                    keywords=[],
                                 ),
                                 attr="_init_slots",
                                 ctx=ast.Load(),
@@ -1650,12 +1752,15 @@ class CodeGenerator:
 
             # Handle !provide - Override render() to update context before layout rendering
             provide_directive = cast(
-                Optional[ProvideDirective], parsed.get_directive_by_type(ProvideDirective)
+                Optional[ProvideDirective],
+                parsed.get_directive_by_type(ProvideDirective),
             )
             if provide_directive:
                 provide_body: List[ast.stmt] = []
                 for key, val_expr in provide_directive.mapping.items():
-                    val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
+                    val_ast = self.template_codegen._transform_expr(
+                        val_expr, set(), known_globals
+                    )
                     provide_body.append(
                         ast.Assign(
                             targets=[
@@ -1677,7 +1782,9 @@ class CodeGenerator:
                 render_call = ast.Call(
                     func=ast.Attribute(
                         value=ast.Call(
-                            func=ast.Name(id="super", ctx=ast.Load()), args=[], keywords=[]
+                            func=ast.Name(id="super", ctx=ast.Load()),
+                            args=[],
+                            keywords=[],
                         ),
                         attr="render",
                         ctx=ast.Load(),
@@ -1693,7 +1800,10 @@ class CodeGenerator:
                         posonlyargs=[],
                         args=[
                             ast.arg(arg="self"),
-                            ast.arg(arg="init", annotation=ast.Name(id="bool", ctx=ast.Load())),
+                            ast.arg(
+                                arg="init",
+                                annotation=ast.Name(id="bool", ctx=ast.Load()),
+                            ),
                         ],
                         vararg=None,
                         kwonlyargs=[],
@@ -1720,7 +1830,8 @@ class CodeGenerator:
                 # Use as layout_id if we have slots to fill for ourselves (as a component)
                 # Or for scoping if <style scoped> is present
                 has_scoped_style = any(
-                    n.tag == "style" and "scoped" in n.attributes for n in parsed.template
+                    n.tag == "style" and "scoped" in n.attributes
+                    for n in parsed.template
                 )
                 if has_scoped_style:
                     scope_id = layout_id_hash[:8]
@@ -1750,7 +1861,9 @@ class CodeGenerator:
                         ast.Assign(
                             targets=[ast.Name(id=name, ctx=ast.Store())],
                             value=ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()), attr=name, ctx=ast.Load()
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
                             ),
                         )
                     )
@@ -1772,7 +1885,8 @@ class CodeGenerator:
 
             # Handle !provide - Update context values at start of render to catch state changes
             provide_directive = cast(
-                Optional[ProvideDirective], parsed.get_directive_by_type(ProvideDirective)
+                Optional[ProvideDirective],
+                parsed.get_directive_by_type(ProvideDirective),
             )
             if provide_directive and render_func:
                 provide_stmts = []
@@ -1780,7 +1894,9 @@ class CodeGenerator:
                     # Transform expression using known globals for this page scope
                     # Note: val_expr is string. We need to parse it or use transform helper.
 
-                    val_ast = self.template_codegen._transform_expr(val_expr, set(), known_globals)
+                    val_ast = self.template_codegen._transform_expr(
+                        val_expr, set(), known_globals
+                    )
 
                     provide_stmts.append(
                         ast.Assign(
@@ -1856,7 +1972,9 @@ class CodeGenerator:
                                         ast.Attribute(
                                             value=ast.Attribute(
                                                 value=ast.Attribute(
-                                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                                    value=ast.Name(
+                                                        id="self", ctx=ast.Load()
+                                                    ),
                                                     attr="request",
                                                     ctx=ast.Load(),
                                                 ),
@@ -1978,8 +2096,12 @@ class CodeGenerator:
                                                 ast.Constant(value="debug"),
                                             ],
                                             values=[
-                                                ast.Name(id="sibling_paths", ctx=ast.Load()),
-                                                ast.Name(id="pjax_enabled", ctx=ast.Load()),
+                                                ast.Name(
+                                                    id="sibling_paths", ctx=ast.Load()
+                                                ),
+                                                ast.Name(
+                                                    id="pjax_enabled", ctx=ast.Load()
+                                                ),
                                                 ast.Name(id="debug", ctx=ast.Load()),
                                             ],
                                         )

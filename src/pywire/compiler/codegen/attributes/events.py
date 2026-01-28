@@ -16,7 +16,9 @@ class EventAttributeCodegen(AttributeCodegen):
         # @click.prevent={handler} → data-on-click="handler" data-modifiers-click="prevent"
         attrs = [f'data-on-{attr.event_type}="{attr.handler_name}"']
         if attr.modifiers:
-            attrs.append(f'data-modifiers-{attr.event_type}="{" ".join(attr.modifiers)}"')
+            attrs.append(
+                f'data-modifiers-{attr.event_type}="{" ".join(attr.modifiers)}"'
+            )
 
         # Lifted arguments support
         if hasattr(attr, "args") and attr.args:

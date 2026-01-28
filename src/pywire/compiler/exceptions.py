@@ -4,7 +4,9 @@
 class PyWireSyntaxError(Exception):
     """Raised when PyWire syntax is invalid."""
 
-    def __init__(self, message: str, file_path: str = "", line: int = 0, column: int = 0):
+    def __init__(
+        self, message: str, file_path: str = "", line: int = 0, column: int = 0
+    ):
         self.message = message
         self.file_path = file_path
         self.line = line

@@ -25,5 +25,9 @@ class ComponentDirectiveParser(DirectiveParser):
         name = match.group(2)
 
         return ComponentDirective(
-            line=line_num, column=col_num, name="!component", path=path, component_name=name
+            line=line_num,
+            column=col_num,
+            name="!component",
+            path=path,
+            component_name=name,
         )

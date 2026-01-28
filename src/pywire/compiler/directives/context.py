@@ -29,7 +29,9 @@ class ContextDirectiveParser(DirectiveParser):
             dummy_code = f"_ = {content}"
             mod = ast.parse(dummy_code)
             assign = mod.body[0]
-            if not isinstance(assign, ast.Assign) or not isinstance(assign.value, ast.Dict):
+            if not isinstance(assign, ast.Assign) or not isinstance(
+                assign.value, ast.Dict
+            ):
                 return None
 
             dict_node = assign.value
@@ -45,11 +47,15 @@ class ContextDirectiveParser(DirectiveParser):
                     local_var = None
                     if isinstance(key_node, ast.Name):
                         local_var = key_node.id
-                    elif isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+                    elif isinstance(key_node, ast.Constant) and isinstance(
+                        key_node.value, str
+                    ):
                         local_var = key_node.value
 
                     global_key = None
-                    if isinstance(value_node, ast.Constant) and isinstance(value_node.value, str):
+                    if isinstance(value_node, ast.Constant) and isinstance(
+                        value_node.value, str
+                    ):
                         global_key = value_node.value
 
                     if local_var and global_key:
@@ -61,7 +67,9 @@ class ContextDirectiveParser(DirectiveParser):
                     # value is expression to be evaluated at runtime
 
                     global_key = None
-                    if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+                    if isinstance(key_node, ast.Constant) and isinstance(
+                        key_node.value, str
+                    ):
                         global_key = key_node.value
 
                     # Convert value node back to source string to be put in generated code

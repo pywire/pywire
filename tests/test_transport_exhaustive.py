@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import msgpack  # type: ignore[import-untyped]
+import msgpack
 from pywire.runtime.http_transport import HTTPSession, HTTPTransportHandler
 from pywire.runtime.page import BasePage
 from starlette.requests import Request

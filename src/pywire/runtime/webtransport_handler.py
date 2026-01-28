@@ -81,7 +81,9 @@ class WebTransportHandler:
                         # Process message
                         try:
                             json_data = json.loads(payload.decode("utf-8"))
-                            await self._handle_message(json_data, scope, send, stream_id)
+                            await self._handle_message(
+                                json_data, scope, send, stream_id
+                            )
                         except Exception as e:
                             print(f"WebTransport message error: {e}")
 
@@ -124,7 +126,9 @@ class WebTransportHandler:
 
                 except Exception as e:
                     # Send error response (no print - response is sufficient)
-                    await self._send_response(send, stream_id, {"type": "error", "error": str(e)})
+                    await self._send_response(
+                        send, stream_id, {"type": "error", "error": str(e)}
+                    )
 
         elif msg_type == "init":
             # Initialize page for this connection (similar to WS)
@@ -155,13 +159,17 @@ class WebTransportHandler:
                 if hasattr(page_class, "__routes__"):
                     url_helper = URLHelper(page_class.__routes__)
 
-                page = page_class(request, params, query, path=path_info, url=url_helper)
+                page = page_class(
+                    request, params, query, path=path_info, url=url_helper
+                )
                 if hasattr(self.app, "get_user"):
                     page.user = self.app.get_user(request)
 
                 self.connection_pages[connection_id] = page
 
-    async def _send_response(self, send: Any, stream_id: int, data: dict[str, Any]) -> None:
+    async def _send_response(
+        self, send: Any, stream_id: int, data: dict[str, Any]
+    ) -> None:
         """Send response back on the same stream."""
         payload = json.dumps(data).encode("utf-8")
         await send(

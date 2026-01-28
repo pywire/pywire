@@ -29,5 +29,9 @@ class ModelAttributeParser(AttributeParser):
             return None
 
         return ModelAttribute(
-            name=attr_name, value=attr_value, model_name=model_name, line=line, column=col
+            name=attr_name,
+            value=attr_value,
+            model_name=model_name,
+            line=line,
+            column=col,
         )

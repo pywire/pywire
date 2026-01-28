@@ -26,7 +26,9 @@ class PathDirectiveCodegen(DirectiveCodegen):
         )
 
         statements.append(
-            ast.Assign(targets=[ast.Name(id="__routes__", ctx=ast.Store())], value=routes_ast)
+            ast.Assign(
+                targets=[ast.Name(id="__routes__", ctx=ast.Store())], value=routes_ast
+            )
         )
 
         # Generate __path_mode__
