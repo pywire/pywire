@@ -32,7 +32,7 @@ from lsprotocol.types import (
 
 # Setup logging for debugging
 logging.basicConfig(
-    filename='/tmp/pywire-lsp.log',
+    filename='/tmp/pywire-language-server.log',
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -57,7 +57,7 @@ SEMANTIC_TOKENS_LEGEND = SemanticTokensLegend(
 )
 
 # Create the language server
-server = LanguageServer('pywire-lsp', 'v0.1', text_document_sync_kind=TextDocumentSyncKind.Full)
+server = LanguageServer('pywire-language-server', 'v0.1', text_document_sync_kind=TextDocumentSyncKind.Full)
 
 
 class PyWireDocument:

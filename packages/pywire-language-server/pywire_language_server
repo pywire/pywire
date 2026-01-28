@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point for PyWire LSP server"""
+"""Entry point for PyWire Language Server"""
 import sys
 import json
 import time
@@ -12,7 +12,7 @@ try:
             "sessionId": "debug-session",
             "runId": "run1",
             "hypothesisId": "H3",
-            "location": "lsp/pywire_lsp_server:start",
+            "location": "pywire_language_server:start",
             "message": "Server process started",
             "data": {
                 "sys.executable": sys.executable,
@@ -27,10 +27,10 @@ except Exception:
     pass
 # #endregion
 
-# Add src to path so we can import pywire_lsp
+# Add src to path so we can import pywire_language_server
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from pywire_lsp.server import start
+from pywire_language_server.server import start
 
 if __name__ == '__main__':
     start()
