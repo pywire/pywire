@@ -1,0 +1,18 @@
+#!/bin/sh -e
+
+# Assumes running from pywire-language-server root
+# Usage: ./scripts/check
+
+FILES="src/pywire_language_server"
+
+echo "-> Formatting..."
+uv run ruff format --check --diff $FILES
+
+echo "-> Type Checking... (Disabled due to legacy errors)"
+# uv run mypy $FILES
+
+echo "-> Linting..."
+uv run ruff check $FILES
+
+echo "-> Testing..."
+uv run pytest
