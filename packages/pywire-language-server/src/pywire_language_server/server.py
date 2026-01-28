@@ -3,9 +3,9 @@
 import ast
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-import jedi
+import jedi  # type: ignore
 from pygls.lsp.server import LanguageServer
 from lsprotocol.types import (
     CompletionItem,
@@ -133,7 +133,7 @@ class PyWireDocument:
 
     def _extract_routes(self) -> Dict[str, str]:
         """Extract route names and patterns from !path directive, handling multi-line dicts."""
-        routes = {}
+        routes: Dict[str, str] = {}
         collecting = False
         content_lines = []
 
@@ -163,11 +163,13 @@ class PyWireDocument:
                 tree = ast.parse(content, mode="eval")
                 if isinstance(tree.body, ast.Dict):
                     for k, v in zip(tree.body.keys, tree.body.values):
-                        if isinstance(k, ast.Constant):
+                        if isinstance(k, ast.Constant) and isinstance(k.value, str):
                             routes[k.value] = (
-                                v.value if isinstance(v, ast.Constant) else ""
+                                str(v.value) if isinstance(v, ast.Constant) else ""
                             )
-                elif isinstance(tree.body, ast.Constant):
+                elif isinstance(tree.body, ast.Constant) and isinstance(
+                    tree.body.value, str
+                ):
                     routes["main"] = tree.body.value
             except Exception:
                 pass
@@ -486,7 +488,7 @@ class PyWireDocument:
         line_text = self.lines[line]
 
         # Find all balanced brace pairs using stack-based matching
-        interpolations = []
+        interpolations: List[Dict[str, Any]] = []
         i = 0
         while i < len(line_text):
             if line_text[i] == "{":
@@ -1295,18 +1297,20 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
                         ),
                     ):
                         # Operators
+                        col_offset = getattr(node, "col_offset", None)
+                        end_col_offset = getattr(node, "end_col_offset", None)
+
+                        if col_offset is None or end_col_offset is None:
+                            continue
+
                         delta_line = line_num - prev_line
-                        char_pos = value_start + node.col_offset
+                        char_pos = value_start + col_offset
                         delta_start = (
                             char_pos - prev_char if delta_line == 0 else char_pos
                         )
 
                         # Get operator string from source
-                        op_str = (
-                            value[node.col_offset : node.end_col_offset]
-                            if hasattr(node, "end_col_offset")
-                            else ""
-                        )
+                        op_str = value[col_offset:end_col_offset]
                         if not op_str:
                             continue
 

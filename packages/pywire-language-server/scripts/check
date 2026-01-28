@@ -8,11 +8,17 @@ FILES="src/pywire_language_server"
 echo "-> Formatting..."
 uv run ruff format --check --diff $FILES
 
-echo "-> Type Checking... (Disabled due to legacy errors)"
-# uv run mypy $FILES
+echo "-> Type Checking..."
+uv run mypy $FILES
 
 echo "-> Linting..."
 uv run ruff check $FILES
 
-echo "-> Testing..."
-uv run pytest
+echo "-> Testing (Multi-version)..."
+# Use uv run to execute tox from dev dependencies, ensuring availability for all cloners
+if command -v tox >/dev/null 2>&1; then
+    tox -p auto
+else
+    # Fallback to uv run tox if global tox not found
+    uv run tox -p auto || uv run pytest
+fi
