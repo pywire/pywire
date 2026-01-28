@@ -7,5 +7,5 @@ cd docs && pnpm build
 cd -
 
 # Build Client
-cd pyhtml/src/pyhtml/client && pnpm build
+cd pywire/src/pywire/client && pnpm build
 cd -

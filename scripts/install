@@ -6,7 +6,7 @@ set -x
 uv sync --all-extras --frozen
 
 # Install Client dependencies
-cd pyhtml/src/pyhtml/client && pnpm install
+cd pywire/src/pywire/client && pnpm install
 cd -
 
 # Install Docs dependencies

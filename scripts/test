@@ -3,10 +3,10 @@
 set -ex
 
 # Run Python tests
-uv run pytest --cov=pyhtml $@
+uv run pytest --cov=pywire $@
 
 # Run client tests
-cd pyhtml/src/pyhtml/client && pnpm test
+cd pywire/src/pywire/client && pnpm test
 cd -
 
 if [ -z $GITHUB_ACTIONS ]; then
