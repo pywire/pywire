@@ -1,0 +1,38 @@
+{% extends "error/base.html" %}
+
+{% block title %}{{ exc_type }}{% endblock %}
+
+{% block header %}{{ exc_type }}{% endblock %}
+
+{% block content %}
+<div class="exc-msg">{{ exc_msg }}</div>
+
+{% if is_framework_error %}
+<div class="alert alert-warning">
+    <strong>Potential Framework Bug</strong>
+    <p>This error seems to originate from within PyWire. If you believe this is a bug,
+        please <a href="{{ github_url }}" target="_blank" class="issue-link">open an issue
+            on GitHub</a>.</p>
+</div>
+{% endif %}
+
+<h2>Traceback</h2>
+<div class="frames">
+    {% for frame in frames %}
+    <div class="frame {% if frame.is_user_code %}frame-user{% else %}frame-vendor{% endif %}">
+        <div class="frame-header">
+            <span class="func">{{ frame.func_name }}</span>
+            <span class="file">{{ frame.short_filename }}:{{ frame.lineno }}</span>
+        </div>
+        <div class="code-context">
+            {% for line in frame.context %}
+            <div class="{% if line.is_current %}line-current{% else %}line{% endif %}">
+                <span class="line-num">{{ line.num }}</span>
+                <span class="code">{{ line.content }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

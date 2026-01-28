@@ -640,6 +640,14 @@ class PyWire:
 
         for file_path_str in invalidated_paths:
             file_path = Path(file_path_str)
+
+            is_in_pages = False
+            try:
+                file_path.relative_to(self.pages_dir)
+                is_in_pages = True
+            except ValueError:
+                is_in_pages = False
+
             try:
                 # Resolve implicit layout for re-compilation
                 implicit_layout = self._resolve_implicit_layout(file_path)
@@ -648,13 +656,6 @@ class PyWire:
                 new_page_class = self.loader.load(
                     file_path, implicit_layout=implicit_layout
                 )
-
-                is_in_pages = False
-                try:
-                    file_path.relative_to(self.pages_dir)
-                    is_in_pages = True
-                except ValueError:
-                    is_in_pages = False
 
                 self.router.remove_routes_for_file(str(file_path))
 
