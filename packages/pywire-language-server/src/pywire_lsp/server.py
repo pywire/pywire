@@ -1,4 +1,4 @@
-"""PyHTML Language Server"""
+"""PyWire Language Server"""
 import ast
 import logging
 import re
@@ -32,7 +32,7 @@ from lsprotocol.types import (
 
 # Setup logging for debugging
 logging.basicConfig(
-    filename='/tmp/pyhtml-lsp.log',
+    filename='/tmp/pywire-lsp.log',
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -57,11 +57,11 @@ SEMANTIC_TOKENS_LEGEND = SemanticTokensLegend(
 )
 
 # Create the language server
-server = LanguageServer('pyhtml-lsp', 'v0.1', text_document_sync_kind=TextDocumentSyncKind.Full)
+server = LanguageServer('pywire-lsp', 'v0.1', text_document_sync_kind=TextDocumentSyncKind.Full)
 
 
-class PyHTMLDocument:
-    """Represents a parsed .pyhtml document"""
+class PyWireDocument:
+    """Represents a parsed .pywire document"""
     
     def __init__(self, uri: str, text: str):
         self.uri = uri
@@ -158,7 +158,7 @@ class PyHTMLDocument:
                 ),
                 message='Missing --- separator between HTML and Python sections',
                 severity=DiagnosticSeverity.Warning,
-                source='pyhtml'
+                source='pywire'
             ))
         
         # Check for !path directive
@@ -171,7 +171,7 @@ class PyHTMLDocument:
                 ),
                 message='Missing !path directive',
                 severity=DiagnosticSeverity.Information,
-                source='pyhtml'
+                source='pywire'
             ))
         
         return diagnostics
@@ -199,7 +199,7 @@ class PyHTMLDocument:
                             ),
                             message=f"{full_attr_name} requires a value",
                             severity=DiagnosticSeverity.Error,
-                            source='pyhtml'
+                            source='pywire'
                         ))
                     continue
                 
@@ -245,7 +245,7 @@ class PyHTMLDocument:
                             ),
                             message=f"Unknown modifier '{mod}'",
                             severity=DiagnosticSeverity.Warning,
-                            source='pyhtml'
+                            source='pywire'
                         ))
 
                     # Event handler - validate as expression or statement
@@ -262,7 +262,7 @@ class PyHTMLDocument:
                                 ),
                                 message=f"Invalid Python syntax in event handler: {e.msg}",
                                 severity=DiagnosticSeverity.Error,
-                                source='pyhtml'
+                                source='pywire'
                             ))
                     continue
 
@@ -278,7 +278,7 @@ class PyHTMLDocument:
                             ),
                             message="$for syntax error: expected 'item in collection'",
                             severity=DiagnosticSeverity.Error,
-                            source='pyhtml'
+                            source='pywire'
                         ))
                     else:
                         # Validate the iterable part is valid Python
@@ -294,7 +294,7 @@ class PyHTMLDocument:
                                     ),
                                     message=f"Invalid iterable expression: {e.msg}",
                                     severity=DiagnosticSeverity.Error,
-                                    source='pyhtml'
+                                    source='pywire'
                                 ))
                 
                 elif attr_name == '$bind':
@@ -310,7 +310,7 @@ class PyHTMLDocument:
                             ),
                             message="$bind value must be an assignable target (variable name)",
                             severity=DiagnosticSeverity.Error,
-                            source='pyhtml'
+                            source='pywire'
                         ))
                 
                 elif attr_name in ('$if', '$show', '$key'):
@@ -325,7 +325,7 @@ class PyHTMLDocument:
                             ),
                             message=f"Invalid Python expression: {e.msg}",
                             severity=DiagnosticSeverity.Error,
-                            source='pyhtml'
+                            source='pywire'
                         ))
                 
                 elif attr_name.startswith('@'):
@@ -343,7 +343,7 @@ class PyHTMLDocument:
                                 ),
                                 message=f"Invalid Python syntax in event handler: {e.msg}",
                                 severity=DiagnosticSeverity.Error,
-                                source='pyhtml'
+                                source='pywire'
                             ))
         return diagnostics
     
@@ -372,8 +372,8 @@ class PyHTMLDocument:
             return ""
         return "\n".join(self.lines[self.separator_line + 1:])
 
-    def pyhtml_to_python_line(self, line: int) -> int:
-        """Convert a line number in the .pyhtml file to a line number in the extracted Python source"""
+    def pywire_to_python_line(self, line: int) -> int:
+        """Convert a line number in the .pywire file to a line number in the extracted Python source"""
         if self.separator_line is None:
             return 0
         return line - self.separator_line - 1
@@ -464,7 +464,7 @@ class PyHTMLDocument:
         return None
 
 
-def find_best_definitions(doc: PyHTMLDocument, expression: str, char_in_expr: int) -> List:
+def find_best_definitions(doc: PyWireDocument, expression: str, char_in_expr: int) -> List:
     """Find the best definitions for an expression using Jedi"""
     try:
         python_source = doc.get_python_source()
@@ -544,7 +544,7 @@ def find_best_definitions(doc: PyHTMLDocument, expression: str, char_in_expr: in
 
 
 # Document cache
-documents: dict[str, PyHTMLDocument] = {}
+documents: dict[str, PyWireDocument] = {}
 
 
 @server.feature('textDocument/didOpen')
@@ -556,7 +556,7 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
     logger.info(f"Document opened: {uri}")
     
     # Parse and cache
-    doc = PyHTMLDocument(uri, text)
+    doc = PyWireDocument(uri, text)
     documents[uri] = doc
     
     # Send diagnostics
@@ -577,7 +577,7 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
     text = params.content_changes[0].text
     
     # Re-parse
-    doc = PyHTMLDocument(uri, text)
+    doc = PyWireDocument(uri, text)
     documents[uri] = doc
     
     # Send updated diagnostics
@@ -659,7 +659,7 @@ def definition(ls: LanguageServer, params: DefinitionParams) -> Optional[List[Lo
         
     try:
         python_source = doc.get_python_source()
-        python_line = doc.pyhtml_to_python_line(position.line)
+        python_line = doc.pywire_to_python_line(position.line)
         
         # Don't pass path to avoid caching issues
         script = jedi.Script(python_source)
@@ -667,7 +667,7 @@ def definition(ls: LanguageServer, params: DefinitionParams) -> Optional[List[Lo
         
         locations = []
         for d in definitions:
-            # Map back to .pyhtml coordinates
+            # Map back to .pywire coordinates
             # For local definitions, offset by separator line
             if doc.separator_line is not None:
                 line = d.line + doc.separator_line
@@ -854,7 +854,7 @@ Define routes for this page.
         
     try:
         python_source = doc.get_python_source()
-        python_line = doc.pyhtml_to_python_line(position.line)
+        python_line = doc.pywire_to_python_line(position.line)
         
         # Don't pass path to avoid caching issues
         script = jedi.Script(python_source)
@@ -991,7 +991,7 @@ def completions(ls: LanguageServer, params: CompletionParams) -> CompletionList:
     elif section == 'python':
         # Use Jedi for Python completions
         python_source = doc.get_python_source()
-        python_line = doc.pyhtml_to_python_line(position.line)
+        python_line = doc.pywire_to_python_line(position.line)
         
         try:
             # Don't pass path to avoid caching issues
@@ -1192,7 +1192,7 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
 
 def start():
     """Start the language server"""
-    logger.info("PyHTML Language Server starting...")
+    logger.info("PyWire Language Server starting...")
     try:
         server.start_io()
     except Exception as e:

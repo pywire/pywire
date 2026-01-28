@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point for PyHTML LSP server"""
+"""Entry point for PyWire LSP server"""
 import sys
 import json
 import time
@@ -7,12 +7,12 @@ from pathlib import Path
 
 # #region agent log
 try:
-    with open('/Users/rholmdahl/projects/pyhtml/.cursor/debug.log', 'a') as f:
+    with open('/Users/rholmdahl/projects/pywire/.cursor/debug.log', 'a') as f:
         log_entry = {
             "sessionId": "debug-session",
             "runId": "run1",
             "hypothesisId": "H3",
-            "location": "lsp/pyhtml_lsp_server:start",
+            "location": "lsp/pywire_lsp_server:start",
             "message": "Server process started",
             "data": {
                 "sys.executable": sys.executable,
@@ -27,10 +27,10 @@ except Exception:
     pass
 # #endregion
 
-# Add src to path so we can import pyhtml_lsp
+# Add src to path so we can import pywire_lsp
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from pyhtml_lsp.server import start
+from pywire_lsp.server import start
 
 if __name__ == '__main__':
     start()
