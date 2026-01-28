@@ -74,11 +74,11 @@ class TestRouterRuntime(unittest.TestCase):
 
     def test_router_remove_routes_for_file(self) -> None:
         class PageA(MockPage):
-            __file_path__ = "file_a.pywire"
+            __file_path__ = "file_a.wire"
             __route__ = "/a"
 
         class PageB(MockPage):
-            __file_path__ = "file_b.pywire"
+            __file_path__ = "file_b.wire"
             __route__ = "/b"
 
         router = Router()
@@ -86,7 +86,7 @@ class TestRouterRuntime(unittest.TestCase):
         router.add_page(PageB)
 
         self.assertEqual(len(router.routes), 2)
-        router.remove_routes_for_file("file_a.pywire")
+        router.remove_routes_for_file("file_a.wire")
         self.assertEqual(len(router.routes), 1)
         self.assertEqual(router.routes[0].page_class, PageB)
 

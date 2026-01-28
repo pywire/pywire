@@ -12,7 +12,7 @@ from starlette.testclient import TestClient
 def app_dev(tmp_path: Path) -> PyWire:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
-    (pages_dir / "index.pywire").write_text(
+    (pages_dir / "index.wire").write_text(
         "!path { 'a': '/a', 'b': '/b' }\n<h1>Index</h1>\n---\n# Python"
     )
 

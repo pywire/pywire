@@ -56,7 +56,7 @@ def test_is_framework_error_logic() -> None:
     assert middleware._is_framework_error(fw_path) is True
 
     # A path in user pages should not
-    user_path = os.path.join(os.getcwd(), "pages", "index.pywire")
+    user_path = os.path.join(os.getcwd(), "pages", "index.wire")
     assert middleware._is_framework_error(user_path) is False
 
     # A path in virtual env site-packages (library code) -> NOT framework (it's user's deps)

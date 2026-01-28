@@ -17,7 +17,7 @@ def mock_request() -> MagicMock:
 
 @pytest.fixture
 def temp_pywire_file(tmp_path: Path) -> str:
-    file_path = tmp_path / "test.pywire"
+    file_path = tmp_path / "test.wire"
     content = "\n".join([f"line {i}" for i in range(1, 20)])
     file_path.write_text(content)
     return str(file_path)
@@ -68,7 +68,7 @@ async def test_compile_error_page_traceback_inference(
     mock_request: MagicMock, tmp_path: Path
 ) -> None:
     # Create a dummy file and raise an error that "looks" like it came from there
-    file_path = tmp_path / "app_logic.pywire"
+    file_path = tmp_path / "app_logic.wire"
     file_path.write_text("dummy content")
 
     def raise_err() -> None:
@@ -90,7 +90,7 @@ async def test_compile_error_page_traceback_inference(
 
 @pytest.mark.asyncio
 async def test_compile_error_page_missing_file(mock_request: MagicMock) -> None:
-    error = PyWireSyntaxError("Bad", file_path="/non/existent/file.pywire", line=1)
+    error = PyWireSyntaxError("Bad", file_path="/non/existent/file.wire", line=1)
     page = CompileErrorPage(mock_request, error)
 
     response = await page.render()

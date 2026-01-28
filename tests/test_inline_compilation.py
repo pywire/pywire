@@ -20,7 +20,7 @@ def test_inline_handler_extraction() -> None:
 
     button_node = TemplateNode(line=1, column=1, tag="button", special_attributes=[click_attr])
 
-    parsed = ParsedPyWire(template=[button_node], file_path="test_inline.pywire")
+    parsed = ParsedPyWire(template=[button_node], file_path="test_inline.wire")
 
     module_ast = generator.generate(parsed)
     ast.fix_missing_locations(module_ast)

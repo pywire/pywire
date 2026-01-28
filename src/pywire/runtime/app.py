@@ -350,14 +350,14 @@ class PyWire:
         # We need to sort files to ensure deterministic order but scanning is recursive
         self._scan_directory(self.pages_dir)
 
-        # Explicitly check for __error__.pywire in root pages dir
+        # Explicitly check for __error__.wire in root pages dir
         # (It is skipped by _scan_directory because it starts with _)
-        error_page_path = self.pages_dir / "__error__.pywire"
+        error_page_path = self.pages_dir / "__error__.wire"
         if error_page_path.exists():
             try:
                 root_layout = None
-                if (self.pages_dir / "__layout__.pywire").exists():
-                    root_layout = str((self.pages_dir / "__layout__.pywire").resolve())
+                if (self.pages_dir / "__layout__.wire").exists():
+                    root_layout = str((self.pages_dir / "__layout__.wire").resolve())
 
                 page_class = self.loader.load(
                     error_page_path, implicit_layout=root_layout
@@ -373,8 +373,8 @@ class PyWire:
         """Recursively scan directory for pages and layouts."""
         current_layout = layout_path
 
-        # Priority: __layout__.pywire ONLY
-        potential_layout = dir_path / "__layout__.pywire"
+        # Priority: __layout__.wire ONLY
+        potential_layout = dir_path / "__layout__.wire"
 
         if potential_layout.exists():
             # Compile layout first (it might use the parent layout!)
@@ -414,8 +414,8 @@ class PyWire:
                 new_prefix = (url_prefix + "/" + new_segment).replace("//", "/")
                 self._scan_directory(entry, current_layout, new_prefix)
 
-            elif entry.is_file() and entry.suffix == ".pywire":
-                if entry.name == "layout.pywire":
+            elif entry.is_file() and entry.suffix == ".wire":
+                if entry.name == "layout.wire":
                     # Previously supported layout file, now ignored (or treated
                     # as normal page? No, starts with l)
                     # Wait, layout.pywire doesn't start with _. So it would be registered as /layout
@@ -427,7 +427,7 @@ class PyWire:
                     continue
 
                 # Determine route path
-                name = entry.stem  # filename without .pywire
+                name = entry.stem  # filename without .wire
 
                 route_segment = name
                 if name == "index":
@@ -564,9 +564,9 @@ class PyWire:
             is_file = i == len(rel_path.parts) - 1
 
             if is_file:
-                if not name.endswith(".pywire"):
+                if not name.endswith(".wire"):
                     return None
-                if name == "layout.pywire":
+                if name == "layout.wire":
                     return None
                 name = Path(name).stem
 
@@ -608,7 +608,7 @@ class PyWire:
 
         while True:
             # Check for layout files
-            layout = current_dir / "__layout__.pywire"
+            layout = current_dir / "__layout__.wire"
 
             if layout.exists():
                 # Don't use layout if it is the file itself (e.g. reloading a layout file)
@@ -658,8 +658,8 @@ class PyWire:
 
                 self.router.remove_routes_for_file(str(file_path))
 
-                # Special handling for __error__.pywire
-                if file_path.name == "__error__.pywire":
+                # Special handling for __error__.wire
+                if file_path.name == "__error__.wire":
                     self.router.add_route("/__error__", new_page_class)
                 elif is_in_pages:
                     self.router.add_page(new_page_class)
@@ -680,7 +680,7 @@ class PyWire:
                 traceback.print_exc()
 
                 # If it was a page, show error
-                if is_in_pages or file_path.name == "__error__.pywire":
+                if is_in_pages or file_path.name == "__error__.wire":
                     self.router.remove_routes_for_file(str(file_path))
                     self._register_error_page(file_path, e)
 

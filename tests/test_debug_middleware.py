@@ -24,7 +24,7 @@ def test_debug_middleware_catches_generic_exception() -> None:
 
 def test_debug_middleware_catches_syntax_error(tmp_path: Path) -> None:
     # Create a dummy file for the syntax error to point to
-    file_path = tmp_path / "broken.pywire"
+    file_path = tmp_path / "broken.wire"
     file_path.write_text("line 1\nline 2\nline 3")
 
     async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:

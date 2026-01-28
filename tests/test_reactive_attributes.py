@@ -34,12 +34,12 @@ def test_variable_binding(loader: PageLoader, mock_app: MagicMock) -> None:
 my_id = "dynamic-id"
 my_class = "btn"
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
@@ -61,12 +61,12 @@ def test_method_binding_paramless(loader: PageLoader, mock_app: MagicMock) -> No
 def get_title():
     return "My Title"
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
@@ -86,12 +86,12 @@ def test_expression_binding(loader: PageLoader, mock_app: MagicMock) -> None:
 ---
 is_error = True
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
@@ -113,12 +113,12 @@ is_checked = True
 is_disabled = False
 is_readonly = None
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
@@ -144,12 +144,12 @@ def test_async_binding(loader: PageLoader, mock_app: MagicMock) -> None:
 async def get_data():
     return "async-data"
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
@@ -170,12 +170,12 @@ def test_aria_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> Non
 is_loading = True
 is_expanded = False
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         orig_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)

@@ -13,7 +13,7 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir)
-        (self.pages_dir / "index.pywire").write_text("<h1>Index</h1>")
+        (self.pages_dir / "index.wire").write_text("<h1>Index</h1>")
 
         # Mock Starlette deps
         # Mock Starlette deps
@@ -39,18 +39,18 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         shutil.rmtree(self.test_dir)
 
     def test_legacy_layout_ignored(self) -> None:
-        """Confirm layout.pywire is IGNORED."""
-        # Create layout.pywire
-        (self.pages_dir / "layout.pywire").write_text("LayoutContent <slot />")
+        """Confirm layout.wire is IGNORED."""
+        # Create layout.wire
+        (self.pages_dir / "layout.wire").write_text("LayoutContent <slot />")
 
         app = PyWire(str(self.pages_dir))
 
         # app.loader should be a mock instance
-        # We expect that for Strict Requirements, layout.pywire is NOT loaded as a layout.
+        # We expect that for Strict Requirements, layout.wire is NOT loaded as a layout.
 
         # In current code (before fix), it WILL be loaded. So this assertion should fail.
 
-        layout_path = self.pages_dir / "layout.pywire"
+        layout_path = self.pages_dir / "layout.wire"
 
         # Normalize path for comparison if needed, but Path objects compare well usually.
         # Check call args
@@ -60,11 +60,11 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
             # call.args[0] is path
             loaded_paths.append(str(call.args[0]))
 
-        self.assertNotIn(str(layout_path), loaded_paths, "layout.pywire should NOT be loaded")
+        self.assertNotIn(str(layout_path), loaded_paths, "layout.wire should NOT be loaded")
 
     async def test_404_pywire_not_error_page(self) -> None:
-        """Confirm 404.pywire is NOT used for error handling."""
-        (self.pages_dir / "404.pywire").write_text("<h1>My Custom 404</h1>")
+        """Confirm 404.wire is NOT used for error handling."""
+        (self.pages_dir / "404.wire").write_text("<h1>My Custom 404</h1>")
 
         app = PyWire(str(self.pages_dir))
         # Mock router match to NOT find anything for /nonexistent
@@ -74,7 +74,7 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         # If not found, it calls router.match("/404").
         # We want to assert that it DOES NOT call match("/404") or even if it does,
         # it shouldn't use it?
-        # Expectation: ONLY __error__.pywire works.
+        # Expectation: ONLY __error__.wire works.
         # So match("/404") should NOT happen or be ignored in _handle_request.
 
         # If I can spy on router.match, I can verify calls.
@@ -99,9 +99,9 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/__error__", paths_checked, "Should look for /__error__")
 
     async def test_nested_error_ignored(self) -> None:
-        """Confirm nested __error__.pywire is ignored."""
+        """Confirm nested __error__.wire is ignored."""
         (self.pages_dir / "sub").mkdir()
-        (self.pages_dir / "sub" / "__error__.pywire").write_text("Nested Error")
+        (self.pages_dir / "sub" / "__error__.wire").write_text("Nested Error")
 
         app = PyWire(str(self.pages_dir))
 
@@ -112,17 +112,17 @@ class TestStrictRequirements(unittest.IsolatedAsyncioTestCase):
         # Can we identify the page class? app.loader.load would have been called for it if loaded.
 
         # Let's check if loader loaded it first.
-        # Nested __error__.pywire starts with _. _scan_directory skips files starting with _.
+        # Nested __error__.wire starts with _. _scan_directory skips files starting with _.
         # So it certainly should NOT be loaded via scan.
         # And _load_pages only explicit loads explicit root __error__.
         # So it should NOT be loaded at all.
 
-        nested_error_path = self.pages_dir / "sub" / "__error__.pywire"
+        nested_error_path = self.pages_dir / "sub" / "__error__.wire"
         loader = cast(Any, app.loader)
         loaded_paths = [str(call.args[0]) for call in loader.load.call_args_list]
 
         self.assertNotIn(
-            str(nested_error_path), loaded_paths, "Nested __error__.pywire should NOT be loaded"
+            str(nested_error_path), loaded_paths, "Nested __error__.wire should NOT be loaded"
         )
 
 

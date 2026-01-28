@@ -9,7 +9,7 @@ def test_static_asset_serving(tmp_path: Path) -> None:
     """Verify static asset serving."""
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
-    (pages_dir / "index.pywire").write_text("<div>Home</div>", encoding="utf-8")
+    (pages_dir / "index.wire").write_text("<div>Home</div>", encoding="utf-8")
 
     static_dir = tmp_path / "static_assets"
     static_dir.mkdir()

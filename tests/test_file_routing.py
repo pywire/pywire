@@ -106,8 +106,8 @@ class TestFileRouting(unittest.TestCase):
     def test_scan_simple_structure(self) -> None:
         """Test standard file structure scanning."""
         # Create pages
-        (self.tmp_path / "index.pywire").touch()
-        (self.tmp_path / "about.pywire").touch()
+        (self.tmp_path / "index.wire").touch()
+        (self.tmp_path / "about.wire").touch()
 
         self.app._scan_directory(self.tmp_path)
 
@@ -120,45 +120,45 @@ class TestFileRouting(unittest.TestCase):
 
     def test_scan_nested_structure(self) -> None:
         """Test nested directories and params."""
-        (self.tmp_path / "index.pywire").touch()
+        (self.tmp_path / "index.wire").touch()
 
         users = self.tmp_path / "users"
         users.mkdir()
-        (users / "index.pywire").touch()
-        (users / "[id].pywire").touch()
+        (users / "index.wire").touch()
+        (users / "[id].wire").touch()
 
         posts = self.tmp_path / "posts"
         posts.mkdir()
         (posts / "[slug]").mkdir()
-        (posts / "[slug]" / "index.pywire").touch()
+        (posts / "[slug]" / "index.wire").touch()
 
         self.app._scan_directory(self.tmp_path)
 
         routes = {r.pattern: r for r in self.app.router.routes}
 
         self.assertIn("/", routes)
-        self.assertIn("/users", routes)  # users/index.pywire -> /users/
+        self.assertIn("/users", routes)  # users/index.wire -> /users/
 
-        # [id].pywire -> /users/{id}
+        # [id].wire -> /users/{id}
         self.assertIn("/users/{id}", routes)
 
-        # posts/[slug]/index.pywire -> /posts/{slug}/
+        # posts/[slug]/index.wire -> /posts/{slug}/
         # Normalized by router might be different
         self.assertIn("/posts/{slug}", routes)
 
     def test_scan_layouts(self) -> None:
         """Test layout discovery and injection."""
-        layout = self.tmp_path / "__layout__.pywire"
+        layout = self.tmp_path / "__layout__.wire"
         layout.touch()
 
-        (self.tmp_path / "index.pywire").touch()
+        (self.tmp_path / "index.wire").touch()
 
         sub = self.tmp_path / "sub"
         sub.mkdir()
-        (sub / "page.pywire").touch()
+        (sub / "page.wire").touch()
 
         # Sub layout
-        sub_layout = sub / "__layout__.pywire"
+        sub_layout = sub / "__layout__.wire"
         sub_layout.touch()
 
         self.app._scan_directory(self.tmp_path)
@@ -182,13 +182,13 @@ class TestFileRouting(unittest.TestCase):
         self.assertIn((norm(layout), None), loaded_normalized)
 
         # Index should have root layout
-        self.assertIn((norm(self.tmp_path / "index.pywire"), norm(layout)), loaded_normalized)
+        self.assertIn((norm(self.tmp_path / "index.wire"), norm(layout)), loaded_normalized)
 
         # Sub layout should be loaded with root layout as implicit!
         self.assertIn((norm(sub_layout), norm(layout)), loaded_normalized)
 
         # Sub page should have sub layout
-        self.assertIn((norm(sub / "page.pywire"), norm(sub_layout)), loaded_normalized)
+        self.assertIn((norm(sub / "page.wire"), norm(sub_layout)), loaded_normalized)
 
     def test_disable_path_based_routing(self) -> None:
         """Test that path_based_routing=False ignores implicit routes but keeps explicit ones."""
@@ -199,10 +199,10 @@ class TestFileRouting(unittest.TestCase):
         self.app.loader = cast(Any, MockLoader())
 
         # 1. Implicit page (should be IGNORED)
-        (self.tmp_path / "implicit.pywire").touch()
+        (self.tmp_path / "implicit.wire").touch()
 
         # 2. Explicit page (should be KEPT)
-        explicit = self.tmp_path / "explicit.pywire"
+        explicit = self.tmp_path / "explicit.wire"
         explicit.touch()
 
         # We need MockLoader to return a class with __routes__ for the explicit one
@@ -213,7 +213,7 @@ class TestFileRouting(unittest.TestCase):
             path: Path, use_cache: bool = True, implicit_layout: str | None = None
         ) -> Type[MockPage]:
             cls = original_load(path, use_cache=use_cache, implicit_layout=implicit_layout)
-            if path.name == "explicit.pywire":
+            if path.name == "explicit.wire":
                 cast(Any, cls).__routes__ = {"main": "/explicit"}
             return cast(Type[MockPage], cls)
 
@@ -233,7 +233,7 @@ class TestFileRouting(unittest.TestCase):
         self.app = PyWire(str(self.tmp_path), path_based_routing=True)
         self.app.loader = cast(Any, MockLoader())
 
-        (self.tmp_path / "implicit.pywire").touch()
+        (self.tmp_path / "implicit.wire").touch()
 
         self.app._scan_directory(self.tmp_path)
 
