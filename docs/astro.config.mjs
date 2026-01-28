@@ -9,18 +9,29 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'pywire',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
+			customCss: ['./src/styles/custom.css'],
+			social: [
+				{ icon: 'github', label: 'GitHub', href: 'https://github.com/pywire/pywire' },
+				{ icon: 'discord', label: 'Discord', href: 'https://discord.gg/pywire' },
+			],
 			sidebar: [
 				{
 					label: 'Guides',
 					items: [
-						// Each item here is one entry in the navigation menu.
-						{ label: 'Example Guide', slug: 'guides/example' },
+						{ label: 'Getting Started', slug: 'guides/getting-started' },
+						{ label: 'Walkthrough', slug: 'guides/walkthrough' },
 					],
 				},
 				{
 					label: 'Reference',
 					autogenerate: { directory: 'reference' },
+				},
+				{
+					label: 'Project',
+					items: [
+						{ label: 'Back to Website', link: 'https://pywire.dev', attrs: { target: '_self' } },
+						{ label: 'Releases', link: 'https://github.com/pywire/pywire/releases' },
+					],
 				},
 			],
 		}),
