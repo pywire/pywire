@@ -1,0 +1,31 @@
+{% extends "error/base.html" %}
+
+{% block title %}PyWire Syntax Error{% endblock %}
+
+{% block header %}PyWire Syntax Error{% endblock %}
+
+{% block content %}
+<div class="error-location">
+    <div class="file-info">{{ file_display }}{% if error_line %}:{{ error_line }}{% endif %}</div>
+    <div class="exc-msg">{{ error_message }}</div>
+</div>
+
+{% if context_lines %}
+<div class="code-context">
+    {% for line in context_lines %}
+    <div class="{% if line.is_current %}line-current{% else %}line{% endif %}">
+        <span class="line-num">{{ line.num }}</span>
+        <span class="code">{{ line.content }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if traceback_text %}
+<div class="traceback-section">
+    <h3>Full Traceback</h3>
+    <pre class="traceback">{{ traceback_text }}</pre>
+</div>
+{% endif %}
+
+{% endblock %}

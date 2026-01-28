@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>{% block title %}PyWire Error{% endblock %}</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --accent-color: #ff6b6b;
+            --secondary-color: #aaa;
+            --code-bg: #222;
+            --border-color: #333;
+            --highlight-bg: #3c1e1e;
+            --highlight-text: #ffcccc;
+            --highlight-border: #ff6b6b;
+            --file-color: #ffd43b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header-block {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: var(--accent-color);
+            font-size: 24px;
+            margin-bottom: 5px;
+            margin-top: 0;
+        }
+
+        h3 {
+            color: var(--secondary-color);
+            font-size: 16px;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+
+        .exc-msg {
+            font-size: 18px;
+            color: #fff;
+            margin-bottom: 20px;
+            font-weight: 500;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
+        /* Code Context */
+        .error-location {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .file-info {
+            color: var(--file-color);
+            font-family: monospace;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .code-context {
+            padding: 10px 0;
+            background: var(--code-bg);
+            font-family: "Fira Code", monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            border-radius: 4px;
+        }
+
+        .line {
+            padding: 2px 15px;
+            color: #888;
+            display: flex;
+        }
+
+        .line-current {
+            padding: 2px 15px;
+            background: var(--highlight-bg);
+            color: var(--highlight-text);
+            display: flex;
+            border-left: 3px solid var(--highlight-border);
+        }
+
+        .line-num {
+            width: 40px;
+            text-align: right;
+            margin-right: 15px;
+            opacity: 0.5;
+            user-select: none;
+        }
+
+        .code {
+            white-space: pre;
+        }
+
+        /* Traceback */
+        .traceback-section {
+            margin-top: 20px;
+        }
+
+        .traceback {
+            background: var(--code-bg);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            overflow-x: auto;
+            color: #ccc;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .frames {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .frame {
+            background: #2d2d2d;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .frame-user {
+            border-left: 4px solid #69db7c;
+        }
+
+        .frame-vendor {
+            border-left: 4px solid #74c0fc;
+            opacity: 0.8;
+        }
+
+        .frame-header {
+            padding: 10px 15px;
+            background: var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        .func {
+            color: var(--file-color);
+            font-weight: bold;
+        }
+
+        .file {
+            color: var(--secondary-color);
+        }
+
+        /* Alerts */
+        .alert {
+            background: #3d2800;
+            border: 1px solid #fcc419;
+            color: #fcc419;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .issue-link {
+            color: var(--file-color);
+            text-decoration: underline;
+        }
+
+        /* 404 Specifics */
+        .error-404 {
+            border-left: 6px solid var(--accent-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header-block">
+            <h1>{% block header %}{% endblock %}</h1>
+        </div>
+
+        {% block content %}{% endblock %}
+
+    </div>
+    <!-- Client Script -->
+    {% if script_url %}
+    <script src="{{ script_url }}"></script>
+    {% endif %}
+</body>
+
+</html>

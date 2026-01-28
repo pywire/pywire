@@ -1,0 +1,11 @@
+{% extends "error/base.html" %}
+
+{% block title %}{{ title }} - PyWire{% endblock %}
+
+{% block header %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="error-location error-404">
+    <div class="exc-msg">{{ message }}</div>
+</div>
+{% endblock %}
