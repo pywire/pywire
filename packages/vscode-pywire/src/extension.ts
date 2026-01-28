@@ -151,7 +151,7 @@ export function activate(context: ExtensionContext) {
     // Path to LSP server script
     // Assumes lsp/ is adjacent to vscode-pywire/
     const serverScript = context.asAbsolutePath(
-        path.join('..', 'lsp', 'pywire_lsp_server')
+        path.join('..', 'pywire-language-server', 'pywire_language_server')
     );
 
     console.log('LSP server script:', serverScript);
