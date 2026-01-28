@@ -9,5 +9,6 @@ uv run ruff format --check --diff $SOURCE_FILES
 uv run mypy $SOURCE_FILES
 uv run ruff check $SOURCE_FILES
 
-echo "-> Testing..."
-uv run pytest
+echo "-> Testing (Multi-version)..."
+# Use uv run to execute tox from dev dependencies, ensuring availability for all cloners
+uv run tox -p auto
