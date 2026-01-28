@@ -75,12 +75,12 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "npm run check-types && node build.js",
+    "vscode:prepublish": "pnpm run package",
+    "compile": "pnpm run check-types && node build.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node build.js --watch",
     "watch:tsc": "tsc --noEmit --watch -p ./",
-    "package": "npm run check-types && node build.js --production",
+    "package": "pnpm run check-types && node build.js --production",
     "check-types": "tsc --noEmit -p ./"
   },
   "devDependencies": {
