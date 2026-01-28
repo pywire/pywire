@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "PyWire",
+  "scopeName": "source.pywire",
+  "patterns": [
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#python-section"
+    },
+    {
+      "include": "#html-content"
+    }
+  ],
+  "repository": {
+    "directives": {
+      "match": "^\\s*(!\\w+)",
+      "name": "keyword.control.directive.pywire"
+    },
+    "python-section": {
+      "begin": "^(---)\\s*$",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.separator.pywire"
+        }
+      },
+      "end": "$^",
+      "contentName": "meta.embedded.block.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "html-content": {
+      "patterns": [
+        {
+          "include": "#interpolation"
+        },
+        {
+          "include": "text.html.basic"
+        }
+      ]
+    },
+    "interpolation": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.embedded.inline.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    }
+  }
+}
