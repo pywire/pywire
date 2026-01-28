@@ -1,0 +1,39 @@
+==================
+Basic Structure
+==================
+
+!layout basic
+
+<div id="app">
+    <h1>Hello</h1>
+</div>
+
+   ---
+
+class Page:
+    pass
+
+---
+
+(source_file
+  (text)
+  (directive
+    (keyword_directive)
+    (keyword_directive))
+  (text)
+  (tag
+    (tag_name)
+    (attribute
+      (attribute_name)
+      (attribute_value))
+    (text)
+    (tag
+      (tag_name)
+      (text)
+      (tag_name))
+    (text)
+    (tag_name))
+  (text)
+  (python_section
+    (separator)
+    (python_code)))

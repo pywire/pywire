@@ -1,0 +1,11 @@
+
+!layout basic
+
+<div id="app">
+    <h1>Hello</h1>
+</div>
+
+   ---
+
+class Page:
+    pass
