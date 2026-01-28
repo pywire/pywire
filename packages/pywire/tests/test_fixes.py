@@ -16,7 +16,7 @@ items = [1, 2, 3]
 ---
 """
 
-    (tmp_path / "index.pywire").write_text(page_content, encoding="utf-8")
+    (tmp_path / "index.wire").write_text(page_content, encoding="utf-8")
 
     app = PyWire(str(tmp_path))
     client = TestClient(app)
@@ -34,7 +34,7 @@ def test_static_path_config(tmp_path: Path) -> None:
     # Create pages dir
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
-    (pages_dir / "index.pywire").write_text("<div>Home</div>", encoding="utf-8")
+    (pages_dir / "index.wire").write_text("<div>Home</div>", encoding="utf-8")
 
     # Create static dir
     static_dir = tmp_path / "assets"

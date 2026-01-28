@@ -213,7 +213,7 @@ async def run_dev_server(
                 # First, recompile changed pages
                 should_reload = False
                 for change_type, file_path in changes:
-                    if file_path.endswith(".pywire"):
+                    if file_path.endswith(".wire"):
                         should_reload = True
                         # Reload logic needs access to the *current* running app instance
                         # We have pywire_app

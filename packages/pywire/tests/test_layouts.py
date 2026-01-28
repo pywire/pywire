@@ -42,11 +42,11 @@ def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
     </footer>
 </div>
 """
-        (tmp_path / "layout.pywire").write_text(layout_code)
+        (tmp_path / "layout.wire").write_text(layout_code)
 
         # Create page - using <slot name="..."> to fill slots
         page_code = """
-!layout "layout.pywire"
+!layout "layout.wire"
 
 <h1>Page Content</h1>
 <p>More content</p>
@@ -55,12 +55,12 @@ def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
     <div>Custom Header</div>
 </slot>
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         original_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             assert issubclass(page_class, BasePage)
 
             request = MagicMock()
@@ -96,11 +96,11 @@ def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None
 </body>
 </html>
 """
-        (tmp_path / "root.pywire").write_text(root_layout)
+        (tmp_path / "root.wire").write_text(root_layout)
 
         # Child layout - uses <head> to append to $head slot
         child_layout = """
-!layout "root.pywire"
+!layout "root.wire"
 
 <head>
     <link rel="stylesheet" href="/styles.css">
@@ -110,11 +110,11 @@ def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None
     <slot />
 </main>
 """
-        (tmp_path / "child.pywire").write_text(child_layout)
+        (tmp_path / "child.wire").write_text(child_layout)
 
         # Page - uses <head> to append to $head slot
         page_code = """
-!layout "child.pywire"
+!layout "child.wire"
 
 <head>
     <title>My Page</title>
@@ -122,12 +122,12 @@ def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None
 
 <h1>Page Content</h1>
 """
-        (tmp_path / "page.pywire").write_text(page_code)
+        (tmp_path / "page.wire").write_text(page_code)
 
         original_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
-            page_class = loader.load(tmp_path / "page.pywire")
+            page_class = loader.load(tmp_path / "page.wire")
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)

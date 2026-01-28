@@ -17,7 +17,7 @@ class TestHooksRemoval(unittest.TestCase):
         self.temp_dir.cleanup()
         self.loader.invalidate_cache()
 
-    def create_page_class(self, content: str, filename: str = "temp.pywire") -> Any:
+    def create_page_class(self, content: str, filename: str = "temp.wire") -> Any:
         path = Path(self.temp_dir.name) / filename
         path.write_text(content)
         return self.loader.load(path)
@@ -52,7 +52,7 @@ def my_mount(self):
         request = MagicMock()
         # Mock app state
         request.app.state.enable_pjax = False
-        request.app.state.pywire._get_client_script_url.return_value = "/static/pywire.js"
+        request.app.state.wire._get_client_script_url.return_value = "/static/pywire.js"
 
         page = page_class(request, {}, {})
         page.called_hooks = []

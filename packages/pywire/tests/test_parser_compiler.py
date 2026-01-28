@@ -43,11 +43,11 @@ class TestParserCompiler(unittest.TestCase):
         self.assertEqual(interp_wrapper.special_attributes[0].expression, "name")
 
     def test_parse_directives(self) -> None:
-        content = "!layout 'main.pywire'\n<div>Content</div>"
+        content = "!layout 'main.wire'\n<div>Content</div>"
         parsed = self.parser.parse(content)
         self.assertEqual(len(parsed.directives), 1)
         assert isinstance(parsed.directives[0], LayoutDirective)
-        self.assertEqual(parsed.directives[0].layout_path, "main.pywire")
+        self.assertEqual(parsed.directives[0].layout_path, "main.wire")
 
     def test_extract_form_validation(self) -> None:
         content = """

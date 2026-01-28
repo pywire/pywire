@@ -53,11 +53,11 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
     def test_load_pages_recursive(self) -> None:
         # Create a nested structure
         (self.pages_dir / "sub").mkdir()
-        (self.pages_dir / "index.pywire").touch()
-        (self.pages_dir / "about.pywire").touch()
-        (self.pages_dir / "sub" / "contact.pywire").touch()
-        (self.pages_dir / "sub" / "[id].pywire").touch()
-        (self.pages_dir / "layout.pywire").touch()
+        (self.pages_dir / "index.wire").touch()
+        (self.pages_dir / "about.wire").touch()
+        (self.pages_dir / "sub" / "contact.wire").touch()
+        (self.pages_dir / "sub" / "[id].wire").touch()
+        (self.pages_dir / "layout.wire").touch()
 
         # Mock loader to return a class
         self.mock_loader.load.return_value = MockPage
@@ -127,21 +127,21 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
     def test_scan_directory_complex(self) -> None:
         # 1. Hidden file
-        (self.pages_dir / "_hidden.pywire").touch()
+        (self.pages_dir / "_hidden.wire").touch()
         # 2. Param directory
         (self.pages_dir / "[user_id]").mkdir()
-        (self.pages_dir / "[user_id]" / "profile.pywire").touch()
+        (self.pages_dir / "[user_id]" / "profile.wire").touch()
         # 3. Trailing slash case (index in sub)
         (self.pages_dir / "about").mkdir()
-        (self.pages_dir / "about" / "index.pywire").touch()
+        (self.pages_dir / "about" / "index.wire").touch()
         # 4. Explicit !path routes
-        (self.pages_dir / "custom.pywire").touch()
+        (self.pages_dir / "custom.wire").touch()
 
         class ExplicitPage(MockPage):
             __routes__ = {"alt": "/my-custom-path"}
 
         def mock_load(path: Path, **kwargs: Any) -> Type[MockPage]:
-            if "custom.pywire" in str(path):
+            if "custom.wire" in str(path):
                 return ExplicitPage
             return MockPage
 
@@ -157,7 +157,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(match)
 
     def test_scan_directory_load_fail(self) -> None:
-        (self.pages_dir / "broken.pywire").touch()
+        (self.pages_dir / "broken.wire").touch()
         # Fail load
         self.mock_loader.load.side_effect = Exception("Compile Error")
 
@@ -239,7 +239,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
     def test_reload_page(self) -> None:
         app = PyWire(str(self.pages_dir))
-        path = self.pages_dir / "index.pywire"
+        path = self.pages_dir / "index.wire"
         path.touch()
 
         with (
@@ -256,7 +256,7 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
     def test_register_error_page(self) -> None:
         app = PyWire(str(self.pages_dir))
-        file_path = self.pages_dir / "fail.pywire"
+        file_path = self.pages_dir / "fail.wire"
         file_path.write_text("broken")
 
         with patch.object(app.router, "add_route") as mock_add_route:

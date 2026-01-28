@@ -47,7 +47,7 @@ def test_bundle_selection_integration(tmp_path: Path) -> None:
     # Set up a real (but small) app
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
-    (pages_dir / "index.pywire").write_text(
+    (pages_dir / "index.wire").write_text(
         "!path { 'a': '/a', 'b': '/b' }\n<h1>Index</h1>\n---\n# Python"
     )
 
@@ -78,7 +78,7 @@ def test_bundle_selection_integration(tmp_path: Path) -> None:
 def test_no_spa_directive_disables_injection(tmp_path: Path) -> None:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
-    (pages_dir / "no_spa.pywire").write_text(
+    (pages_dir / "no_spa.wire").write_text(
         "!path { 'a': '/a', 'b': '/b' }\n!no_spa\n<h1>No SPA</h1>\n---\n# Python"
     )
 

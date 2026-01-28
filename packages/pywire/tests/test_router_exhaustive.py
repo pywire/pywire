@@ -110,12 +110,12 @@ class TestRouterExhaustive(unittest.TestCase):
 
         class PageF(MockPage):
             __route__ = "/f"
-            __file_path__ = "/path/to/f.pywire"
+            __file_path__ = "/path/to/f.wire"
 
         router.add_page(PageF)
         self.assertEqual(len(router.routes), 1)
 
-        router.remove_routes_for_file("/path/to/f.pywire")
+        router.remove_routes_for_file("/path/to/f.wire")
         self.assertEqual(len(router.routes), 0)
 
 

@@ -20,7 +20,7 @@ raise ValueError("Boom")
 ---
 <h1>Test</h1>"""
 
-        pywire_file = tmp_path / "script_error.pywire"
+        pywire_file = tmp_path / "script_error.wire"
         pywire_file.write_text(source)
 
         try:
@@ -54,7 +54,7 @@ raise ValueError("Boom")
     Value: { 1 / 0 }
 </p>"""
 
-        pywire_file = tmp_path / "expr_error.pywire"
+        pywire_file = tmp_path / "expr_error.wire"
         pywire_file.write_text(source)
 
         try:

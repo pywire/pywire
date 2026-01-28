@@ -20,7 +20,7 @@ class TestAsyncFeatures(unittest.TestCase):
             template=[template_node],
             python_code=python_code,
             python_ast=ast.parse(python_code) if python_code else None,
-            file_path="test_async.pywire",
+            file_path="test_async.wire",
         )
 
         module_ast = self.generator.generate(parsed)

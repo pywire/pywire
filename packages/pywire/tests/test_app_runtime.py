@@ -37,10 +37,10 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
 
     def test_scan_directory_routing(self) -> None:
         # Create a nested structure
-        (self.pages_dir / "index.pywire").touch()
+        (self.pages_dir / "index.wire").touch()
         users = self.pages_dir / "users"
         users.mkdir()
-        (users / "[id].pywire").touch()
+        (users / "[id].wire").touch()
 
         # Mock loader to return dummy classes
         with patch.object(self.app.loader, "load", return_value=type("Page", (BasePage,), {})):
@@ -49,7 +49,7 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
 
         # Verify routes were added
         # index -> /
-        # users/[id].pywire -> /users/{id}
+        # users/[id].wire -> /users/{id}
         self.app.router.add_route.assert_any_call("/", unittest.mock.ANY)
         self.app.router.add_route.assert_any_call("/users/{id}", unittest.mock.ANY)
 
@@ -83,7 +83,7 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
 
     def test_register_error_page(self) -> None:
         self.app.router = MagicMock()
-        file_path = self.pages_dir / "broken.pywire"
+        file_path = self.pages_dir / "broken.wire"
         file_path.write_text("!path '/broken'\nINVALID PYTHON")
 
         self.app._register_error_page(file_path, Exception("Parse error"))
@@ -93,7 +93,7 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
 
     def test_reload_page_implicit_routing(self) -> None:
         # Create a page that relies on implicit routing
-        page_path = self.pages_dir / "implicit.pywire"
+        page_path = self.pages_dir / "implicit.wire"
         page_path.write_text("<h1>Implicit</h1>")
 
         # Mock loader to return a class without explicit routes
@@ -115,7 +115,7 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
             self.app.reload_page(page_path)
 
         # Verify that add_route was called with the implicit path
-        # /implicit.pywire -> /implicit
+        # /implicit.wire -> /implicit
         self.app.router.add_route.assert_called_with("/implicit", page_class)
 
 

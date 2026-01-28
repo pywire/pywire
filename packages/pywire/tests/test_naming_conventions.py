@@ -32,20 +32,20 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         shutil.rmtree(self.test_dir)
 
     def test_layout_ignores_legacy(self) -> None:
-        """Verify layout.pywire is IGNORED."""
+        """Verify layout.wire is IGNORED."""
         # Create both files
-        (self.pages_dir / "layout.pywire").touch()
-        (self.pages_dir / "__layout__.pywire").touch()
-        (self.pages_dir / "index.pywire").touch()
+        (self.pages_dir / "layout.wire").touch()
+        (self.pages_dir / "__layout__.wire").touch()
+        (self.pages_dir / "index.wire").touch()
 
         # Run scan
         self.app._scan_directory(self.pages_dir)
 
         # Verify loader.load was called for __layout__ (as implicit layout for index)
-        # But NOT for layout.pywire
+        # But NOT for layout.wire
 
-        expected_layout_path = self.pages_dir / "__layout__.pywire"
-        legacy_layout_path = self.pages_dir / "layout.pywire"
+        expected_layout_path = self.pages_dir / "__layout__.wire"
+        legacy_layout_path = self.pages_dir / "layout.wire"
 
         # Filter calls for layout loading
         loader = cast(Any, self.app.loader)
@@ -57,20 +57,20 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
             call for call in loader.load.call_args_list if call.args[0] == legacy_layout_path
         ]
 
-        self.assertTrue(len(layout_load_calls) > 0, "__layout__.pywire MUST be loaded")
-        self.assertEqual(len(legacy_load_calls), 0, "layout.pywire MUST NOT be loaded")
+        self.assertTrue(len(layout_load_calls) > 0, "__layout__.wire MUST be loaded")
+        self.assertEqual(len(legacy_load_calls), 0, "layout.wire MUST NOT be loaded")
 
         # Verify index page was loaded with implicit layout
-        index_path = self.pages_dir / "index.pywire"
+        index_path = self.pages_dir / "index.wire"
         loader = cast(Any, self.app.loader)
         loader.load.assert_any_call(index_path, implicit_layout=str(expected_layout_path.resolve()))
 
     def test_error_page_registration(self) -> None:
-        """Verify __error__.pywire is registered at /__error__."""
-        (self.pages_dir / "__error__.pywire").touch()
+        """Verify __error__.wire is registered at /__error__."""
+        (self.pages_dir / "__error__.wire").touch()
 
         # Mock load_pages behavior for error page
-        # _load_pages explicitly checks for __error__.pywire
+        # _load_pages explicitly checks for __error__.wire
         self.app._load_pages()
 
         # Check explicit call in _load_pages manually

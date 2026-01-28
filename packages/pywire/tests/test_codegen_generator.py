@@ -47,7 +47,7 @@ class TestCodeGenerator(unittest.TestCase):
             template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
             python_code="name = 'World'",
             python_ast=ast.parse("name = 'World'"),
-            file_path="test.pywire",
+            file_path="test.wire",
         )
         module = self.generator.generate(parsed)
         self.assertIsInstance(module, ast.Module)
@@ -118,7 +118,7 @@ class TestCodeGenerator(unittest.TestCase):
                     is_simple_string=False,
                 )
             ],
-            file_path="test.pywire",
+            file_path="test.wire",
         )
         module = self.generator.generate(parsed)
 

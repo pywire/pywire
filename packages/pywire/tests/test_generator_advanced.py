@@ -11,13 +11,13 @@ class TestGeneratorAdvanced(unittest.TestCase):
 
     def test_generate_layout_mode(self) -> None:
         # Page with layout inheriting slots
-        layout = LayoutDirective(name="layout", layout_path="base.pywire", line=1, column=0)
+        layout = LayoutDirective(name="layout", layout_path="base.wire", line=1, column=0)
         parsed = ParsedPyWire(
             template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
             directives=[layout],
             python_code="",
             python_ast=ast.parse(""),
-            file_path="page.pywire",
+            file_path="page.wire",
         )
 
         module = self.generator.generate(parsed)
@@ -30,7 +30,7 @@ class TestGeneratorAdvanced(unittest.TestCase):
         self.assertIsInstance(init_slots.body[0], ast.If)  # hasatrr(super(), ...)
 
         # Should have a parent layout ID hashed
-        # hashlib.md5("base.pywire".encode()).hexdigest()
+        # hashlib.md5("base.wire".encode()).hexdigest()
 
         # Note: path is resolved relative to cwd if not absolute, let's just check
         # it contains a string constant
@@ -48,7 +48,7 @@ class TestGeneratorAdvanced(unittest.TestCase):
             directives=[path],
             python_code="",
             python_ast=ast.parse(""),
-            file_path="p.pywire",
+            file_path="p.wire",
         )
 
         stmts = self.generator._generate_spa_metadata(parsed)
@@ -77,7 +77,7 @@ class TestGeneratorAdvanced(unittest.TestCase):
 
     def test_generate_init_method(self) -> None:
         parsed = ParsedPyWire(
-            template=[], python_code="", python_ast=ast.parse(""), file_path="test.pywire"
+            template=[], python_code="", python_ast=ast.parse(""), file_path="test.wire"
         )
         init_func = self.generator._generate_init_method(parsed)
 
