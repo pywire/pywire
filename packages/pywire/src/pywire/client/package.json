@@ -1,0 +1,26 @@
+{
+    "name": "pywire-client",
+    "version": "0.0.1",
+    "description": "PyWire client-side library with transport fallbacks",
+    "private": true,
+    "scripts": {
+        "build": "node build.mjs",
+        "build:dev": "node build.mjs --dev",
+        "watch": "node build.mjs --watch",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage"
+    },
+    "devDependencies": {
+        "@types/morphdom": "^2.3.0",
+        "@vitest/coverage-v8": "^4.0.17",
+        "esbuild": "^0.20.0",
+        "happy-dom": "^20.3.6",
+        "typescript": "^5.3.0",
+        "vitest": "^4.0.17"
+    },
+    "dependencies": {
+        "@msgpack/msgpack": "^3.1.3",
+        "morphdom": "^2.7.7"
+    }
+}

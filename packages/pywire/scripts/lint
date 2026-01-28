@@ -1,6 +1,6 @@
 #!/bin/sh -e
 
-export SOURCE_FILES="pyhtml"
+export SOURCE_FILES="pywire"
 
 set -x
 
