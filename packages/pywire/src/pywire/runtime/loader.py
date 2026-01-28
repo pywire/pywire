@@ -20,7 +20,10 @@ class PageLoader:
         self._reverse_deps: Dict[str, set[str]] = {}  # dependency -> set of dependents
 
     def load(
-        self, pywire_file: Path, use_cache: bool = True, implicit_layout: Optional[str] = None
+        self,
+        pywire_file: Path,
+        use_cache: bool = True,
+        implicit_layout: Optional[str] = None,
     ) -> Type[BasePage]:
         """Load and compile a .pywire file into a page class."""
         # Normalize path
@@ -46,7 +49,9 @@ class PageLoader:
                 # We need to ensure implicit_layout is relative or absolute?
                 # content relies on load_layout taking a path.
                 parsed.directives.append(
-                    LayoutDirective(name="layout", line=0, column=0, layout_path=implicit_layout)
+                    LayoutDirective(
+                        name="layout", line=0, column=0, layout_path=implicit_layout
+                    )
                 )
 
         # Generate code
@@ -107,7 +112,9 @@ class PageLoader:
             dependents = self._reverse_deps.get(key, set())
             for dependent in list(dependents):
                 # We construct a Path object to recurse properly (though internal key is string)
-                print(f"PyWire: Invalidating dependent {dependent} because {key} changed.")
+                print(
+                    f"PyWire: Invalidating dependent {dependent} because {key} changed."
+                )
                 invalidated.update(self.invalidate_cache(Path(dependent)))
 
             return invalidated
@@ -116,7 +123,9 @@ class PageLoader:
             self._reverse_deps.clear()
             return set()  # All cleared
 
-    def load_layout(self, layout_path: str, base_path: Optional[str] = None) -> Type[BasePage]:
+    def load_layout(
+        self, layout_path: str, base_path: Optional[str] = None
+    ) -> Type[BasePage]:
         """Load a layout file and return its class."""
         path = Path(layout_path)
         if not path.is_absolute():

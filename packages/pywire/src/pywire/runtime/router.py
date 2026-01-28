@@ -9,7 +9,9 @@ from pywire.runtime.page import BasePage
 class Route:
     """Represents a single route pattern."""
 
-    def __init__(self, pattern: str, page_class: Type[BasePage], name: Optional[str]) -> None:
+    def __init__(
+        self, pattern: str, page_class: Type[BasePage], name: Optional[str]
+    ) -> None:
         self.pattern = pattern
         self.page_class = page_class
         self.name = name
@@ -205,7 +207,9 @@ class Router:
         elif hasattr(page_class, "__route__"):
             self.add_route(page_class.__route__, page_class)
 
-    def match(self, path: str) -> Optional[Tuple[Type[BasePage], dict[str, str], Optional[str]]]:
+    def match(
+        self, path: str
+    ) -> Optional[Tuple[Type[BasePage], dict[str, str], Optional[str]]]:
         """Match URL path to page class. Returns: (PageClass, params, variant_name)."""
         for route in self.routes:
             params = route.match(path)
@@ -219,5 +223,7 @@ class Router:
         file_path = str(file_path)
 
         self.routes = [
-            r for r in self.routes if getattr(r.page_class, "__file_path__", "") != file_path
+            r
+            for r in self.routes
+            if getattr(r.page_class, "__file_path__", "") != file_path
         ]

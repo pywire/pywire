@@ -8,14 +8,14 @@ which requires explicit enable_webtransport=True in H3Connection initialization.
 import asyncio
 from typing import Any, Callable, Optional
 
-from aioquic.asyncio import QuicConnectionProtocol, serve  # type: ignore
-from aioquic.h3.connection import H3_ALPN, H3Connection  # type: ignore
-from aioquic.h3.events import (  # type: ignore
+from aioquic.asyncio import QuicConnectionProtocol, serve
+from aioquic.h3.connection import H3_ALPN, H3Connection
+from aioquic.h3.events import (
     H3Event,
     HeadersReceived,
 )
-from aioquic.quic.configuration import QuicConfiguration  # type: ignore
-from aioquic.quic.events import ProtocolNegotiated, QuicEvent  # type: ignore
+from aioquic.quic.configuration import QuicConfiguration
+from aioquic.quic.events import ProtocolNegotiated, QuicEvent
 
 
 class ASGIProtocol(QuicConnectionProtocol):
@@ -25,7 +25,9 @@ class ASGIProtocol(QuicConnectionProtocol):
     Handles WebTransport by creating H3Connection with enable_webtransport=True.
     """
 
-    def __init__(self, quic: Any, *args: Any, app_factory: Callable, **kwargs: Any) -> None:
+    def __init__(
+        self, quic: Any, *args: Any, app_factory: Callable, **kwargs: Any
+    ) -> None:
         super().__init__(quic, *args, **kwargs)
         self._http: Optional[H3Connection] = None
         self._app_factory = app_factory
@@ -37,7 +39,10 @@ class ASGIProtocol(QuicConnectionProtocol):
             if event.alpn_protocol in H3_ALPN:
                 # CRITICAL: Enable WebTransport support
                 self._http = H3Connection(self._quic, enable_webtransport=True)
-                print("PyWire: HTTP/3 connection established with WebTransport enabled", flush=True)
+                print(
+                    "PyWire: HTTP/3 connection established with WebTransport enabled",
+                    flush=True,
+                )
 
         # Pass events to HTTP/3 layer
         if self._http is not None:
@@ -50,7 +55,8 @@ class ASGIProtocol(QuicConnectionProtocol):
             # Parse ASGI scope from headers
             scope = self._build_scope(event)
             print(
-                f"PyWire: Received {scope['type']} request to {scope.get('path', '/')}", flush=True
+                f"PyWire: Received {scope['type']} request to {scope.get('path', '/')}",
+                flush=True,
             )
 
             # Create ASGI handler
@@ -118,7 +124,10 @@ class ASGIProtocol(QuicConnectionProtocol):
                             (b"sec-webtransport-http3-draft", b"draft02"),
                         ],
                     )
-                print(f"PyWire: WebTransport connection accepted on stream {stream_id}", flush=True)
+                print(
+                    f"PyWire: WebTransport connection accepted on stream {stream_id}",
+                    flush=True,
+                )
             elif msg_type == "http.response.start":
                 status = message.get("status", 200)
                 response_headers = message.get("headers", [])
@@ -181,5 +190,5 @@ async def run_aioquic_server(
         host,
         port,
         configuration=configuration,
-        create_protocol=create_protocol,  # type: ignore
+        create_protocol=create_protocol,
     )

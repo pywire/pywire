@@ -6,7 +6,7 @@ set -ex
 uv run pytest --cov=pywire $@
 
 # Run client tests
-cd pywire/src/pywire/client && pnpm test
+cd src/pywire/client && pnpm test
 cd -
 
 if [ -z $GITHUB_ACTIONS ]; then

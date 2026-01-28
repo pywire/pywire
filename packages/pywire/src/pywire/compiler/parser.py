@@ -160,9 +160,9 @@ class PyWireParser:
 
                         j = i + 1
 
-                        while (brace_count > 0 or bracket_count > 0 or paren_count > 0) and j < len(
-                            directive_lines
-                        ):
+                        while (
+                            brace_count > 0 or bracket_count > 0 or paren_count > 0
+                        ) and j < len(directive_lines):
                             next_line = directive_lines[j].strip()
                             accumulated += "\n" + next_line
                             brace_count += next_line.count("{") - next_line.count("}")
@@ -191,7 +191,9 @@ class PyWireParser:
                     template_lines.append("")
             else:
                 # Not a directive, part of template
-                directives_done = True  # Once we hit template, no more directives allowed
+                directives_done = (
+                    True  # Once we hit template, no more directives allowed
+                )
 
                 # Check if this line LOOKS like a directive but wasn't parsed
                 # (e.g. invalid syntax or misplaced)
@@ -329,7 +331,9 @@ class PyWireParser:
                 actual_line = line_offset + (e.lineno or 1)
 
                 raise PyWireSyntaxError(
-                    f"Python syntax error: {e.msg}", file_path=file_path, line=actual_line
+                    f"Python syntax error: {e.msg}",
+                    file_path=file_path,
+                    line=actual_line,
                 )
 
         if python_ast:
@@ -359,7 +363,9 @@ class PyWireParser:
         if raw_text:
             # Bypass interpolation for raw text elements (script, style)
             return [
-                TemplateNode(tag=None, text_content=text, line=start_line, column=0, is_raw=True)
+                TemplateNode(
+                    tag=None, text_content=text, line=start_line, column=0, is_raw=True
+                )
             ]
 
         parts = self.interpolation_parser.parse(text, line=start_line, col=0)
@@ -372,10 +378,14 @@ class PyWireParser:
                     # But if we are inside <pre>, we need it.
                     # BS4/lxml default to preserving.
                     nodes.append(
-                        TemplateNode(tag=None, text_content=part, line=start_line, column=0)
+                        TemplateNode(
+                            tag=None, text_content=part, line=start_line, column=0
+                        )
                     )
             else:
-                node = TemplateNode(tag=None, text_content=None, line=part.line, column=part.column)
+                node = TemplateNode(
+                    tag=None, text_content=None, line=part.line, column=part.column
+                )
                 node.special_attributes = [part]
                 nodes.append(node)
         return nodes
@@ -396,9 +406,14 @@ class PyWireParser:
 
         # Handle inner text (before first child)
         if element.text:
-            is_raw = isinstance(element.tag, str) and element.tag.lower() in ("script", "style")
+            is_raw = isinstance(element.tag, str) and element.tag.lower() in (
+                "script",
+                "style",
+            )
             text_nodes = self._parse_text(
-                element.text, start_line=getattr(element, "sourceline", 0), raw_text=is_raw
+                element.text,
+                start_line=getattr(element, "sourceline", 0),
+                raw_text=is_raw,
             )
             if text_nodes:
                 node.children.extend(text_nodes)
@@ -444,7 +459,9 @@ class PyWireParser:
 
         return node
 
-    def _extract_form_validation_schema(self, form_node: TemplateNode) -> FormValidationSchema:
+    def _extract_form_validation_schema(
+        self, form_node: TemplateNode
+    ) -> FormValidationSchema:
         """Extract validation rules from form inputs."""
         schema = FormValidationSchema()
 
@@ -470,7 +487,9 @@ class PyWireParser:
 
         return schema
 
-    def _extract_field_rules(self, node: TemplateNode, field_name: str) -> FieldValidationRules:
+    def _extract_field_rules(
+        self, node: TemplateNode, field_name: str
+    ) -> FieldValidationRules:
         """Extract validation rules from a single input node."""
         attrs = node.attributes
         special_attrs = node.special_attributes
@@ -579,7 +598,11 @@ class PyWireParser:
             if not parsed:
                 # Check for reactive value syntax: attr="{expr}"
                 val_str = str(value).strip()
-                if val_str.startswith("{") and val_str.endswith("}") and val_str.count("{") == 1:
+                if (
+                    val_str.startswith("{")
+                    and val_str.endswith("}")
+                    and val_str.count("{") == 1
+                ):
                     # Treat as reactive attribute
                     # Exclude special internal attr for spread
                     if name == "__pywire_spread__":
@@ -595,7 +618,11 @@ class PyWireParser:
                     else:
                         special.append(
                             ReactiveAttribute(
-                                name=name, value=val_str, expr=val_str[1:-1], line=0, column=0
+                                name=name,
+                                value=val_str,
+                                expr=val_str[1:-1],
+                                line=0,
+                                column=0,
                             )
                         )
                 else:

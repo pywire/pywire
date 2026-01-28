@@ -77,7 +77,9 @@ class PropsDirectiveParser(DirectiveParser):
             # TODO: Handle kwonlyargs if we want to enforce keyword only props?
             # For now simple args.
 
-            return PropsDirective(line=line_num, column=col_num, name="!props", args=parsed_args)
+            return PropsDirective(
+                line=line_num, column=col_num, name="!props", args=parsed_args
+            )
 
         except SyntaxError:
             # Invalid python syntax in props

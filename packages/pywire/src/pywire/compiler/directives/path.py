@@ -34,7 +34,9 @@ class PathDirectiveParser(DirectiveParser):
             # Case 1: Dictionary !path {'main': '/'}
             if isinstance(expr_ast.body, ast.Dict):
                 routes: Dict[str, str] = {}
-                for key_node, value_node in zip(expr_ast.body.keys, expr_ast.body.values):
+                for key_node, value_node in zip(
+                    expr_ast.body.keys, expr_ast.body.values
+                ):
                     if (
                         not isinstance(key_node, ast.Constant)
                         or not isinstance(key_node.value, str)
@@ -53,7 +55,9 @@ class PathDirectiveParser(DirectiveParser):
                 )
 
             # Case 2: String !path '/test'
-            elif isinstance(expr_ast.body, ast.Constant) and isinstance(expr_ast.body.value, str):
+            elif isinstance(expr_ast.body, ast.Constant) and isinstance(
+                expr_ast.body.value, str
+            ):
                 return PathDirective(
                     name="path",
                     routes={"main": expr_ast.body.value},

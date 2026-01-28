@@ -6,9 +6,9 @@ from typing import IO, Any, Callable, Coroutine
 
 # Context variable to hold the log callback for the current request/session
 # Callback signature: async def callback(message: str)
-log_callback_ctx: contextvars.ContextVar[Callable[[str], Coroutine[Any, Any, None]] | None] = (
-    contextvars.ContextVar("log_callback_ctx", default=None)
-)
+log_callback_ctx: contextvars.ContextVar[
+    Callable[[str], Coroutine[Any, Any, None]] | None
+] = contextvars.ContextVar("log_callback_ctx", default=None)
 
 
 class ContextAwareStdout:

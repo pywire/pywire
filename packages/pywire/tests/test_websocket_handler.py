@@ -3,7 +3,7 @@ import unittest
 from typing import Any, Dict, Optional, cast
 from unittest.mock import MagicMock
 
-import msgpack  # type: ignore[import-untyped]
+import msgpack
 from pywire.runtime.page import BasePage
 from pywire.runtime.websocket import WebSocketHandler
 from starlette.requests import Request

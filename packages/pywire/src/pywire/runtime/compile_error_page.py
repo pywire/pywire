@@ -175,7 +175,9 @@ class CompileErrorPage(BasePage):
                     <div class="exc-msg">{html.escape(self.error_message)}</div>
                 </div>
 
-                {f'<div class="code-context">{context_html}</div>' if context_html else ""}
+                {
+            f'<div class="code-context">{context_html}</div>' if context_html else ""
+        }
 
                 {traceback_html}
             </div>
@@ -186,6 +188,8 @@ class CompileErrorPage(BasePage):
         """
         return HTMLResponse(content)
 
-    async def handle_event(self, handler_name: str, data: Dict[str, Any]) -> HTMLResponse:
+    async def handle_event(
+        self, handler_name: str, data: Dict[str, Any]
+    ) -> HTMLResponse:
         """No-op for error page."""
         return HTMLResponse("Error page does not handle events")

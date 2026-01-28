@@ -66,7 +66,9 @@ class JinjaInterpolationParser(InterpolationParser):
 
         return False
 
-    def parse(self, text: str, line: int, col: int) -> List[Union[str, InterpolationNode]]:
+    def parse(
+        self, text: str, line: int, col: int
+    ) -> List[Union[str, InterpolationNode]]:
         """
         Parse text with {expression} into mix of strings and InterpolationNodes.
         Returns: ['Hello, ', InterpolationNode(expr='name'), '!']
@@ -118,7 +120,9 @@ class JinjaInterpolationParser(InterpolationParser):
 
                         tokens.append(
                             InterpolationNode(
-                                expression=expr, line=current_line, column=current_column
+                                expression=expr,
+                                line=current_line,
+                                column=current_column,
                             )
                         )
                     else:

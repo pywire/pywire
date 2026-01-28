@@ -169,7 +169,10 @@ class FormValidator:
         return None
 
     def _validate_number(
-        self, str_value: str, rules: FieldRules, state_getter: Optional[Callable[[str], Any]] = None
+        self,
+        str_value: str,
+        rules: FieldRules,
+        state_getter: Optional[Callable[[str], Any]] = None,
     ) -> Optional[str]:
         """Validate a number input."""
         try:
@@ -233,7 +236,10 @@ class FormValidator:
         return None
 
     def _validate_date(
-        self, str_value: str, rules: FieldRules, state_getter: Optional[Callable[[str], Any]] = None
+        self,
+        str_value: str,
+        rules: FieldRules,
+        state_getter: Optional[Callable[[str], Any]] = None,
     ) -> Optional[str]:
         """Validate a date input."""
         try:

@@ -21,7 +21,9 @@ async def ensure_async_iterator(iterable: Any) -> AsyncIterator[Any]:
             yield item
 
 
-def render_attrs(defined_attrs: dict[str, Any], spread_attrs: dict[str, Any] | None = None) -> str:
+def render_attrs(
+    defined_attrs: dict[str, Any], spread_attrs: dict[str, Any] | None = None
+) -> str:
     """
     Merge and render HTML attributes.
     defined_attrs: Attributes defined in the template (explicitly).

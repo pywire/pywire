@@ -25,10 +25,10 @@ def _generate_cert() -> Tuple[str, str, bytes]:
     import os
     import tempfile
 
-    from cryptography import x509  # type: ignore
-    from cryptography.hazmat.primitives import hashes, serialization  # type: ignore
-    from cryptography.hazmat.primitives.asymmetric import ec  # type: ignore
-    from cryptography.x509.oid import NameOID  # type: ignore
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
 
     # Use ECDSA P-256 (More standard for QUIC/TLS 1.3 than RSA)
     key = ec.generate_private_key(ec.SECP256R1())
@@ -125,8 +125,8 @@ async def run_dev_server(
 
     # Try to import Hypercorn for HTTP/3 support
     try:
-        from hypercorn.asyncio import serve  # type: ignore
-        from hypercorn.config import Config  # type: ignore
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config
 
         has_http3 = True
     except ImportError:
@@ -206,7 +206,9 @@ async def run_dev_server(
                         app_config_changed = True
 
                 if library_changed or app_config_changed:
-                    print("PyWire: Core/Config change detected. Please restart server manually.")
+                    print(
+                        "PyWire: Core/Config change detected. Please restart server manually."
+                    )
 
                 # First, recompile changed pages
                 should_reload = False
@@ -223,7 +225,9 @@ async def run_dev_server(
 
                 # Then broadcast reload if needed
                 if should_reload:
-                    print(f"PyWire: Changes detected in {pages_dir}, reloading clients...")
+                    print(
+                        f"PyWire: Changes detected in {pages_dir}, reloading clients..."
+                    )
 
                     # Broadcast reload to WebSocket clients
                     if hasattr(pywire_app, "ws_handler"):
@@ -274,7 +278,9 @@ async def run_dev_server(
             import subprocess
 
             if shutil.which("mkcert"):
-                print("PyWire: 'mkcert' detected. Generating trusted local certificates...")
+                print(
+                    "PyWire: 'mkcert' detected. Generating trusted local certificates..."
+                )
                 try:
                     # Generate certs in current directory (standard matching default checks)
                     # We check localhost.pem first
@@ -313,7 +319,9 @@ async def run_dev_server(
                     "PyWire: Tip: Install 'mkcert' for trusted local HTTPS "
                     "(e.g. 'brew install mkcert')."
                 )
-                print("PyWire: Using ephemeral self-signed certificates (browser will warn).")
+                print(
+                    "PyWire: Using ephemeral self-signed certificates (browser will warn)."
+                )
 
     async with asyncio.TaskGroup() as tg:
         if has_http3:
@@ -345,7 +353,9 @@ async def run_dev_server(
                 )
 
                 # Serve the starlette app wrapped in PyWire
-                tg.create_task(serve(pywire_app.app, config, shutdown_trigger=shutdown_event.wait))
+                tg.create_task(
+                    serve(pywire_app.app, config, shutdown_trigger=shutdown_event.wait)
+                )
             except Exception as e:
                 print(f"PyWire: Failed to start Hypercorn: {e}")
                 import traceback
@@ -364,7 +374,7 @@ async def run_dev_server(
                 ssl_options["ssl_certfile"] = cert_path
                 ssl_options["ssl_keyfile"] = key_path
 
-            config = uvicorn.Config(
+            uv_config = uvicorn.Config(
                 pywire_app.app,
                 host=host,
                 port=port,
@@ -372,7 +382,7 @@ async def run_dev_server(
                 log_level="info",
                 **ssl_options,  # type: ignore
             )
-            server = uvicorn.Server(config)
+            server = uvicorn.Server(uv_config)
 
             # Disable Uvicorn's signal handlers so we can manage it
             # Disable Uvicorn's signal handlers so we can manage it

@@ -23,13 +23,16 @@ def import_app(app_str: str) -> Any:
 
         module = importlib.import_module(module_name)
     except ImportError as e:
-        raise click.BadParameter(f"Could not import module '{module_name}': {e}", param_hint="APP")
+        raise click.BadParameter(
+            f"Could not import module '{module_name}': {e}", param_hint="APP"
+        )
 
     try:
         app = getattr(module, app_name)
     except AttributeError:
         raise click.BadParameter(
-            f"Attribute '{app_name}' not found in module '{module_name}'", param_hint="APP"
+            f"Attribute '{app_name}' not found in module '{module_name}'",
+            param_hint="APP",
         )
 
     return app
@@ -153,7 +156,11 @@ def build(app: Optional[str]) -> None:
 @click.option("--workers", default=None, type=int, help="Number of worker processes")
 @click.option("--no-access-log", is_flag=True, help="Disable access logging")
 def run(
-    app: Optional[str], host: str, port: int, workers: Optional[int], no_access_log: bool
+    app: Optional[str],
+    host: str,
+    port: int,
+    workers: Optional[int],
+    no_access_log: bool,
 ) -> None:
     """Run production server using Uvicorn."""
     import multiprocessing
@@ -175,7 +182,12 @@ def run(
     import_app(app)
 
     uvicorn.run(
-        app, host=host, port=port, workers=workers, access_log=not no_access_log, factory=False
+        app,
+        host=host,
+        port=port,
+        workers=workers,
+        access_log=not no_access_log,
+        factory=False,
     )
 
 

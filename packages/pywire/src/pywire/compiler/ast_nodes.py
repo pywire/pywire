@@ -185,7 +185,9 @@ class FormValidationSchema:
     model_name: Optional[str] = None  # For $model={ClassName}
 
     def __str__(self) -> str:
-        return f"FormValidationSchema(fields={len(self.fields)}, model={self.model_name})"
+        return (
+            f"FormValidationSchema(fields={len(self.fields)}, model={self.model_name})"
+        )
 
 
 @dataclass
@@ -204,7 +206,9 @@ class EventAttribute(SpecialAttribute):
 
     event_type: str  # 'click', 'submit', etc.
     handler_name: str
-    args: List[str] = field(default_factory=list)  # List of python expressions for arguments
+    args: List[str] = field(
+        default_factory=list
+    )  # List of python expressions for arguments
     modifiers: List[str] = field(
         default_factory=list
     )  # List of modifiers (e.g. ['prevent', 'stop'])

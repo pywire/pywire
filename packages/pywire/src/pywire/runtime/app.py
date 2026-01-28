@@ -111,7 +111,9 @@ class PyWire:
             # WebSocket transport
             WebSocketRoute("/_pywire/ws", self.ws_handler.handle),
             # HTTP transport endpoints
-            Route("/_pywire/session", self.http_handler.create_session, methods=["POST"]),
+            Route(
+                "/_pywire/session", self.http_handler.create_session, methods=["POST"]
+            ),
             Route("/_pywire/poll", self.http_handler.poll, methods=["GET"]),
             Route("/_pywire/event", self.http_handler.handle_event, methods=["POST"]),
             # Upload endpoint
@@ -127,7 +129,9 @@ class PyWire:
         # Mount User Static Files if configured
         if self.static_dir:
             if not self.static_dir.exists():
-                print(f"Warning: Configured static directory '{self.static_dir}' does not exist.")
+                print(
+                    f"Warning: Configured static directory '{self.static_dir}' does not exist."
+                )
             else:
                 routes.append(
                     Mount(
@@ -152,8 +156,14 @@ class PyWire:
 
             # Actually, let's keep them registered if debug=True, but
             # modify _handle_source/_handle_file to checking _is_dev_mode as well inside.
-            routes.append(Route("/_pywire/source", self._handle_source, methods=["GET"]))
-            routes.append(Route("/_pywire/file/{encoded:path}", self._handle_file, methods=["GET"]))
+            routes.append(
+                Route("/_pywire/source", self._handle_source, methods=["GET"])
+            )
+            routes.append(
+                Route(
+                    "/_pywire/file/{encoded:path}", self._handle_file, methods=["GET"]
+                )
+            )
             # Chrome DevTools automatic workspace folders (M-135+)
             routes.append(
                 Route(
@@ -164,7 +174,9 @@ class PyWire:
             )
 
         # Default page handler (catch-all, must be last)
-        routes.append(Route("/{path:path}", self._handle_request, methods=["GET", "POST"]))
+        routes.append(
+            Route("/{path:path}", self._handle_request, methods=["GET", "POST"])
+        )
 
         # Create Starlette app with all transport routes
         self.app = Starlette(routes=routes, exception_handlers=exception_handlers)
@@ -201,7 +213,9 @@ class PyWire:
             # Check for upload token
             token = request.headers.get("X-Upload-Token")
             if not token or token not in self.upload_tokens:
-                return JSONResponse({"error": "Invalid or expired upload token"}, status_code=403)
+                return JSONResponse(
+                    {"error": "Invalid or expired upload token"}, status_code=403
+                )
 
             # Fail-fast: Check Content-Length header
             content_length = request.headers.get("content-length")
@@ -211,8 +225,12 @@ class PyWire:
                     # Global safety limit: 10MB (allows for 5MB file + overhead)
                     # Real app might configure this or inspect specific field limits after streaming
                     if length > 10 * 1024 * 1024:
-                        print(f"WARN: Upload rejected. Content-Length {length} exceeds 10MB limit.")
-                        return JSONResponse({"error": "Payload Too Large"}, status_code=413)
+                        print(
+                            f"WARN: Upload rejected. Content-Length {length} exceeds 10MB limit."
+                        )
+                        return JSONResponse(
+                            {"error": "Payload Too Large"}, status_code=413
+                        )
                 except ValueError:
                     pass
 
@@ -341,7 +359,9 @@ class PyWire:
                 if (self.pages_dir / "__layout__.pywire").exists():
                     root_layout = str((self.pages_dir / "__layout__.pywire").resolve())
 
-                page_class = self.loader.load(error_page_path, implicit_layout=root_layout)
+                page_class = self.loader.load(
+                    error_page_path, implicit_layout=root_layout
+                )
                 self.router.add_route("/__error__", page_class)
             except Exception as e:
                 print(f"Failed to load error page {error_page_path}: {e}")
@@ -461,7 +481,9 @@ class PyWire:
             rel_path = file_path.relative_to(self.pages_dir)
 
             # Basic route inference from path
-            route_path = "/" + str(rel_path.with_suffix("")).replace("index", "").strip("/")
+            route_path = "/" + str(rel_path.with_suffix("")).replace("index", "").strip(
+                "/"
+            )
             if not route_path:
                 route_path = "/"
 
@@ -493,17 +515,23 @@ class PyWire:
                     class ModeAwareErrorPage(BasePage):
                         """Error page that decides whether to show details or trigger 500."""
 
-                        def __init__(self, request: Request, *args: Any, **kwargs: Any) -> None:
+                        def __init__(
+                            self, request: Request, *args: Any, **kwargs: Any
+                        ) -> None:
                             # Store for parent __init__
                             super().__init__(request, *args, **kwargs)
 
                         async def render(self, init: bool = True) -> Any:
                             # Check mode at render time (not registration time!)
                             # This allows dev_server.py to set _is_dev_mode after app init
-                            if captured_app.debug or getattr(captured_app, "_is_dev_mode", False):
+                            if captured_app.debug or getattr(
+                                captured_app, "_is_dev_mode", False
+                            ):
                                 # DEV MODE: Show detailed CompileErrorPage
                                 detail_page = CompileErrorPage(
-                                    self.request, captured_error, file_path=captured_file_path
+                                    self.request,
+                                    captured_error,
+                                    file_path=captured_file_path,
                                 )
                                 return await detail_page.render()
                             else:
@@ -617,7 +645,9 @@ class PyWire:
                 implicit_layout = self._resolve_implicit_layout(file_path)
 
                 # Recompile
-                new_page_class = self.loader.load(file_path, implicit_layout=implicit_layout)
+                new_page_class = self.loader.load(
+                    file_path, implicit_layout=implicit_layout
+                )
 
                 is_in_pages = False
                 try:
@@ -727,7 +757,9 @@ class PyWire:
                     url_helper = URLHelper(page_class.__routes__)
 
                 try:
-                    page = page_class(request, {}, query, path=path_info, url=url_helper)
+                    page = page_class(
+                        request, {}, query, path=path_info, url=url_helper
+                    )
                     # Inject error code
                     page.error_code = 404
                     response = await page.render()
@@ -741,7 +773,9 @@ class PyWire:
                     pass  # Fallback
 
             # Default 404 with client script
-            page = ErrorPage(request, "404 Not Found", f"The path '{path}' could not be found.")
+            page = ErrorPage(
+                request, "404 Not Found", f"The path '{path}' could not be found."
+            )
             response = await page.render()
             response.status_code = 404
             return response
@@ -774,7 +808,9 @@ class PyWire:
             # Handle event
             try:
                 event_data = await request.json()
-                response = await page.handle_event(event_data.get("handler", ""), event_data)
+                response = await page.handle_event(
+                    event_data.get("handler", ""), event_data
+                )
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
         else:
@@ -792,7 +828,9 @@ class PyWire:
             # WebTransport Hash
             if hasattr(request.app.state, "webtransport_cert_hash"):
                 cert_hash = list(request.app.state.webtransport_cert_hash)
-                injections.append(f"<script>window.PYWIRE_CERT_HASH = {cert_hash};</script>")
+                injections.append(
+                    f"<script>window.PYWIRE_CERT_HASH = {cert_hash};</script>"
+                )
 
             # Upload Token Injection
             if getattr(page, "__has_uploads__", False):
@@ -801,7 +839,9 @@ class PyWire:
                 token = secrets.token_urlsafe(32)
                 self.upload_tokens.add(token)
                 # Token meta tag
-                injections.append(f'<meta name="pywire-upload-token" content="{token}">')
+                injections.append(
+                    f'<meta name="pywire-upload-token" content="{token}">'
+                )
 
             if injections:
                 injection_str = "\n".join(injections)

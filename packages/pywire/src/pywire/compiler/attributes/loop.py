@@ -70,4 +70,6 @@ class KeyAttributeParser(AttributeParser):
             )
 
         expr = attr_value[1:-1].strip()
-        return KeyAttribute(name=attr_name, value=attr_value, expr=expr, line=line, column=col)
+        return KeyAttribute(
+            name=attr_name, value=attr_value, expr=expr, line=line, column=col
+        )

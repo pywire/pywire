@@ -2,7 +2,7 @@ import base64
 from pathlib import Path
 from typing import Any, cast
 
-import msgpack  # type: ignore[import-untyped]
+import msgpack
 import pytest
 from pywire.runtime.app import PyWire
 from starlette.testclient import TestClient

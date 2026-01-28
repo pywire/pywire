@@ -3,7 +3,7 @@ import unittest
 from typing import Any, Dict, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import msgpack  # type: ignore[import-untyped]
+import msgpack
 from pywire.runtime.page import BasePage
 from pywire.runtime.websocket import WebSocketHandler
 from starlette.responses import Response
@@ -28,7 +28,7 @@ class MockPage(BasePage):
         self.render_count += 1
         return Response("<html></html>")
 
-    async def handle_event(self, name, data):  # type: ignore
+    async def handle_event(self, name, data):
         return Response("Updated")
 
 

@@ -6,7 +6,7 @@ import sys
 import traceback
 from typing import Any, Dict, Set
 
-import msgpack  # type: ignore
+import msgpack
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from pywire.runtime.logging import log_callback_ctx
@@ -66,7 +66,9 @@ class WebSocketHandler:
 
             traceback.print_exc()
 
-    async def _process_message(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
+    async def _process_message(
+        self, websocket: WebSocket, data: Dict[str, Any]
+    ) -> None:
         """Process incoming message from client."""
         msg_type = data.get("type")
 
@@ -100,7 +102,10 @@ class WebSocketHandler:
         if not (self.app.debug and getattr(self.app, "_is_dev_mode", False)):
             await websocket.send_bytes(
                 msgpack.packb(
-                    {"type": "error", "error": f"{type(error).__name__}: An error occurred"}
+                    {
+                        "type": "error",
+                        "error": f"{type(error).__name__}: An error occurred",
+                    }
                 )
             )
             return
@@ -220,7 +225,9 @@ class WebSocketHandler:
                 scope["type"] = "http"
                 scope["path"] = pathname
                 scope["raw_path"] = pathname.encode("ascii")
-                scope["query_string"] = query_string.encode("ascii") if query_string else b""
+                scope["query_string"] = (
+                    query_string.encode("ascii") if query_string else b""
+                )
                 # Ensure minimal requirements for valid Request
                 if "headers" not in scope:
                     scope["headers"] = [(b"host", b"localhost")]
@@ -250,7 +257,9 @@ class WebSocketHandler:
                 if hasattr(page_class, "__routes__"):
                     url_helper = URLHelper(page_class.__routes__)
 
-                page = page_class(request, params, query, path=path_info, url=url_helper)
+                page = page_class(
+                    request, params, query, path=path_info, url=url_helper
+                )
                 if hasattr(self.app, "get_user"):
                     page.user = self.app.get_user(websocket)
 
@@ -268,7 +277,9 @@ class WebSocketHandler:
             async def broadcast_update() -> None:
                 up_response = await page.render(init=False)
                 up_html = up_response.body.decode("utf-8")
-                await websocket.send_bytes(msgpack.packb({"type": "update", "html": up_html}))
+                await websocket.send_bytes(
+                    msgpack.packb({"type": "update", "html": up_html})
+                )
 
             page._on_update = broadcast_update
 
@@ -288,7 +299,9 @@ class WebSocketHandler:
         finally:
             log_callback_ctx.reset(token)
 
-    async def _handle_relocate(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
+    async def _handle_relocate(
+        self, websocket: WebSocket, data: Dict[str, Any]
+    ) -> None:
         """Handle SPA navigation between sibling paths."""
 
         # Define callback for log streaming
@@ -331,7 +344,9 @@ class WebSocketHandler:
                 scope["type"] = "http"
                 scope["path"] = pathname
                 scope["raw_path"] = pathname.encode("ascii")
-                scope["query_string"] = query_string.encode("ascii") if query_string else b""
+                scope["query_string"] = (
+                    query_string.encode("ascii") if query_string else b""
+                )
                 # Ensure minimal requirements for valid Request
                 if "headers" not in scope:
                     scope["headers"] = [(b"host", b"localhost")]
@@ -364,7 +379,9 @@ class WebSocketHandler:
                     url_helper = URLHelper(page_class.__routes__)
 
                 # Create page instance
-                page = page_class(request, params, query, path=path_info, url=url_helper)
+                page = page_class(
+                    request, params, query, path=path_info, url=url_helper
+                )
 
                 # Populate user if hook exists
                 if hasattr(self.app, "get_user"):
@@ -382,7 +399,9 @@ class WebSocketHandler:
                 # Render and send initial HTML
                 response = await page.render()
                 html = response.body.decode("utf-8")
-                await websocket.send_bytes(msgpack.packb({"type": "update", "html": html}))
+                await websocket.send_bytes(
+                    msgpack.packb({"type": "update", "html": html})
+                )
                 return
 
             # Parse new URL
@@ -406,16 +425,22 @@ class WebSocketHandler:
                     match = self.app.router.match("/__error__")
 
                     if match:
-                        print(f"Relocate: Route not found for {pathname}, serving /__error__")
+                        print(
+                            f"Relocate: Route not found for {pathname}, serving /__error__"
+                        )
                     else:
                         # Fallback to generic ErrorPage if no custom 404
                         # We need to construct a bound ErrorPage class
-                        print(f"Relocate: Route not found for {pathname}, serving generic 404")
+                        print(
+                            f"Relocate: Route not found for {pathname}, serving generic 404"
+                        )
                         from pywire.runtime.error_page import ErrorPage
 
                         # Create a closure helper
                         class BoundErrorPage(ErrorPage):
-                            def __init__(self, request: Request, *args: Any, **kwargs: Any) -> None:
+                            def __init__(
+                                self, request: Request, *args: Any, **kwargs: Any
+                            ) -> None:
                                 super().__init__(
                                     request,
                                     "404 Not Found",
@@ -440,7 +465,9 @@ class WebSocketHandler:
             scope["type"] = "http"
             scope["path"] = pathname
             scope["raw_path"] = pathname.encode("ascii")
-            scope["query_string"] = query_string.encode("ascii") if query_string else b""
+            scope["query_string"] = (
+                query_string.encode("ascii") if query_string else b""
+            )
             # Ensure minimal requirements for valid Request
             if "headers" not in scope:
                 scope["headers"] = [(b"host", b"localhost")]
@@ -475,7 +502,9 @@ class WebSocketHandler:
                 url_helper = URLHelper(page_class.__routes__)
 
             # Instantiate new page
-            new_page = page_class(request, params, query, path=path_info, url=url_helper)
+            new_page = page_class(
+                request, params, query, path=path_info, url=url_helper
+            )
 
             # If this is an error page (match failed originally), inject error code
             if not self.app.router.match(pathname):
@@ -491,7 +520,9 @@ class WebSocketHandler:
             async def broadcast_update() -> None:
                 up_response = await new_page.render(init=False)
                 up_html = up_response.body.decode("utf-8")
-                await websocket.send_bytes(msgpack.packb({"type": "update", "html": up_html}))
+                await websocket.send_bytes(
+                    msgpack.packb({"type": "update", "html": up_html})
+                )
 
             new_page._on_update = broadcast_update
 
@@ -507,7 +538,9 @@ class WebSocketHandler:
                 response = await new_page.render()
                 html = response.body.decode("utf-8")
 
-                await websocket.send_bytes(msgpack.packb({"type": "update", "html": html}))
+                await websocket.send_bytes(
+                    msgpack.packb({"type": "update", "html": html})
+                )
             except Exception:
                 raise
         except Exception as e:
@@ -583,12 +616,18 @@ class WebSocketHandler:
                         # Render with new code but preserved state
                         response = await new_page.render()
                         html = response.body.decode("utf-8")
-                        await connection.send_bytes(msgpack.packb({"type": "update", "html": html}))
-                        print(f"PyWire: Hot reload (state preserved) for {type(new_page).__name__}")
+                        await connection.send_bytes(
+                            msgpack.packb({"type": "update", "html": html})
+                        )
+                        print(
+                            f"PyWire: Hot reload (state preserved) for {type(new_page).__name__}"
+                        )
 
                     except Exception as e:
                         # Anything failed, fall back to hard reload
-                        print(f"PyWire: Hot reload failed, falling back to hard reload: {e}")
+                        print(
+                            f"PyWire: Hot reload failed, falling back to hard reload: {e}"
+                        )
                         import traceback
 
                         traceback.print_exc()

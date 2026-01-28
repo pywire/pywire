@@ -218,7 +218,9 @@ class TemplateCodegen:
         for node in nodes:
             # Pass implicit root source ONLY to the root element if it matches
             node_root_source = (
-                implicit_root_source if (implicit_root_source and node is root_element) else None
+                implicit_root_source
+                if (implicit_root_source and node is root_element)
+                else None
             )
 
             self._add_node(
@@ -238,7 +240,9 @@ class TemplateCodegen:
         body.append(
             ast.Return(
                 value=ast.Call(
-                    func=ast.Attribute(value=ast.Constant(value=""), attr="join", ctx=ast.Load()),
+                    func=ast.Attribute(
+                        value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                    ),
                     args=[ast.Name(id="parts", ctx=ast.Load())],
                     keywords=[],
                 )
@@ -293,7 +297,18 @@ class TemplateCodegen:
                     return word
                 if known_globals is not None and word in known_globals:
                     return word
-                keywords = {"if", "else", "and", "or", "not", "in", "is", "True", "False", "None"}
+                keywords = {
+                    "if",
+                    "else",
+                    "and",
+                    "or",
+                    "not",
+                    "in",
+                    "is",
+                    "True",
+                    "False",
+                    "None",
+                }
                 if word in keywords:
                     return word
                 return f"self.{word}"
@@ -312,7 +327,9 @@ class TemplateCodegen:
                 # 2. If explicitly known as global/instance var, transform to self.<name>
                 if known_globals is not None and node.id in known_globals:
                     return ast.Attribute(
-                        value=ast.Name(id="self", ctx=ast.Load()), attr=node.id, ctx=node.ctx
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr=node.id,
+                        ctx=node.ctx,
                     )
 
                 # 3. If builtin, keep as is (unless matched by step 1/2)
@@ -321,7 +338,9 @@ class TemplateCodegen:
 
                 # 4. Otherwise, assume implicit instance attribute
                 return ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()), attr=node.id, ctx=node.ctx
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr=node.id,
+                    ctx=node.ctx,
                 )
 
         new_tree = AddSelfTransformer().visit(tree)
@@ -402,7 +421,9 @@ class TemplateCodegen:
         """Find the single root element if it exists (ignoring text/whitespace and metadata)."""
         # Exclude style and script tags from root consideration
         elements = [
-            n for n in nodes if n.tag is not None and n.tag.lower() not in ("style", "script")
+            n
+            for n in nodes
+            if n.tag is not None and n.tag.lower() not in ("style", "script")
         ]
         if len(elements) == 1:
             return elements[0]
@@ -411,7 +432,7 @@ class TemplateCodegen:
     def _set_line(self, node: ast.AST, template_node: TemplateNode) -> ast.AST:
         """Helper to set line number on AST node."""
         if template_node.line > 0 and hasattr(node, "lineno"):
-            node.lineno = template_node.line  # type: ignore
+            node.lineno = template_node.line
             node.col_offset = template_node.column  # type: ignore
             node.end_lineno = template_node.line  # type: ignore # Single line approximation
             node.end_col_offset = template_node.column + 1  # type: ignore
@@ -454,7 +475,9 @@ class TemplateCodegen:
         pass
 
         # 1. Handle $for
-        for_attr = next((a for a in node.special_attributes if isinstance(a, ForAttribute)), None)
+        for_attr = next(
+            (a for a in node.special_attributes if isinstance(a, ForAttribute)), None
+        )
         if for_attr:
             loop_vars_str = for_attr.loop_vars
             new_locals = local_vars.copy()
@@ -524,7 +547,10 @@ class TemplateCodegen:
             )
 
             for_stmt = ast.AsyncFor(
-                target=loop_targets_node, iter=wrapped_iterable, body=for_body, orelse=[]
+                target=loop_targets_node,
+                iter=wrapped_iterable,
+                body=for_body,
+                orelse=[],
             )
             # Tag with line number
             self._set_line(for_stmt, node)
@@ -532,7 +558,9 @@ class TemplateCodegen:
             return
 
         # 2. Handle $if
-        if_attr = next((a for a in node.special_attributes if isinstance(a, IfAttribute)), None)
+        if_attr = next(
+            (a for a in node.special_attributes if isinstance(a, IfAttribute)), None
+        )
         if if_attr:
             cond_expr = self._transform_expr(
                 if_attr.condition,
@@ -574,11 +602,17 @@ class TemplateCodegen:
             default_renderer_arg: ast.expr = ast.Constant(value=None)
             if node.children:
                 self._slot_default_counter += 1
-                func_name = f"_render_slot_default_{slot_name}_{self._slot_default_counter}"
-                aux_func = self._generate_function(node.children, func_name, is_async=True)
+                func_name = (
+                    f"_render_slot_default_{slot_name}_{self._slot_default_counter}"
+                )
+                aux_func = self._generate_function(
+                    node.children, func_name, is_async=True
+                )
                 self.auxiliary_functions.append(aux_func)
                 default_renderer_arg = ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()), attr=func_name, ctx=ast.Load()
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr=func_name,
+                    ctx=ast.Load(),
                 )
 
             call_kwargs = [
@@ -600,11 +634,15 @@ class TemplateCodegen:
             ]
 
             if is_head_slot:
-                call_kwargs.append(ast.keyword(arg="append", value=ast.Constant(value=True)))
+                call_kwargs.append(
+                    ast.keyword(arg="append", value=ast.Constant(value=True))
+                )
 
             render_call = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()), attr="render_slot", ctx=ast.Load()
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="render_slot",
+                    ctx=ast.Load(),
                 ),
                 args=[ast.Constant(value=slot_name)],
                 keywords=call_kwargs,
@@ -613,7 +651,9 @@ class TemplateCodegen:
             append_stmt = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id="parts", ctx=ast.Load()), attr="append", ctx=ast.Load()
+                        value=ast.Name(id="parts", ctx=ast.Load()),
+                        attr="append",
+                        ctx=ast.Load(),
                     ),
                     args=[ast.Await(value=render_call)],
                     keywords=[],
@@ -623,7 +663,9 @@ class TemplateCodegen:
             append_stmt = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id=parts_var, ctx=ast.Load()), attr="append", ctx=ast.Load()
+                        value=ast.Name(id=parts_var, ctx=ast.Load()),
+                        attr="append",
+                        ctx=ast.Load(),
                     ),
                     args=[ast.Await(value=render_call)],
                     keywords=[],
@@ -646,7 +688,9 @@ class TemplateCodegen:
                 dict_keys.append(ast.Constant(value=ctx_prop))
                 dict_values.append(
                     ast.Attribute(
-                        value=ast.Name(id="self", ctx=ast.Load()), attr=ctx_prop, ctx=ast.Load()
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr=ctx_prop,
+                        ctx=ast.Load(),
                     )
                 )
 
@@ -668,7 +712,9 @@ class TemplateCodegen:
             dict_keys.append(ast.Constant(value="_context"))
             dict_values.append(
                 ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()), attr="context", ctx=ast.Load()
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="context",
+                    ctx=ast.Load(),
                 )
             )
 
@@ -695,7 +741,9 @@ class TemplateCodegen:
                         )
                     else:
                         # String interpolation
-                        parts = self.interpolation_parser.parse(v, node.line, node.column)
+                        parts = self.interpolation_parser.parse(
+                            v, node.line, node.column
+                        )
                         current_concat: Optional[ast.expr] = None
                         for part in parts:
                             term: ast.expr
@@ -722,7 +770,9 @@ class TemplateCodegen:
                                 current_concat = ast.BinOp(
                                     left=current_concat, op=ast.Add(), right=term
                                 )
-                        val_expr = current_concat if current_concat else ast.Constant(value="")
+                        val_expr = (
+                            current_concat if current_concat else ast.Constant(value="")
+                        )
                 else:
                     # Static string
                     val_expr = ast.Constant(value=v)
@@ -766,7 +816,9 @@ class TemplateCodegen:
 
                     # Resolve handler string/expr
                     raw_handler = attr.handler_name
-                    if raw_handler.strip().startswith("{") and raw_handler.strip().endswith("}"):
+                    if raw_handler.strip().startswith(
+                        "{"
+                    ) and raw_handler.strip().endswith("}"):
                         # New syntax: {expr} -> Evaluate it?
                         # Wait, standard event logic treats handler_name as STRING NAME usually.
                         # If it's an expression like {print('hi')}, it evaluates to None.
@@ -806,7 +858,9 @@ class TemplateCodegen:
 
                     # Modifiers
                     if attr.modifiers:
-                        dict_keys.append(ast.Constant(value=f"data-modifiers-{event_type}"))
+                        dict_keys.append(
+                            ast.Constant(value=f"data-modifiers-{event_type}")
+                        )
                         dict_values.append(ast.Constant(value=" ".join(attr.modifiers)))
 
                     # Args
@@ -844,7 +898,9 @@ class TemplateCodegen:
                     # var here.
 
                     # Generate temp var name
-                    handler_list_name = f"_handlers_{event_type}_{node.line}_{node.column}"
+                    handler_list_name = (
+                        f"_handlers_{event_type}_{node.line}_{node.column}"
+                    )
 
                     # ... [Code similar to lines 907+ to build the list] ...
                     # But wait, lines 907+ append to `body`.
@@ -868,7 +924,9 @@ class TemplateCodegen:
             # Add keyword(arg=None, value=dict) for **kwargs
             keywords = []
             keywords.append(
-                ast.keyword(arg=None, value=ast.Dict(keys=dict_keys, values=dict_values))
+                ast.keyword(
+                    arg=None, value=ast.Dict(keys=dict_keys, values=dict_values)
+                )
             )
 
             # 4. Handle Slots (Children)
@@ -899,7 +957,9 @@ class TemplateCodegen:
             values: List[ast.expr] = []
 
             for s_name, s_nodes in slots_map.items():
-                slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace("-", "_")
+                slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace(
+                    "-", "_"
+                )
                 slot_parts_var = f"{slot_var_name}_parts"
 
                 body.append(
@@ -931,7 +991,9 @@ class TemplateCodegen:
                         targets=[ast.Name(id=slot_var_name, ctx=ast.Store())],
                         value=ast.Call(
                             func=ast.Attribute(
-                                value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                                value=ast.Constant(value=""),
+                                attr="join",
+                                ctx=ast.Load(),
                             ),
                             args=[ast.Name(id=slot_parts_var, ctx=ast.Load())],
                             keywords=[],
@@ -948,7 +1010,7 @@ class TemplateCodegen:
                     ast.keyword(
                         arg="slots",
                         value=ast.Dict(
-                            keys=keys,  # type: ignore # List[Optional[expr]] vs List[expr] variance
+                            keys=keys,
                             values=values,
                         ),
                     )
@@ -960,7 +1022,9 @@ class TemplateCodegen:
             )
 
             render_call = ast.Call(
-                func=ast.Attribute(value=instantiation, attr="_render_template", ctx=ast.Load()),
+                func=ast.Attribute(
+                    value=instantiation, attr="_render_template", ctx=ast.Load()
+                ),
                 args=[],
                 keywords=[],
             )
@@ -970,7 +1034,9 @@ class TemplateCodegen:
             append_stmt = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id=parts_var, ctx=ast.Load()), attr="append", ctx=ast.Load()
+                        value=ast.Name(id=parts_var, ctx=ast.Load()),
+                        attr="append",
+                        ctx=ast.Load(),
                     ),
                     args=[ast.Await(value=render_call)],
                     keywords=[],
@@ -1085,7 +1151,8 @@ class TemplateCodegen:
         else:
             # Element
             bind_attr = next(
-                (a for a in node.special_attributes if isinstance(a, BindAttribute)), None
+                (a for a in node.special_attributes if isinstance(a, BindAttribute)),
+                None,
             )
             bindings: Dict[str, ast.expr] = {}
             new_bound_var = bound_var
@@ -1105,7 +1172,9 @@ class TemplateCodegen:
                     self.generated_bindings.append(
                         BindingDef(handler_name, var_name, "upload-progress")
                     )
-                    bindings["data-on-upload-progress"] = ast.Constant(value=handler_name)
+                    bindings["data-on-upload-progress"] = ast.Constant(
+                        value=handler_name
+                    )
 
                 else:
                     event_type = "input"
@@ -1125,9 +1194,7 @@ class TemplateCodegen:
 
                     bindings[val_prop] = target_var_expr
                     if tag == "select":
-                        new_bound_var = (
-                            target_var_expr  # AST node passed as bound_var? No, logic expects expr
-                        )
+                        new_bound_var = target_var_expr  # AST node passed as bound_var? No, logic expects expr
                         # But bound_var is passed recursively.
                         # Wait, logic for <option> uses bound_var which is currently a string in
                         # old code?
@@ -1136,14 +1203,18 @@ class TemplateCodegen:
                         # Let's pass the AST expression node.
                         new_bound_var = target_var_expr
 
-                    self.generated_bindings.append(BindingDef(handler_name, var_name, event_type))
+                    self.generated_bindings.append(
+                        BindingDef(handler_name, var_name, event_type)
+                    )
                     bindings[f"data-on-{event_type}"] = ast.Constant(value=handler_name)
 
             show_attr = next(
-                (a for a in node.special_attributes if isinstance(a, ShowAttribute)), None
+                (a for a in node.special_attributes if isinstance(a, ShowAttribute)),
+                None,
             )
             key_attr = next(
-                (a for a in node.special_attributes if isinstance(a, KeyAttribute)), None
+                (a for a in node.special_attributes if isinstance(a, KeyAttribute)),
+                None,
             )
 
             if key_attr:
@@ -1175,7 +1246,12 @@ class TemplateCodegen:
             # And <slot>.
             # <style scoped> handling is separate (reshaping content).
 
-            apply_scope = scope_id and node.tag not in ("style", "script", "slot", "template")
+            apply_scope = scope_id and node.tag not in (
+                "style",
+                "script",
+                "slot",
+                "template",
+            )
             if apply_scope:
                 body.append(
                     ast.Assign(
@@ -1266,7 +1342,9 @@ class TemplateCodegen:
                             term = ast.Call(
                                 func=ast.Name(id="str", ctx=ast.Load()),
                                 args=[
-                                    self._transform_expr(part.expression, local_vars, known_globals)
+                                    self._transform_expr(
+                                        part.expression, local_vars, known_globals
+                                    )
                                 ],
                                 keywords=[],
                             )
@@ -1277,7 +1355,9 @@ class TemplateCodegen:
                                 left=current_concat, op=ast.Add(), right=term
                             )
 
-                    val_expr = current_concat if current_concat else ast.Constant(value="")
+                    val_expr = (
+                        current_concat if current_concat else ast.Constant(value="")
+                    )
                 else:
                     val_expr = ast.Constant(value=v)
 
@@ -1375,7 +1455,9 @@ class TemplateCodegen:
                                 targets=[
                                     ast.Subscript(
                                         value=ast.Name(id="attrs", ctx=ast.Load()),
-                                        slice=ast.Constant(value=f"data-modifiers-{event_type}"),
+                                        slice=ast.Constant(
+                                            value=f"data-modifiers-{event_type}"
+                                        ),
                                         ctx=ast.Store(),
                                     )
                                 ],
@@ -1431,17 +1513,22 @@ class TemplateCodegen:
 
                         # _h = {"handler": "...", "modifiers": [...]}
                         handler_dict = ast.Dict(
-                            keys=[ast.Constant(value="handler"), ast.Constant(value="modifiers")],
+                            keys=[
+                                ast.Constant(value="handler"),
+                                ast.Constant(value="modifiers"),
+                            ],
                             values=[
                                 ast.Constant(value=attr.handler_name),
                                 ast.List(
-                                    elts=[ast.Constant(value=m) for m in modifiers], ctx=ast.Load()
+                                    elts=[ast.Constant(value=m) for m in modifiers],
+                                    ctx=ast.Load(),
                                 ),
                             ],
                         )
                         body.append(
                             ast.Assign(
-                                targets=[ast.Name(id="_h", ctx=ast.Store())], value=handler_dict
+                                targets=[ast.Name(id="_h", ctx=ast.Store())],
+                                value=handler_dict,
                             )
                         )
 
@@ -1475,7 +1562,9 @@ class TemplateCodegen:
                             ast.Expr(
                                 value=ast.Call(
                                     func=ast.Attribute(
-                                        value=ast.Name(id=handler_list_name, ctx=ast.Load()),
+                                        value=ast.Name(
+                                            id=handler_list_name, ctx=ast.Load()
+                                        ),
                                         attr="append",
                                         ctx=ast.Load(),
                                     ),
@@ -1514,7 +1603,9 @@ class TemplateCodegen:
                                 targets=[
                                     ast.Subscript(
                                         value=ast.Name(id="attrs", ctx=ast.Load()),
-                                        slice=ast.Constant(value=f"data-modifiers-{event_type}"),
+                                        slice=ast.Constant(
+                                            value=f"data-modifiers-{event_type}"
+                                        ),
                                         ctx=ast.Store(),
                                     )
                                 ],
@@ -1539,7 +1630,10 @@ class TemplateCodegen:
 
                     # _r_val = val_expr
                     body.append(
-                        ast.Assign(targets=[ast.Name(id="_r_val", ctx=ast.Store())], value=val_expr)
+                        ast.Assign(
+                            targets=[ast.Name(id="_r_val", ctx=ast.Store())],
+                            value=val_expr,
+                        )
                     )
 
                     is_aria = attr.name.lower().startswith("aria-")
@@ -1560,7 +1654,9 @@ class TemplateCodegen:
                                     ast.Assign(
                                         targets=[
                                             ast.Subscript(
-                                                value=ast.Name(id="attrs", ctx=ast.Load()),
+                                                value=ast.Name(
+                                                    id="attrs", ctx=ast.Load()
+                                                ),
                                                 slice=ast.Constant(value=attr.name),
                                                 ctx=ast.Store(),
                                             )
@@ -1579,8 +1675,12 @@ class TemplateCodegen:
                                             ast.Assign(
                                                 targets=[
                                                     ast.Subscript(
-                                                        value=ast.Name(id="attrs", ctx=ast.Load()),
-                                                        slice=ast.Constant(value=attr.name),
+                                                        value=ast.Name(
+                                                            id="attrs", ctx=ast.Load()
+                                                        ),
+                                                        slice=ast.Constant(
+                                                            value=attr.name
+                                                        ),
                                                         ctx=ast.Store(),
                                                     )
                                                 ],
@@ -1590,26 +1690,36 @@ class TemplateCodegen:
                                         orelse=[
                                             ast.If(
                                                 test=ast.Compare(
-                                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                                    left=ast.Name(
+                                                        id="_r_val", ctx=ast.Load()
+                                                    ),
                                                     ops=[ast.IsNot()],
-                                                    comparators=[ast.Constant(value=None)],
+                                                    comparators=[
+                                                        ast.Constant(value=None)
+                                                    ],
                                                 ),
                                                 body=[
                                                     ast.Assign(
                                                         targets=[
                                                             ast.Subscript(
                                                                 value=ast.Name(
-                                                                    id="attrs", ctx=ast.Load()
+                                                                    id="attrs",
+                                                                    ctx=ast.Load(),
                                                                 ),
-                                                                slice=ast.Constant(value=attr.name),
+                                                                slice=ast.Constant(
+                                                                    value=attr.name
+                                                                ),
                                                                 ctx=ast.Store(),
                                                             )
                                                         ],
                                                         value=ast.Call(
-                                                            func=ast.Name(id="str", ctx=ast.Load()),
+                                                            func=ast.Name(
+                                                                id="str", ctx=ast.Load()
+                                                            ),
                                                             args=[
                                                                 ast.Name(
-                                                                    id="_r_val", ctx=ast.Load()
+                                                                    id="_r_val",
+                                                                    ctx=ast.Load(),
                                                                 )
                                                             ],
                                                             keywords=[],
@@ -1639,7 +1749,9 @@ class TemplateCodegen:
                                     ast.Assign(
                                         targets=[
                                             ast.Subscript(
-                                                value=ast.Name(id="attrs", ctx=ast.Load()),
+                                                value=ast.Name(
+                                                    id="attrs", ctx=ast.Load()
+                                                ),
                                                 slice=ast.Constant(value=attr.name),
                                                 ctx=ast.Store(),
                                             )
@@ -1653,14 +1765,22 @@ class TemplateCodegen:
                                             op=ast.And(),
                                             values=[
                                                 ast.Compare(
-                                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                                    left=ast.Name(
+                                                        id="_r_val", ctx=ast.Load()
+                                                    ),
                                                     ops=[ast.IsNot()],
-                                                    comparators=[ast.Constant(value=False)],
+                                                    comparators=[
+                                                        ast.Constant(value=False)
+                                                    ],
                                                 ),
                                                 ast.Compare(
-                                                    left=ast.Name(id="_r_val", ctx=ast.Load()),
+                                                    left=ast.Name(
+                                                        id="_r_val", ctx=ast.Load()
+                                                    ),
                                                     ops=[ast.IsNot()],
-                                                    comparators=[ast.Constant(value=None)],
+                                                    comparators=[
+                                                        ast.Constant(value=None)
+                                                    ],
                                                 ),
                                             ],
                                         ),
@@ -1668,14 +1788,24 @@ class TemplateCodegen:
                                             ast.Assign(
                                                 targets=[
                                                     ast.Subscript(
-                                                        value=ast.Name(id="attrs", ctx=ast.Load()),
-                                                        slice=ast.Constant(value=attr.name),
+                                                        value=ast.Name(
+                                                            id="attrs", ctx=ast.Load()
+                                                        ),
+                                                        slice=ast.Constant(
+                                                            value=attr.name
+                                                        ),
                                                         ctx=ast.Store(),
                                                     )
                                                 ],
                                                 value=ast.Call(
-                                                    func=ast.Name(id="str", ctx=ast.Load()),
-                                                    args=[ast.Name(id="_r_val", ctx=ast.Load())],
+                                                    func=ast.Name(
+                                                        id="str", ctx=ast.Load()
+                                                    ),
+                                                    args=[
+                                                        ast.Name(
+                                                            id="_r_val", ctx=ast.Load()
+                                                        )
+                                                    ],
                                                     keywords=[],
                                                 ),
                                             )
@@ -1714,7 +1844,10 @@ class TemplateCodegen:
                                             attr="get",
                                             ctx=ast.Load(),
                                         ),
-                                        args=[ast.Constant(value="style"), ast.Constant(value="")],
+                                        args=[
+                                            ast.Constant(value="style"),
+                                            ast.Constant(value=""),
+                                        ],
                                         keywords=[],
                                     ),
                                     op=ast.Add(),
@@ -1797,7 +1930,8 @@ class TemplateCodegen:
             from pywire.compiler.ast_nodes import SpreadAttribute
 
             explicit_spread = next(
-                (a for a in node.special_attributes if isinstance(a, SpreadAttribute)), None
+                (a for a in node.special_attributes if isinstance(a, SpreadAttribute)),
+                None,
             )
             if explicit_spread:
                 # expr is likely 'attrs' or similar

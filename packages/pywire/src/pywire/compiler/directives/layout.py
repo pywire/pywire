@@ -17,7 +17,9 @@ class LayoutDirectiveParser(DirectiveParser):
         """Check if line starts with !layout."""
         return line.strip().startswith("!layout")
 
-    def parse(self, line: str, line_num: int, col_num: int) -> Optional[LayoutDirective]:
+    def parse(
+        self, line: str, line_num: int, col_num: int
+    ) -> Optional[LayoutDirective]:
         """Parse !layout "path/to/layout" directive."""
         match = self.PATTERN.match(line.strip())
         if not match:
@@ -32,9 +34,14 @@ class LayoutDirectiveParser(DirectiveParser):
             # We expect a simple string literal
             expr_ast = ast.parse(path_str, mode="eval")
 
-            if isinstance(expr_ast.body, ast.Constant) and isinstance(expr_ast.body.value, str):
+            if isinstance(expr_ast.body, ast.Constant) and isinstance(
+                expr_ast.body.value, str
+            ):
                 return LayoutDirective(
-                    name="layout", layout_path=expr_ast.body.value, line=line_num, column=col_num
+                    name="layout",
+                    layout_path=expr_ast.body.value,
+                    line=line_num,
+                    column=col_num,
                 )
 
             return None

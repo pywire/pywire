@@ -57,7 +57,9 @@ class UploadManager:
             with open(meta_path, "r") as f:
                 lines = f.read().splitlines()
                 filename = lines[0]
-                content_type = lines[1] if len(lines) > 1 else "application/octet-stream"
+                content_type = (
+                    lines[1] if len(lines) > 1 else "application/octet-stream"
+                )
 
             return FileUpload(
                 filename=filename,
