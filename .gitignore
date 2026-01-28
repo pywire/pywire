@@ -4,7 +4,7 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-uv.lock
+
 src/pywire/client/node_modules/
 src/pywire/client/dist/
 .coverage
