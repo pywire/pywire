@@ -24,3 +24,44 @@ jobs:
         run: uv sync --all-extras
       - name: Run tests
         run: uv run pytest
+
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        # This will install both client and doc dependencies if pnpm-workspace is set up,
+        # otherwise we might need to be specific. Assuming standard pnpm install works for the root/client.
+        # But scripts/build assumes we can run pnpm build in specific dirs.
+        # Let's check how scripts/build works again. 
+        # scripts/build does `cd docs && pnpm build` and `cd src/pywire/client && pnpm build`.
+        # So we probably just need pnpm available.
+        # But we probably need to install dependencies in those folders first?
+        # The script doesn't seem to have install steps.
+        # Let's assume we need to install dependencies.
+        # actually, looking at scripts/build again:
+        # cd docs && pnpm build
+        # cd src/pywire/client && pnpm build
+        # It assumes deps are installed.
+        # We should probably run scripts/install? No that's python.
+        # We should probably do pnpm install in the steps.
+        run: |
+           # We need to install dependencies for docs and client before building
+           # Assuming these have package.json files
+           cd docs && pnpm install --frozen-lockfile
+           cd ../src/pywire/client && pnpm install --frozen-lockfile
+
+      - name: Run build script
+        run: ./scripts/build
