@@ -1,9 +1,8 @@
-import html
 import linecache
 import os
 import traceback
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -72,12 +71,12 @@ class DevErrorMiddleware:
         if hasattr(self.app, "state") and hasattr(self.app.state, "pywire"):
             script_url = self.app.state.pywire._get_client_script_url()
 
-        # Context lines logic reused... 
-        # (Alternatively, could we reuse CompileErrorPage? 
+        # Context lines logic reused...
+        # (Alternatively, could we reuse CompileErrorPage?
         # No, DevErrorMiddleware catches exceptions, CompileErrorPage is a page.
-        # But logic is identical. For now, copying logic for simplicity 
+        # But logic is identical. For now, copying logic for simplicity
         # as CompileErrorPage might have different lifecycle).
-        
+
         context_lines_data = []
         if exc.file_path and exc.line and os.path.exists(exc.file_path):
             try:
@@ -121,22 +120,24 @@ class DevErrorMiddleware:
             filename = frame.f_code.co_filename
             func_name = frame.f_code.co_name
             context = []
-            
+
             # Simple context reading for frames
             try:
                 if os.path.exists(filename):
-                     # linecache handles reading
-                     start = max(1, lineno - 5)
-                     end = lineno + 5
-                     lines = linecache.getlines(filename) # Will return [] if fails?
-                     if lines:
-                         for i in range(start, end + 1):
-                             if i <= len(lines):
-                                 context.append({
-                                     "num": i,
-                                     "content": lines[i - 1].rstrip(),
-                                     "is_current": i == lineno
-                                 })
+                    # linecache handles reading
+                    start = max(1, lineno - 5)
+                    end = lineno + 5
+                    lines = linecache.getlines(filename)  # Will return [] if fails?
+                    if lines:
+                        for i in range(start, end + 1):
+                            if i <= len(lines):
+                                context.append(
+                                    {
+                                        "num": i,
+                                        "content": lines[i - 1].rstrip(),
+                                        "is_current": i == lineno,
+                                    }
+                                )
             except Exception:
                 pass
 
@@ -172,7 +173,7 @@ class DevErrorMiddleware:
         is_framework_error: bool,
     ) -> str:
         from pywire.runtime.error_renderer import render_template
-        
+
         script_url = "/_pywire/static/pywire.dev.min.js"
         if hasattr(self.app, "state") and hasattr(self.app.state, "pywire"):
             script_url = self.app.state.pywire._get_client_script_url()
