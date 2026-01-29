@@ -1,4 +1,3 @@
-import html
 from typing import Any, Dict
 
 from starlette.requests import Request
@@ -27,17 +26,19 @@ class ErrorPage(BasePage):
         # But wait, ErrorPage is usually instantiated by app or similar.
         # Let's check constructor. It takes request. We can get app from request.app usually if Starlette?
         # request.app is available.
-        
+
         script_url = "/_pywire/static/pywire.core.min.js"
-        if hasattr(self.request, "app") and hasattr(self.request.app, "_get_client_script_url"):
-             # Use the private method if available (a bit hacky but correct for PyWire app)
-             # Or check debug mode directly
-             pass
-        
+        if hasattr(self.request, "app") and hasattr(
+            self.request.app, "_get_client_script_url"
+        ):
+            # Use the private method if available (a bit hacky but correct for PyWire app)
+            # Or check debug mode directly
+            pass
+
         # Actually, simpler: check if we are in dev mode via request.app.state if set?
         # The prompt mentioned "attach the correct script based on the environment".
         # PyWire app sets self.app.state.pywire = self.
-        
+
         try:
             pywire_app = self.request.app.state.pywire
             script_url = pywire_app._get_client_script_url()
