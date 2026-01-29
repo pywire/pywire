@@ -1,6 +1,7 @@
 # PyWire Language Server
 
 LSP support for PyWire.
+<!-- bump -->
 
 ## ❤️ Support PyWire
 
