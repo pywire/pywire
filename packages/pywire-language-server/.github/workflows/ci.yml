@@ -36,7 +36,7 @@ jobs:
         working-directory: pywire-language-server
         # Install the sibling pywire package in editable mode or direct path
         run: |
-           uv add --path ../pywire pywire
+           uv add --editable ../pywire
            uv sync --all-extras
       
       - name: Run tests
