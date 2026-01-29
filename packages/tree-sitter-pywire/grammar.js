@@ -14,10 +14,10 @@ module.exports = grammar({
         )),
 
         // Directives: !path, !layout, etc.
-        directive: $ => choice(
+        directive: $ => prec(1, choice(
             $._directive_single_line,
             $._directive_multiline
-        ),
+        )),
 
         _directive_single_line: $ => seq(
             alias(token(seq('!', /[a-zA-Z_]\w*/)), $.keyword_directive),
@@ -98,7 +98,7 @@ module.exports = grammar({
 
         // ...
 
-        text: $ => /[^<{}\-]+/,
+        text: $ => /[^<{}\-!]+|!/,
         hyphen: $ => '-',
 
         comment: $ => token(seq('<!--', /[^-]+/, '-->'))
