@@ -11,6 +11,9 @@
     "Programming Languages"
   ],
   "main": "./out/extension.js",
+  "extensionDependencies": [
+    "ms-python.python"
+  ],
   "contributes": {
     "languages": [
       {
@@ -54,6 +57,11 @@
           ],
           "default": "off",
           "description": "Traces the communication between VS Code and the language server"
+        },
+        "pywire.useBundledPyright": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, bypasses Pylance middleware and uses the bundled Pyright from the language server. Useful for testing fallback mode."
         }
       }
     },
@@ -75,13 +83,14 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run package",
+    "vscode:prepublish": "pnpm run bundle-deps && pnpm run package",
     "compile": "pnpm run check-types && node build.js",
     "watch": "concurrently \"pnpm run watch:esbuild\" \"pnpm run watch:tsc\"",
     "watch:esbuild": "node build.js --watch",
     "watch:tsc": "tsc --noEmit --watch -p ./",
     "package": "pnpm run check-types && node build.js --production",
-    "check-types": "tsc --noEmit -p ./"
+    "check-types": "tsc --noEmit -p ./",
+    "bundle-deps": "mkdir -p bundled/libs && pip install pygls pyright ../pywire -t bundled/libs"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",

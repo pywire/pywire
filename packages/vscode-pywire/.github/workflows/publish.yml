@@ -10,17 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
           version: 8
       - name: Install dependencies
         run: pnpm install
+      - name: Bundle Python dependencies
+        run: pnpm run bundle-deps
       - name: Compile
         run: pnpm run compile
       - name: Publish to Marketplace
-        run: pnpm run vscode:prepublish && pnpm exec vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: pnpm exec vsce publish -p ${{ secrets.VSCE_PAT }}
