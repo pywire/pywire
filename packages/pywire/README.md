@@ -1,6 +1,6 @@
-# PyWire Core
+# pywire Core
 
-The core framework for PyWire.
+The core framework for pywire.
 
 <!-- SUPPORT_MESSAGE_TEMPLATE_START -->
 ## ❤️ Support pywire

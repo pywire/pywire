@@ -1,9 +1,12 @@
 """Main ASGI application."""
 
 import re
+import logging
 import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, cast
+
+logger = logging.getLogger(__name__)
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -129,8 +132,8 @@ class PyWire:
         # Mount User Static Files if configured
         if self.static_dir:
             if not self.static_dir.exists():
-                print(
-                    f"Warning: Configured static directory '{self.static_dir}' does not exist."
+                logger.warning(
+                    f"Configured static directory '{self.static_dir}' does not exist."
                 )
             else:
                 routes.append(
@@ -225,8 +228,8 @@ class PyWire:
                     # Global safety limit: 10MB (allows for 5MB file + overhead)
                     # Real app might configure this or inspect specific field limits after streaming
                     if length > 10 * 1024 * 1024:
-                        print(
-                            f"WARN: Upload rejected. Content-Length {length} exceeds 10MB limit."
+                        logger.warning(
+                            f"Upload rejected. Content-Length {length} exceeds 10MB limit."
                         )
                         return JSONResponse(
                             {"error": "Payload Too Large"}, status_code=413
@@ -245,10 +248,10 @@ class PyWire:
                     upload_id = upload_manager.save(cast(UploadFile, file))
                     response_data[field_name] = upload_id
 
-            print(f"DEBUG: Upload successful. Returning: {response_data}")
+            logger.debug(f"Upload successful. Returning: {response_data}")
             return JSONResponse(response_data)
         except Exception as e:
-            traceback.print_exc()
+            logger.error(f"Upload failed: {e}", exc_info=True)
             return JSONResponse({"error": str(e)}, status_code=500)
 
     async def _handle_source(self, request: Request) -> Response:
@@ -363,9 +366,9 @@ class PyWire:
                     error_page_path, implicit_layout=root_layout
                 )
                 self.router.add_route("/__error__", page_class)
+                self.router.add_route("/__error__", page_class)
             except Exception as e:
-                print(f"Failed to load error page {error_page_path}: {e}")
-                traceback.print_exc()
+                logger.error(f"Failed to load error page {error_page_path}: {e}", exc_info=True)
 
     def _scan_directory(
         self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""
@@ -383,8 +386,7 @@ class PyWire:
                 self.loader.load(potential_layout, implicit_layout=layout_path)
                 current_layout = str(potential_layout.resolve())
             except Exception as e:
-                print(f"Failed to load layout {potential_layout}: {e}")
-                traceback.print_exc()
+                logger.error(f"Failed to load layout {potential_layout}: {e}", exc_info=True)
 
         # 2. Iterate identifiers
         # Sort to ensure index processed or consistent order
@@ -469,8 +471,7 @@ class PyWire:
                         self.router.add_route(route_path, page_class)
 
                 except Exception as e:
-                    print(f"Failed to load page {entry}: {e}")
-                    traceback.print_exc()
+                    logger.error(f"Failed to load page {entry}: {e}", exc_info=True)
                     self._register_error_page(entry, e)
 
     def _register_error_page(self, file_path: Path, error: Exception) -> None:
@@ -546,7 +547,7 @@ class PyWire:
                 pass
 
         except Exception as e:
-            print(f"Failed to register error page for {file_path}: {e}")
+            logger.error(f"Failed to register error page for {file_path}: {e}")
 
     def _get_implicit_route(self, file_path: Path) -> Optional[str]:
         """Calculate implicit route path from file path."""
@@ -677,8 +678,7 @@ class PyWire:
                 print(f"Reloaded: {file_path}")
 
             except Exception as e:
-                print(f"Failed to reload {file_path}: {e}")
-                traceback.print_exc()
+                logger.error(f"Failed to reload {file_path}: {e}", exc_info=True)
 
                 # If it was a page, show error
                 if is_in_pages or file_path.name == "__error__.wire":
