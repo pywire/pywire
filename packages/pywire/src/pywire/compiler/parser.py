@@ -321,7 +321,9 @@ class PyWireParser:
         if python_section.strip():
             try:
                 # Don't silence SyntaxError - let it bubble up so user knows their code is invalid
-                python_ast = ast.parse(python_section)
+                from pywire.compiler.preprocessor import preprocess_python_code
+                preprocessed_code = preprocess_python_code(python_section)
+                python_ast = ast.parse(preprocessed_code)
             except SyntaxError as e:
                 # Calculate correct line number
                 # python_start is 0-indexed line number of '---'

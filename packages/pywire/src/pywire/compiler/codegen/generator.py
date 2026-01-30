@@ -184,6 +184,11 @@ class CodeGenerator:
                 level=0,
             ),
             ast.ImportFrom(
+                module="pywire.core.wire",
+                names=[ast.alias(name="wire", asname=None)],
+                level=0,
+            ),
+            ast.ImportFrom(
                 module="starlette.responses",
                 names=[ast.alias(name="Response", asname=None)],
                 level=0,
@@ -335,13 +340,17 @@ class CodeGenerator:
                 )
             )
 
+        # Transform user Python code to class methods (Must run before __init__ to set flags)
+        all_globals = known_methods.union(known_vars)
+        user_code_stmts: List[ast.stmt] = []
+        if parsed.python_ast:
+            user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
+
         # Generate __init__ method
         class_body.append(self._generate_init_method(parsed))
 
-        # Transform user Python code to class methods
-        all_globals = known_methods.union(known_vars)
-        if parsed.python_ast:
-            class_body.extend(self._transform_user_code(parsed.python_ast, all_globals))
+        # Add user code
+        class_body.extend(user_code_stmts)
 
         # Generate form validation schemas and wrappers
         # MUST happen before render generation as it updates EventAttributes to point to wrappers
@@ -401,16 +410,12 @@ class CodeGenerator:
         if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
             init_hooks.extend(self._collected_mount_hooks)
 
-        # If we have top-level init code
-        if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
-            init_hooks.insert(0, "__top_level_init__")
+
 
         # Ensure 'on_before_load' and 'on_load' are present
         final_init_hooks = []
 
-        # Prepend generated top-level init
-        if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
-            final_init_hooks.append("__top_level_init__")
+
 
         # Standard hooks - REMOVED per user request
         # final_init_hooks.append('on_before_load')
@@ -576,6 +581,9 @@ class CodeGenerator:
 
         # Map $event to event for Alpine compatibility
         code = code.replace("$event", "event")
+
+        from pywire.compiler.preprocessor import preprocess_python_code
+        code = preprocess_python_code(code)
 
         tree = ast.parse(code)
         extracted_args: List[str] = []
@@ -1324,6 +1332,22 @@ class CodeGenerator:
             )
         )
 
+        # Call __top_level_init__ if it exists (for wire() and mutable init)
+        if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="__top_level_init__",
+                            ctx=ast.Load(),
+                        ),
+                        args=[],
+                        keywords=[],
+                    )
+                )
+            )
+
         return ast.FunctionDef(
             name="__init__",
             args=ast.arguments(
@@ -1362,7 +1386,7 @@ class CodeGenerator:
                 # Module-level assignments become class attributes
                 # UNLESS they target 'self' (e.g. self.x = 1), which makes no sense at class level
                 # and implies instance initialization.
-
+                
                 is_instance_assign = False
                 for target in node.targets:
                     # Check if target is Attribute(value=Name(id='self'))
@@ -1373,25 +1397,18 @@ class CodeGenerator:
                     ):
                         is_instance_assign = True
                         break
+                
+                # Also check if value is a Call (like wire()) or mutable structure.
+                # These should be instance-level to avoid shared state.
+                is_mutable_init = isinstance(
+                    node.value, 
+                    (ast.Call, ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)
+                )
 
-                if is_instance_assign:
+                if is_instance_assign or is_mutable_init:
                     top_level_statements.append(node)
                 else:
-                    # BUT, if they rely on runtime values (like other vars), they
-                    # should be in __init__
-                    # For now, we assume static assignments.
-                    # If the value calls a function, it might be safer in
-                    # __top_level_init__.
-                    # Heuristic: Check if value is constant?
-                    # "top level statements will be considered on_load...
-                    # obviously not each RTT request"
-                    # "execute on first load" -> init=True.
-
-                    # So executable statements (Calls, Loops, Ifs) definitely go
-                    # to `__top_level_init__`.
-                    # Simple assignments `x = 1`?
-                    # If `x = 1`, it stays class attr (default user expectation
-                    # for python scripts?).
+                    # Simple literals (int, str) stay class attributes
                     transformed.append(node)
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -1428,7 +1445,7 @@ class CodeGenerator:
 
     def _generate_top_level_init(
         self, statements: List[ast.stmt], known_globals: Set[str]
-    ) -> ast.AsyncFunctionDef:
+    ) -> ast.FunctionDef:
         """Generate __top_level_init__ method from top-level statements."""
 
         # 1. Collect all variables assigned in this scope to promote them to instance attributes.
@@ -1461,10 +1478,10 @@ class CodeGenerator:
         combined_globals = set(known_globals)
         combined_globals.update(local_assignments)
 
-        # Wrap statements in async method
+        # Wrap statements in sync method (must be sync for __init__)
         # Transform variables to self.X
 
-        wrapper = ast.AsyncFunctionDef(
+        wrapper = ast.FunctionDef(
             name="__top_level_init__",
             args=ast.arguments(
                 posonlyargs=[],
@@ -1480,7 +1497,7 @@ class CodeGenerator:
         )
 
         return cast(
-            ast.AsyncFunctionDef, self._transform_to_method(wrapper, combined_globals)
+            ast.FunctionDef, self._transform_to_method(wrapper, combined_globals)
         )
 
     def _transform_to_method(

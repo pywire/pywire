@@ -85,6 +85,8 @@ def initialize(self):
         content = """
 <p>Test</p>
 ---
+if not hasattr(self, 'log'):
+    self.log = []
 self.log.append('top_level')
 
 @mount
@@ -98,7 +100,6 @@ def my_mount(self):
         request.app.state.wire._get_client_script_url.return_value = "/static/pywire.js"
 
         page = page_class(request, {}, {})
-        page.log = []
 
         self.run_async(page.render(init=True))
 
