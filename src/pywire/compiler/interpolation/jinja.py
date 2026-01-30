@@ -24,8 +24,12 @@ class JinjaInterpolationParser(InterpolationParser):
         stripped = text.strip()
 
         # 1. Try simple parse
+        # 1. Try simple parse
         try:
-            ast.parse(stripped, mode="eval")
+            from pywire.compiler.preprocessor import preprocess_python_code
+            
+            preprocessed = preprocess_python_code(stripped)
+            ast.parse(preprocessed, mode="eval")
             return True
         except SyntaxError:
             pass

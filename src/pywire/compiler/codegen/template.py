@@ -281,6 +281,8 @@ class TemplateCodegen:
         expr_str = expr_str.strip()
 
         try:
+            from pywire.compiler.preprocessor import preprocess_python_code
+            expr_str = preprocess_python_code(expr_str)
             tree = ast.parse(expr_str, mode="eval")
             if line_offset > 0:
                 # ast.increment_lineno uses 1-based indexing for AST, but adds diff
