@@ -47,6 +47,7 @@ module.exports = grammar({
         // HTML Content (Simplified for now)
         _html_content: $ => choice(
             $.tag,
+            $.self_closing_tag,
             $.text,
             $.hyphen,
             $.interpolation
@@ -61,6 +62,13 @@ module.exports = grammar({
             '</',
             alias($.tag_name, $.tag_name),
             '>'
+        ),
+
+        self_closing_tag: $ => seq(
+            '<',
+            alias($.tag_name, $.tag_name),
+            repeat($.attribute),
+            '/>'
         ),
 
         tag_name: $ => /\w+/,
@@ -80,7 +88,8 @@ module.exports = grammar({
 
         attribute_value: $ => choice(
             seq('"', alias(/[^"]*/, $.attribute_content), '"'),
-            seq("'", alias(/[^']*/, $.attribute_content), "'")
+            seq("'", alias(/[^']*/, $.attribute_content), "'"),
+            $.interpolation
         ),
 
         interpolation: $ => seq(

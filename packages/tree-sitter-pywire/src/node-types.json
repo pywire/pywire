@@ -33,6 +33,10 @@
         {
           "type": "attribute_content",
           "named": true
+        },
+        {
+          "type": "interpolation",
+          "named": true
         }
       ]
     }
@@ -96,6 +100,25 @@
     }
   },
   {
+    "type": "self_closing_tag",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "attribute",
+          "named": true
+        },
+        {
+          "type": "tag_name",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "source_file",
     "named": true,
     "root": true,
@@ -118,6 +141,10 @@
         },
         {
           "type": "python_section",
+          "named": true
+        },
+        {
+          "type": "self_closing_tag",
           "named": true
         },
         {
@@ -152,6 +179,10 @@
           "named": true
         },
         {
+          "type": "self_closing_tag",
+          "named": true
+        },
+        {
           "type": "tag",
           "named": true
         },
@@ -177,6 +208,10 @@
   },
   {
     "type": "'",
+    "named": false
+  },
+  {
+    "type": "/>",
     "named": false
   },
   {
