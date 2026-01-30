@@ -1,11 +1,92 @@
 """PyWire Language Server"""
 
 import ast
+import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, cast
+import os
+import shutil
+import sys
 
-import jedi  # type: ignore
+class ShadowFileManager:
+    """
+    Manages generation of shadow .py files for Pyright consumption.
+    This mimics the behavior of the VS Code extension but on the server side.
+    """
+    def __init__(self, root_uri: str):
+        self.root_uri = root_uri
+        self.root_path = self._uri_to_path(root_uri)
+        if self.root_path:
+            self.pywire_dir = os.path.join(self.root_path, ".pywire")
+        else:
+            self.pywire_dir = "" # Disable if no root path
+        
+    def _uri_to_path(self, uri: str) -> Optional[str]:
+        # Simple parsing, in real world might need urllib
+        if uri.startswith("file://"):
+            return uri[7:]
+        # If no file:// scheme, assume it is strict file path or invalid
+        # But LSP URIs should be file://
+        return None
+
+    def ensure_init(self) -> bool:
+        """Ensure .pywire directory exists and is ignored."""
+        if not self.pywire_dir:
+            return False
+            
+        if not os.path.exists(self.pywire_dir):
+            try:
+                os.makedirs(self.pywire_dir, exist_ok=True)
+                gitignore = os.path.join(self.pywire_dir, ".gitignore")
+                with open(gitignore, "w") as f:
+                    f.write("*\n")
+            except Exception as e:
+                logger.error(f"Failed to init shadow dir: {e}")
+                return False
+        return True
+
+    def update_shadow_file(self, doc_uri: str, content: str) -> Optional[str]:
+        """Write content to shadow file and return its path."""
+        if not self.pywire_dir: return None
+
+        try:
+            doc_path = self._uri_to_path(doc_uri)
+            if not doc_path: return None
+            
+            # Simple containment check
+            if not doc_path.startswith(self.root_path):
+                # Outside workspace??
+                return None
+
+            rel_path = os.path.relpath(doc_path, self.root_path)
+            
+            shadow_rel_path = rel_path + ".py"
+            shadow_path = os.path.join(self.pywire_dir, shadow_rel_path)
+            
+            # Ensure parent dir
+            os.makedirs(os.path.dirname(shadow_path), exist_ok=True)
+            
+            with open(shadow_path, "w") as f:
+                f.write(content)
+                
+            return f"file://{shadow_path}"
+        except Exception as e:
+            logger.error(f"Failed to update shadow file for {doc_uri}: {e}")
+            return None
+
+    def get_shadow_uri(self, doc_uri: str) -> Optional[str]:
+        doc_path = self._uri_to_path(doc_uri)
+        try:
+            if not doc_path or not self.root_path: return None
+            rel_path = os.path.relpath(doc_path, self.root_path)
+            shadow_path = os.path.join(self.pywire_dir, rel_path + ".py")
+            return f"file://{shadow_path}"
+        except ValueError:
+            return None
+
+
+
 from pygls.lsp.server import LanguageServer
 from lsprotocol.types import (
     CompletionItem,
@@ -30,10 +111,14 @@ from lsprotocol.types import (
 )
 
 # Setup logging for debugging
+# Setup logging for debugging
 logging.basicConfig(
-    filename="/tmp/pywire-language-server.log",
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("/tmp/pywire-language-server.log"),
+        logging.StreamHandler(sys.stderr)
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -86,702 +171,213 @@ server = LanguageServer(
 )
 
 
+from .transpiler import Transpiler
+
+from .pyright import PyrightClient
+
+# Global state for Pyright fallback
+pyright_client: Optional[PyrightClient] = None
+shadow_manager: Optional[ShadowFileManager] = None
+
+@server.feature("initialize")
+def initialize(ls: LanguageServer, params: Any):
+    """Initialize the server."""
+    global pyright_client, shadow_manager
+    
+    # Check if client capabilities suggest we need fallback?
+    # Or maybe we just always try to start if configured?
+    
+    # We need root URI
+    root_uri = params.root_uri or (f"file://{params.root_path}" if params.root_path else None)
+
+    if root_uri:
+        shadow_manager = ShadowFileManager(root_uri)
+        if shadow_manager.ensure_init():
+            # Check initialization options
+            init_opts = getattr(params, "initialization_options", {}) or {}
+            # Default to True for standalone clients (NeoVim, etc.), but VS Code sends explicit False
+            use_bundled_pyright = init_opts.get("useBundledPyright", True)
+            
+            logger.info(f"Use Bundled Pyright: {use_bundled_pyright}")
+
+            if use_bundled_pyright:
+                # Try start pyright
+                client = PyrightClient()
+                if client.start():
+                    pyright_client = client
+                    logger.info("Pyright fallback started successfully")
+                    
+                    # Perform async init in a task
+                    import asyncio
+                    asyncio.create_task(_init_pyright(ls, params))
+                else:
+                    logger.error("Pyright failed to start. Language server features will be limited.")
+            else:
+                 logger.info("Pyright bundling disabled by client (Middleware Mode).")
+        else:
+             logger.error("Failed to init shadow manager. Language server features will be limited.")
+
+import attrs
+
+async def _init_pyright(ls: LanguageServer, params: Any):
+    if pyright_client:
+        try:
+            logger.info(f"Checking for node: {shutil.which('node')}")
+            
+            # lsprotocol models use attrs
+            init_dict = attrs.asdict(params, recurse=True)
+
+            # Important: Set processId to None or our PID
+            init_dict['processId'] = os.getpid()
+            
+            logger.debug(f"Sending initialize to Pyright: {json.dumps(init_dict)[:200]}...")
+
+            await pyright_client.send_request("initialize", init_dict)
+            
+            # Send initialized notification
+            pyright_client.send_notification("initialized", {})
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize pyright interaction: {e}")
+
 class PyWireDocument:
-    """Represents a parsed .pywire document"""
+    """Represents a parsed .pywire document using Virtual Document architecture"""
 
     def __init__(self, uri: str, text: str):
         self.uri = uri
         self.text = text
+        
+        # Transpile to virtual python
+        self.transpiler = Transpiler(text)
+        self.virtual_python, self.source_map = self.transpiler.transpile()
+        
+        # Compatibility layers while refactoring
         self.lines = text.split("\n")
-
-        # Parse sections
-        self.separator_line = self._find_separator()
-        self.diagnostics = self._validate()
-        # Add event handler validation
-        self.diagnostics.extend(self._validate_event_handlers())
-
-        # Track directive ranges (for multi-line directives)
-        self.directive_ranges = self._find_directive_ranges()
-
-        # Extract routes info
-        self.routes = self._extract_routes()
-
-    def _find_separator(self) -> Optional[int]:
-        """Find the --- separator line"""
-        for i, line in enumerate(self.lines):
-            if line.strip() == "---":
-                return i
-        return None
-
-    def _find_directive_ranges(self) -> Dict[str, tuple]:
-        """Find start/end lines for multi-line directives."""
-        ranges = {}
-        i = 0
-        while i < len(self.lines):
-            stripped = self.lines[i].strip()
-            if stripped.startswith("!path"):
-                start = i
-                # Check if opens a brace but doesn't close it
-                if "{" in stripped and "}" not in stripped:
-                    # Multi-line: find closing brace
-                    while i < len(self.lines) and "}" not in self.lines[i]:
-                        i += 1
-                ranges["path"] = (start, i)
-                break
-            i += 1
-        return ranges
-
-    def _extract_routes(self) -> Dict[str, str]:
-        """Extract route names and patterns from !path directive, handling multi-line dicts."""
-        routes: Dict[str, str] = {}
-        collecting = False
-        content_lines = []
-
-        for line in self.lines:
-            stripped = line.strip()
-            if stripped.startswith("!path "):
-                rest = stripped[6:].strip()
-                if "{" in rest:
-                    collecting = True
-                    content_lines.append(rest)
-                    if "}" in rest:
-                        # Single-line dict
-                        collecting = False
-                        break
-                else:
-                    # Single string path
-                    content_lines.append(rest)
-                    break
-            elif collecting:
-                content_lines.append(stripped)
-                if "}" in stripped:
-                    break
-
-        if content_lines:
-            content = " ".join(content_lines)
-            try:
-                tree = ast.parse(content, mode="eval")
-                if isinstance(tree.body, ast.Dict):
-                    for k, v in zip(tree.body.keys, tree.body.values):
-                        if isinstance(k, ast.Constant) and isinstance(k.value, str):
-                            routes[k.value] = (
-                                str(v.value) if isinstance(v, ast.Constant) else ""
-                            )
-                elif isinstance(tree.body, ast.Constant) and isinstance(
-                    tree.body.value, str
-                ):
-                    routes["main"] = tree.body.value
-            except Exception:
-                pass
-        return routes
-
-    def _validate(self) -> List[Diagnostic]:
-        """Basic validation"""
-        diagnostics = []
-
-        # Check for --- separator
-        if self.separator_line is None:
-            diagnostics.append(
-                Diagnostic(
-                    range=Range(
-                        start=Position(line=0, character=0),
-                        end=Position(line=0, character=0),
-                    ),
-                    message="Missing --- separator between HTML and Python sections",
-                    severity=DiagnosticSeverity.Warning,
-                    source="pywire",
-                )
-            )
-
-        # Check for !path directive
-        has_path = any(line.strip().startswith("!path") for line in self.lines)
-        if not has_path:
-            diagnostics.append(
-                Diagnostic(
-                    range=Range(
-                        start=Position(line=0, character=0),
-                        end=Position(line=0, character=0),
-                    ),
-                    message="Missing !path directive",
-                    severity=DiagnosticSeverity.Information,
-                    source="pywire",
-                )
-            )
-
-        return diagnostics
-
-    def _validate_event_handlers(self) -> List[Diagnostic]:
-        """Validate Python syntax in event handler and directive attributes"""
-        diagnostics = []
-        for i, line in enumerate(self.lines):
-            if self.separator_line and i >= self.separator_line:
-                break
-            # Update regex to support dots in attribute names (for modifiers)
-            for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line):
-                full_attr_name = m.group(1)
-                value = m.group(2)
-                value_start = m.start(2)
-                value_end = m.end(2)
-
-                if not value:
-                    # Some attributes require a value
-                    if full_attr_name in ("$if", "$show", "$for", "$bind"):
-                        diagnostics.append(
-                            Diagnostic(
-                                range=Range(
-                                    start=Position(line=i, character=m.start(1)),
-                                    end=Position(line=i, character=m.end(1)),
-                                ),
-                                message=f"{full_attr_name} requires a value",
-                                severity=DiagnosticSeverity.Error,
-                                source="pywire",
-                            )
-                        )
-                    continue
-
-                # Check for event handlers with modifiers
-                if full_attr_name.startswith("@"):
-                    parts = full_attr_name[1:].split(".")
-                    _ = parts[0]
-                    modifiers = parts[1:]
-
-                    # Validate modifiers
-                    valid_modifiers = {
-                        "prevent",
-                        "stop",
-                        "self",  # Logic
-                        "enter",
-                        "escape",
-                        "space",
-                        "tab",
-                        "up",
-                        "down",
-                        "left",
-                        "right",  # Keys
-                        "shift",
-                        "alt",
-                        "ctrl",
-                        "meta",
-                        "cmd",  # System
-                        "debounce",
-                        "throttle",  # Performance
-                        "window",
-                        "outside",  # Global/Outside
-                    }
-
-                    for mod in modifiers:
-                        # Handle modifiers with arguments (e.g. debounce.500ms)
-                        # Actually the current spec says syntax is .debounce.500ms
-                        # So '500ms' would be a separate part in the split if we split by dot.
-                        # Wait, the prompt says: ".debounce" or ".debounce.500ms"
-                        # If we split '@click.debounce.500ms' by '.', we get ['click', 'debounce', '500ms']
-
-                        if mod in valid_modifiers:
-                            continue
-
-                        # Check if it's a time argument (e.g. 500ms, 1s)
-                        if re.match(r"^\d+(ms|s)$", mod):
-                            continue
-
-                        # Check if it is a key alias or fallback
-                        # The spec says: "Fallback: If a modified key ... doesn't match ... falls back to e.code"
-                        # This implies we can use key names.
-                        # For now, let's warn on unknown modifiers unless it looks like a key or time
-
-                        # Warning for unknown modifier
-                        diagnostics.append(
-                            Diagnostic(
-                                range=Range(
-                                    start=Position(
-                                        line=i,
-                                        character=m.start(1)
-                                        + 1
-                                        + full_attr_name.index(mod),
-                                    ),
-                                    end=Position(
-                                        line=i,
-                                        character=m.start(1)
-                                        + 1
-                                        + full_attr_name.index(mod)
-                                        + len(mod),
-                                    ),
-                                ),
-                                message=f"Unknown modifier '{mod}'",
-                                severity=DiagnosticSeverity.Warning,
-                                source="pywire",
-                            )
-                        )
-
-                    # Event handler - validate as expression or statement
-                    try:
-                        ast.parse(value, mode="eval")
-                    except SyntaxError:
-                        try:
-                            ast.parse(value, mode="exec")
-                        except SyntaxError as e:
-                            diagnostics.append(
-                                Diagnostic(
-                                    range=Range(
-                                        start=Position(line=i, character=value_start),
-                                        end=Position(line=i, character=value_end),
-                                    ),
-                                    message=f"Invalid Python syntax in event handler: {e.msg}",
-                                    severity=DiagnosticSeverity.Error,
-                                    source="pywire",
-                                )
-                            )
-                    continue
-
-                attr_name = full_attr_name
-                # Validate based on attribute type
-                if attr_name == "$for":
-                    # Validate $for={item in items} syntax
-                    if " in " not in value:
-                        diagnostics.append(
-                            Diagnostic(
-                                range=Range(
-                                    start=Position(line=i, character=value_start),
-                                    end=Position(line=i, character=value_end),
-                                ),
-                                message="$for syntax error: expected 'item in collection'",
-                                severity=DiagnosticSeverity.Error,
-                                source="pywire",
-                            )
-                        )
-                    else:
-                        # Validate the iterable part is valid Python
-                        parts = value.split(" in ", 1)
-                        if len(parts) == 2:
-                            try:
-                                ast.parse(parts[1], mode="eval")
-                            except SyntaxError as e:
-                                diagnostics.append(
-                                    Diagnostic(
-                                        range=Range(
-                                            start=Position(
-                                                line=i, character=value_start
-                                            ),
-                                            end=Position(line=i, character=value_end),
-                                        ),
-                                        message=f"Invalid iterable expression: {e.msg}",
-                                        severity=DiagnosticSeverity.Error,
-                                        source="pywire",
-                                    )
-                                )
-
-                elif attr_name == "$bind":
-                    # Validate $bind value is an assignable target
-                    try:
-                        # Try to parse as assignment target
-                        ast.parse(f"{value} = None", mode="exec")
-                    except SyntaxError:
-                        diagnostics.append(
-                            Diagnostic(
-                                range=Range(
-                                    start=Position(line=i, character=value_start),
-                                    end=Position(line=i, character=value_end),
-                                ),
-                                message="$bind value must be an assignable target (variable name)",
-                                severity=DiagnosticSeverity.Error,
-                                source="pywire",
-                            )
-                        )
-
-                elif attr_name in ("$if", "$show", "$key"):
-                    # Validate as Python expression
-                    try:
-                        ast.parse(value, mode="eval")
-                    except SyntaxError as e:
-                        diagnostics.append(
-                            Diagnostic(
-                                range=Range(
-                                    start=Position(line=i, character=value_start),
-                                    end=Position(line=i, character=value_end),
-                                ),
-                                message=f"Invalid Python expression: {e.msg}",
-                                severity=DiagnosticSeverity.Error,
-                                source="pywire",
-                            )
-                        )
-
-                elif attr_name.startswith("@"):
-                    # Event handler - validate as expression or statement
-                    try:
-                        ast.parse(value, mode="eval")
-                    except SyntaxError:
-                        try:
-                            ast.parse(value, mode="exec")
-                        except SyntaxError as e:
-                            diagnostics.append(
-                                Diagnostic(
-                                    range=Range(
-                                        start=Position(line=i, character=value_start),
-                                        end=Position(line=i, character=value_end),
-                                    ),
-                                    message=f"Invalid Python syntax in event handler: {e.msg}",
-                                    severity=DiagnosticSeverity.Error,
-                                    source="pywire",
-                                )
-                            )
-        return diagnostics
-
-    def get_section(self, line: int) -> str:
-        """Determine which section a line is in"""
-        if line >= len(self.lines):
-            return "python"  # Default to python for new lines at end
-
-        if self.separator_line is None:
-            if self.lines[line].strip().startswith("!"):
-                return "directive"
-            return "html"
-
-        if line < self.separator_line:
-            if self.lines[line].strip().startswith("!"):
-                return "directive"
-            return "html"
-        elif line == self.separator_line:
-            return "separator"
-        else:
-            return "python"
+        # Old properties like routes and diagnostics should now be derived/validated differently.
+        # But for now, let's keep the structure and just cache the transpilation result.
+        self.diagnostics: List[Diagnostic] = []
+        self.directive_ranges = self.transpiler.directive_ranges
 
     def get_python_source(self) -> str:
-        """Extract the Python code from the document"""
-        if self.separator_line is None:
-            return ""
-        return "\n".join(self.lines[self.separator_line + 1 :])
+        """Return the virtual python source code."""
+        return self.virtual_python
 
-    def pywire_to_python_line(self, line: int) -> int:
-        """Convert a line number in the .pywire file to a line number in the extracted Python source"""
-        if self.separator_line is None:
-            return 0
-        return line - self.separator_line - 1
-
-    def get_event_attr_at(self, line: int, char: int) -> Optional[dict]:
-        """Return event attr info if cursor is on one: {type, name, value, col_offset, char_in_value}"""
-        if line >= len(self.lines):
-            return None
-        line_text = self.lines[line]
-        for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line_text):
-            attr_start = m.start(1)
-            attr_end = m.end(1)
-            value_start = m.start(2)
-            value_end = m.end(2)
-            if attr_start <= char <= attr_end:
-                return {"type": "name", "name": m.group(1), "value": m.group(2)}
-            if value_start <= char <= value_end:
-                return {
-                    "type": "value",
-                    "name": m.group(1),
-                    "value": m.group(2),
-                    "col_offset": value_start,
-                    "char_in_value": char - value_start,
-                }
-        return None
-
-    def get_interpolation_at(self, line: int, char: int) -> Optional[dict]:
-        """Return interpolation info if cursor is on one: {type, name, value, col_offset, char_in_value}
-
-        Uses balanced brace matching to handle nested braces in f-strings.
-        """
-        if line >= len(self.lines):
-            return None
-        line_text = self.lines[line]
-
-        # Find all balanced brace pairs using stack-based matching
-        interpolations: List[Dict[str, Any]] = []
-        i = 0
-        while i < len(line_text):
-            if line_text[i] == "{":
-                # Start of potential interpolation
-                start = i
-                depth = 1
-                i += 1
-                in_string = None  # Track if we're inside a string
-
-                while i < len(line_text) and depth > 0:
-                    c = line_text[i]
-
-                    # Handle string literals (ignore braces inside strings)
-                    if c in ('"', "'") and (i == 0 or line_text[i - 1] != "\\"):
-                        if in_string is None:
-                            in_string = c
-                        elif in_string == c:
-                            in_string = None
-                    elif in_string is None:
-                        if c == "{":
-                            depth += 1
-                        elif c == "}":
-                            depth -= 1
-                    i += 1
-
-                if depth == 0:
-                    # Found balanced braces
-                    end = i  # Points after closing }
-                    value_start = start + 1
-                    value_end = end - 1
-                    interpolations.append(
-                        {
-                            "start": start,
-                            "end": end,
-                            "value_start": value_start,
-                            "value_end": value_end,
-                            "value": line_text[value_start:value_end],
-                        }
-                    )
-            else:
-                i += 1
-
-        # Find which interpolation contains the cursor
-        for interp in interpolations:
-            if interp["value_start"] <= char <= interp["value_end"]:
-                return {
-                    "type": "interpolation",
-                    "name": interp["value"],
-                    "value": interp["value"],
-                    "col_offset": interp["value_start"],
-                    "char_in_value": char - interp["value_start"],
-                }
-        return None
+    def update(self, text: str):
+        self.text = text
+        self.transpiler = Transpiler(text)
+        self.virtual_python, self.source_map = self.transpiler.transpile()
+        self.directive_ranges = self.transpiler.directive_ranges
+        self.lines = text.split("\n")
 
 
-def find_best_definitions(
-    doc: PyWireDocument, expression: str, char_in_expr: int
-) -> List:
-    """Find the best definitions for an expression using Jedi"""
-    try:
-        python_source = doc.get_python_source()
-        # Create virtual Python document with context
-        virtual_python = python_source + "\n# Event handler expression\n" + expression
+    def map_to_original(self, line: int, col: int) -> Tuple[int, int]:
+        """Map virtual python position to original .wire position"""
+        return self.source_map.to_original(line, col)
 
-        # Calculate line number in virtual document (where expression starts)
-        python_lines = python_source.split("\n")
-        # Line 1-based: len(python_lines) lines of code + 1 line comment + 1 line expression
-        virtual_line = len(python_lines) + 2
+    def map_to_generated(self, line: int, col: int) -> Optional[Tuple[int, int]]:
+        """Map original .wire position to virtual python position"""
+        return self.source_map.to_generated(line, col)
 
-        script = jedi.Script(virtual_python)
 
-        # Try goto() first
-        definitions = script.goto(virtual_line, char_in_expr)
+    # Legacy validation and helpers removed.
 
-        # If goto finds nothing or only self-references, try infer()
-        if not definitions or all(
-            d.line and d.line >= virtual_line for d in definitions
-        ):
-            inferred = script.infer(virtual_line, char_in_expr)
-            if inferred:
-                definitions.extend(inferred)
 
-        # If still nothing useful, synthesize a usage for assignment targets (e.g., count += 1)
-        if not definitions:
-            try:
-                target_names = []
-                expr_ast = ast.parse(expression, mode="exec")
-                for node in ast.walk(expr_ast):
-                    if isinstance(node, ast.AugAssign) and isinstance(
-                        node.target, ast.Name
-                    ):
-                        target_names.append(node.target.id)
-                    if isinstance(node, ast.Assign):
-                        for tgt in node.targets:
-                            if isinstance(tgt, ast.Name):
-                                target_names.append(tgt.id)
-                for name in target_names:
-                    synthetic = virtual_python + f"\n{name}\n"
-                    synthetic_script = jedi.Script(synthetic)
-                    synthetic_line = virtual_line + 1  # line of synthetic usage
-                    defs = synthetic_script.goto(synthetic_line, 0)
-                    if defs:
-                        definitions.extend(defs)
-                        break
-            except Exception:
-                pass
 
-        # Filter definitions
-        valid_defs = []
-        seen_locations = set()
 
-        for d in definitions:
-            # Skip if definition is in the virtual expression itself (recursive)
-            if d.line and d.line >= virtual_line:
-                continue
-
-            # Skip if definition is 'global count' etc.
-            if d.line and d.line <= len(python_lines):
-                line_text = python_lines[d.line - 1].strip()
-                if line_text.startswith("global "):
-                    continue
-
-            # Avoid duplicates
-            loc = (d.module_path, d.line, d.column)
-            if loc in seen_locations:
-                continue
-            seen_locations.add(loc)
-
-            valid_defs.append(d)
-
-        # Sort to prioritize module-level assignments (column 0)
-        # Then by line number to get the first one
-        valid_defs.sort(key=lambda d: (1 if d.column > 0 else 0, d.line or 0))
-
-        return valid_defs
-    except Exception as e:
-        logger.error(f"Jedi definition error: {e}")
-        return []
 
 
 # Document cache
 documents: dict[str, PyWireDocument] = {}
 
+def validate(ls: LanguageServer, uri: str):
+    """Sends diagnostics for the given URI."""
+    doc = documents.get(uri)
+    if doc:
+        ls.text_document_publish_diagnostics(
+            PublishDiagnosticsParams(uri=uri, diagnostics=doc.diagnostics)
+        )
+
 
 @server.feature("textDocument/didOpen")
 def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
-    """Handle document open"""
+    """Text document did open notification."""
     uri = params.text_document.uri
-    text = params.text_document.text
+    # Validate URI scheme
+    if not uri.startswith("file://"):
+        return
 
-    logger.info(f"Document opened: {uri}")
-
-    # Parse and cache
-    doc = PyWireDocument(uri, text)
+    doc = PyWireDocument(uri, params.text_document.text)
     documents[uri] = doc
+    
+    # Sync with Shadow/Pyright
+    if shadow_manager:
+        shadow_path = shadow_manager.update_shadow_file(uri, doc.get_python_source())
+        
+        if pyright_client and shadow_path:
+            # We must open the SHADOW file in Pyright
+            # Construct params
+            # We need to send textDocument/didOpen for the shadow file
+            try:
+                shadow_doc_item = {
+                    "uri": shadow_path,
+                    "languageId": "python",
+                    "version": params.text_document.version,
+                    "text": doc.get_python_source()
+                }
+                pyright_client.send_notification("textDocument/didOpen", {"textDocument": shadow_doc_item})
+            except Exception as e:
+                logger.error(f"Failed to notify pyright didOpen: {e}")
 
-    # Send diagnostics
-    ls.text_document_publish_diagnostics(
-        PublishDiagnosticsParams(uri=uri, diagnostics=doc.diagnostics)
-    )
+    # Initial diagnostics
+    validate(ls, uri)
 
 
 @server.feature("textDocument/didChange")
 def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
-    """Handle document changes"""
+    """Text document did change notification."""
     uri = params.text_document.uri
+    doc = documents.get(uri)
+    if not doc:
+        return
+    
+    # Update document text
+    # Simple full text replacement for now, assuming client sends full text
+    # NOTE: In reality, params.content_changes might be incremental.
+    # But PyWireDocument expects full text.
+    # LSP says if syncKind is Full, we get full text in content_changes[0].text
+    if params.content_changes:
+        new_text = params.content_changes[-1].text
+        doc.update(new_text)
 
-    # Get updated text
-    text = params.content_changes[0].text
+        # Sync with Shadow/Pyright
+        if shadow_manager:
+            shadow_path = shadow_manager.update_shadow_file(uri, doc.get_python_source())
+            
+            if pyright_client and shadow_path:
+                try:
+                    shadow_change_params = {
+                        "textDocument": {
+                            "uri": shadow_path,
+                            "version": params.text_document.version
+                        },
+                        "contentChanges": [{
+                            "text": doc.get_python_source()
+                        }]
+                    }
+                    pyright_client.send_notification("textDocument/didChange", shadow_change_params)
+                except Exception as e:
+                    logger.error(f"Failed to notify pyright didChange: {e}")
 
-    # Re-parse
-    doc = PyWireDocument(uri, text)
-    documents[uri] = doc
-
-    # Send updated diagnostics
-    ls.text_document_publish_diagnostics(
-        PublishDiagnosticsParams(uri=uri, diagnostics=doc.diagnostics)
-    )
+    validate(ls, uri)
 
     logger.info(f"Document changed: {uri}")
 
 
-@server.feature("textDocument/definition")
-def definition(
-    ls: LanguageServer, params: DefinitionParams
-) -> Optional[List[Location]]:
-    """Provide go-to-definition"""
-    uri = params.text_document.uri
-    position = params.position
 
-    doc = documents.get(uri)
-    if not doc:
-        return None
-
-    section = doc.get_section(position.line)
-
-    # Handle HTML section - check for event handler attributes or interpolations
-    if section == "html":
-        attr = doc.get_event_attr_at(position.line, position.character)
-        interp = doc.get_interpolation_at(position.line, position.character)
-
-        target = None
-        if attr and attr["type"] == "value":
-            target = attr
-        elif interp:
-            target = interp
-
-        if target:
-            # Go-to-definition for event handler value or interpolation
-            try:
-                definitions = find_best_definitions(
-                    doc, target["value"], target["char_in_value"]
-                )
-
-                if not definitions:
-                    return None
-
-                locations = []
-                python_source = doc.get_python_source()
-                python_lines = python_source.split("\n")
-
-                for d in definitions:
-                    if d.line <= len(python_lines):
-                        # Definition is in Python section
-                        if doc.separator_line is not None:
-                            line = d.line - 1 + doc.separator_line + 1
-                        else:
-                            line = d.line - 1
-                        target_uri = uri
-                    else:
-                        # External definition
-                        line = d.line - 1
-                        target_uri = d.module_path.as_uri() if d.module_path else uri
-
-                    locations.append(
-                        Location(
-                            uri=target_uri,
-                            range=Range(
-                                start=Position(line=line, character=d.column),
-                                end=Position(
-                                    line=line, character=d.column + len(d.name)
-                                ),
-                            ),
-                        )
-                    )
-
-                return locations
-            except Exception as e:
-                logger.error(f"Jedi definition error for HTML expression: {e}")
-
-        return None
-
-    # Handle Python section
-    if section != "python":
-        return None
-
-    try:
-        python_source = doc.get_python_source()
-        python_line = doc.pywire_to_python_line(position.line)
-
-        # Don't pass path to avoid caching issues
-        script = jedi.Script(python_source)
-        definitions = script.goto(python_line + 1, position.character)
-
-        locations = []
-        for d in definitions:
-            # Map back to .pywire coordinates
-            # For local definitions, offset by separator line
-            if doc.separator_line is not None:
-                line = d.line + doc.separator_line
-            else:
-                line = d.line - 1
-
-            target_uri = d.module_path.as_uri() if d.module_path else uri
-
-            locations.append(
-                Location(
-                    uri=target_uri,
-                    range=Range(
-                        start=Position(line=line, character=d.column),
-                        end=Position(line=line, character=d.column + len(d.name)),
-                    ),
-                )
-            )
-
-        return locations
-    except Exception as e:
-        logger.error(f"Jedi definition error: {e}")
-        return None
 
 
 @server.feature("textDocument/hover")
-def hover(ls: LanguageServer, params: HoverParams) -> Optional[Hover]:
+async def hover(ls: LanguageServer, params: HoverParams) -> Optional[Hover]:
     """Provide hover information"""
     uri = params.text_document.uri
     position = params.position
@@ -832,173 +428,268 @@ Define routes for this page.
 """
         )
 
-    section = doc.get_section(position.line)
+    # Check for word at cursor to detect $ shorthand or directives
+    line_text = doc.lines[position.line]
+    char = position.character
+    start = char
+    while start > 0 and (line_text[start-1].isalnum() or line_text[start-1] in "@$._"):
+        start -= 1
+    end = char
+    while end < len(line_text) and (line_text[end].isalnum() or line_text[end] in "@$._"):
+        end += 1
+    
+    word = line_text[start:end]
+    is_shorthand = word.startswith("$") and len(word) > 1 and word[1].isalpha()
 
-    # Handle HTML section - check for event handler attributes
-    if section == "html":
-        attr = doc.get_event_attr_at(position.line, position.character)
-        interp = doc.get_interpolation_at(position.line, position.character)
+    # Direct mapping approach
+    gen_pos = doc.map_to_generated(position.line, position.character)
+    
+    
+    if gen_pos:
+        gen_line, gen_col = gen_pos
+        
+        # 1. Try Pyright Fallback
+        if pyright_client and shadow_manager:
+            shadow_uri = shadow_manager.get_shadow_uri(uri)
+            if shadow_uri:
+                 try:
+                    # Construct params for Pyright
+                    # We need to translate the position to the shadow file
+                    shadow_params = {
+                        "textDocument": {"uri": shadow_uri},
+                        "position": {"line": gen_line, "character": gen_col}
+                    }
+                    
+                    result = await pyright_client.send_request("textDocument/hover", shadow_params)
+                    if result and "contents" in result:
 
-        if attr and attr["type"] == "name":
-            # Hover on attribute name - provide documentation
-            hover_docs = {
-                "@click": "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click={change_name}` or `@click={count += 1}`",
-                "@submit": "**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.",
-                "@change": "**@change**\n\nChange event handler. Value can be a function name or Python expression.",
-                "@input": "**@input**\n\nInput event handler. Value can be a function name or Python expression.",
-                "$if": "**$if**\n\nConditional rendering. Element is excluded from DOM when condition is falsy.\n\nExample: `$if={is_admin}`",
-                "$show": "**$show**\n\nConditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.\n\nExample: `$show={is_visible}`",
-                "$for": "**$for**\n\nLoop directive. Repeats the element for each item in a collection.\n\n**Syntax:**\n- `$for={item in items}`\n- `$for={index, item in enumerate(items)}`\n- `$for={key, value in dict.items()}`",
-                "$key": "**$key**\n\nStable key for loops. Provides a unique identifier for efficient DOM diffing.\n\nExample: `$key={item.id}`",
-                "$bind": "**$bind**\n\nTwo-way data binding. Binds an input element's value to a Python variable.\n\nExample: `$bind={username}`",
-            }
-            if attr["name"] in hover_docs:
-                return Hover(contents=hover_docs[attr["name"]])
-            elif attr["name"].startswith("@"):
-                # Handle modifiers in hover
-                parts = attr["name"].split(".")
-                base_event = parts[0]
-                if base_event in hover_docs:
-                    base_docs = hover_docs[base_event]
-                    # Append modifier info
-                    if len(parts) > 1:
-                        mods = ", ".join(f"`.{m}`" for m in parts[1:])
-                        base_docs += f"\n\n**Modifiers used:** {mods}"
-                    return Hover(contents=base_docs)
+                        # Success!
+                        # We might needed to map range?
+                        # For now, just return contents
+                        
+                        contents = result["contents"]
+                        
+                        # Add shorthand hint if needed
+                        # Pyright returns MarkdownString usually
+                        if is_shorthand:
+                             prefix = f"**Reactive Shorthand**\n\nAccessor for `{word}`. Equivalent to `{word[1:]}.value`.\n\n---\n\n"
+                             if isinstance(contents, dict) and "value" in contents:
+                                 contents["value"] = prefix + contents["value"]
+                             elif isinstance(contents, str):
+                                 contents = prefix + contents
+                                 
+                        if isinstance(contents, dict):
+                             return Hover(contents=contents) # It's MarkupContent
+                        else:
+                             return Hover(contents=contents)
+                 except Exception as e:
+                     logger.error(f"Pyright hover failed: {e}")
 
-                return Hover(contents=f"**{attr['name']}**\n\nEvent handler attribute.")
-            elif attr["name"].startswith("$"):
-                return Hover(contents=f"**{attr['name']}**\n\nDirective attribute.")
+                 except Exception as e:
+                     logger.error(f"Pyright hover failed: {e}")
 
-        target = None
-        if attr and attr["type"] == "value":
-            target = attr
-        elif interp:
-            target = interp
+        # Fallback checks (if no mapping or Pyright failed)
 
-        if target:
-            # Hover on attribute value or interpolation
+    # Fallback checks (if no mapping or Jedi failed)
+    
+    hover_docs = {
+        "@click": "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click={change_name}` or `@click={count += 1}`",
+        "@submit": "**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.",
+        "@change": "**@change**\n\nChange event handler. Value can be a function name or Python expression.",
+        "@input": "**@input**\n\nInput event handler. Value can be a function name or Python expression.",
+        "$if": "**$if**\n\nConditional rendering. Element is excluded from DOM when condition is falsy.\n\nExample: `$if={is_admin}`",
+        "$show": "**$show**\n\nConditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.\n\nExample: `$show={is_visible}`",
+        "$for": "**$for**\n\nLoop directive. Repeats the element for each item in a collection.\n\n**Syntax:**\n- `$for={item in items}`\n- `$for={index, item in enumerate(items)}`\n- `$for={key, value in dict.items()}`",
+        "$key": "**$key**\n\nStable key for loops. Provides a unique identifier for efficient DOM diffing.\n\nExample: `$key={item.id}`",
+        "$bind": "**$bind**\n\nTwo-way data binding. Binds an input element's value to a Python variable.\n\nExample: `$bind={username}`",
+    }
+    
+    if word in hover_docs:
+        return Hover(contents=hover_docs[word])
+    elif word.startswith("@"):
+        parts = word.split(".")
+        if parts[0] in hover_docs:
+             base = hover_docs[parts[0]]
+             if len(parts) > 1:
+                 base += f"\n\n**Modifiers:** {', '.join(parts[1:])}"
+             return Hover(contents=base)
+        return Hover(contents=f"**{word}**\n\nEvent handler.")
+    elif is_shorthand:
+        return Hover(contents=f"**Reactive Shorthand**\n\nAccessor for `{word}`. Equivalent to `{word[1:]}.value`.")
+    elif word.startswith("$"):
+        return Hover(contents=f"**{word}**\n\nDirective.")
+        
+    return None
+
+
+@server.feature("textDocument/references")
+async def references(ls: LanguageServer, params: DefinitionParams) -> Optional[List[Location]]:
+    """Provide find references"""
+    uri = params.text_document.uri
+    position = params.position
+
+    doc = documents.get(uri)
+    if not doc:
+        return None
+        
+    # Map to virtual python
+    gen_pos = doc.map_to_generated(position.line, position.character)
+    if not gen_pos:
+         return None
+         
+    gen_line, gen_col = gen_pos
+    
+    if pyright_client and shadow_manager:
+        shadow_uri = shadow_manager.get_shadow_uri(uri)
+        if shadow_uri:
             try:
-                definitions = find_best_definitions(
-                    doc, target["value"], target["char_in_value"]
-                )
-
-                if definitions:
-                    best = definitions[0]
-                    # Show definition info
-                    type_info = best.type or "unknown"
-
-                    # Get the assignment line content if available
-                    assignment_info = ""
-                    python_source = doc.get_python_source()
-                    python_lines = python_source.split("\n")
-                    if best.line and best.line <= len(python_lines):
-                        line_content = python_lines[best.line - 1].strip()
-                        if (
-                            line_content and len(line_content) < 100
-                        ):  # Reasonable length limit
-                            assignment_info = f"\n```python\n{line_content}\n```"
-
-                    desc = best.description or best.name
-                    docstring = best.docstring()
-
-                    content = f"**{best.name}** ({type_info}){assignment_info}\n\n{docstring or desc}"
-                    return Hover(contents=content)
-
-                # No Jedi definitions found - check for injected framework variables
-                variable_docs = {
-                    "params": "**params**\n\nDictionary containing URL path parameters captured from the route. For example, if route is `/user/:id`, `params['id']` will be available.",
-                    "query": "**query**\n\nDictionary containing URL query parameters. For example value of `/page?q=search` is in `query['q']`.",
-                    "path": "**path**\n\nDictionary mapping route names to booleans, indicating which route is currently active. E.g. `path['main']` is True.",
-                    "url": "**url**\n\nURL Helper object. Use `url['name'].format(...)` to generate URLs for defined routes.",
+                shadow_params = {
+                    "textDocument": {"uri": shadow_uri},
+                    "position": {"line": gen_line, "character": gen_col},
+                    "context": {"includeDeclaration": True} # params.context might be present
                 }
+                
+                # We need to handle params.context if it exists
+                if hasattr(params, 'context'):
+                     # lsprotocol object to dict... or just manual
+                     shadow_params["context"] = {"includeDeclaration": params.context.include_declaration}
 
-                # Extract the word at cursor position from the expression
-                expr = target["value"]
-                char_pos = target["char_in_value"]
-                # Find word boundaries
-                word_start = char_pos
-                while word_start > 0 and (
-                    expr[word_start - 1].isidentifier() or expr[word_start - 1] == "_"
-                ):
-                    word_start -= 1
-                word_end = char_pos
-                while word_end < len(expr) and (
-                    expr[word_end].isidentifier() or expr[word_end] == "_"
-                ):
-                    word_end += 1
-                word = expr[word_start:word_end]
+                result = await pyright_client.send_request("textDocument/references", shadow_params)
+                
+                if result:
+                    # Result is List[Location] (dicts)
+                    # We need to map them back
+                    locations = []
+                    for loc in result:
+                        loc_uri = loc.get("uri")
+                        loc_range = loc.get("range")
+                        
+                        # If reference is in shadow file, map back
+                        # If external, keep as is
+                        if loc_uri == shadow_uri:
+                            # Map back to .wire
+                            start = loc_range["start"]
+                            end = loc_range["end"]
+                            
+                            orig_start = doc.map_to_original(start["line"], start["character"])
+                            orig_end = doc.map_to_original(end["line"], end["character"])
+                            
+                            if orig_start and orig_end:
+                                locations.append(Location(
+                                    uri=uri,
+                                    range=Range(
+                                        start=Position(line=orig_start[0], character=orig_start[1]),
+                                        end=Position(line=orig_end[0], character=orig_end[1])
+                                    )
+                                ))
+                        else:
+                            # External reference
+                            locations.append(Location(
+                                uri=loc_uri,
+                                range=Range(
+                                    start=Position(line=loc_range["start"]["line"], character=loc_range["start"]["character"]),
+                                    end=Position(line=loc_range["end"]["line"], character=loc_range["end"]["character"])
+                                )
+                            ))
+                    return locations
 
-                if word in variable_docs:
-                    return Hover(contents=variable_docs[word])
-
-                # Fallback to help() if no definition found
-                python_source = doc.get_python_source()
-                virtual_python = (
-                    python_source + "\n# Event handler expression\n" + target["value"]
-                )
-                virtual_line = len(python_source.split("\n")) + 2
-
-                script = jedi.Script(virtual_python)
-                help_info = script.help(virtual_line, target["char_in_value"])
-                if help_info:
-                    doc_string = help_info[0].docstring()
-                    if doc_string:
-                        return Hover(contents=doc_string)
             except Exception as e:
-                logger.error(f"Jedi hover error for HTML expression: {e}")
+                logger.error(f"Pyright references error: {e}")
+                
+    return None 
 
+@server.feature("textDocument/definition")
+async def definition(
+    ls: LanguageServer, params: DefinitionParams
+) -> Optional[List[Location]]:
+    """Provide go-to-definition"""
+    uri = params.text_document.uri
+    position = params.position
+
+    doc = documents.get(uri)
+    if not doc:
         return None
 
-    # Handle Python section
-    if section != "python":
+    # Map to virtual python
+    gen_pos = doc.map_to_generated(position.line, position.character)
+    if not gen_pos:
         return None
+        
+    gen_line, gen_col = gen_pos
+    
+    if pyright_client and shadow_manager:
+        shadow_uri = shadow_manager.get_shadow_uri(uri)
+        if shadow_uri:
+            try:
+                shadow_params = {
+                    "textDocument": {"uri": shadow_uri},
+                    "position": {"line": gen_line, "character": gen_col}
+                }
+                
+                result = await pyright_client.send_request("textDocument/definition", shadow_params)
+                
+                if result:
+                    # Result is Location | Location[] | LocationLink[] | None
+                    # Normalize to list
+                    if not isinstance(result, list):
+                        result = [result]
+                        
+                    locations = []
+                    for loc in result:
+                        # Handle LocationLink? Pyright usually returns Location for basic definition
+                        if "targetUri" in loc:
+                             # It's a LocationLink
+                             loc_uri = loc["targetUri"]
+                             loc_range = loc["targetSelectionRange"]
+                        else:
+                             # It's a Location
+                             loc_uri = loc["uri"]
+                             loc_range = loc["range"]
+                        
+                        if loc_uri == shadow_uri:
+                            # Map back
+                            start = loc_range["start"]
+                            end = loc_range["end"]
+                            
+                            orig_start = doc.map_to_original(start["line"], start["character"])
+                            # For definitions, end might not handle well if we map purely points
+                            # Just map start
+                            
+                            if orig_start:
+                                # Start is valid. 
+                                # Hack: use end same as start or +length?
+                                # Ideally map end too. 
+                                orig_end = doc.map_to_original(end["line"], end["character"])
+                                if not orig_end:
+                                    orig_end = orig_start
+                                
+                                locations.append(Location(
+                                    uri=uri,
+                                    range=Range(
+                                        start=Position(line=orig_start[0], character=orig_start[1]),
+                                        end=Position(line=orig_end[0], character=orig_end[1])
+                                    )
+                                ))
+                        else:
+                             locations.append(Location(
+                                uri=loc_uri,
+                                range=Range(
+                                    start=Position(line=loc_range["start"]["line"], character=loc_range["start"]["character"]),
+                                    end=Position(line=loc_range["end"]["line"], character=loc_range["end"]["character"])
+                                )
+                            ))
 
-    try:
-        python_source = doc.get_python_source()
-        python_line = doc.pywire_to_python_line(position.line)
+                    return locations
+            except Exception as e:
+                logger.error(f"Pyright definition error: {e}")
+                
+    return None
 
-        # Don't pass path to avoid caching issues
-        script = jedi.Script(python_source)
-        help_info = script.help(python_line + 1, position.character)
 
-        if not help_info:
-            # Check for injected variables
-            variable_docs = {
-                "params": "**params**\n\nDictionary containing URL path parameters captured from the route. For example, if route is `/user/:id`, `params['id']` will be available.",
-                "query": "**query**\n\nDictionary containing URL query parameters. For example value of `/page?q=search` is in `query['q']`.",
-                "path": "**path**\n\nDictionary mapping route names to booleans, indicating which route is currently active. E.g. `path['main']` is True.",
-                "url": "**url**\n\nURL Helper object. Use `url['name'].format(...)` to generate URLs for defined routes.",
-            }
-
-            # Simple check if cursor is on one of these words
-            # This is naive but works for demonstration
-            line_text = doc.lines[position.line]
-            word_start = position.character
-            while word_start > 0 and line_text[word_start - 1].isidentifier():
-                word_start -= 1
-            word_end = position.character
-            while word_end < len(line_text) and line_text[word_end].isidentifier():
-                word_end += 1
-
-            word = line_text[word_start:word_end]
-            if word in variable_docs:
-                return Hover(contents=variable_docs[word])
-
-            return None
-
-        doc_string = help_info[0].docstring()
-        if not doc_string:
-            return None
-
-        return Hover(contents=doc_string)
-    except Exception as e:
-        logger.error(f"Jedi hover error: {e}")
-        return None
 
 
 @server.feature("textDocument/completion")
-def completions(ls: LanguageServer, params: CompletionParams) -> CompletionList:
+async def completions(ls: LanguageServer, params: CompletionParams) -> CompletionList:
     """Provide completions"""
     uri = params.text_document.uri
     position = params.position
@@ -1007,160 +698,76 @@ def completions(ls: LanguageServer, params: CompletionParams) -> CompletionList:
     if not doc:
         return CompletionList(is_incomplete=False, items=[])
 
-    section = doc.get_section(position.line)
-    logger.info(f"Completion in {section} section at line {position.line}")
+    # Map to virtual python
+    gen_pos = doc.map_to_generated(position.line, position.character)
+    if gen_pos:
+        gen_line, gen_col = gen_pos
+        
+        if pyright_client and shadow_manager:
+            shadow_uri = shadow_manager.get_shadow_uri(uri)
+            if shadow_uri:
+                try:
+                    shadow_params = {
+                        "textDocument": {"uri": shadow_uri},
+                        "position": {"line": gen_line, "character": gen_col},
+                        "context": attrs.asdict(params.context) if params.context else None
+                    }
+                    
+                    result = await pyright_client.send_request("textDocument/completion", shadow_params)
+                    
+                    if result:
+                        # Result can be CompletionList (dict) or List[CompletionItem]
+                        if isinstance(result, list):
+                            items = result
+                            is_incomplete = False
+                        else:
+                            items = result.get("items", [])
+                            is_incomplete = result.get("isIncomplete", False)
+                            
+                        # No mapping needed for completions usually, 
+                        # unless insertText/textEdit has ranges?
+                        # For now assume insertText/label is good.
+                        
+                        comp_items = []
+                        for item in items:
+                            # Convert dict to CompletionItem
+                            # Be careful with data field serialization if it's complex
+                            # Just passing minimal for now?
+                            # Or relying on pygls validation?
+                            # Let's try to pass raw dicts? No, return type expects object
+                            # Actually pygls 1.0+ might accept dicts if types allow?
+                            # But type hint says CompletionList.
+                            
+                            # Safest: Use attrs.from_dict or manual
+                            # Let's try manual simple copy for safety
+                            new_item = CompletionItem(
+                                label=item["label"],
+                                kind=item.get("kind"),
+                                detail=item.get("detail"),
+                                documentation=item.get("documentation"),
+                                sort_text=item.get("sortText"),
+                                filter_text=item.get("filterText"),
+                                insert_text=item.get("insertText"),
+                                # Skip textEdit/additionalTextEdits as they involve ranges we might need to map
+                            )
+                            comp_items.append(new_item)
 
-    items = []
+                        return CompletionList(is_incomplete=is_incomplete, items=comp_items)
 
-    if section == "directive":
-        items = [
-            CompletionItem(
-                label="!path",
-                kind=CompletionItemKind.Keyword,
-                detail="Define route mapping",
-                documentation="Example: !path { 'home': '/' }",
-            ),
-            CompletionItem(
-                label="!layout",
-                kind=CompletionItemKind.Keyword,
-                detail="Use a layout template",
-            ),
-        ]
-
-    elif section == "html":
-        # Get current line to check context
-        line_text = doc.lines[position.line][: position.character]
-
-        # Check if we're in a tag (simplified)
-        if "<" in line_text and ">" not in line_text.split("<")[-1]:
-            items = [
-                CompletionItem(
-                    label="$if",
-                    kind=CompletionItemKind.Property,
-                    detail="Conditional rendering",
-                    documentation="Render element only if condition is true.\n\nExample: `$if={is_admin}`",
-                ),
-                CompletionItem(
-                    label="$show",
-                    kind=CompletionItemKind.Property,
-                    detail="Conditional visibility",
-                    documentation="Show/hide element with CSS (stays in DOM).\n\nExample: `$show={is_visible}`",
-                ),
-                CompletionItem(
-                    label="$for",
-                    kind=CompletionItemKind.Property,
-                    detail="Loop over collection",
-                    documentation="Repeat element for each item.\n\nExamples:\n- `$for={item in items}`\n- `$for={item, idx in items}`\n- `$for={k, v in dict.items()}`",
-                ),
-                CompletionItem(
-                    label="$key",
-                    kind=CompletionItemKind.Property,
-                    detail="Stable key for loops",
-                    documentation="Unique key for efficient DOM diffing in loops.\n\nExample: `$key={item.id}`",
-                ),
-                CompletionItem(
-                    label="$bind",
-                    kind=CompletionItemKind.Property,
-                    detail="Two-way data binding",
-                    documentation="Bind input value to a variable.\n\nExample: `$bind={username}`",
-                ),
-                CompletionItem(
-                    label="@click",
-                    kind=CompletionItemKind.Event,
-                    detail="Click event handler",
-                    documentation="Example: `@click={handle_click}` or `@click={count += 1}`",
-                ),
-                CompletionItem(
-                    label="@submit",
-                    kind=CompletionItemKind.Event,
-                    detail="Form submit handler",
-                    documentation="Example: `@submit={handle_submit}`",
-                ),
-                CompletionItem(
-                    label="@change",
-                    kind=CompletionItemKind.Event,
-                    detail="Change event handler",
-                    documentation="Example: `@change={on_select_change}`",
-                ),
-                CompletionItem(
-                    label="@input",
-                    kind=CompletionItemKind.Event,
-                    detail="Input event handler",
-                    documentation="Example: `@input={on_input}`",
-                ),
-            ]
-
-    elif section == "python":
-        # Use Jedi for Python completions
-        python_source = doc.get_python_source()
-        python_line = doc.pywire_to_python_line(position.line)
-
-        try:
-            # Don't pass path to avoid caching issues
-            script = jedi.Script(python_source)
-            jedi_completions = script.complete(python_line + 1, position.character)
-
-            for c in jedi_completions:
-                kind = CompletionItemKind.Text
-                if c.type == "function":
-                    kind = CompletionItemKind.Function
-                elif c.type == "class":
-                    kind = CompletionItemKind.Class
-                elif c.type == "module":
-                    kind = CompletionItemKind.Module
-                elif c.type == "keyword":
-                    kind = CompletionItemKind.Keyword
-                elif c.type == "statement":
-                    kind = CompletionItemKind.Variable
-
-                items.append(
-                    CompletionItem(
-                        label=c.name,
-                        kind=kind,
-                        detail=c.description,
-                        documentation=c.docstring(),
-                    )
-                )
-        except Exception as e:
-            logger.error(f"Jedi completion error: {e}")
-
-        # Add our custom snippets/injected variables
-        items.extend(
-            [
-                CompletionItem(
-                    label="async def __on_load",
-                    kind=CompletionItemKind.Snippet,
-                    insert_text="async def __on_load():\n    pass",
-                    detail="Lifecycle hook",
-                    documentation="Called before every render",
-                ),
-                CompletionItem(
-                    label="params",
-                    kind=CompletionItemKind.Variable,
-                    detail="URL parameters",
-                    documentation='Dictionary of URL path parameters (e.g. {"id": "123"})',
-                ),
-                CompletionItem(
-                    label="query",
-                    kind=CompletionItemKind.Variable,
-                    detail="Query parameters",
-                    documentation="Dictionary of query string parameters",
-                ),
-                CompletionItem(
-                    label="path",
-                    kind=CompletionItemKind.Variable,
-                    detail="Path info",
-                    documentation='Dictionary indicating which route matched (e.g. {"main": True})',
-                ),
-                CompletionItem(
-                    label="url",
-                    kind=CompletionItemKind.Variable,
-                    detail="URL Helper",
-                    documentation="Helper to generate URLs for routes",
-                ),
-            ]
-        )
-
+                except Exception as e:
+                    logger.error(f"Pyright completion error: {e}")
+    
+    # If not mapped, fallback to simple directives
+    items = [
+        CompletionItem(label="$if", kind=CompletionItemKind.Keyword, documentation="Conditional rendering"),
+        CompletionItem(label="$show", kind=CompletionItemKind.Keyword, documentation="Conditional visibility"),
+        CompletionItem(label="$for", kind=CompletionItemKind.Keyword, documentation="Loop"),
+        CompletionItem(label="$key", kind=CompletionItemKind.Keyword, documentation="List key"),
+        CompletionItem(label="$bind", kind=CompletionItemKind.Keyword, documentation="Two-way binding"),
+        CompletionItem(label="@click", kind=CompletionItemKind.Event, documentation="Click handler"),
+        CompletionItem(label="@submit", kind=CompletionItemKind.Event, documentation="Submit handler"),
+    ]
+    
     return CompletionList(is_incomplete=False, items=items)
 
 
@@ -1179,158 +786,191 @@ def _get_semantic_token_type(name_type: str) -> int:
 
 @server.feature("textDocument/semanticTokens/full")
 def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> SemanticTokens:
-    """Provide semantic tokens for Python syntax highlighting in @click values"""
+    """Provide semantic tokens for Python syntax highlighting using virtual python AST"""
     uri = params.text_document.uri
     doc = documents.get(uri)
 
     if not doc:
         return SemanticTokens(data=[])
 
-    tokens = []
-    prev_line = 0
-    prev_char = 0
-
-    # Scan HTML section for event handler attributes
-    for line_num, line_text in enumerate(doc.lines):
-        if doc.separator_line and line_num >= doc.separator_line:
-            break
-
-        # Find all @click={...} patterns
-        for m in re.finditer(r'([@$][\w\.]+)="([^"]*)"', line_text):
-            value = m.group(2)
-            value_start = m.start(2)
-
-            if not value:
-                continue
-
-            # Tokenize the Python expression using AST parsing
-            try:
-                tree = ast.parse(value, mode="eval")
-
-                # Use Jedi to get type information for names
-                python_source = doc.get_python_source()
-                virtual_python = (
-                    python_source + "\n# Event handler expression\n" + value
-                )
-                virtual_line = len(python_source.split("\n")) + 1
-
-                script = jedi.Script(virtual_python)
-                names_dict = {}
-                try:
-                    jedi_names = script.get_names(line=virtual_line + 1)
-                    for name in jedi_names:
-                        if name.name not in names_dict:
-                            names_dict[name.name] = name.type
-                except Exception:
-                    pass
-
-                # Walk AST and create tokens
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Name):
-                        # Variable/function name
-                        delta_line = line_num - prev_line
-                        char_pos = value_start + node.col_offset
-                        delta_start = (
-                            char_pos - prev_char if delta_line == 0 else char_pos
-                        )
-
-                        name_type = names_dict.get(node.id, "statement")
-                        token_type = _get_semantic_token_type(name_type)
-
-                        tokens.append(delta_line)
-                        tokens.append(delta_start)
-                        tokens.append(len(node.id))
-                        tokens.append(token_type)
-                        tokens.append(0)  # No modifiers
-
-                        prev_line = line_num
-                        prev_char = char_pos
-                    elif isinstance(node, ast.Constant):
-                        delta_line = line_num - prev_line
-                        char_pos = value_start + node.col_offset
-                        delta_start = (
-                            char_pos - prev_char if delta_line == 0 else char_pos
-                        )
-
-                        if isinstance(node.value, str):
-                            token_type_idx = SEMANTIC_TOKEN_TYPES.index("string")
-                            length = len(str(node.value)) + 2  # +2 for quotes
-                        elif isinstance(node.value, (int, float)):
-                            token_type_idx = SEMANTIC_TOKEN_TYPES.index("number")
-                            length = len(str(node.value))
-                        else:
-                            continue
-
-                        tokens.append(delta_line)
-                        tokens.append(delta_start)
-                        tokens.append(length)
-                        tokens.append(token_type_idx)
-                        tokens.append(0)
-
-                        prev_line = line_num
-                        prev_char = char_pos
-                    elif isinstance(
-                        node,
-                        (
-                            ast.Add,
-                            ast.Sub,
-                            ast.Mult,
-                            ast.Div,
-                            ast.Mod,
-                            ast.Pow,
-                            ast.LShift,
-                            ast.RShift,
-                            ast.BitOr,
-                            ast.BitXor,
-                            ast.BitAnd,
-                            ast.FloorDiv,
-                            ast.Eq,
-                            ast.NotEq,
-                            ast.Lt,
-                            ast.LtE,
-                            ast.Gt,
-                            ast.GtE,
-                            ast.Is,
-                            ast.IsNot,
-                            ast.In,
-                            ast.NotIn,
-                        ),
-                    ):
-                        # Operators
-                        col_offset = getattr(node, "col_offset", None)
-                        end_col_offset = getattr(node, "end_col_offset", None)
-
-                        if col_offset is None or end_col_offset is None:
-                            continue
-
-                        delta_line = line_num - prev_line
-                        char_pos = value_start + col_offset
-                        delta_start = (
-                            char_pos - prev_char if delta_line == 0 else char_pos
-                        )
-
-                        # Get operator string from source
-                        op_str = value[col_offset:end_col_offset]
-                        if not op_str:
-                            continue
-
-                        tokens.append(delta_line)
-                        tokens.append(delta_start)
-                        tokens.append(len(op_str))
-                        tokens.append(SEMANTIC_TOKEN_TYPES.index("operator"))
-                        tokens.append(0)
-
-                        prev_line = line_num
-                        prev_char = char_pos
-
-            except SyntaxError:
-                # If parsing fails, skip semantic tokens for this expression
+    try:
+        source = doc.get_python_source()
+        if not source:
+            return SemanticTokens(data=[])
+            
+        # Parse virtual python
+        tree = ast.parse(source)
+        
+        # Collect tokens
+        tokens_data = [] # (line, start_col, length, type, modifiers)
+        
+        # Helper to process nodes
+        for node in ast.walk(tree):
+            token_type_idx = -1
+            length = 0
+            
+            # Identify token type
+            if isinstance(node, ast.Name):
+                # We could improve this by inferring type with Jedi, 
+                # but for speed AST matching is okay for basic highlighting
+                token_type_idx = SEMANTIC_TOKEN_TYPES.index("variable")
+                length = len(node.id)
+                # Heuristics for keywords/builtins could be added here
+            elif isinstance(node, ast.FunctionDef):
+                token_type_idx = SEMANTIC_TOKEN_TYPES.index("function")
+                length = len(node.name)
+                # Map the function name position
+                # node.lineno is 1-based start of 'def'
+                # node.col_offset is start of 'def'
+                # We need exact location of the name
+                # AST doesn't give name location easily, usually it's def <name>
+                # Let's skip definitions for now if complex, or handle simple cases
                 pass
-            except Exception:
-                # Skip semantic tokens for this expression on error
-                pass
+            
+            # Better approach: Use Jedi for semantic tokens if we want high quality
+            # But let's stick to simple AST node mapping first
+            
+            if token_type_idx != -1:
+                # Map variables
+                # node.lineno is 1-based, node.col_offset is 0-based
+                gen_line = node.lineno
+                gen_col = node.col_offset
+                
+                # Verify location mapping
+                orig_pos = doc.map_to_original(gen_line - 1, gen_col)
+                if orig_pos:
+                    orig_line, orig_col = orig_pos
+                    tokens_data.append((orig_line, orig_col, length, token_type_idx, 0))
+        
+        # Sort tokens by line, then column
+        tokens_data.sort()
+        
+        # Flatten to delta encoding
+        final_tokens = []
+        prev_line = 0
+        prev_char = 0
+        
+        for t in tokens_data:
+            line, col, length, type_idx, mod = t
+            
+            delta_line = line - prev_line
+            delta_start = col - prev_char if delta_line == 0 else col
+            
+            final_tokens.extend([delta_line, delta_start, length, type_idx, mod])
+            
+            prev_line = line
+            prev_char = col
+            
+        return SemanticTokens(data=final_tokens)
 
-    return SemanticTokens(data=tokens)
+    except Exception as e:
+        logger.error(f"Semantic tokens error: {e}")
+        return SemanticTokens(data=[])
+
+
+
+
+@server.feature("pywire/virtualCode")
+def virtual_code(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]]:
+    """Return the generated virtual python code for a document."""
+    # Params is just { uri: str } usually, or list? pygls passes the raw params object if not typed
+    # We expect params to be a dict or object with 'uri'
+    
+    # Check if params is a dict or object
+    uri = None
+    if isinstance(params, dict):
+        uri = params.get("uri")
+    elif hasattr(params, "uri"):
+        uri = params.uri
+        
+    if not uri:
+        return None
+
+    doc = documents.get(uri)
+    if not doc:
+        return None
+        
+    return {
+        "uri": uri,
+        "content": doc.get_python_source(),
+    }
+
+
+@server.feature("pywire/mapToGenerated")
+def map_to_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]]:
+    """Map a position in the source .wire file to the generated .py file."""
+    uri = None
+    position = None
+    
+    # Handle various param structures
+    if isinstance(params, dict):
+        uri = params.get("uri")
+        pos_dict = params.get("position")
+        if pos_dict:
+            position = Position(line=pos_dict["line"], character=pos_dict["character"])
+    elif hasattr(params, "uri") and hasattr(params, "position"):
+        uri = params.uri
+        position = params.position
+
+    if not uri or not position:
+        return None
+
+    doc = documents.get(uri)
+    if not doc:
+        return None
+
+    gen_pos = doc.map_to_generated(position.line, position.character)
+    if not gen_pos:
+        return None
+        
+    gen_line, gen_col = gen_pos
+    return {
+        "line": gen_line,
+        "character": gen_col
+    }
+
+
+@server.feature("pywire/mapFromGenerated")
+def map_from_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]]:
+    """Map a position in the generated .py file back to the source .wire file."""
+    uri = None
+    position = None
+    
+    # Handle various param structures
+    if isinstance(params, dict):
+        uri = params.get("uri")
+        pos_dict = params.get("position")
+        if pos_dict:
+            position = Position(line=pos_dict["line"], character=pos_dict["character"])
+    elif hasattr(params, "uri") and hasattr(params, "position"):
+        uri = params.uri
+        position = params.position
+
+    if not uri or not position:
+        return None
+
+    # URI might be the shadow URI; we need the original URI
+    # Shadow manager can help us find the original if needed, 
+    # but the client usually sends the original URI and expects us to know it.
+    # Actually, the middleware sends the ORIGINAL .wire URI 
+    # but asks to map a position that it thinks corresponds to the generated code.
+    # Wait, the middleware knows the original URI.
+    
+    doc = documents.get(uri)
+    if not doc:
+        return None
+
+    orig_pos = doc.map_to_original(position.line, position.character)
+    if not orig_pos:
+        return None
+        
+    orig_line, orig_col = orig_pos
+    return {
+        "line": orig_line,
+        "character": orig_col
+    }
+
+
 
 
 def start():
