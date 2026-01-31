@@ -4,10 +4,23 @@ export SOURCE_FILES="src/pywire"
 
 set -x
 
-./scripts/sync-version
-uv run ruff format --check --diff $SOURCE_FILES
-uv run mypy $SOURCE_FILES
-uv run ruff check $SOURCE_FILES
+uv run --with ruff ruff format --check --diff $SOURCE_FILES
+uv run --with mypy mypy $SOURCE_FILES
+uv run --with ruff ruff check $SOURCE_FILES
+
+echo "=== Checking PyWire Client (TS) ==="
+if [ -d "src/pywire/client" ]; then
+    (
+        cd src/pywire/client
+        if [ ! -x node_modules/.bin/eslint ]; then
+            pnpm install
+        fi
+        pnpm format:check
+        pnpm lint
+        pnpm typecheck
+        pnpm test
+    )
+fi
 
 echo "-> Testing (Multi-version)..."
 # Use uv run to execute tox from dev dependencies, ensuring availability for all cloners

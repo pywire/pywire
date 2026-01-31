@@ -3,7 +3,6 @@ import unittest
 from typing import Any, List, cast
 
 from pywire.compiler.ast_nodes import (
-    BindAttribute,
     EventAttribute,
     ForAttribute,
     IfAttribute,
@@ -57,7 +56,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         )
 
         lines: list[ast.stmt] = []
-        self.codegen._add_node(node, lines)
+        self.codegen._add_node(node, lines, enable_regions=False)
 
         self.assert_code_in("async for item in ensure_async_iterator(self.items):", lines)
         # Check that child node was added with increased indent
@@ -69,62 +68,8 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         node = TemplateNode(tag="div", special_attributes=[if_attr], children=[], line=1, column=0)
 
         lines: list[ast.stmt] = []
-        self.codegen._add_node(node, lines)
+        self.codegen._add_node(node, lines, enable_regions=False)
         self.assert_code_in("if self.show_me:", lines)
-
-    def test_add_node_bind_checkbox(self) -> None:
-        # <input type="checkbox" $bind={is_active}>
-        bind = BindAttribute(
-            name="$bind",
-            value="is_active",
-            variable="is_active",
-            binding_type="property",
-            line=1,
-            column=0,
-        )
-        node = TemplateNode(
-            tag="input",
-            attributes={"type": "checkbox"},
-            special_attributes=[bind],
-            line=1,
-            column=0,
-        )
-
-        lines: list[ast.stmt] = []
-        self.codegen._add_node(node, lines)
-        # Check for checked binding logic
-        self.assert_code_in("if self.is_active:", lines)
-        self.assert_code_in("attrs['checked'] = ''", lines)
-
-    def test_add_node_bind_select(self) -> None:
-        # <select $bind={selected_val}><option value="1">One</option></select>
-        bind = BindAttribute(
-            name="$bind",
-            value="selected_val",
-            variable="selected_val",
-            binding_type="property",
-            line=1,
-            column=0,
-        )
-        option = TemplateNode(
-            tag="option", attributes={"value": "1"}, children=[], line=1, column=0
-        )
-        node = TemplateNode(
-            tag="select",
-            attributes={},
-            special_attributes=[bind],
-            children=[option],
-            line=1,
-            column=0,
-        )
-
-        lines: list[ast.stmt] = []
-        self.codegen._add_node(node, lines)
-        # Check that option has selected logic based on bound_var
-        self.assert_code_in(
-            "if 'value' in attrs and str(attrs['value']) == str(self.selected_val):", lines
-        )
-        self.assert_code_in("attrs['selected'] = ''", lines)
 
     def test_add_node_reactive_boolean(self) -> None:
         # <button disabled={is_disabled}>Click</button>
@@ -134,7 +79,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         node = TemplateNode(tag="button", special_attributes=[reactive], line=1, column=0)
 
         lines: list[ast.stmt] = []
-        self.codegen._add_node(node, lines)
+        self.codegen._add_node(node, lines, enable_regions=False)
         # Should handle HTML boolean attribute (presence/absence)
         self.assert_code_in("if _r_val is True:", lines)
         self.assert_code_in("attrs['disabled'] = ''", lines)
@@ -147,7 +92,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         node = TemplateNode(tag="div", special_attributes=[show], line=1, column=0)
 
         lines: list[ast.stmt] = []
-        self.codegen._add_node(node, lines)
+        self.codegen._add_node(node, lines, enable_regions=False)
         self.assert_code_in("if not self.is_visible:", lines)
         self.assert_code_in("attrs['style'] = attrs.get('style', '') + '; display: none'", lines)
 

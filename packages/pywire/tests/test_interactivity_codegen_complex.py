@@ -16,7 +16,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         template = "<button @click={delete_item(item.id, 'confirmed')}>Delete</button>"
         # Mock python code with the handler method
         python_code = "async def delete_item(id, status): pass"
-        content = f"{template}\n---\n{python_code}"
+        content = f"{python_code}\n---html---\n{template}"
         parsed = self.parser.parse(content)
 
         # Generate code

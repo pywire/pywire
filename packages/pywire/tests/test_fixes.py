@@ -8,12 +8,11 @@ def test_synchronous_loop(tmp_path: Path) -> None:
     """Verify that synchronous lists work in $for loops."""
 
     page_content = """
+items = [1, 2, 3]
+---html---
 <ul>
     <li $for={item in items}>{item}</li>
 </ul>
----
-items = [1, 2, 3]
----
 """
 
     (tmp_path / "index.wire").write_text(page_content, encoding="utf-8")

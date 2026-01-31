@@ -1,6 +1,6 @@
 ---
-title: "Walkthrough: A Reactive Counter"
-description: "Building your first interactive component."
+title: 'Walkthrough: A Reactive Counter'
+description: 'Building your first interactive component.'
 ---
 
 In this walkthrough, we'll build a reactive counter that updates instantly without any JavaScript.
@@ -17,11 +17,11 @@ A pywire component is just a Python function decorated with `@component`.
 @component
 def Counter():
     count = 0
-    
+
     def increment():
         nonlocal count
         count += 1
-        
+
     return """
     <div class="counter">
         <p>The current count is: <strong>{count}</strong></p>

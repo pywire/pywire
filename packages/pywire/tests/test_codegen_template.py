@@ -89,9 +89,7 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("async def _render_template(self):", code)
         self.assertIn("parts = []", code)
         self.assertIn("import json", code)
-        self.assertIn("parts.append('<div')", code)  # unparse uses single quotes often?
-        self.assertIn("parts.append(str(self.msg))", code)
-        self.assertIn("parts.append('</div>')", code)
+        self.assertIn("parts.append(await self._render_region_r1())", code)
         self.assertIn("return ''.join(parts)", code)
 
     def test_generate_slot_methods(self) -> None:

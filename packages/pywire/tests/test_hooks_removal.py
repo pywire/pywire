@@ -33,8 +33,6 @@ class TestHooksRemoval(unittest.TestCase):
     def test_standard_hooks_ignored(self) -> None:
         """Verify on_load/on_before_load are ignored unless called manually."""
         content = """
-<p>Test</p>
----
 self.called_hooks = []
 
 def on_load(self):
@@ -46,7 +44,9 @@ def on_before_load(self):
 @mount
 def my_mount(self):
     self.called_hooks.append('mount')
----
+
+---html---
+<p>Test</p>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()

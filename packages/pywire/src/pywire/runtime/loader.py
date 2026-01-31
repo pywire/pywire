@@ -1,8 +1,13 @@
 """Page loader - compiles and executes .pywire files."""
 
 import ast
+import os
+import hashlib
+import importlib.util
+import json
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Dict, Optional, Set, Type, cast
 
 from pywire.compiler.codegen.generator import CodeGenerator
@@ -18,6 +23,7 @@ class PageLoader:
         self.codegen = CodeGenerator()
         self._cache: Dict[str, Type[BasePage]] = {}  # path -> compiled class
         self._reverse_deps: Dict[str, set[str]] = {}  # dependency -> set of dependents
+        self._manifest_cache: Dict[str, tuple[float, dict]] = {}
 
     def load(
         self,
@@ -36,6 +42,13 @@ class PageLoader:
         # but for now assume strict mapping
         if use_cache and path_key in self._cache:
             return self._cache[path_key]
+
+        # Try precompiled artifact
+        precompiled = self._load_precompiled(pywire_file)
+        if precompiled:
+            self._cache[path_key] = precompiled
+            precompiled.__file_path__ = str(pywire_file)
+            return precompiled
 
         # Parse
         parsed = self.parser.parse_file(pywire_file)
@@ -69,19 +82,19 @@ class PageLoader:
 
         exec(code, module.__dict__)
 
-        # Find Page class
-        # Prefer __page_class__ if defined (robust method)
-        if hasattr(module, "__page_class__"):
-            obj = module.__page_class__
-            self._cache[path_key] = obj
-            obj.__file_path__ = str(pywire_file)
-            return cast(Type[BasePage], obj)
+        page_class = self._find_page_class(module, pywire_file)
+        self._cache[path_key] = page_class
+        page_class.__file_path__ = str(pywire_file)
+        return page_class
+        raise ValueError(f"No page class found in {pywire_file}")
 
-        # Fallback (legacy/backup)
+    def _find_page_class(self, module: ModuleType, pywire_file: Path) -> Type[BasePage]:
+        if hasattr(module, "__page_class__"):
+            return cast(Type[BasePage], module.__page_class__)
+
         import pywire.runtime.page as page_mod
 
         current_base_page = page_mod.BasePage
-
         for name, obj in module.__dict__.items():
             if name.startswith("__"):
                 continue
@@ -91,11 +104,94 @@ class PageLoader:
                     and obj is not current_base_page
                     and name != "_LayoutBase"
                 ):
-                    # Cache the compiled class
-                    self._cache[path_key] = obj
-                    obj.__file_path__ = str(pywire_file)
                     return cast(Type[BasePage], obj)
+
         raise ValueError(f"No page class found in {pywire_file}")
+
+    def _load_precompiled(self, pywire_file: Path) -> Optional[Type[BasePage]]:
+        manifest_path = self._find_manifest(pywire_file)
+        if not manifest_path:
+            return None
+
+        manifest = self._load_manifest(manifest_path)
+        if not manifest:
+            return None
+
+        entries = manifest.get("entries", {})
+        entry = entries.get(str(pywire_file))
+        if not entry:
+            return None
+
+        if not self._is_entry_fresh(pywire_file, entry):
+            return None
+
+        artifact_path = (manifest_path.parent / entry.get("artifact", "")).resolve()
+        if not artifact_path.exists():
+            return None
+
+        module_name = (
+            "pywire_build_"
+            + hashlib.md5(str(artifact_path).encode("utf-8")).hexdigest()
+        )
+        spec = importlib.util.spec_from_file_location(module_name, artifact_path)
+        if not spec or not spec.loader:
+            return None
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return self._find_page_class(module, pywire_file)
+
+    def _find_manifest(self, pywire_file: Path) -> Optional[Path]:
+        build_dir_override = os.environ.get("PYWIRE_BUILD_DIR")
+        if build_dir_override:
+            build_dir = Path(build_dir_override)
+            if not build_dir.is_absolute():
+                build_dir = Path.cwd() / build_dir
+            manifest_path = build_dir / "manifest.json"
+            if manifest_path.exists():
+                return manifest_path
+
+        current_dir = pywire_file.parent.resolve()
+        while True:
+            manifest_path = current_dir / ".pywire_build" / "manifest.json"
+            if manifest_path.exists():
+                return manifest_path
+
+            if current_dir == current_dir.parent:
+                break
+            current_dir = current_dir.parent
+
+        return None
+
+    def _load_manifest(self, manifest_path: Path) -> Optional[dict]:
+        try:
+            mtime = manifest_path.stat().st_mtime
+            cache_key = str(manifest_path)
+            cached = self._manifest_cache.get(cache_key)
+            if cached and cached[0] == mtime:
+                return cached[1]
+
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self._manifest_cache[cache_key] = (mtime, data)
+            return data
+        except Exception:
+            return None
+
+    def _is_entry_fresh(self, pywire_file: Path, entry: dict) -> bool:
+        if entry.get("hash") != self._hash_file(pywire_file):
+            return False
+
+        for dep in entry.get("deps", []):
+            dep_path = Path(dep.get("path", ""))
+            if not dep_path.exists():
+                return False
+            if dep.get("hash") != self._hash_file(dep_path):
+                return False
+
+        return True
+
+    def _hash_file(self, path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def invalidate_cache(self, path: Optional[Path] = None) -> Set[str]:
         """Clear cached classes. If path given, only clear that entry and its dependents.

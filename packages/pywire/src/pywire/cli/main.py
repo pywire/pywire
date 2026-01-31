@@ -139,14 +139,52 @@ def dev(
 
 @cli.command()
 @click.argument("app", required=False)
-def build(app: Optional[str]) -> None:
-    """Build the application for production (stub)."""
+@click.option(
+    "--optimize",
+    is_flag=True,
+    help="Compile bytecode artifacts for faster import.",
+)
+@click.option(
+    "--out-dir",
+    default=".pywire_build",
+    help="Output directory for build artifacts.",
+)
+@click.option(
+    "--pages-dir",
+    default=None,
+    help="Override pages directory (default: app.pages_dir).",
+)
+def build(
+    app: Optional[str], optimize: bool, out_dir: str, pages_dir: Optional[str]
+) -> None:
+    """Build the application for production."""
     if not app:
         app = _discover_app_str()
 
     click.echo(f"🔨 Building {app}...")
-    # TODO: Implement build logic (static asset compilation, etc.)
-    click.echo("✅ Build complete (stub)")
+
+    app_instance = import_app(app)
+
+    if pages_dir:
+        resolved_pages_dir = Path(pages_dir)
+    elif hasattr(app_instance, "pages_dir"):
+        resolved_pages_dir = Path(app_instance.pages_dir)
+    else:
+        resolved_pages_dir = Path("pages")
+
+    from pywire.compiler.build import build_project
+
+    summary = build_project(
+        optimize=optimize,
+        pages_dir=resolved_pages_dir,
+        out_dir=Path(out_dir),
+    )
+
+    click.echo(
+        "✅ Build complete "
+        f"(pages={summary.pages}, layouts={summary.layouts}, "
+        f"components={summary.components}, out={summary.out_dir})"
+    )
 
 
 @cli.command()

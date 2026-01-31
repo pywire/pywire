@@ -59,6 +59,6 @@ class ErrorPage(BasePage):
 
     async def handle_event(
         self, handler_name: str, data: Dict[str, Any]
-    ) -> HTMLResponse:
+    ) -> dict[str, Any]:
         """No-op for error page."""
-        return HTMLResponse("Error page does not handle events")
+        return await self.render_update(init=False)

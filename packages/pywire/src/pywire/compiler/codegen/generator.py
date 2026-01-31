@@ -1,6 +1,7 @@
 """Main code generator orchestrator."""
 
 import ast
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
 
 from pywire.compiler.ast_nodes import (
@@ -84,6 +85,8 @@ class CodeGenerator:
     def generate(self, parsed: ParsedPyWire) -> ast.Module:
         """Generate complete module AST."""
         self.file_path = parsed.file_path
+        self._has_top_level_init = False
+        self._collected_mount_hooks: List[str] = []
         module_body = []
 
         # Imports
@@ -214,6 +217,15 @@ class CodeGenerator:
                 names=[ast.alias(name="load_component", asname=None)],
                 level=0,
             ),
+            ast.ImportFrom(
+                module="pywire.runtime.helpers",
+                names=[
+                    ast.alias(name="unwrap_wire", asname=None),
+                    ast.alias(name="set_render_context", asname=None),
+                    ast.alias(name="reset_render_context", asname=None),
+                ],
+                level=0,
+            ),
         ]
         return imports
 
@@ -306,6 +318,67 @@ class CodeGenerator:
                     vars.add(node.target.id)
         return vars
 
+    def _extract_route_params_from_pattern(self, pattern: str) -> Set[str]:
+        params: Set[str] = set()
+        if not pattern:
+            return params
+
+        for name in re.findall(r"\{([a-zA-Z_]\w*)(?::[^}]+)?\}", pattern):
+            if not name.isidentifier():
+                continue
+            params.add(name)
+
+        for name in re.findall(r":([a-zA-Z_]\w*)(?::[^/]+)?", pattern):
+            if not name.isidentifier():
+                continue
+            params.add(name)
+
+        return params
+
+    def _extract_route_params_from_file_path(
+        self, file_path: Optional[str]
+    ) -> Set[str]:
+        params: Set[str] = set()
+        if not file_path:
+            return params
+
+        from pathlib import Path
+
+        path = Path(file_path)
+
+        for part in path.parts:
+            if not part:
+                continue
+            if not (part.startswith("[") and part.endswith("]")):
+                continue
+            name = part[1:-1]
+            if not name:
+                continue
+            if not name.isidentifier():
+                continue
+            params.add(name)
+
+        stem = path.stem
+        if stem.startswith("[") and stem.endswith("]"):
+            name = stem[1:-1]
+            if name and name.isidentifier():
+                params.add(name)
+
+        return params
+
+    def _extract_route_params(self, parsed: ParsedPyWire) -> Set[str]:
+        params: Set[str] = set()
+
+        path_directive = parsed.get_directive_by_type(PathDirective)
+        if path_directive:
+            assert isinstance(path_directive, PathDirective)
+            for pattern in path_directive.routes.values():
+                params.update(self._extract_route_params_from_pattern(pattern))
+
+        params.update(self._extract_route_params_from_file_path(parsed.file_path))
+
+        return params
+
     def _generate_page_class(
         self,
         parsed: ParsedPyWire,
@@ -341,7 +414,8 @@ class CodeGenerator:
             )
 
         # Transform user Python code to class methods (Must run before __init__ to set flags)
-        all_globals = known_methods.union(known_vars)
+        route_params = self._extract_route_params(parsed)
+        all_globals = known_methods.union(known_vars).union(route_params)
         user_code_stmts: List[ast.stmt] = []
         if parsed.python_ast:
             user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
@@ -360,7 +434,9 @@ class CodeGenerator:
         class_body.extend(form_validation_methods)
         # Generate _render_template method AND binding methods
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
-        all_globals = known_methods.union(known_vars).union(known_imports)
+        all_globals = (
+            known_methods.union(known_vars).union(route_params).union(known_imports)
+        )
 
         render_func, binding_funcs = self._generate_render_template_method(
             parsed, known_methods, all_globals, async_methods, component_map
@@ -410,12 +486,8 @@ class CodeGenerator:
         if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
             init_hooks.extend(self._collected_mount_hooks)
 
-
-
         # Ensure 'on_before_load' and 'on_load' are present
         final_init_hooks = []
-
-
 
         # Standard hooks - REMOVED per user request
         # final_init_hooks.append('on_before_load')
@@ -583,6 +655,7 @@ class CodeGenerator:
         code = code.replace("$event", "event")
 
         from pywire.compiler.preprocessor import preprocess_python_code
+
         code = preprocess_python_code(code)
 
         tree = ast.parse(code)
@@ -1386,7 +1459,7 @@ class CodeGenerator:
                 # Module-level assignments become class attributes
                 # UNLESS they target 'self' (e.g. self.x = 1), which makes no sense at class level
                 # and implies instance initialization.
-                
+
                 is_instance_assign = False
                 for target in node.targets:
                     # Check if target is Attribute(value=Name(id='self'))
@@ -1397,12 +1470,20 @@ class CodeGenerator:
                     ):
                         is_instance_assign = True
                         break
-                
+
                 # Also check if value is a Call (like wire()) or mutable structure.
                 # These should be instance-level to avoid shared state.
                 is_mutable_init = isinstance(
-                    node.value, 
-                    (ast.Call, ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)
+                    node.value,
+                    (
+                        ast.Call,
+                        ast.List,
+                        ast.Dict,
+                        ast.Set,
+                        ast.ListComp,
+                        ast.DictComp,
+                        ast.SetComp,
+                    ),
                 )
 
                 if is_instance_assign or is_mutable_init:
@@ -1596,7 +1677,7 @@ class CodeGenerator:
         component_map: Optional[Dict[str, str]] = None,
     ) -> Tuple[
         Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]],
-        List[Union[ast.FunctionDef, ast.AsyncFunctionDef]],
+        List[ast.stmt],
     ]:
         """Generate _render_template method and binding/slot handlers."""
         if component_map is None:
@@ -1607,7 +1688,7 @@ class CodeGenerator:
             # assert isinstance(layout_directive, LayoutDirective) # Mypy narrowing issue
             pass
 
-        binding_funcs: List[Union[ast.FunctionDef, ast.AsyncFunctionDef]] = []
+        binding_funcs: List[ast.stmt] = []
         render_func = None
 
         if layout_directive:
@@ -2200,65 +2281,19 @@ class CodeGenerator:
                 )
             )
 
-        # Generate binding methods
-        for binding in self.template_codegen.generated_bindings:
-            target = binding.variable_name
-            # Unparse check if necessary, but here we can rely on standard keys
-            val_key = "value"
-            if binding.event_type == "change":
-                val_key = "checked"
-            elif binding.event_type == "upload-progress":
-                val_key = "progress"
-
-            handler_body = [
-                ast.Assign(
-                    targets=[ast.Name(id="val", ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="event_data", ctx=ast.Load()),
-                            attr="get",
-                            ctx=ast.Load(),
-                        ),
-                        args=[ast.Constant(value=val_key)],
-                        keywords=[],
-                    ),
-                ),
-                ast.If(
-                    test=ast.Compare(
-                        left=ast.Name(id="val", ctx=ast.Load()),
-                        ops=[ast.IsNot()],
-                        comparators=[ast.Constant(value=None)],
-                    ),
-                    body=[
-                        ast.Assign(
-                            targets=[
-                                ast.Attribute(
-                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                    attr=target,
-                                    ctx=ast.Store(),
-                                )
-                            ],
-                            value=ast.Name(id="val", ctx=ast.Load()),
-                        )
-                    ],
-                    orelse=[],
-                ),
-            ]
-
+        if self.template_codegen.region_renderers:
+            region_keys: List[ast.expr | None] = []
+            region_vals: List[ast.expr] = []
+            for (
+                region_id,
+                method_name,
+            ) in self.template_codegen.region_renderers.items():
+                region_keys.append(ast.Constant(value=region_id))
+                region_vals.append(ast.Constant(value=method_name))
             binding_funcs.append(
-                ast.AsyncFunctionDef(
-                    name=binding.handler_name,
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[ast.arg(arg="self"), ast.arg(arg="event_data")],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[],
-                    ),
-                    body=handler_body,
-                    decorator_list=[],
-                    returns=None,
+                ast.Assign(
+                    targets=[ast.Name(id="__region_renderers__", ctx=ast.Store())],
+                    value=ast.Dict(keys=region_keys, values=region_vals),
                 )
             )
 

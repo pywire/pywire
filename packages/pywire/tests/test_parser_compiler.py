@@ -25,7 +25,7 @@ class TestParserCompiler(unittest.TestCase):
         self.assertEqual(root.children[0].tag, "span")
 
     def test_parse_with_python(self) -> None:
-        content = """<h1>Title</h1>\n---\nname = 'World'\ndef hello(): pass"""
+        content = """name = 'World'\ndef hello(): pass\n---html---\n<h1>Title</h1>"""
         parsed = self.parser.parse(content)
         self.assertEqual(parsed.template[0].tag, "h1")
         self.assertIn("name = 'World'", parsed.python_code)

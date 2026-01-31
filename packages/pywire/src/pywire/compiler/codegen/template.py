@@ -4,18 +4,10 @@ import ast
 import dataclasses
 import re
 from collections import defaultdict
-from dataclasses import (
-    dataclass,
-)  # Keep replace import to minimize diff elsewhere if used, but shadowing is issue.
 
-# Actually if I remove replace from import, I must fix ALL usages.
-# But shadowing only happens if something LOCAL is named replace.
-# I still haven't found the local variable.
-# Safer: Just import dataclasses and use fully qualified name where it fails.
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from pywire.compiler.ast_nodes import (
-    BindAttribute,
     EventAttribute,
     ForAttribute,
     IfAttribute,
@@ -26,15 +18,6 @@ from pywire.compiler.ast_nodes import (
     TemplateNode,
 )
 from pywire.compiler.interpolation.jinja import JinjaInterpolationParser
-
-
-@dataclass
-class BindingDef:
-    """Definition of a generated binding."""
-
-    handler_name: str
-    variable_name: str
-    event_type: str  # 'input' or 'change'
 
 
 class TemplateCodegen:
@@ -61,11 +44,11 @@ class TemplateCodegen:
 
     def __init__(self) -> None:
         self.interpolation_parser = JinjaInterpolationParser()
-        self.generated_bindings: List[BindingDef] = []
-        self._binding_counter = 0
         self._slot_default_counter = 0
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
+        self._region_counter = 0
+        self.region_renderers: Dict[str, str] = {}
 
     def generate_render_method(
         self,
@@ -159,11 +142,11 @@ class TemplateCodegen:
         return slot_funcs, self.auxiliary_functions
 
     def _reset_state(self) -> None:
-        self.generated_bindings = []
-        self._binding_counter = 0
         self._slot_default_counter = 0
         self.auxiliary_functions = []
         self.has_file_inputs = False
+        self._region_counter = 0
+        self.region_renderers = {}
 
     def _generate_function(
         self,
@@ -178,6 +161,8 @@ class TemplateCodegen:
         scope_id: Optional[str] = None,
         initial_locals: Optional[Set[str]] = None,
         implicit_root_source: Optional[str] = None,
+        enable_regions: bool = True,
+        root_region_id: Optional[str] = None,
     ) -> ast.AsyncFunctionDef:
         """Generate a single function body as AST."""
 
@@ -222,6 +207,9 @@ class TemplateCodegen:
                 if (implicit_root_source and node is root_element)
                 else None
             )
+            node_region_id = (
+                root_region_id if (root_region_id and node is root_element) else None
+            )
 
             self._add_node(
                 node,
@@ -234,6 +222,8 @@ class TemplateCodegen:
                 scope_id=scope_id,
                 local_vars=initial_locals,
                 implicit_root_source=node_root_source,
+                enable_regions=enable_regions,
+                region_id=node_region_id,
             )
 
         # return "".join(parts)
@@ -282,6 +272,7 @@ class TemplateCodegen:
 
         try:
             from pywire.compiler.preprocessor import preprocess_python_code
+
             expr_str = preprocess_python_code(expr_str)
             tree = ast.parse(expr_str, mode="eval")
             if line_offset > 0:
@@ -408,6 +399,114 @@ class TemplateCodegen:
 
         return base_expr
 
+    def _wrap_unwrap_wire(self, expr: ast.expr) -> ast.expr:
+        return ast.Call(
+            func=ast.Name(id="unwrap_wire", ctx=ast.Load()),
+            args=[expr],
+            keywords=[],
+        )
+
+    def _next_region_id(self) -> str:
+        self._region_counter += 1
+        return f"r{self._region_counter}"
+
+    def _node_is_dynamic(
+        self, node: TemplateNode, known_globals: Optional[Set[str]] = None
+    ) -> bool:
+        if node.tag is None:
+            if any(
+                isinstance(attr, InterpolationNode) for attr in node.special_attributes
+            ):
+                return True
+            if node.text_content and not node.is_raw:
+                parts = self.interpolation_parser.parse(
+                    node.text_content, node.line, node.column
+                )
+                return any(isinstance(part, InterpolationNode) for part in parts)
+            return False
+
+        for attr in node.special_attributes:
+            if isinstance(attr, EventAttribute):
+                continue
+            return True
+
+        return any(
+            self._node_is_dynamic(child, known_globals) for child in node.children
+        )
+
+    def _generate_region_method(
+        self,
+        node: TemplateNode,
+        func_name: str,
+        region_id: str,
+        layout_id: Optional[str],
+        known_methods: Optional[Set[str]],
+        known_globals: Optional[Set[str]],
+        async_methods: Optional[Set[str]],
+        component_map: Optional[Dict[str, str]],
+        scope_id: Optional[str],
+        implicit_root_source: Optional[str],
+    ) -> ast.AsyncFunctionDef:
+        func_def = self._generate_function(
+            [node],
+            func_name,
+            is_async=True,
+            layout_id=layout_id,
+            known_methods=known_methods,
+            known_globals=known_globals,
+            async_methods=async_methods,
+            component_map=component_map,
+            scope_id=scope_id,
+            implicit_root_source=implicit_root_source,
+            enable_regions=False,
+            root_region_id=region_id,
+        )
+
+        if len(func_def.body) < 3:
+            return func_def
+
+        setup = func_def.body[:3]
+        render_body = func_def.body[3:]
+
+        begin_render = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_begin_region_render",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Constant(value=region_id)],
+                keywords=[],
+            )
+        )
+        render_body.insert(0, begin_render)
+
+        token_assign = ast.Assign(
+            targets=[ast.Name(id="_render_token", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Name(id="set_render_context", ctx=ast.Load()),
+                args=[
+                    ast.Name(id="self", ctx=ast.Load()),
+                    ast.Constant(value=region_id),
+                ],
+                keywords=[],
+            ),
+        )
+
+        reset_stmt = ast.Expr(
+            value=ast.Call(
+                func=ast.Name(id="reset_render_context", ctx=ast.Load()),
+                args=[ast.Name(id="_render_token", ctx=ast.Load())],
+                keywords=[],
+            )
+        )
+
+        func_def.body = setup + [
+            token_assign,
+            ast.Try(body=render_body, orelse=[], finalbody=[reset_stmt], handlers=[]),
+        ]
+        return func_def
+
     def _has_spread_attribute(self, nodes: List[TemplateNode]) -> bool:
         """Check if any node in the tree has a SpreadAttribute."""
         from pywire.compiler.ast_nodes import SpreadAttribute
@@ -454,6 +553,8 @@ class TemplateCodegen:
         scope_id: Optional[str] = None,
         parts_var: str = "parts",
         implicit_root_source: Optional[str] = None,
+        enable_regions: bool = True,
+        region_id: Optional[str] = None,
     ) -> None:
         if local_vars is None:
             local_vars = set()
@@ -524,6 +625,7 @@ class TemplateCodegen:
                         component_map,
                         scope_id,
                         parts_var=parts_var,
+                        enable_regions=enable_regions,
                     )
             else:
                 new_node = dataclasses.replace(node, special_attributes=new_attrs)
@@ -539,6 +641,7 @@ class TemplateCodegen:
                     component_map,
                     scope_id,
                     parts_var=parts_var,
+                    enable_regions=enable_regions,
                 )
 
             # Wrap iterable in ensure_async_iterator
@@ -587,6 +690,7 @@ class TemplateCodegen:
                 component_map,
                 scope_id,
                 parts_var=parts_var,
+                enable_regions=enable_regions,
             )
 
             if_stmt = ast.If(test=cond_expr, body=if_body, orelse=[])
@@ -984,6 +1088,7 @@ class TemplateCodegen:
                         component_map,
                         scope_id,
                         parts_var=slot_parts_var,
+                        enable_regions=enable_regions,
                     )  # PASS slot_parts_var
 
                 # Join parts -> slot string
@@ -1083,17 +1188,16 @@ class TemplateCodegen:
                         if isinstance(part, str):
                             term = ast.Constant(value=part)
                         else:
+                            expr = self._transform_expr(
+                                part.expression,
+                                local_vars,
+                                known_globals,
+                                line_offset=part.line,
+                                col_offset=part.column,
+                            )
                             term = ast.Call(
                                 func=ast.Name(id="str", ctx=ast.Load()),
-                                args=[
-                                    self._transform_expr(
-                                        part.expression,
-                                        local_vars,
-                                        known_globals,
-                                        line_offset=part.line,
-                                        col_offset=part.column,
-                                    )
-                                ],
+                                args=[self._wrap_unwrap_wire(expr)],
                                 keywords=[],
                             )
 
@@ -1123,17 +1227,16 @@ class TemplateCodegen:
             ):
                 # Handle standalone interpolation node from parser splitting
                 interp = node.special_attributes[0]
+                expr = self._transform_expr(
+                    interp.expression,
+                    local_vars,
+                    known_globals,
+                    line_offset=interp.line,
+                    col_offset=interp.column,
+                )
                 term = ast.Call(
                     func=ast.Name(id="str", ctx=ast.Load()),
-                    args=[
-                        self._transform_expr(
-                            interp.expression,
-                            local_vars,
-                            known_globals,
-                            line_offset=interp.line,
-                            col_offset=interp.column,
-                        )
-                    ],
+                    args=[self._wrap_unwrap_wire(expr)],
                     keywords=[],
                 )
                 append_stmt = ast.Expr(
@@ -1152,63 +1255,56 @@ class TemplateCodegen:
             pass
         else:
             # Element
-            bind_attr = next(
-                (a for a in node.special_attributes if isinstance(a, BindAttribute)),
-                None,
-            )
+            if enable_regions and self._node_is_dynamic(node, known_globals):
+                region_id = self._next_region_id()
+                method_name = f"_render_region_{region_id}"
+                self.region_renderers[region_id] = method_name
+                self.auxiliary_functions.append(
+                    self._generate_region_method(
+                        node,
+                        method_name,
+                        region_id,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        implicit_root_source,
+                    )
+                )
+
+                append_stmt = ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Await(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr=method_name,
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[],
+                                    keywords=[],
+                                )
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+                self._set_line(append_stmt, node)
+                body.append(append_stmt)
+                return
+
             bindings: Dict[str, ast.expr] = {}
             new_bound_var = bound_var
-
-            if bind_attr:
-                var_name = bind_attr.variable
-                self._binding_counter += 1
-                handler_name = f"_handle_bind_{self._binding_counter}"
-
-                tag = node.tag.lower()
-                input_type = node.attributes.get("type", "text")
-
-                if tag == "input" and input_type == "file":
-                    self.has_file_inputs = True
-
-                if bind_attr.binding_type == "progress":
-                    self.generated_bindings.append(
-                        BindingDef(handler_name, var_name, "upload-progress")
-                    )
-                    bindings["data-on-upload-progress"] = ast.Constant(
-                        value=handler_name
-                    )
-
-                else:
-                    event_type = "input"
-                    val_prop = "value"
-
-                    if tag == "input" and input_type in ("checkbox", "radio"):
-                        event_type = "change"
-                        val_prop = "checked"
-
-                    target_var_expr = self._transform_expr(
-                        var_name,
-                        local_vars,
-                        known_globals,
-                        line_offset=node.line,
-                        col_offset=node.column,
-                    )
-
-                    bindings[val_prop] = target_var_expr
-                    if tag == "select":
-                        new_bound_var = target_var_expr  # AST node passed as bound_var? No, logic expects expr
-                        # But bound_var is passed recursively.
-                        # Wait, logic for <option> uses bound_var which is currently a string in
-                        # old code?
-                        # "if str(attrs['value']) == str({bound_var}):"
-                        # We need to pass the expression object or similar?
-                        # Let's pass the AST expression node.
-                        new_bound_var = target_var_expr
-
-                    self.generated_bindings.append(
-                        BindingDef(handler_name, var_name, event_type)
-                    )
-                    bindings[f"data-on-{event_type}"] = ast.Constant(value=handler_name)
+            if region_id:
+                bindings["data-pw-region"] = ast.Constant(value=region_id)
 
             show_attr = next(
                 (a for a in node.special_attributes if isinstance(a, ShowAttribute)),
@@ -1408,7 +1504,7 @@ class TemplateCodegen:
                     if not isinstance(binding_expr, ast.Constant):
                         wrapper = ast.Call(
                             func=ast.Name(id="str", ctx=ast.Load()),
-                            args=[binding_expr],
+                            args=[self._wrap_unwrap_wire(binding_expr)],
                             keywords=[],
                         )
 
@@ -1629,6 +1725,7 @@ class TemplateCodegen:
                         line_offset=node.line,
                         col_offset=node.column,
                     )
+                    val_expr = self._wrap_unwrap_wire(val_expr)
 
                     # _r_val = val_expr
                     body.append(
@@ -2034,6 +2131,7 @@ class TemplateCodegen:
                     scope_id,
                     parts_var=parts_var,
                     implicit_root_source=implicit_root_source,
+                    enable_regions=enable_regions,
                 )
 
             if node.tag.lower() not in self.VOID_ELEMENTS:

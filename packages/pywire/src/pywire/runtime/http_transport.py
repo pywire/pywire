@@ -216,13 +216,20 @@ class HTTPTransportHandler:
                         session.page.on_load()
 
             # Dispatch event
-            response = await session.page.handle_event(handler_name, event_data)
+            update = await session.page.handle_event(handler_name, event_data)
 
-            # Get updated HTML
-            html = bytes(response.body).decode("utf-8")
+            if isinstance(update, Response):
+                html = bytes(update.body).decode("utf-8")
+                payload: Dict[str, Any] = {"type": "update", "html": html}
+            elif isinstance(update, dict) and update.get("type") == "regions":
+                payload = {"type": "update", "regions": update.get("regions", [])}
+            elif isinstance(update, dict) and update.get("type") == "full":
+                payload = {"type": "update", "html": update.get("html", "")}
+            else:
+                payload = {"type": "error", "error": "Invalid update payload"}
 
             return Response(
-                msgpack.packb({"type": "update", "html": html}),
+                msgpack.packb(payload),
                 media_type="application/x-msgpack",
             )
 

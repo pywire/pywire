@@ -21,39 +21,6 @@ def test_event_syntax_enforcement() -> None:
         parse('<button @click="handler"></button>')
 
 
-def test_bind_syntax_enforcement() -> None:
-    """Test that $bind attributes must use brackets and $bind:busy is ignored."""
-    # Valid
-    parse("<input $bind={val}>")
-
-    # Invalid (quoted)
-    with pytest.raises(PyWireSyntaxError, match="must be wrapped in brackets"):
-        parse('<input $bind="val">')
-
-    # Invalid Type (busy) handling check
-    # Since we removed :busy support, $bind:busy is not a special attribute.
-    # It should be parsed as a regular attribute.
-    parsed = parse("<button $bind:busy={is_busy}></button>")
-    btn = parsed.template[0]
-    # It should start with $bind:busy in attributes
-    # Note: attribute names are preserved as is
-    # It will fall back to ReactiveAttribute because of {expr} syntax
-    # assert "$bind:busy" in btn.attributes <-- INCORRECT, it's special/reactive
-
-    # Reset of Busy behavior check:
-    # Ensure it is NOT a BindAttribute
-    assert not any(isinstance(a, type(None)) for a in btn.special_attributes)  # dummy
-    from pywire.compiler.ast_nodes import BindAttribute, ReactiveAttribute
-
-    bind_attrs = [a for a in btn.special_attributes if isinstance(a, BindAttribute)]
-    assert len(bind_attrs) == 0
-
-    # It IS a ReactiveAttribute
-    reactive_attrs = [a for a in btn.special_attributes if isinstance(a, ReactiveAttribute)]
-    assert len(reactive_attrs) == 1
-    assert reactive_attrs[0].name == "$bind:busy"
-
-
 def test_conditional_syntax_enforcement() -> None:
     """Test that $if/$show attributes must use brackets."""
     # Valid

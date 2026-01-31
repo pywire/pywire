@@ -33,11 +33,11 @@ class TestLifecycleHooks(unittest.TestCase):
     def test_top_level_init_execution(self) -> None:
         """Verify top-level executable statements run on init=True."""
         content = """
-<p>Content</p>
----
 print("Top Level Run")
 self.counter = 1
----
+
+---html---
+<p>Content</p>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()
@@ -62,12 +62,12 @@ self.counter = 1
     def test_mount_hook(self) -> None:
         """Verify @mount decorated method runs on init."""
         content = """
-<p>Hello</p>
----
 @mount
 def initialize(self):
     self.mounted = True
----
+
+---html---
+<p>Hello</p>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()
@@ -83,8 +83,6 @@ def initialize(self):
     def test_execution_order(self) -> None:
         """Verify order: top-level -> @mount."""
         content = """
-<p>Test</p>
----
 if not hasattr(self, 'log'):
     self.log = []
 self.log.append('top_level')
@@ -92,7 +90,9 @@ self.log.append('top_level')
 @mount
 def my_mount(self):
     self.log.append('mount')
----
+
+---html---
+<p>Test</p>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()

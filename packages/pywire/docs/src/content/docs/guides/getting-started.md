@@ -3,7 +3,7 @@ title: Getting Started
 description: How to install and start using pywire.
 ---
 
-Welcome to **pywire**, the "Live Conduit" for Python. 
+Welcome to **pywire**, the "Live Conduit" for Python.
 
 ## Installation
 
@@ -18,6 +18,17 @@ pip install pywire
 ## Your First .wire File
 
 pywire components are defined in `.wire` files. These files combine Python logic and HTML structure.
+
+```pywire title="counter.wire"
+count = wire(0)
+
+def increment():
+    $count += 1
+
+---html---
+<button @click={increment}>Increment</button>
+<p>Count: {count.value}</p>
+```
 
 ```python title="hello.wire"
 @component
