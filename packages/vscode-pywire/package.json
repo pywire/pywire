@@ -3,6 +3,7 @@
   "displayName": "PyWire",
   "description": "Language support for PyWire files",
   "version": "0.0.1",
+  "type": "module",
   "publisher": "Reece Holmdahl",
   "engines": {
     "vscode": "^1.75.0"
@@ -90,14 +91,27 @@
     "watch:tsc": "tsc --noEmit --watch -p ./",
     "package": "pnpm run check-types && node build.js --production",
     "check-types": "tsc --noEmit -p ./",
-    "bundle-deps": "mkdir -p bundled/libs && pip install pygls pyright ../pywire -t bundled/libs"
+    "bundle-deps": "mkdir -p bundled/libs && pip install pygls pyright ../pywire -t bundled/libs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm check-types",
+    "coverage": "echo \"No coverage configured\"",
+    "check": "pnpm format:check && pnpm lint && pnpm check-types"
   },
   "devDependencies": {
+    "@eslint/js": "^9.35.0",
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
     "@vscode/vsce": "^2.22.0",
     "concurrently": "^9.2.1",
     "esbuild": "^0.27.2",
+    "eslint": "^9.35.0",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
     "typescript": "^5.3.3"
   },
   "dependencies": {

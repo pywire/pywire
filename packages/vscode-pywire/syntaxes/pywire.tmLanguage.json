@@ -3,42 +3,32 @@
   "name": "PyWire",
   "scopeName": "source.pywire",
   "patterns": [
-    {
-      "include": "#python-section"
-    },
-    {
-      "include": "#directives"
-    },
-    {
-      "include": "#comments"
-    },
-    {
-      "include": "#tags"
-    },
-    {
-      "include": "#interpolation"
-    },
-    {
-      "include": "#text"
-    }
+    { "include": "#python-header" },
+    { "include": "#separator" },
+    { "include": "#html-content" }
   ],
   "repository": {
-    "python-section": {
-      "begin": "^(---)\\s*$",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.separator.pywire keyword.control.pywire"
-        }
-      },
-      "end": "\\z",
+    "python-header": {
+      "begin": "\\A",
+      "end": "^(?=\\s*---+\\s*html\\s*---+\\s*$)",
       "contentName": "meta.embedded.block.python",
       "patterns": [
-        {
-          "include": "#wire-variable"
-        },
-        {
-          "include": "source.python"
-        }
+        { "include": "#directives" },
+        { "include": "#wire-variable" },
+        { "include": "source.python" }
+      ]
+    },
+    "separator": {
+      "match": "^\\s*(-{3,})\\s*[Hh][Tt][Mm][Ll]\\s*\\1\\s*$",
+      "name": "punctuation.separator.pywire keyword.control.pywire"
+    },
+    "html-content": {
+      "patterns": [
+        { "include": "#directives" },
+        { "include": "#comments" },
+        { "include": "#tags" },
+        { "include": "#interpolation" },
+        { "include": "#text" }
       ]
     },
     "directives": {
@@ -50,28 +40,15 @@
         {
           "begin": "(!path)\\s*(\\{)",
           "beginCaptures": {
-            "1": {
-              "name": "keyword.control.directive.pywire"
-            },
-            "2": {
-              "name": "punctuation.section.embedded.begin.pywire"
-            }
+            "1": { "name": "keyword.control.directive.pywire" },
+            "2": { "name": "punctuation.section.embedded.begin.pywire" }
           },
           "end": "(\\})",
           "endCaptures": {
-            "1": {
-              "name": "punctuation.section.embedded.end.pywire"
-            }
+            "1": { "name": "punctuation.section.embedded.end.pywire" }
           },
           "contentName": "meta.embedded.block.python",
-          "patterns": [
-            {
-              "include": "#wire-variable"
-            },
-            {
-              "include": "source.python"
-            }
-          ]
+          "patterns": [{ "include": "#wire-variable" }, { "include": "source.python" }]
         }
       ]
     },
@@ -91,181 +68,101 @@
     "interpolation": {
       "begin": "\\{",
       "beginCaptures": {
-        "0": {
-          "name": "punctuation.section.embedded.begin.pywire"
-        }
+        "0": { "name": "punctuation.section.embedded.begin.pywire" }
       },
       "end": "\\}",
       "endCaptures": {
-        "0": {
-          "name": "punctuation.section.embedded.end.pywire"
-        }
+        "0": { "name": "punctuation.section.embedded.end.pywire" }
       },
       "contentName": "meta.embedded.inline.python",
-      "patterns": [
-        {
-          "include": "#wire-variable"
-        },
-        {
-          "include": "source.python"
-        }
-      ]
+      "patterns": [{ "include": "#wire-variable" }, { "include": "source.python" }]
     },
     "tags": {
-      "patterns": [
-        {
-          "include": "#tags-void"
-        },
-        {
-          "include": "#tags-general"
-        }
-      ]
+      "patterns": [{ "include": "#tags-void" }, { "include": "#tags-general" }]
     },
     "tags-void": {
       "begin": "(<)(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)(?=\\s|/?>)",
       "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.html"
-        },
-        "2": {
-          "name": "entity.name.tag.html"
-        }
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" }
       },
       "end": "/?>",
       "endCaptures": {
-        "0": {
-          "name": "punctuation.definition.tag.end.html"
-        }
+        "0": { "name": "punctuation.definition.tag.end.html" }
       },
       "name": "meta.tag.void.html",
-      "patterns": [
-        {
-          "include": "#attributes"
-        }
-      ]
+      "patterns": [{ "include": "#attributes" }]
     },
     "tags-general": {
       "begin": "(<)([^/\\s>/]*)",
       "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.html"
-        },
-        "2": {
-          "name": "entity.name.tag.html"
-        }
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" }
       },
       "end": "(/?>)",
       "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.end.html"
-        }
+        "1": { "name": "punctuation.definition.tag.end.html" }
       },
-      "patterns": [
-        {
-          "include": "#attributes"
-        }
-      ]
+      "patterns": [{ "include": "#attributes" }]
     },
     "tags-end": {
       "match": "(</)([^/\\s>]*)(\\>)",
       "captures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.html"
-        },
-        "2": {
-          "name": "entity.name.tag.html"
-        },
-        "3": {
-          "name": "punctuation.definition.tag.end.html"
-        }
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "punctuation.definition.tag.end.html" }
       }
     },
     "attributes": {
       "patterns": [
-        {
-          "include": "#attribute-event"
-        },
-        {
-          "include": "#attribute-directive"
-        },
-        {
-          "include": "#attribute-normal"
-        }
+        { "include": "#attribute-event" },
+        { "include": "#attribute-directive" },
+        { "include": "#attribute-normal" }
       ]
     },
     "attribute-event": {
       "begin": "(@[\\w\\.]+)(?=\\s*=?|/?>)",
       "beginCaptures": {
-        "1": {
-          "name": "entity.other.attribute-name.event.pywire support.function.event.pywire"
-        }
+        "1": { "name": "entity.other.attribute-name.event.pywire support.function.event.pywire" }
       },
       "end": "(?=[\\s/>])",
-      "patterns": [
-        {
-          "include": "#attribute-value-assignment"
-        }
-      ]
+      "patterns": [{ "include": "#attribute-value-assignment" }]
     },
     "attribute-directive": {
       "begin": "(\\$[\\w\\.]+)(?=\\s*=?|/?>)",
       "beginCaptures": {
-        "1": {
-          "name": "keyword.control.directive.attribute.pywire"
-        }
+        "1": { "name": "keyword.control.directive.attribute.pywire" }
       },
       "end": "(?=[\\s/>])",
-      "patterns": [
-        {
-          "include": "#attribute-value-assignment"
-        }
-      ]
+      "patterns": [{ "include": "#attribute-value-assignment" }]
     },
     "attribute-normal": {
       "begin": "([^\\s\"'=<>`/]+)",
       "beginCaptures": {
-        "1": {
-          "name": "entity.other.attribute-name.html"
-        }
+        "1": { "name": "entity.other.attribute-name.html" }
       },
       "end": "(?=[\\s/>])",
-      "patterns": [
-        {
-          "include": "#attribute-value-assignment"
-        }
-      ]
+      "patterns": [{ "include": "#attribute-value-assignment" }]
     },
     "attribute-value-assignment": {
       "begin": "=",
       "beginCaptures": {
-        "0": {
-          "name": "punctuation.separator.key-value.html"
-        }
+        "0": { "name": "punctuation.separator.key-value.html" }
       },
       "end": "(?=[\\s/>])",
       "patterns": [
-        {
-          "include": "#interpolation"
-        },
+        { "include": "#interpolation" },
         {
           "begin": "\"",
           "end": "\"",
           "name": "string.quoted.double.html",
-          "patterns": [
-            {
-              "include": "#interpolation"
-            }
-          ]
+          "patterns": [{ "include": "#interpolation" }]
         },
         {
           "begin": "'",
           "end": "'",
           "name": "string.quoted.single.html",
-          "patterns": [
-            {
-              "include": "#interpolation"
-            }
-          ]
+          "patterns": [{ "include": "#interpolation" }]
         },
         {
           "match": "[^\\s\"'=<>`/]+",
@@ -274,21 +171,13 @@
       ]
     },
     "text": {
-      "patterns": [
-        {
-          "include": "#tags-end"
-        }
-      ]
+      "patterns": [{ "include": "#tags-end" }]
     },
     "wire-variable": {
       "match": "(\\$)([a-zA-Z_]\\w*)",
       "captures": {
-        "1": {
-          "name": "punctuation.definition.variable.pywire keyword.operator.pywire"
-        },
-        "2": {
-          "name": "variable.other.readwrite.pywire"
-        }
+        "1": { "name": "punctuation.definition.variable.pywire keyword.operator.pywire" },
+        "2": { "name": "variable.other.readwrite.pywire" }
       }
     }
   }

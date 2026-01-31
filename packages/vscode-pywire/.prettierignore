@@ -1,0 +1,9 @@
+README.md
+.github/
+*.lock
+pnpm-lock.yaml
+node_modules/
+out/
+bundled/
+*.json
+
