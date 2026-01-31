@@ -4,5 +4,17 @@ export SOURCE_FILES="src/pywire"
 
 set -x
 
-uv run ruff format $SOURCE_FILES
-uv run ruff check --fix $SOURCE_FILES
+uv run --with ruff ruff format $SOURCE_FILES
+uv run --with ruff ruff check --fix $SOURCE_FILES
+
+echo "-> Linting client..."
+if [ -d "src/pywire/client" ]; then
+    (
+        cd src/pywire/client
+        if [ ! -x node_modules/.bin/eslint ]; then
+            pnpm install
+        fi
+        pnpm format
+        pnpm lint:fix
+    )
+fi

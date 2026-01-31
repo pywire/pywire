@@ -11,6 +11,8 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
+    Tuple,
     Union,
 )
 
@@ -122,6 +124,9 @@ class BasePage:
 
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
+        self._wire_subscribers: Dict[Tuple[Any, str], Set[str]] = defaultdict(set)
+        self._region_dependencies: Dict[str, Set[Tuple[Any, str]]] = defaultdict(set)
+        self._dirty_regions: Set[str] = set()
 
         # Error state for error pages
         self.error_code: Optional[int] = None
@@ -200,6 +205,7 @@ class BasePage:
 
         # Render template (may be async for layouts with render_slot calls)
         # Render HTML
+        self._clear_wire_tracking()
         html = await self._render_template()
 
         # Inject styles if this is the root render (not a component or partial update)
@@ -227,9 +233,38 @@ class BasePage:
 
         return Response(html, media_type="text/html")
 
+    def _clear_wire_tracking(self) -> None:
+        self._wire_subscribers.clear()
+        self._region_dependencies.clear()
+        self._dirty_regions.clear()
+
+    def _begin_region_render(self, region_id: str) -> None:
+        deps = self._region_dependencies.get(region_id)
+        if deps:
+            for dep in deps:
+                regions = self._wire_subscribers.get(dep)
+                if regions and region_id in regions:
+                    regions.discard(region_id)
+                    if not regions:
+                        self._wire_subscribers.pop(dep, None)
+        self._region_dependencies[region_id] = set()
+
+    def _register_wire_read(self, wire_obj: Any, field: str, region_id: str) -> None:
+        key = (wire_obj, field)
+        self._wire_subscribers[key].add(region_id)
+        self._region_dependencies[region_id].add(key)
+
+    def _invalidate_wire(self, wire_obj: Any, field: str) -> None:
+        regions = set()
+        key = (wire_obj, field)
+        if key in self._wire_subscribers:
+            regions |= self._wire_subscribers[key]
+        if regions:
+            self._dirty_regions.update(regions)
+
     async def handle_event(
         self, event_name: str, event_data: dict[str, Any]
-    ) -> Response:
+    ) -> Dict[str, Any]:
         """Handle client event (from @click, etc.)."""
 
         # Retrieve handler
@@ -291,7 +326,31 @@ class BasePage:
                 raise e
 
         # Re-render without re-initializing
-        return await self.render(init=False)
+        return await self.render_update(init=False)
+
+    async def render_update(self, init: bool = False) -> Dict[str, Any]:
+        if hasattr(self, "__region_renderers__") and self._dirty_regions:
+            updates = []
+            region_map = getattr(self, "__region_renderers__", {}) or {}
+            for region_id in sorted(self._dirty_regions):
+                method_name = region_map.get(region_id)
+                if not method_name:
+                    continue
+                renderer = getattr(self, method_name, None)
+                if not renderer:
+                    continue
+                if inspect.iscoroutinefunction(renderer):
+                    region_html = await renderer()
+                else:
+                    region_html = renderer()
+                updates.append({"region": region_id, "html": region_html})
+            self._dirty_regions.clear()
+            if updates:
+                return {"type": "regions", "regions": updates}
+
+        response = await self.render(init=init)
+        html = bytes(response.body).decode("utf-8")
+        return {"type": "full", "html": html}
 
     async def push_state(self) -> None:
         """Force a UI update with current state (useful for streaming progress)."""

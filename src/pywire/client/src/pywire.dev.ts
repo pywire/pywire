@@ -5,23 +5,23 @@
  * - Error trace with source loading for DevTools
  * - Enhanced console output
  */
-import { PyWireDevApp } from './dev/dev-app';
+import { PyWireDevApp } from './dev/dev-app'
 
 // Re-export core
-export * from './core';
+export * from './core'
 
 // Export dev-specific
-export { PyWireDevApp } from './dev/dev-app';
-export { StatusOverlay } from './dev/status-overlay';
-export { ErrorTraceHandler } from './dev/error-trace';
+export { PyWireDevApp } from './dev/dev-app'
+export { StatusOverlay } from './dev/status-overlay'
+export { ErrorTraceHandler } from './dev/error-trace'
 
 // Auto-init with dev app
-const app = new PyWireDevApp();
+const app = new PyWireDevApp()
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => app.init());
+  document.addEventListener('DOMContentLoaded', () => app.init())
 } else {
-    app.init();
+  app.init()
 }
 
-export { app };
+export { app }

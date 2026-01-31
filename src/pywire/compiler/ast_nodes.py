@@ -143,17 +143,6 @@ class ForAttribute(SpecialAttribute):
 
 
 @dataclass
-class BindAttribute(SpecialAttribute):
-    """$bind={variable}."""
-
-    variable: str
-    binding_type: Optional[str] = None
-
-    def __str__(self) -> str:
-        return f"BindAttribute(var={self.variable}, type={self.binding_type})"
-
-
-@dataclass
 class FieldValidationRules:
     """Validation rules for a single form field."""
 
@@ -287,7 +276,7 @@ class ParsedPyWire:
 
     directives: List[Directive] = field(default_factory=list)
     template: List[TemplateNode] = field(default_factory=list)
-    python_code: str = ""  # Raw Python section (below ---)
+    python_code: str = ""  # Raw Python section (above ---html---)
     python_ast: Optional[ast.Module] = None  # Parsed Python AST
     file_path: str = ""
 

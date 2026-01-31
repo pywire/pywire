@@ -7,6 +7,7 @@ import traceback
 from typing import Any, Dict, Set
 
 import msgpack
+from starlette.responses import Response
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from pywire.runtime.logging import log_callback_ctx
@@ -167,6 +168,30 @@ class WebSocketHandler:
             )
         )
 
+    async def _send_update_payload(self, websocket: WebSocket, update: Any) -> None:
+        if isinstance(update, Response):
+            html = bytes(update.body).decode("utf-8")
+            await websocket.send_bytes(msgpack.packb({"type": "update", "html": html}))
+            return
+
+        if isinstance(update, dict):
+            if update.get("type") == "regions":
+                await websocket.send_bytes(
+                    msgpack.packb(
+                        {"type": "update", "regions": update.get("regions", [])}
+                    )
+                )
+                return
+            if update.get("type") == "full":
+                html = update.get("html", "")
+                await websocket.send_bytes(
+                    msgpack.packb({"type": "update", "html": html})
+                )
+                return
+
+        # Fallback: force full reload
+        await websocket.send_bytes(msgpack.packb({"type": "reload"}))
+
     async def _handle_event(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
         """Handle UI event (click, etc)."""
         handler_name = data.get("handler")
@@ -275,23 +300,18 @@ class WebSocketHandler:
 
             # Define update broadcaster
             async def broadcast_update() -> None:
-                up_response = await page.render(init=False)
-                up_html = up_response.body.decode("utf-8")
-                await websocket.send_bytes(
-                    msgpack.packb({"type": "update", "html": up_html})
-                )
+                update = await page.render_update(init=False)
+                await self._send_update_payload(websocket, update)
 
             page._on_update = broadcast_update
 
             # Call handler
             try:
-                response = await page.handle_event(handler_name, event_data)
+                update = await page.handle_event(handler_name, event_data)
             except Exception as e:
                 raise e
 
-            html = response.body.decode("utf-8")
-
-            await websocket.send_bytes(msgpack.packb({"type": "update", "html": html}))
+            await self._send_update_payload(websocket, update)
 
         except Exception as e:
             # Send structured trace to client (no print - trace is sufficient)

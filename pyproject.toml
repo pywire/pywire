@@ -58,5 +58,7 @@ module = [
     "aioquic.*",
     "cryptography.*",
     "hypercorn.*",
+    "msgpack",
+    "msgpack.*",
 ]
 ignore_missing_imports = true

@@ -133,16 +133,16 @@ class TestFormParsing(unittest.TestCase):
         parser = PyWireParser()
 
         content = """
+async def handle_form(data):
+    pass
+
+---html---
 <form @submit={handle_form}>
     <input name="username" required minlength="3" maxlength="20">
     <input name="email" type="email" required>
     <input name="age" type="number" min="18" max="100">
     <button type="submit">Submit</button>
 </form>
-
----
-async def handle_form(data):
-    pass
 """
 
         parsed = parser.parse(content)
@@ -203,14 +203,14 @@ class TestFormCodegen(unittest.TestCase):
         generator = CodeGenerator()
 
         content = """
+async def handle_form(data):
+    pass
+
+---html---
 <form @submit={handle_form}>
     <input name="username" required minlength="3">
     <button type="submit">Submit</button>
 </form>
-
----
-async def handle_form(data):
-    pass
 """
 
         parsed = parser.parse(content)

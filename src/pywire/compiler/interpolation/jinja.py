@@ -27,7 +27,7 @@ class JinjaInterpolationParser(InterpolationParser):
         # 1. Try simple parse
         try:
             from pywire.compiler.preprocessor import preprocess_python_code
-            
+
             preprocessed = preprocess_python_code(stripped)
             ast.parse(preprocessed, mode="eval")
             return True

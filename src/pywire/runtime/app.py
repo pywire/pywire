@@ -809,9 +809,12 @@ class PyWire:
             # Handle event
             try:
                 event_data = await request.json()
-                response = await page.handle_event(
+                update = await page.handle_event(
                     event_data.get("handler", ""), event_data
                 )
+                if isinstance(update, dict):
+                    return JSONResponse(update)
+                response = cast(Response, update)
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
         else:

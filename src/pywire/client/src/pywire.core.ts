@@ -3,20 +3,20 @@
  * Production-optimized client with minimal footprint.
  * Excludes dev features: status overlay, error trace with source loading.
  */
-import { PyWireApp } from './core/app';
+import { PyWireApp } from './core/app'
 
-export { PyWireApp, PyWireConfig } from './core/app';
-export { TransportManager, TransportConfig } from './core/transport-manager';
-export { DOMUpdater } from './core/dom-updater';
-export * from './core/transports';
+export { PyWireApp, PyWireConfig } from './core/app'
+export { TransportManager, TransportConfig } from './core/transport-manager'
+export { DOMUpdater } from './core/dom-updater'
+export * from './core/transports'
 
 // Auto-init
-const app = new PyWireApp();
+const app = new PyWireApp()
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => app.init());
+  document.addEventListener('DOMContentLoaded', () => app.init())
 } else {
-    app.init();
+  app.init()
 }
 
-export { app };
+export { app }

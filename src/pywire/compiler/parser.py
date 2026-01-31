@@ -1,6 +1,7 @@
 """Main PyWire parser orchestrator."""
 
 import ast
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
@@ -19,7 +20,6 @@ from pywire.compiler.ast_nodes import (
     TemplateNode,
 )
 from pywire.compiler.attributes.base import AttributeParser
-from pywire.compiler.attributes.bind import BindAttributeParser
 from pywire.compiler.attributes.conditional import ConditionalAttributeParser
 from pywire.compiler.attributes.events import EventAttributeParser
 from pywire.compiler.attributes.form import ModelAttributeParser
@@ -38,6 +38,8 @@ from pywire.compiler.interpolation.jinja import JinjaInterpolationParser
 class PyWireParser:
     """Main parser orchestrator."""
 
+    _separator_re = re.compile(r"^\s*(-{3,})\s*html\s*\1\s*$", re.IGNORECASE)
+
     def __init__(self) -> None:
         # Directive registry
         self.directive_parsers: List[DirectiveParser] = [
@@ -55,7 +57,6 @@ class PyWireParser:
             ConditionalAttributeParser(),
             LoopAttributeParser(),
             KeyAttributeParser(),
-            BindAttributeParser(),
             ModelAttributeParser(),
         ]
 
@@ -72,141 +73,29 @@ class PyWireParser:
     def parse(self, content: str, file_path: str = "") -> ParsedPyWire:
         """Parse PyWire content."""
         lines = content.split("\n")
-
-        # Split into sections: directives/template and Python code
-        python_start = -1
-        python_end = -1
-
-        for i, line in enumerate(lines):
-            if line.strip() == "---":
-                if python_start == -1:
-                    python_start = i
-                else:
-                    python_end = i
-                    break
+        separator_index = self._find_separator_line(lines, file_path)
 
         python_section = ""
-        template_tail = []
+        python_start_line = -1
+        template_lines: List[str] = []
 
-        if python_start >= 0 and python_end > python_start:
-            # Valid block: --- ... ---
-            directive_section = "\n".join(lines[:python_start])
-            python_section = "\n".join(lines[python_start + 1 : python_end])
-            template_tail = lines[python_end + 1 :]
-        elif python_start >= 0:
-            # Unclosed block - treat everything after as Python?
-            # Or error? Let's assume everything after is Python (legacy behavior somewhat)
-            # But this swallows template.
-            # For now, let's keep it consistent: everything before is directives.
-            directive_section = "\n".join(lines[:python_start])
-            python_section = "\n".join(lines[python_start + 1 :])
+        if separator_index is not None:
+            header_lines = lines[:separator_index]
+
+            # Parse directives at the top of the header, remaining lines are Python
+            directives, python_lines, python_start_line = self._parse_header_sections(
+                header_lines
+            )
+            python_section = "\n".join(python_lines)
+
+            # HTML comes after the separator; pad to preserve line numbers
+            template_lines = [""] * (separator_index + 1) + lines[separator_index + 1 :]
         else:
-            # No block - validate that there's no malformed separator or orphaned Python code
+            # No separator - validate that there's no malformed separator or orphaned Python code
             self._validate_no_orphaned_python(lines, file_path)
-            directive_section = content
-            python_section = ""
+            directives, template_lines = self._parse_directives_and_template(lines)
 
-        # Parse directives (handles multiline directives by accumulating lines)
-        directives = []
-        template_lines = []
-        directive_lines = directive_section.split("\n")
-
-        directives_done = False  # Enforce directives at top
-
-        i = 0
-        while i < len(directive_lines):
-            old_i = i
-            line = directive_lines[i]
-            line_stripped = line.strip()
-            line_num = i + 1
-
-            if not line_stripped or line_stripped.startswith("---"):
-                # Blank lines are fine, keep them in template for lining up
-                # (or ignore? if we want correct line numbers for template,
-                # we need them)
-                # But if we are still parsing directives, blank lines are ignored.
-                # If we are done directives, they become template blank lines.
-                if directives_done:
-                    template_lines.append(line)
-                else:
-                    # In directive section, blank lines don't matter?
-                    # Actually we need to PAD template_lines to keep sync if we skip them here?
-                    # "Add blank lines to template_lines to preserve line numbers"
-                    # logic below handles it.
-                    pass
-                i += 1
-                continue
-
-            # Check if it's a directive
-            found_directive = False
-
-            if not directives_done:
-                for parser in self.directive_parsers:
-                    if parser.can_parse(line_stripped):
-                        # Try single line first
-                        directive = parser.parse(line_stripped, line_num, 0)
-                        if directive:
-                            directives.append(directive)
-                            found_directive = True
-                            i += 1
-                            break
-
-                        # If single line failed, try accumulating multiline content
-                        # Count open braces/brackets/PARENS to find the end
-                        accumulated = line_stripped
-                        brace_count = accumulated.count("{") - accumulated.count("}")
-                        bracket_count = accumulated.count("[") - accumulated.count("]")
-                        paren_count = accumulated.count("(") - accumulated.count(")")
-
-                        j = i + 1
-
-                        while (
-                            brace_count > 0 or bracket_count > 0 or paren_count > 0
-                        ) and j < len(directive_lines):
-                            next_line = directive_lines[j].strip()
-                            accumulated += "\n" + next_line
-                            brace_count += next_line.count("{") - next_line.count("}")
-                            bracket_count += next_line.count("[") - next_line.count("]")
-                            paren_count += next_line.count("(") - next_line.count(")")
-                            j += 1
-
-                        # Try parsing the accumulated content
-                        directive = parser.parse(accumulated, line_num, 0)
-                        if directive:
-                            directives.append(directive)
-                            found_directive = True
-                            i = j  # Skip past all accumulated lines
-                            break
-                        else:
-                            i += 1  # Parse failed, move on to this line being template?
-                        break
-
-            if found_directive:
-                # Add blank lines to template_lines to preserve line numbers
-                # We skipped from old_i to i.
-                # old_i was the line where we started looking.
-                # i is now the next line to process.
-                # So lines [old_i : i] were directives.
-                for _ in range(i - old_i):
-                    template_lines.append("")
-            else:
-                # Not a directive, part of template
-                directives_done = (
-                    True  # Once we hit template, no more directives allowed
-                )
-
-                # Check if this line LOOKS like a directive but wasn't parsed
-                # (e.g. invalid syntax or misplaced)
-                if line_stripped.startswith("!"):
-                    # Could be a warning or error?
-                    pass
-
-                template_lines.append(line)
-                i += 1
-
-        # Append template content that followed the Python block
-        if template_tail:
-            template_lines.extend(template_tail)
+        # Parse directives/template sections already handled above
 
         # Parse template HTML using lxml
         template_html = "\n".join(template_lines)
@@ -322,15 +211,14 @@ class PyWireParser:
             try:
                 # Don't silence SyntaxError - let it bubble up so user knows their code is invalid
                 from pywire.compiler.preprocessor import preprocess_python_code
+
                 preprocessed_code = preprocess_python_code(python_section)
                 python_ast = ast.parse(preprocessed_code)
             except SyntaxError as e:
                 # Calculate correct line number
-                # python_start is 0-indexed line number of '---'
+                # python_start_line is 0-indexed line number of first python line
                 # e.lineno is 1-indexed relative to python_section
-                # actual_line = (python_start + 1) + e.lineno
-                line_offset = python_start + 1
-                actual_line = line_offset + (e.lineno or 1)
+                actual_line = python_start_line + (e.lineno or 1)
 
                 raise PyWireSyntaxError(
                     f"Python syntax error: {e.msg}",
@@ -338,14 +226,12 @@ class PyWireParser:
                     line=actual_line,
                 )
 
-        if python_ast:
+        if python_ast and python_start_line >= 0:
             # Shift line numbers to match original file
-            # python_start is index of '---' line
-            # python_section code starts at python_start + 1
+            # python_start_line is index of first python line
             # Current AST lines start at 1.
-            # We want line 1 to map to (python_start + 1) + 1 = python_start + 2
-            # So offset = python_start + 1
-            ast.increment_lineno(python_ast, python_start + 1)
+            # We want line 1 to map to python_start_line + 1
+            ast.increment_lineno(python_ast, python_start_line)
 
         return ParsedPyWire(
             directives=directives,
@@ -354,6 +240,179 @@ class PyWireParser:
             python_ast=python_ast,
             file_path=file_path,
         )
+
+    def _find_separator_line(
+        self, lines: List[str], file_path: str
+    ) -> Union[int, None]:
+        separator_indices = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            if self._separator_re.match(stripped):
+                separator_indices.append(i)
+                continue
+
+            if self._looks_like_separator_line(stripped):
+                raise PyWireSyntaxError(
+                    f"Malformed separator on line {i + 1}: '{stripped}'. "
+                    "Expected symmetric dashes around 'html', e.g. '---html---'.",
+                    file_path=file_path,
+                    line=i + 1,
+                )
+
+        if len(separator_indices) > 1:
+            raise PyWireSyntaxError(
+                "Multiple HTML separators found. Only one '---html---' line is allowed.",
+                file_path=file_path,
+                line=separator_indices[1] + 1,
+            )
+
+        return separator_indices[0] if separator_indices else None
+
+    def _looks_like_separator_line(self, stripped: str) -> bool:
+        if not stripped:
+            return False
+        if "html" in stripped.lower() and "-" in stripped:
+            return True
+        if all(c == "-" for c in stripped) and len(stripped) >= 3:
+            return True
+        return False
+
+    def _parse_header_sections(
+        self, header_lines: List[str]
+    ) -> Tuple[List[Any], List[str], int]:
+        directives: List[Any] = []
+        python_lines: List[str] = []
+        pending_blanks: List[str] = []
+        python_start_line = -1
+
+        i = 0
+        while i < len(header_lines):
+            line = header_lines[i]
+            line_stripped = line.strip()
+            line_num = i + 1
+
+            if not line_stripped:
+                pending_blanks.append(line)
+                i += 1
+                continue
+
+            found_directive = False
+            for parser in self.directive_parsers:
+                if parser.can_parse(line_stripped):
+                    directive = parser.parse(line_stripped, line_num, 0)
+                    if directive:
+                        directives.append(directive)
+                        found_directive = True
+                        pending_blanks = []
+                        i += 1
+                        break
+
+                    accumulated = line_stripped
+                    brace_count = accumulated.count("{") - accumulated.count("}")
+                    bracket_count = accumulated.count("[") - accumulated.count("]")
+                    paren_count = accumulated.count("(") - accumulated.count(")")
+
+                    j = i + 1
+                    while (
+                        brace_count > 0 or bracket_count > 0 or paren_count > 0
+                    ) and j < len(header_lines):
+                        next_line = header_lines[j].strip()
+                        accumulated += "\n" + next_line
+                        brace_count += next_line.count("{") - next_line.count("}")
+                        bracket_count += next_line.count("[") - next_line.count("]")
+                        paren_count += next_line.count("(") - next_line.count(")")
+                        j += 1
+
+                    directive = parser.parse(accumulated, line_num, 0)
+                    if directive:
+                        directives.append(directive)
+                        found_directive = True
+                        pending_blanks = []
+                        i = j
+                        break
+                    break
+
+            if found_directive:
+                continue
+
+            python_start_line = i - len(pending_blanks)
+            python_lines.extend(pending_blanks)
+            python_lines.extend(header_lines[i:])
+            pending_blanks = []
+            break
+
+        return directives, python_lines, python_start_line
+
+    def _parse_directives_and_template(
+        self, all_lines: List[str]
+    ) -> Tuple[List[Any], List[str]]:
+        directives: List[Any] = []
+        template_lines: List[str] = []
+        directives_done = False
+
+        i = 0
+        while i < len(all_lines):
+            old_i = i
+            line = all_lines[i]
+            line_stripped = line.strip()
+            line_num = i + 1
+
+            if not line_stripped:
+                if directives_done:
+                    template_lines.append(line)
+                i += 1
+                continue
+
+            found_directive = False
+            if not directives_done:
+                for parser in self.directive_parsers:
+                    if parser.can_parse(line_stripped):
+                        directive = parser.parse(line_stripped, line_num, 0)
+                        if directive:
+                            directives.append(directive)
+                            found_directive = True
+                            i += 1
+                            break
+
+                        accumulated = line_stripped
+                        brace_count = accumulated.count("{") - accumulated.count("}")
+                        bracket_count = accumulated.count("[") - accumulated.count("]")
+                        paren_count = accumulated.count("(") - accumulated.count(")")
+
+                        j = i + 1
+
+                        while (
+                            brace_count > 0 or bracket_count > 0 or paren_count > 0
+                        ) and j < len(all_lines):
+                            next_line = all_lines[j].strip()
+                            accumulated += "\n" + next_line
+                            brace_count += next_line.count("{") - next_line.count("}")
+                            bracket_count += next_line.count("[") - next_line.count("]")
+                            paren_count += next_line.count("(") - next_line.count(")")
+                            j += 1
+
+                        directive = parser.parse(accumulated, line_num, 0)
+                        if directive:
+                            directives.append(directive)
+                            found_directive = True
+                            i = j
+                            break
+                        i += 1
+                        break
+
+            if found_directive:
+                for _ in range(i - old_i):
+                    template_lines.append("")
+            else:
+                directives_done = True
+                template_lines.append(line)
+                i += 1
+
+        return directives, template_lines
 
     def _parse_text(
         self, text: str, start_line: int = 0, raw_text: bool = False
@@ -662,12 +721,16 @@ class PyWireParser:
         """Validate that there's no malformed separator or orphaned Python code."""
         for i, line in enumerate(lines):
             stripped = line.strip()
+            if not stripped:
+                continue
 
-            # Check for partial separator patterns
-            if stripped and all(c == "-" for c in stripped) and stripped != "---":
+            if self._separator_re.match(stripped):
+                continue
+
+            if self._looks_like_separator_line(stripped):
                 raise PyWireSyntaxError(
-                    f"Malformed separator on line {i + 1}: found '{stripped}' but expected '---'. "
-                    f"Page-level Python code must be enclosed between two '---' lines.",
+                    f"Malformed separator on line {i + 1}: '{stripped}'. "
+                    "Expected symmetric dashes around 'html', e.g. '---html---'.",
                     file_path=file_path,
                     line=i + 1,
                 )
@@ -676,13 +739,12 @@ class PyWireParser:
             # Only check after line 5 to allow for directives at the top
             if i > 5 and self._looks_like_python_code(stripped):
                 raise PyWireSyntaxError(
-                    f"Python code detected on line {i + 1} without '---' separator. "
-                    f"Page-level Python code must be enclosed between two '---' lines.\n"
+                    f"Python code detected on line {i + 1} without a '---html---' separator. "
+                    f"Page-level Python code must appear before the HTML separator.\n"
                     f"Example format:\n"
-                    f"  <div>HTML content</div>\n"
-                    f"  ---\n"
                     f"  # Python code here\n"
-                    f"  ---",
+                    f"  ---html---\n"
+                    f"  <div>HTML content</div>",
                     file_path=file_path,
                     line=i + 1,
                 )

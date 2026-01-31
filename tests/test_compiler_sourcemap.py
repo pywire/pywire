@@ -11,13 +11,11 @@ class TestCompilerSourceMap:
         """Verify runtime errors in python blocks point to correct lines."""
         loader = PageLoader()
 
-        # Line 1: ---
-        # Line 2: raise ValueError("Boom")
-        # Line 3: ---
-        # Line 4: <h1>Test</h1>
-        source = """---
-raise ValueError("Boom")
----
+        # Line 1: raise ValueError("Boom")
+        # Line 2: ---html---
+        # Line 3: <h1>Test</h1>
+        source = """raise ValueError("Boom")
+---html---
 <h1>Test</h1>"""
 
         pywire_file = tmp_path / "script_error.wire"
@@ -38,8 +36,8 @@ raise ValueError("Boom")
 
             error_frame = frames[-1]
 
-            # raise on line 2
-            assert error_frame.lineno == 2, f"Raise should be on line 2, got {error_frame.lineno}"
+            # raise on line 1
+            assert error_frame.lineno == 1, f"Raise should be on line 1, got {error_frame.lineno}"
 
     def test_traceback_line_numbers_embedded_expr(self, tmp_path: Path) -> None:
         """Verify errors in { expression } point to correct lines."""
