@@ -17,8 +17,8 @@ uv run ruff check $FILES
 echo "-> Testing (Multi-version)..."
 # Use uv run to execute tox from dev dependencies, ensuring availability for all cloners
 if command -v tox >/dev/null 2>&1; then
-    tox -p auto
+    TOX_PARALLEL_NO_SPINNER=1 tox -q -p auto
 else
     # Fallback to uv run tox if global tox not found
-    uv run tox -p auto || uv run pytest
+    TOX_PARALLEL_NO_SPINNER=1 uv run tox -q -p auto || uv run pytest
 fi
