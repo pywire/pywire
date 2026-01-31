@@ -4,20 +4,21 @@ Basic Structure
 
 !layout basic
 
+class Page:
+    pass
+
+---html---
+
 <div id="app">
     <h1>Hello</h1>
 </div>
 
-   ---
-
-class Page:
-    pass
-
----
-
 (source_file
   (directive
     (keyword_directive))
+  (python_line)
+  (python_line)
+  (separator)
   (tag
     (tag_name)
     (attribute
@@ -30,8 +31,4 @@ class Page:
       (text)
       (tag_name))
     (text)
-    (tag_name))
-  (text)
-  (python_section
-    (separator)
-    (python_code)))
+    (tag_name)))

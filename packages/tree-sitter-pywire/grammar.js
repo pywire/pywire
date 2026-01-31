@@ -7,11 +7,25 @@ module.exports = grammar({
     ],
 
     rules: {
-        source_file: $ => repeat(choice(
-            $.directive,
-            $._html_content,
-            $.python_section
-        )),
+        source_file: $ => choice(
+            seq(
+                repeat(choice(
+                    $.directive,
+                    $.python_line,
+                    /\r?\n/
+                )),
+                $.separator,
+                repeat(choice(
+                    $._html_content,
+                    /\r?\n/
+                ))
+            ),
+            repeat(choice(
+                $.directive,
+                $._html_content,
+                /\r?\n/
+            ))
+        ),
 
         // Directives: !path, !layout, etc.
         directive: $ => prec(1, choice(
@@ -36,13 +50,8 @@ module.exports = grammar({
 
         _directive_multiline_content: $ => /[^}]+/,
 
-        // Python Section
-        python_section: $ => seq(
-            $.separator,
-            optional(alias($._python_block, $.python_code))
-        ),
-
-        _python_block: $ => token(prec(1, repeat1(/.|\n/))),
+        // Python Header Lines (before separator)
+        python_line: $ => token(prec(1, /[^\n]+/)),
 
         // HTML Content (Simplified for now)
         _html_content: $ => choice(
@@ -102,7 +111,11 @@ module.exports = grammar({
 
         // Separator must be on its own line (roughly)
         separator: $ => token(seq(
-            '---'
+            /-{3,}/,
+            /\s*/,
+            /[Hh][Tt][Mm][Ll]/,
+            /\s*/,
+            /-{3,}/
         )),
 
         // ...
