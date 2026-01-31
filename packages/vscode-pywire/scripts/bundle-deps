@@ -1,0 +1,16 @@
+#!/bin/sh -e
+
+TARGET_DIR="bundled/libs"
+mkdir -p "$TARGET_DIR"
+
+if [ -n "$PYWIRE_SRC" ]; then
+    python -m pip install pygls pyright -e "$PYWIRE_SRC" -t "$TARGET_DIR"
+    exit 0
+fi
+
+if [ -d "../pywire" ]; then
+    python -m pip install pygls pyright -e ../pywire -t "$TARGET_DIR"
+    exit 0
+fi
+
+python -m pip install pygls pyright git+https://github.com/pywire/pywire.git -t "$TARGET_DIR"

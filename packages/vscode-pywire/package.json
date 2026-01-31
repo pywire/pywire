@@ -91,7 +91,7 @@
     "watch:tsc": "tsc --noEmit --watch -p ./",
     "package": "pnpm run check-types && node build.js --production",
     "check-types": "tsc --noEmit -p ./",
-    "bundle-deps": "mkdir -p bundled/libs && if [ -d \"../pywire\" ]; then pip install pygls pyright -e ../pywire -t bundled/libs; else pip install pygls pyright pywire -t bundled/libs; fi",
+    "bundle-deps": "./scripts/bundle-deps",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
