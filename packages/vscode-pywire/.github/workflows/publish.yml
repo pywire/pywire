@@ -34,7 +34,7 @@ jobs:
         run: pnpm install
       - name: Bundle Python dependencies
         env:
-          PYWIRE_SRC: ../pywire
+          PYWIRE_SRC: pywire
         run: pnpm run bundle-deps
       - name: Compile
         run: pnpm run compile

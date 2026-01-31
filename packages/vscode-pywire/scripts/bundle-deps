@@ -1,15 +1,47 @@
 #!/bin/sh -e
 
-TARGET_DIR="bundled/libs"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TARGET_DIR="$ROOT_DIR/bundled/libs"
 mkdir -p "$TARGET_DIR"
 
-if [ -n "$PYWIRE_SRC" ]; then
-    python -m pip install pygls pyright -e "$PYWIRE_SRC" -t "$TARGET_DIR"
+resolve_pywire_src() {
+    if [ -z "$1" ]; then
+        return 1
+    fi
+
+    src="$1"
+    case "$src" in
+        /*) ;;
+        *) src="$ROOT_DIR/$src" ;;
+    esac
+
+    if [ ! -d "$src" ]; then
+        return 1
+    fi
+
+    if [ -f "$src/pyproject.toml" ] || [ -f "$src/setup.py" ] || [ -f "$src/setup.cfg" ]; then
+        echo "$src"
+        return 0
+    fi
+
+    return 1
+}
+
+pywire_src="$(resolve_pywire_src "$PYWIRE_SRC")" || pywire_src=""
+if [ -n "$pywire_src" ]; then
+    python -m pip install pygls pyright -e "$pywire_src" -t "$TARGET_DIR"
     exit 0
 fi
 
-if [ -d "../pywire" ]; then
-    python -m pip install pygls pyright -e ../pywire -t "$TARGET_DIR"
+pywire_src="$(resolve_pywire_src "../pywire")" || pywire_src=""
+if [ -n "$pywire_src" ]; then
+    python -m pip install pygls pyright -e "$pywire_src" -t "$TARGET_DIR"
+    exit 0
+fi
+
+pywire_src="$(resolve_pywire_src "pywire")" || pywire_src=""
+if [ -n "$pywire_src" ]; then
+    python -m pip install pygls pyright -e "$pywire_src" -t "$TARGET_DIR"
     exit 0
 fi
 
