@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: pywire/pywire
-          path: pywire
+          path: _deps/pywire
           token: ${{ secrets.GH_PAT }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -34,7 +34,7 @@ jobs:
         run: pnpm install
       - name: Bundle Python dependencies
         env:
-          PYWIRE_SRC: pywire
+          PYWIRE_SRC: _deps/pywire
         run: pnpm run bundle-deps
       - name: Compile
         run: pnpm run compile
