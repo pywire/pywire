@@ -3,91 +3,14 @@
 import ast
 import json
 import logging
-import re
-from typing import Any, Dict, List, Optional, Tuple, cast
 import os
+import re
 import shutil
 import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-class ShadowFileManager:
-    """
-    Manages generation of shadow .py files for Pyright consumption.
-    This mimics the behavior of the VS Code extension but on the server side.
-    """
-    def __init__(self, root_uri: str):
-        self.root_uri = root_uri
-        self.root_path = self._uri_to_path(root_uri)
-        if self.root_path:
-            self.pywire_dir = os.path.join(self.root_path, ".pywire")
-        else:
-            self.pywire_dir = "" # Disable if no root path
-        
-    def _uri_to_path(self, uri: str) -> Optional[str]:
-        # Simple parsing, in real world might need urllib
-        if uri.startswith("file://"):
-            return uri[7:]
-        # If no file:// scheme, assume it is strict file path or invalid
-        # But LSP URIs should be file://
-        return None
-
-    def ensure_init(self) -> bool:
-        """Ensure .pywire directory exists and is ignored."""
-        if not self.pywire_dir:
-            return False
-            
-        if not os.path.exists(self.pywire_dir):
-            try:
-                os.makedirs(self.pywire_dir, exist_ok=True)
-                gitignore = os.path.join(self.pywire_dir, ".gitignore")
-                with open(gitignore, "w") as f:
-                    f.write("*\n")
-            except Exception as e:
-                logger.error(f"Failed to init shadow dir: {e}")
-                return False
-        return True
-
-    def update_shadow_file(self, doc_uri: str, content: str) -> Optional[str]:
-        """Write content to shadow file and return its path."""
-        if not self.pywire_dir: return None
-
-        try:
-            doc_path = self._uri_to_path(doc_uri)
-            if not doc_path: return None
-            
-            # Simple containment check
-            if not doc_path.startswith(self.root_path):
-                # Outside workspace??
-                return None
-
-            rel_path = os.path.relpath(doc_path, self.root_path)
-            
-            shadow_rel_path = rel_path + ".py"
-            shadow_path = os.path.join(self.pywire_dir, shadow_rel_path)
-            
-            # Ensure parent dir
-            os.makedirs(os.path.dirname(shadow_path), exist_ok=True)
-            
-            with open(shadow_path, "w") as f:
-                f.write(content)
-                
-            return f"file://{shadow_path}"
-        except Exception as e:
-            logger.error(f"Failed to update shadow file for {doc_uri}: {e}")
-            return None
-
-    def get_shadow_uri(self, doc_uri: str) -> Optional[str]:
-        doc_path = self._uri_to_path(doc_uri)
-        try:
-            if not doc_path or not self.root_path: return None
-            rel_path = os.path.relpath(doc_path, self.root_path)
-            shadow_path = os.path.join(self.pywire_dir, rel_path + ".py")
-            return f"file://{shadow_path}"
-        except ValueError:
-            return None
-
-
-
-from pygls.lsp.server import LanguageServer
+import attrs
 from lsprotocol.types import (
     CompletionItem,
     CompletionItemKind,
@@ -101,6 +24,7 @@ from lsprotocol.types import (
     Hover,
     HoverParams,
     Location,
+    MarkupContent,
     Position,
     PublishDiagnosticsParams,
     Range,
@@ -109,6 +33,95 @@ from lsprotocol.types import (
     SemanticTokensParams,
     TextDocumentSyncKind,
 )
+from pygls.lsp.server import LanguageServer
+
+from .pyright import PyrightClient
+from .transpiler import Transpiler
+
+
+class ShadowFileManager:
+    """
+    Manages generation of shadow .py files for Pyright consumption.
+    This mimics the behavior of the VS Code extension but on the server side.
+    """
+
+    def __init__(self, root_uri: str):
+        self.root_uri = root_uri
+        self.root_path = self._uri_to_path(root_uri)
+        if self.root_path:
+            self.pywire_dir = os.path.join(self.root_path, ".pywire")
+        else:
+            self.pywire_dir = ""  # Disable if no root path
+
+    def _uri_to_path(self, uri: str) -> Optional[str]:
+        # Simple parsing, in real world might need urllib
+        if uri.startswith("file://"):
+            return uri[7:]
+        # If no file:// scheme, assume it is strict file path or invalid
+        # But LSP URIs should be file://
+        return None
+
+    def ensure_init(self) -> bool:
+        """Ensure .pywire directory exists and is ignored."""
+        if not self.pywire_dir:
+            return False
+
+        if not os.path.exists(self.pywire_dir):
+            try:
+                os.makedirs(self.pywire_dir, exist_ok=True)
+                gitignore = os.path.join(self.pywire_dir, ".gitignore")
+                with open(gitignore, "w") as f:
+                    f.write("*\n")
+            except Exception as e:
+                logger.error(f"Failed to init shadow dir: {e}")
+                return False
+        return True
+
+    def update_shadow_file(self, doc_uri: str, content: str) -> Optional[str]:
+        """Write content to shadow file and return its path."""
+        if not self.pywire_dir:
+            return None
+
+        try:
+            doc_path = self._uri_to_path(doc_uri)
+            if not doc_path:
+                return None
+
+            if not self.root_path:
+                return None
+
+            # Simple containment check
+            if not doc_path.startswith(self.root_path):
+                # Outside workspace??
+                return None
+
+            rel_path = os.path.relpath(doc_path, self.root_path)
+
+            shadow_rel_path = rel_path + ".py"
+            shadow_path = os.path.join(self.pywire_dir, shadow_rel_path)
+
+            # Ensure parent dir
+            os.makedirs(os.path.dirname(shadow_path), exist_ok=True)
+
+            with open(shadow_path, "w") as f:
+                f.write(content)
+
+            return f"file://{shadow_path}"
+        except Exception as e:
+            logger.error(f"Failed to update shadow file for {doc_uri}: {e}")
+            return None
+
+    def get_shadow_uri(self, doc_uri: str) -> Optional[str]:
+        doc_path = self._uri_to_path(doc_uri)
+        try:
+            if not doc_path or not self.root_path:
+                return None
+            rel_path = os.path.relpath(doc_path, self.root_path)
+            shadow_path = os.path.join(self.pywire_dir, rel_path + ".py")
+            return f"file://{shadow_path}"
+        except ValueError:
+            return None
+
 
 # Setup logging for debugging
 # Setup logging for debugging
@@ -117,8 +130,8 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/tmp/pywire-language-server.log"),
-        logging.StreamHandler(sys.stderr)
-    ]
+        logging.StreamHandler(sys.stderr),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -171,24 +184,23 @@ server = LanguageServer(
 )
 
 
-from .transpiler import Transpiler
-
-from .pyright import PyrightClient
-
 # Global state for Pyright fallback
 pyright_client: Optional[PyrightClient] = None
 shadow_manager: Optional[ShadowFileManager] = None
+
 
 @server.feature("initialize")
 def initialize(ls: LanguageServer, params: Any):
     """Initialize the server."""
     global pyright_client, shadow_manager
-    
+
     # Check if client capabilities suggest we need fallback?
     # Or maybe we just always try to start if configured?
-    
+
     # We need root URI
-    root_uri = params.root_uri or (f"file://{params.root_path}" if params.root_path else None)
+    root_uri = params.root_uri or (
+        f"file://{params.root_path}" if params.root_path else None
+    )
 
     if root_uri:
         shadow_manager = ShadowFileManager(root_uri)
@@ -197,7 +209,7 @@ def initialize(ls: LanguageServer, params: Any):
             init_opts = getattr(params, "initialization_options", {}) or {}
             # Default to True for standalone clients (NeoVim, etc.), but VS Code sends explicit False
             use_bundled_pyright = init_opts.get("useBundledPyright", True)
-            
+
             logger.info(f"Use Bundled Pyright: {use_bundled_pyright}")
 
             if use_bundled_pyright:
@@ -206,39 +218,46 @@ def initialize(ls: LanguageServer, params: Any):
                 if client.start():
                     pyright_client = client
                     logger.info("Pyright fallback started successfully")
-                    
+
                     # Perform async init in a task
                     import asyncio
+
                     asyncio.create_task(_init_pyright(ls, params))
                 else:
-                    logger.error("Pyright failed to start. Language server features will be limited.")
+                    logger.error(
+                        "Pyright failed to start. Language server features will be limited."
+                    )
             else:
-                 logger.info("Pyright bundling disabled by client (Middleware Mode).")
+                logger.info("Pyright bundling disabled by client (Middleware Mode).")
         else:
-             logger.error("Failed to init shadow manager. Language server features will be limited.")
+            logger.error(
+                "Failed to init shadow manager. Language server features will be limited."
+            )
 
-import attrs
 
 async def _init_pyright(ls: LanguageServer, params: Any):
     if pyright_client:
         try:
             logger.info(f"Checking for node: {shutil.which('node')}")
-            
+
             # lsprotocol models use attrs
             init_dict = attrs.asdict(params, recurse=True)
 
             # Important: Set processId to None or our PID
-            init_dict['processId'] = os.getpid()
-            
-            logger.debug(f"Sending initialize to Pyright: {json.dumps(init_dict)[:200]}...")
+            init_dict["processId"] = os.getpid()
+
+            logger.debug(
+                f"Sending initialize to Pyright: {json.dumps(init_dict)[:200]}..."
+            )
 
             await pyright_client.send_request("initialize", init_dict)
-            
+
             # Send initialized notification
             pyright_client.send_notification("initialized", {})
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize pyright interaction: {e}")
+
 
 class PyWireDocument:
     """Represents a parsed .pywire document using Virtual Document architecture"""
@@ -246,11 +265,11 @@ class PyWireDocument:
     def __init__(self, uri: str, text: str):
         self.uri = uri
         self.text = text
-        
+
         # Transpile to virtual python
         self.transpiler = Transpiler(text)
         self.virtual_python, self.source_map = self.transpiler.transpile()
-        
+
         # Compatibility layers while refactoring
         self.lines = text.split("\n")
         # Old properties like routes and diagnostics should now be derived/validated differently.
@@ -269,8 +288,7 @@ class PyWireDocument:
         self.directive_ranges = self.transpiler.directive_ranges
         self.lines = text.split("\n")
 
-
-    def map_to_original(self, line: int, col: int) -> Tuple[int, int]:
+    def map_to_original(self, line: int, col: int) -> Optional[Tuple[int, int]]:
         """Map virtual python position to original .wire position"""
         return self.source_map.to_original(line, col)
 
@@ -278,21 +296,310 @@ class PyWireDocument:
         """Map original .wire position to virtual python position"""
         return self.source_map.to_generated(line, col)
 
-
     # Legacy validation and helpers removed.
-
-
-
-
 
 
 # Document cache
 documents: dict[str, PyWireDocument] = {}
 
+
+def _uri_to_path(uri: str) -> Optional[str]:
+    if uri.startswith("file://"):
+        return uri[7:]
+    return None
+
+
+def _find_separator_index(lines: List[str]) -> Optional[int]:
+    separator_re = re.compile(r"^\s*(-{3,})\s*html\s*\1\s*$", re.IGNORECASE)
+    for i, line in enumerate(lines):
+        if separator_re.match(line.strip()):
+            return i
+    return None
+
+
+def _scan_directives_end(lines: List[str], end_idx: int) -> int:
+    i = 0
+    pending_blank_start: Optional[int] = None
+    while i < end_idx:
+        stripped = lines[i].strip()
+        if not stripped:
+            if pending_blank_start is None:
+                pending_blank_start = i
+            i += 1
+            continue
+        if stripped.startswith("!"):
+            pending_blank_start = None
+            i += 1
+            continue
+        break
+    if pending_blank_start is not None:
+        return pending_blank_start
+    return i
+
+
+def _extract_first_string_literal(line: str) -> Optional[Tuple[int, int, str]]:
+    match = re.search(r"(['\"])(?P<val>(?:\\.|(?!\1).)*)\1", line)
+    if not match:
+        return None
+    return match.start("val"), match.end("val"), match.group("val")
+
+
+def _parse_path_routes(routes_text: str) -> Optional[Dict[str, str]]:
+    try:
+        expr_ast = ast.parse(routes_text, mode="eval")
+    except SyntaxError:
+        return None
+
+    if isinstance(expr_ast.body, ast.Dict):
+        routes: Dict[str, str] = {}
+        for key_node, value_node in zip(expr_ast.body.keys, expr_ast.body.values):
+            if not isinstance(key_node, ast.Constant) or not isinstance(
+                key_node.value, str
+            ):
+                return None
+            if not isinstance(value_node, ast.Constant) or not isinstance(
+                value_node.value, str
+            ):
+                return None
+            routes[key_node.value] = value_node.value
+        return routes
+
+    if isinstance(expr_ast.body, ast.Constant) and isinstance(expr_ast.body.value, str):
+        return {"main": expr_ast.body.value}
+
+    return None
+
+
+def _collect_path_block(lines: List[str], start_idx: int) -> Tuple[str, int]:
+    line = lines[start_idx]
+    if "{" in line and "}" not in line:
+        current_idx = start_idx
+        content_accum = []
+        while current_idx < len(lines):
+            line_text = lines[current_idx]
+            content_accum.append(line_text)
+            if "}" in line_text:
+                break
+            current_idx += 1
+        return ("".join(content_accum), current_idx)
+    return (line, start_idx)
+
+
+def _get_word_at_position(line_text: str, char: int) -> str:
+    start = char
+    while start > 0 and (
+        line_text[start - 1].isalnum() or line_text[start - 1] in "@$._"
+    ):
+        start -= 1
+    end = char
+    while end < len(line_text) and (
+        line_text[end].isalnum() or line_text[end] in "@$._"
+    ):
+        end += 1
+    return line_text[start:end]
+
+
+def _get_section(lines: List[str], line_number: int) -> str:
+    separator_idx = _find_separator_index(lines)
+
+    if separator_idx is not None and line_number == separator_idx:
+        return "separator"
+
+    line_text = lines[line_number].strip() if line_number < len(lines) else ""
+    if (
+        line_text.startswith("!")
+        or line_text.startswith("# !")
+        or line_text.startswith("#!")
+    ):
+        return "directive"
+
+    if separator_idx is not None and line_number < separator_idx:
+        return "python"
+
+    return "html"
+
+
+def _path_param_at(value: str, rel_col: int) -> Optional[Tuple[str, Optional[str]]]:
+    pattern = (
+        r":(?P<name>\w+)(?::(?P<type>\w+))?|\{(?P<name2>\w+)(?::(?P<type2>\w+))?\}"
+    )
+    for match in re.finditer(pattern, value):
+        if match.start() <= rel_col < match.end():
+            name = match.group("name") or match.group("name2")
+            type_hint = match.group("type") or match.group("type2")
+            return name, type_hint
+    return None
+
+
+def _path_entry_hover(doc: PyWireDocument, position: Position) -> Optional[Hover]:
+    if "path" not in doc.directive_ranges:
+        return None
+    start_line, end_line = doc.directive_ranges["path"]
+    if position.line < start_line or position.line > end_line:
+        return None
+
+    line = doc.lines[position.line]
+    stripped = line.strip()
+
+    # Single-line !path "/route"
+    if stripped.startswith("!path") and "{" not in line:
+        literal = _extract_first_string_literal(line)
+        if not literal:
+            return None
+        start_col, end_col, route_value = literal
+        if start_col <= position.character <= end_col:
+            return Hover(contents=f"**Route pattern**\n\n`{route_value}`")
+        return None
+
+    # Dict entries: 'name': '/route/:id'
+    for match in re.finditer(
+        r"(['\"])(?P<key>[^'\"]+)\1\s*:\s*(['\"])(?P<val>[^'\"]+)\3", line
+    ):
+        key_start, key_end = match.start("key"), match.end("key")
+        val_start, val_end = match.start("val"), match.end("val")
+        if key_start <= position.character <= key_end:
+            return Hover(contents=f"**Route name**\n\n`{match.group('key')}`")
+        if val_start <= position.character <= val_end:
+            rel_col = position.character - val_start
+            param = _path_param_at(match.group("val"), rel_col)
+            if param:
+                name, type_hint = param
+                type_label = type_hint or "string"
+                return Hover(contents=f"**Path parameter**\n\n`{name}` ({type_label})")
+            return Hover(contents=f"**Route pattern**\n\n`{match.group('val')}`")
+
+    return None
+
+
 def validate(ls: LanguageServer, uri: str):
     """Sends diagnostics for the given URI."""
     doc = documents.get(uri)
     if doc:
+        diagnostics: List[Diagnostic] = []
+        lines = doc.lines
+
+        # Validate !path directives
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.startswith("!path"):
+                block_text, end_idx = _collect_path_block(lines, i)
+                match = re.search(r"!path\s*(.+)", block_text, re.DOTALL)
+                if not match:
+                    diagnostics.append(
+                        Diagnostic(
+                            range=Range(
+                                start=Position(line=i, character=0),
+                                end=Position(
+                                    line=end_idx, character=len(lines[end_idx])
+                                ),
+                            ),
+                            message="Invalid path directive syntax",
+                            severity=DiagnosticSeverity.Error,
+                        )
+                    )
+                    i = end_idx + 1
+                    continue
+
+                routes_text = match.group(1).strip()
+                parsed = _parse_path_routes(routes_text)
+                if parsed is None:
+                    diagnostics.append(
+                        Diagnostic(
+                            range=Range(
+                                start=Position(line=i, character=0),
+                                end=Position(
+                                    line=end_idx, character=len(lines[end_idx])
+                                ),
+                            ),
+                            message="Invalid path directive syntax",
+                            severity=DiagnosticSeverity.Error,
+                        )
+                    )
+                i = end_idx + 1
+                continue
+            i += 1
+
+        # Validate !layout paths
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith("!layout"):
+                continue
+            literal = _extract_first_string_literal(line)
+            if not literal:
+                continue
+            start_col, end_col, layout_path = literal
+            doc_path = _uri_to_path(uri)
+            if not doc_path:
+                continue
+            base_dir = Path(doc_path).parent
+            target = Path(layout_path)
+            if not target.is_absolute():
+                target = (base_dir / target).resolve()
+            if not target.exists():
+                diagnostics.append(
+                    Diagnostic(
+                        range=Range(
+                            start=Position(line=idx, character=start_col),
+                            end=Position(line=idx, character=end_col),
+                        ),
+                        message=f"Layout file not found: {layout_path}",
+                        severity=DiagnosticSeverity.Error,
+                    )
+                )
+
+        # ---html--- separator checks
+        separator_idx = _find_separator_index(lines)
+        if separator_idx is not None:
+            directive_end = _scan_directives_end(lines, separator_idx)
+            has_python = False
+            for i in range(directive_end, separator_idx):
+                if lines[i].strip():
+                    has_python = True
+                    break
+            if not has_python:
+                diagnostics.append(
+                    Diagnostic(
+                        range=Range(
+                            start=Position(line=separator_idx, character=0),
+                            end=Position(
+                                line=separator_idx,
+                                character=len(lines[separator_idx]),
+                            ),
+                        ),
+                        message="Separator not needed: no Python code before HTML",
+                        severity=DiagnosticSeverity.Warning,
+                    )
+                )
+        else:
+            directive_end = _scan_directives_end(lines, len(lines))
+            has_python = False
+            html_start: Optional[int] = None
+            for i in range(directive_end, len(lines)):
+                stripped = lines[i].strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("!"):
+                    continue
+                if stripped.startswith("<"):
+                    html_start = i
+                    break
+                has_python = True
+            if has_python and html_start is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        range=Range(
+                            start=Position(line=html_start, character=0),
+                            end=Position(
+                                line=html_start, character=len(lines[html_start])
+                            ),
+                        ),
+                        message="Missing ---html--- separator between Python and HTML",
+                        severity=DiagnosticSeverity.Error,
+                    )
+                )
+
+        doc.diagnostics = diagnostics
         ls.text_document_publish_diagnostics(
             PublishDiagnosticsParams(uri=uri, diagnostics=doc.diagnostics)
         )
@@ -308,11 +615,11 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
 
     doc = PyWireDocument(uri, params.text_document.text)
     documents[uri] = doc
-    
+
     # Sync with Shadow/Pyright
     if shadow_manager:
         shadow_path = shadow_manager.update_shadow_file(uri, doc.get_python_source())
-        
+
         if pyright_client and shadow_path:
             # We must open the SHADOW file in Pyright
             # Construct params
@@ -322,9 +629,11 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
                     "uri": shadow_path,
                     "languageId": "python",
                     "version": params.text_document.version,
-                    "text": doc.get_python_source()
+                    "text": doc.get_python_source(),
                 }
-                pyright_client.send_notification("textDocument/didOpen", {"textDocument": shadow_doc_item})
+                pyright_client.send_notification(
+                    "textDocument/didOpen", {"textDocument": shadow_doc_item}
+                )
             except Exception as e:
                 logger.error(f"Failed to notify pyright didOpen: {e}")
 
@@ -339,7 +648,7 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
     doc = documents.get(uri)
     if not doc:
         return
-    
+
     # Update document text
     # Simple full text replacement for now, assuming client sends full text
     # NOTE: In reality, params.content_changes might be incremental.
@@ -351,29 +660,28 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
 
         # Sync with Shadow/Pyright
         if shadow_manager:
-            shadow_path = shadow_manager.update_shadow_file(uri, doc.get_python_source())
-            
+            shadow_path = shadow_manager.update_shadow_file(
+                uri, doc.get_python_source()
+            )
+
             if pyright_client and shadow_path:
                 try:
                     shadow_change_params = {
                         "textDocument": {
                             "uri": shadow_path,
-                            "version": params.text_document.version
+                            "version": params.text_document.version,
                         },
-                        "contentChanges": [{
-                            "text": doc.get_python_source()
-                        }]
+                        "contentChanges": [{"text": doc.get_python_source()}],
                     }
-                    pyright_client.send_notification("textDocument/didChange", shadow_change_params)
+                    pyright_client.send_notification(
+                        "textDocument/didChange", shadow_change_params
+                    )
                 except Exception as e:
                     logger.error(f"Failed to notify pyright didChange: {e}")
 
     validate(ls, uri)
 
     logger.info(f"Document changed: {uri}")
-
-
-
 
 
 @server.feature("textDocument/hover")
@@ -397,6 +705,9 @@ async def hover(ls: LanguageServer, params: HoverParams) -> Optional[Hover]:
             in_path_directive = True
 
     if in_path_directive:
+        entry_hover = _path_entry_hover(doc, position)
+        if entry_hover:
+            return entry_hover
         return Hover(
             contents="""**!path Directive**
 
@@ -421,77 +732,83 @@ Define routes for this page.
 - `:name:str` - captures as string (default)
 
 **Injected Variables:**
-- `self.path` - dict of route names to booleans
-- `self.params` - dict of captured parameters  
-- `self.query` - dict of query string parameters
-- `self.url` - helper to generate URLs
+- `path` - dict of route names to booleans
+- `params` - dict of captured parameters
+- `query` - dict of query string parameters
+- `url` - helper to generate URLs
 """
         )
 
     # Check for word at cursor to detect $ shorthand or directives
     line_text = doc.lines[position.line]
-    char = position.character
-    start = char
-    while start > 0 and (line_text[start-1].isalnum() or line_text[start-1] in "@$._"):
-        start -= 1
-    end = char
-    while end < len(line_text) and (line_text[end].isalnum() or line_text[end] in "@$._"):
-        end += 1
-    
-    word = line_text[start:end]
+    word = _get_word_at_position(line_text, position.character)
     is_shorthand = word.startswith("$") and len(word) > 1 and word[1].isalpha()
 
     # Direct mapping approach
     gen_pos = doc.map_to_generated(position.line, position.character)
-    
-    
+
     if gen_pos:
         gen_line, gen_col = gen_pos
-        
+
         # 1. Try Pyright Fallback
         if pyright_client and shadow_manager:
             shadow_uri = shadow_manager.get_shadow_uri(uri)
             if shadow_uri:
-                 try:
+                try:
                     # Construct params for Pyright
                     # We need to translate the position to the shadow file
                     shadow_params = {
                         "textDocument": {"uri": shadow_uri},
-                        "position": {"line": gen_line, "character": gen_col}
+                        "position": {"line": gen_line, "character": gen_col},
                     }
-                    
-                    result = await pyright_client.send_request("textDocument/hover", shadow_params)
-                    if result and "contents" in result:
 
+                    result = await pyright_client.send_request(
+                        "textDocument/hover", shadow_params
+                    )
+                    if result and "contents" in result:
                         # Success!
                         # We might needed to map range?
                         # For now, just return contents
-                        
+
                         contents = result["contents"]
-                        
+
                         # Add shorthand hint if needed
                         # Pyright returns MarkdownString usually
                         if is_shorthand:
-                             prefix = f"**Reactive Shorthand**\n\nAccessor for `{word}`. Equivalent to `{word[1:]}.value`.\n\n---\n\n"
-                             if isinstance(contents, dict) and "value" in contents:
-                                 contents["value"] = prefix + contents["value"]
-                             elif isinstance(contents, str):
-                                 contents = prefix + contents
-                                 
-                        if isinstance(contents, dict):
-                             return Hover(contents=contents) # It's MarkupContent
-                        else:
-                             return Hover(contents=contents)
-                 except Exception as e:
-                     logger.error(f"Pyright hover failed: {e}")
+                            prefix = f"**Reactive Shorthand**\n\nAccessor for `{word}`. Equivalent to `{word[1:]}.value`.\n\n---\n\n"
+                            if isinstance(contents, dict) and "value" in contents:
+                                contents["value"] = prefix + contents["value"]
+                            elif isinstance(contents, str):
+                                contents = prefix + contents
 
-                 except Exception as e:
-                     logger.error(f"Pyright hover failed: {e}")
+                        if isinstance(contents, dict):
+                            return Hover(
+                                contents=MarkupContent(
+                                    kind=contents.get("kind", "markdown"),
+                                    value=contents.get("value", ""),
+                                )
+                            )
+                        return Hover(contents=contents)
+                except Exception as e:
+                    logger.error(f"Pyright hover failed: {e}")
+
+                except Exception as e:
+                    logger.error(f"Pyright hover failed: {e}")
 
         # Fallback checks (if no mapping or Pyright failed)
 
     # Fallback checks (if no mapping or Jedi failed)
-    
+
+    framework_hovers = {
+        "path": "**path**\n\nRoute matcher dict. Keys are route names from `!path`, values are `True` when that route matched.",
+        "url": "**url**\n\nURL helper dict. Keys are route names from `!path`, values are URL templates.",
+        "params": "**params**\n\nURL path parameters extracted from the matched route.",
+        "query": "**query**\n\nQuery string parameters from the URL.",
+    }
+
+    if word in framework_hovers:
+        return Hover(contents=framework_hovers[word])
+
     hover_docs = {
         "@click": "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click={change_name}` or `@click={count += 1}`",
         "@submit": "**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.",
@@ -501,29 +818,32 @@ Define routes for this page.
         "$show": "**$show**\n\nConditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.\n\nExample: `$show={is_visible}`",
         "$for": "**$for**\n\nLoop directive. Repeats the element for each item in a collection.\n\n**Syntax:**\n- `$for={item in items}`\n- `$for={index, item in enumerate(items)}`\n- `$for={key, value in dict.items()}`",
         "$key": "**$key**\n\nStable key for loops. Provides a unique identifier for efficient DOM diffing.\n\nExample: `$key={item.id}`",
-        "$bind": "**$bind**\n\nTwo-way data binding. Binds an input element's value to a Python variable.\n\nExample: `$bind={username}`",
     }
-    
+
     if word in hover_docs:
         return Hover(contents=hover_docs[word])
     elif word.startswith("@"):
         parts = word.split(".")
         if parts[0] in hover_docs:
-             base = hover_docs[parts[0]]
-             if len(parts) > 1:
-                 base += f"\n\n**Modifiers:** {', '.join(parts[1:])}"
-             return Hover(contents=base)
+            base = hover_docs[parts[0]]
+            if len(parts) > 1:
+                base += f"\n\n**Modifiers:** {', '.join(parts[1:])}"
+            return Hover(contents=base)
         return Hover(contents=f"**{word}**\n\nEvent handler.")
     elif is_shorthand:
-        return Hover(contents=f"**Reactive Shorthand**\n\nAccessor for `{word}`. Equivalent to `{word[1:]}.value`.")
+        return Hover(
+            contents=f"**Reactive Shorthand**\n\nAccessor for `{word}`. Equivalent to `{word[1:]}.value`."
+        )
     elif word.startswith("$"):
         return Hover(contents=f"**{word}**\n\nDirective.")
-        
+
     return None
 
 
 @server.feature("textDocument/references")
-async def references(ls: LanguageServer, params: DefinitionParams) -> Optional[List[Location]]:
+async def references(
+    ls: LanguageServer, params: DefinitionParams
+) -> Optional[List[Location]]:
     """Provide find references"""
     uri = params.text_document.uri
     position = params.position
@@ -531,14 +851,14 @@ async def references(ls: LanguageServer, params: DefinitionParams) -> Optional[L
     doc = documents.get(uri)
     if not doc:
         return None
-        
+
     # Map to virtual python
     gen_pos = doc.map_to_generated(position.line, position.character)
     if not gen_pos:
-         return None
-         
+        return None
+
     gen_line, gen_col = gen_pos
-    
+
     if pyright_client and shadow_manager:
         shadow_uri = shadow_manager.get_shadow_uri(uri)
         if shadow_uri:
@@ -546,16 +866,22 @@ async def references(ls: LanguageServer, params: DefinitionParams) -> Optional[L
                 shadow_params = {
                     "textDocument": {"uri": shadow_uri},
                     "position": {"line": gen_line, "character": gen_col},
-                    "context": {"includeDeclaration": True} # params.context might be present
+                    "context": {
+                        "includeDeclaration": True
+                    },  # params.context might be present
                 }
-                
-                # We need to handle params.context if it exists
-                if hasattr(params, 'context'):
-                     # lsprotocol object to dict... or just manual
-                     shadow_params["context"] = {"includeDeclaration": params.context.include_declaration}
 
-                result = await pyright_client.send_request("textDocument/references", shadow_params)
-                
+                # We need to handle params.context if it exists
+                if hasattr(params, "context"):
+                    # lsprotocol object to dict... or just manual
+                    shadow_params["context"] = {
+                        "includeDeclaration": params.context.include_declaration
+                    }
+
+                result = await pyright_client.send_request(
+                    "textDocument/references", shadow_params
+                )
+
                 if result:
                     # Result is List[Location] (dicts)
                     # We need to map them back
@@ -563,40 +889,60 @@ async def references(ls: LanguageServer, params: DefinitionParams) -> Optional[L
                     for loc in result:
                         loc_uri = loc.get("uri")
                         loc_range = loc.get("range")
-                        
+
                         # If reference is in shadow file, map back
                         # If external, keep as is
                         if loc_uri == shadow_uri:
                             # Map back to .wire
                             start = loc_range["start"]
                             end = loc_range["end"]
-                            
-                            orig_start = doc.map_to_original(start["line"], start["character"])
-                            orig_end = doc.map_to_original(end["line"], end["character"])
-                            
+
+                            orig_start = doc.map_to_original(
+                                start["line"], start["character"]
+                            )
+                            orig_end = doc.map_to_original(
+                                end["line"], end["character"]
+                            )
+
                             if orig_start and orig_end:
-                                locations.append(Location(
-                                    uri=uri,
-                                    range=Range(
-                                        start=Position(line=orig_start[0], character=orig_start[1]),
-                                        end=Position(line=orig_end[0], character=orig_end[1])
+                                locations.append(
+                                    Location(
+                                        uri=uri,
+                                        range=Range(
+                                            start=Position(
+                                                line=orig_start[0],
+                                                character=orig_start[1],
+                                            ),
+                                            end=Position(
+                                                line=orig_end[0], character=orig_end[1]
+                                            ),
+                                        ),
                                     )
-                                ))
+                                )
                         else:
                             # External reference
-                            locations.append(Location(
-                                uri=loc_uri,
-                                range=Range(
-                                    start=Position(line=loc_range["start"]["line"], character=loc_range["start"]["character"]),
-                                    end=Position(line=loc_range["end"]["line"], character=loc_range["end"]["character"])
+                            locations.append(
+                                Location(
+                                    uri=loc_uri,
+                                    range=Range(
+                                        start=Position(
+                                            line=loc_range["start"]["line"],
+                                            character=loc_range["start"]["character"],
+                                        ),
+                                        end=Position(
+                                            line=loc_range["end"]["line"],
+                                            character=loc_range["end"]["character"],
+                                        ),
+                                    ),
                                 )
-                            ))
+                            )
                     return locations
 
             except Exception as e:
                 logger.error(f"Pyright references error: {e}")
-                
-    return None 
+
+    return None
+
 
 @server.feature("textDocument/definition")
 async def definition(
@@ -610,82 +956,139 @@ async def definition(
     if not doc:
         return None
 
+    # Handle !layout directive path
+    line_text = doc.lines[position.line]
+    if line_text.strip().startswith("!layout"):
+        literal = _extract_first_string_literal(line_text)
+        if literal:
+            start_col, end_col, layout_path = literal
+            if start_col <= position.character <= end_col:
+                doc_path = _uri_to_path(uri)
+                if doc_path:
+                    base_dir = Path(doc_path).parent
+                    target = Path(layout_path)
+                    if not target.is_absolute():
+                        target = (base_dir / target).resolve()
+                    if target.exists():
+                        return [
+                            Location(
+                                uri=f"file://{target}",
+                                range=Range(
+                                    start=Position(line=0, character=0),
+                                    end=Position(line=0, character=0),
+                                ),
+                            )
+                        ]
+
+    # Go-to-definition for path variable
+    word = _get_word_at_position(line_text, position.character)
+    if word == "path" and "path" in doc.directive_ranges:
+        start_line, _ = doc.directive_ranges["path"]
+        return [
+            Location(
+                uri=uri,
+                range=Range(
+                    start=Position(line=start_line, character=0),
+                    end=Position(line=start_line, character=0),
+                ),
+            )
+        ]
+
     # Map to virtual python
     gen_pos = doc.map_to_generated(position.line, position.character)
     if not gen_pos:
         return None
-        
+
     gen_line, gen_col = gen_pos
-    
+
     if pyright_client and shadow_manager:
         shadow_uri = shadow_manager.get_shadow_uri(uri)
         if shadow_uri:
             try:
                 shadow_params = {
                     "textDocument": {"uri": shadow_uri},
-                    "position": {"line": gen_line, "character": gen_col}
+                    "position": {"line": gen_line, "character": gen_col},
                 }
-                
-                result = await pyright_client.send_request("textDocument/definition", shadow_params)
-                
+
+                result = await pyright_client.send_request(
+                    "textDocument/definition", shadow_params
+                )
+
                 if result:
                     # Result is Location | Location[] | LocationLink[] | None
                     # Normalize to list
                     if not isinstance(result, list):
                         result = [result]
-                        
+
                     locations = []
                     for loc in result:
                         # Handle LocationLink? Pyright usually returns Location for basic definition
                         if "targetUri" in loc:
-                             # It's a LocationLink
-                             loc_uri = loc["targetUri"]
-                             loc_range = loc["targetSelectionRange"]
+                            # It's a LocationLink
+                            loc_uri = loc["targetUri"]
+                            loc_range = loc["targetSelectionRange"]
                         else:
-                             # It's a Location
-                             loc_uri = loc["uri"]
-                             loc_range = loc["range"]
-                        
+                            # It's a Location
+                            loc_uri = loc["uri"]
+                            loc_range = loc["range"]
+
                         if loc_uri == shadow_uri:
                             # Map back
                             start = loc_range["start"]
                             end = loc_range["end"]
-                            
-                            orig_start = doc.map_to_original(start["line"], start["character"])
+
+                            orig_start = doc.map_to_original(
+                                start["line"], start["character"]
+                            )
                             # For definitions, end might not handle well if we map purely points
                             # Just map start
-                            
+
                             if orig_start:
-                                # Start is valid. 
+                                # Start is valid.
                                 # Hack: use end same as start or +length?
-                                # Ideally map end too. 
-                                orig_end = doc.map_to_original(end["line"], end["character"])
+                                # Ideally map end too.
+                                orig_end = doc.map_to_original(
+                                    end["line"], end["character"]
+                                )
                                 if not orig_end:
                                     orig_end = orig_start
-                                
-                                locations.append(Location(
-                                    uri=uri,
-                                    range=Range(
-                                        start=Position(line=orig_start[0], character=orig_start[1]),
-                                        end=Position(line=orig_end[0], character=orig_end[1])
+
+                                locations.append(
+                                    Location(
+                                        uri=uri,
+                                        range=Range(
+                                            start=Position(
+                                                line=orig_start[0],
+                                                character=orig_start[1],
+                                            ),
+                                            end=Position(
+                                                line=orig_end[0], character=orig_end[1]
+                                            ),
+                                        ),
                                     )
-                                ))
-                        else:
-                             locations.append(Location(
-                                uri=loc_uri,
-                                range=Range(
-                                    start=Position(line=loc_range["start"]["line"], character=loc_range["start"]["character"]),
-                                    end=Position(line=loc_range["end"]["line"], character=loc_range["end"]["character"])
                                 )
-                            ))
+                        else:
+                            locations.append(
+                                Location(
+                                    uri=loc_uri,
+                                    range=Range(
+                                        start=Position(
+                                            line=loc_range["start"]["line"],
+                                            character=loc_range["start"]["character"],
+                                        ),
+                                        end=Position(
+                                            line=loc_range["end"]["line"],
+                                            character=loc_range["end"]["character"],
+                                        ),
+                                    ),
+                                )
+                            )
 
                     return locations
             except Exception as e:
                 logger.error(f"Pyright definition error: {e}")
-                
+
     return None
-
-
 
 
 @server.feature("textDocument/completion")
@@ -698,11 +1101,24 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     if not doc:
         return CompletionList(is_incomplete=False, items=[])
 
+    section = _get_section(doc.lines, position.line)
+
     # Map to virtual python
     gen_pos = doc.map_to_generated(position.line, position.character)
+    if not gen_pos:
+        gen_pos = doc.source_map.nearest_generated_on_line(
+            position.line, position.character
+        )
+
+    if section == "python":
+        if not gen_pos:
+            return CompletionList(is_incomplete=False, items=[])
+    elif section == "separator":
+        return CompletionList(is_incomplete=False, items=[])
+
     if gen_pos:
         gen_line, gen_col = gen_pos
-        
+
         if pyright_client and shadow_manager:
             shadow_uri = shadow_manager.get_shadow_uri(uri)
             if shadow_uri:
@@ -710,11 +1126,15 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                     shadow_params = {
                         "textDocument": {"uri": shadow_uri},
                         "position": {"line": gen_line, "character": gen_col},
-                        "context": attrs.asdict(params.context) if params.context else None
+                        "context": attrs.asdict(params.context)
+                        if params.context
+                        else None,
                     }
-                    
-                    result = await pyright_client.send_request("textDocument/completion", shadow_params)
-                    
+
+                    result = await pyright_client.send_request(
+                        "textDocument/completion", shadow_params
+                    )
+
                     if result:
                         # Result can be CompletionList (dict) or List[CompletionItem]
                         if isinstance(result, list):
@@ -723,11 +1143,11 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                         else:
                             items = result.get("items", [])
                             is_incomplete = result.get("isIncomplete", False)
-                            
-                        # No mapping needed for completions usually, 
+
+                        # No mapping needed for completions usually,
                         # unless insertText/textEdit has ranges?
                         # For now assume insertText/label is good.
-                        
+
                         comp_items = []
                         for item in items:
                             # Convert dict to CompletionItem
@@ -737,7 +1157,7 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                             # Let's try to pass raw dicts? No, return type expects object
                             # Actually pygls 1.0+ might accept dicts if types allow?
                             # But type hint says CompletionList.
-                            
+
                             # Safest: Use attrs.from_dict or manual
                             # Let's try manual simple copy for safety
                             new_item = CompletionItem(
@@ -752,22 +1172,44 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                             )
                             comp_items.append(new_item)
 
-                        return CompletionList(is_incomplete=is_incomplete, items=comp_items)
+                        return CompletionList(
+                            is_incomplete=is_incomplete, items=comp_items
+                        )
 
                 except Exception as e:
                     logger.error(f"Pyright completion error: {e}")
-    
+
+    if section == "python":
+        return CompletionList(is_incomplete=False, items=[])
+
     # If not mapped, fallback to simple directives
     items = [
-        CompletionItem(label="$if", kind=CompletionItemKind.Keyword, documentation="Conditional rendering"),
-        CompletionItem(label="$show", kind=CompletionItemKind.Keyword, documentation="Conditional visibility"),
-        CompletionItem(label="$for", kind=CompletionItemKind.Keyword, documentation="Loop"),
-        CompletionItem(label="$key", kind=CompletionItemKind.Keyword, documentation="List key"),
-        CompletionItem(label="$bind", kind=CompletionItemKind.Keyword, documentation="Two-way binding"),
-        CompletionItem(label="@click", kind=CompletionItemKind.Event, documentation="Click handler"),
-        CompletionItem(label="@submit", kind=CompletionItemKind.Event, documentation="Submit handler"),
+        CompletionItem(
+            label="$if",
+            kind=CompletionItemKind.Keyword,
+            documentation="Conditional rendering",
+        ),
+        CompletionItem(
+            label="$show",
+            kind=CompletionItemKind.Keyword,
+            documentation="Conditional visibility",
+        ),
+        CompletionItem(
+            label="$for", kind=CompletionItemKind.Keyword, documentation="Loop"
+        ),
+        CompletionItem(
+            label="$key", kind=CompletionItemKind.Keyword, documentation="List key"
+        ),
+        CompletionItem(
+            label="@click", kind=CompletionItemKind.Event, documentation="Click handler"
+        ),
+        CompletionItem(
+            label="@submit",
+            kind=CompletionItemKind.Event,
+            documentation="Submit handler",
+        ),
     ]
-    
+
     return CompletionList(is_incomplete=False, items=items)
 
 
@@ -797,21 +1239,21 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
         source = doc.get_python_source()
         if not source:
             return SemanticTokens(data=[])
-            
+
         # Parse virtual python
         tree = ast.parse(source)
-        
+
         # Collect tokens
-        tokens_data = [] # (line, start_col, length, type, modifiers)
-        
+        tokens_data = []  # (line, start_col, length, type, modifiers)
+
         # Helper to process nodes
         for node in ast.walk(tree):
             token_type_idx = -1
             length = 0
-            
+
             # Identify token type
             if isinstance(node, ast.Name):
-                # We could improve this by inferring type with Jedi, 
+                # We could improve this by inferring type with Jedi,
                 # but for speed AST matching is okay for basic highlighting
                 token_type_idx = SEMANTIC_TOKEN_TYPES.index("variable")
                 length = len(node.id)
@@ -826,41 +1268,43 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
                 # AST doesn't give name location easily, usually it's def <name>
                 # Let's skip definitions for now if complex, or handle simple cases
                 pass
-            
+
             # Better approach: Use Jedi for semantic tokens if we want high quality
             # But let's stick to simple AST node mapping first
-            
+
             if token_type_idx != -1:
                 # Map variables
                 # node.lineno is 1-based, node.col_offset is 0-based
-                gen_line = node.lineno
-                gen_col = node.col_offset
-                
+                if not hasattr(node, "lineno") or not hasattr(node, "col_offset"):
+                    continue
+                gen_line = getattr(node, "lineno")
+                gen_col = getattr(node, "col_offset")
+
                 # Verify location mapping
                 orig_pos = doc.map_to_original(gen_line - 1, gen_col)
                 if orig_pos:
                     orig_line, orig_col = orig_pos
                     tokens_data.append((orig_line, orig_col, length, token_type_idx, 0))
-        
+
         # Sort tokens by line, then column
         tokens_data.sort()
-        
+
         # Flatten to delta encoding
         final_tokens = []
         prev_line = 0
         prev_char = 0
-        
+
         for t in tokens_data:
             line, col, length, type_idx, mod = t
-            
+
             delta_line = line - prev_line
             delta_start = col - prev_char if delta_line == 0 else col
-            
+
             final_tokens.extend([delta_line, delta_start, length, type_idx, mod])
-            
+
             prev_line = line
             prev_char = col
-            
+
         return SemanticTokens(data=final_tokens)
 
     except Exception as e:
@@ -868,28 +1312,26 @@ def semantic_tokens(ls: LanguageServer, params: SemanticTokensParams) -> Semanti
         return SemanticTokens(data=[])
 
 
-
-
 @server.feature("pywire/virtualCode")
 def virtual_code(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]]:
     """Return the generated virtual python code for a document."""
     # Params is just { uri: str } usually, or list? pygls passes the raw params object if not typed
     # We expect params to be a dict or object with 'uri'
-    
+
     # Check if params is a dict or object
     uri = None
     if isinstance(params, dict):
         uri = params.get("uri")
     elif hasattr(params, "uri"):
         uri = params.uri
-        
+
     if not uri:
         return None
 
     doc = documents.get(uri)
     if not doc:
         return None
-        
+
     return {
         "uri": uri,
         "content": doc.get_python_source(),
@@ -901,7 +1343,7 @@ def map_to_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]
     """Map a position in the source .wire file to the generated .py file."""
     uri = None
     position = None
-    
+
     # Handle various param structures
     if isinstance(params, dict):
         uri = params.get("uri")
@@ -921,13 +1363,14 @@ def map_to_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]
 
     gen_pos = doc.map_to_generated(position.line, position.character)
     if not gen_pos:
-        return None
-        
+        gen_pos = doc.source_map.nearest_generated_on_line(
+            position.line, position.character
+        )
+        if not gen_pos:
+            return None
+
     gen_line, gen_col = gen_pos
-    return {
-        "line": gen_line,
-        "character": gen_col
-    }
+    return {"line": gen_line, "character": gen_col}
 
 
 @server.feature("pywire/mapFromGenerated")
@@ -935,7 +1378,7 @@ def map_from_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, An
     """Map a position in the generated .py file back to the source .wire file."""
     uri = None
     position = None
-    
+
     # Handle various param structures
     if isinstance(params, dict):
         uri = params.get("uri")
@@ -950,12 +1393,12 @@ def map_from_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, An
         return None
 
     # URI might be the shadow URI; we need the original URI
-    # Shadow manager can help us find the original if needed, 
+    # Shadow manager can help us find the original if needed,
     # but the client usually sends the original URI and expects us to know it.
-    # Actually, the middleware sends the ORIGINAL .wire URI 
+    # Actually, the middleware sends the ORIGINAL .wire URI
     # but asks to map a position that it thinks corresponds to the generated code.
     # Wait, the middleware knows the original URI.
-    
+
     doc = documents.get(uri)
     if not doc:
         return None
@@ -963,14 +1406,9 @@ def map_from_generated(ls: LanguageServer, params: Any) -> Optional[Dict[str, An
     orig_pos = doc.map_to_original(position.line, position.character)
     if not orig_pos:
         return None
-        
+
     orig_line, orig_col = orig_pos
-    return {
-        "line": orig_line,
-        "character": orig_col
-    }
-
-
+    return {"line": orig_line, "character": orig_col}
 
 
 def start():

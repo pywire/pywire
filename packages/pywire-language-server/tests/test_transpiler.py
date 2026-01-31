@@ -13,11 +13,11 @@ def test_transpile_simple_interpolation():
 
 def test_transpile_python_section():
     source = """
-<h1>Hi</h1>
----
 x = 1
 def foo():
     pass
+---html---
+<h1>Hi</h1>
 """
     transpiler = Transpiler(source)
     code, _ = transpiler.transpile()
@@ -64,7 +64,7 @@ def test_variable_rewrite_mapping():
     """Test that $count maps to count in generated code."""
     source = """
 count = wire(0)
----
+---html---
 <p>{$count}</p>
 """
     transpiler = Transpiler(source)
@@ -89,7 +89,7 @@ def test_explicit_property_mapping():
     """Test that {count.value} maps 'count' correctly."""
     source = """
 count = wire(0)
----
+---html---
 <p>{count.value}</p>
 """
     transpiler = Transpiler(source)
@@ -112,7 +112,7 @@ def test_event_handler_mapping():
     """Test @click={$count} mapping."""
     source = """
 count = wire(0)
----
+---html---
 <button @click={$count += 1}>Inc</button>
 """
     transpiler = Transpiler(source)
