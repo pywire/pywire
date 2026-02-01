@@ -7,6 +7,11 @@ import time
 BUNDLED_LIBS = os.path.join(os.path.dirname(__file__), '..', 'bundled', 'libs')
 sys.path.insert(0, BUNDLED_LIBS)
 
+# Add bundled libs/bin to PATH so pyright-langserver can be found
+BUNDLED_BIN = os.path.join(BUNDLED_LIBS, 'bin')
+if os.path.exists(BUNDLED_BIN):
+    os.environ["PATH"] = BUNDLED_BIN + os.pathsep + os.environ.get("PATH", "")
+
 # FOR DEVELOPMENT ONLY: Add the sibling pywire-language-server/src to path
 # In a real build, we would bundle this too.
 DEV_SERVER_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'pywire-language-server'))

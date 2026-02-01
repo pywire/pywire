@@ -1,14 +1,18 @@
 import * as path from 'path'
 import * as fs from 'fs'
+import { createRequire } from 'module'
+import { pathToFileURL } from 'url'
 import {
   workspace,
   ExtensionContext,
   window,
   commands,
+  languages,
   Position,
   Range,
   TextEditor,
   TextEditorEdit,
+  TextEdit,
   extensions,
   Uri,
   TextDocument,
@@ -31,7 +35,37 @@ import {
   ProvideCompletionItemsSignature,
 } from 'vscode-languageclient/node'
 
+type PrettierModule = typeof import('prettier')
+type PrettierPlugin = import('prettier').Plugin
+
 let client: LanguageClient
+let prettierModule: PrettierModule | null = null
+let pywirePluginModule: unknown = null
+let extensionDir: string = ''
+
+function loadPrettierModule(): PrettierModule {
+  if (prettierModule) {
+    return prettierModule
+  }
+
+  // Use createRequire to load CJS modules from bundled node_modules
+  const dummyModulePath = path.join(extensionDir, 'out', 'node_modules', 'index.js')
+  const requireFrom = createRequire(pathToFileURL(dummyModulePath).href)
+  prettierModule = requireFrom('prettier') as PrettierModule
+  return prettierModule
+}
+
+function loadPywirePlugin(): unknown {
+  if (pywirePluginModule) {
+    return pywirePluginModule
+  }
+
+  // Use createRequire to load from bundled node_modules
+  const dummyModulePath = path.join(extensionDir, 'out', 'node_modules', 'index.js')
+  const requireFrom = createRequire(pathToFileURL(dummyModulePath).href)
+  pywirePluginModule = requireFrom('prettier-plugin-pywire')
+  return pywirePluginModule
+}
 
 interface PositionMapping {
   line: number
@@ -206,6 +240,8 @@ async function mapLocationBack(
 }
 
 export function activate(context: ExtensionContext) {
+  extensionDir = context.extensionPath
+
   const output = window.createOutputChannel('PyWire')
   const log = (message: string) => {
     output.appendLine(`[${new Date().toISOString()}] ${message}`)
@@ -267,12 +303,54 @@ export function activate(context: ExtensionContext) {
   )
   context.subscriptions.push(toggleCommentCmd)
 
+  const formattingProvider = languages.registerDocumentFormattingEditProvider(
+    { language: 'pywire' },
+    {
+      async provideDocumentFormattingEdits(document: TextDocument) {
+        const text = document.getText()
+        if (text.trim().length === 0) {
+          return []
+        }
+
+        try {
+          const prettier = loadPrettierModule()
+          const prettierAny = prettier as PrettierModule & { default?: PrettierModule }
+          const formatFn = prettierAny.format ?? prettierAny.default?.format
+          if (typeof formatFn !== 'function') {
+            throw new Error('Prettier format function not available')
+          }
+
+          const pluginModule = loadPywirePlugin()
+          const pywirePlugin =
+            (pluginModule as { default?: PrettierPlugin }).default ??
+            (pluginModule as PrettierPlugin)
+          const formatted = await formatFn(text, {
+            parser: 'pywire',
+            plugins: [pywirePlugin],
+            filepath: document.fileName,
+          })
+          if (formatted === text) {
+            return []
+          }
+
+          const fullRange = new Range(document.positionAt(0), document.positionAt(text.length))
+          return [TextEdit.replace(fullRange, formatted)]
+        } catch (e) {
+          console.error('PyWire format failed', e)
+          log(`PyWire format failed: ${String(e)}`)
+          return []
+        }
+      },
+    }
+  )
+  context.subscriptions.push(formattingProvider)
+
   // Get Python path from settings
   const config = workspace.getConfiguration('pywire')
   let pythonPath = config.get<string>('pythonPath')
 
   // Path to LSP server script (launcher)
-  const serverScript = context.asAbsolutePath(path.join('src', 'lsp_launcher.py'))
+  const serverScript = context.asAbsolutePath(path.join('out', 'lsp_launcher.py'))
 
   console.log('LSP server script:', serverScript)
   log(`LSP server script: ${serverScript}`)

@@ -2,7 +2,15 @@
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_DIR="$ROOT_DIR/bundled/libs"
+if [ -d "$TARGET_DIR" ]; then
+    rm -rf "$TARGET_DIR"
+fi
 mkdir -p "$TARGET_DIR"
+
+PYTHON_BIN="python"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+fi
 
 resolve_pywire_src() {
     if [ -z "$1" ]; then
@@ -28,21 +36,54 @@ resolve_pywire_src() {
 }
 
 pywire_src="$(resolve_pywire_src "$PYWIRE_SRC")" || pywire_src=""
-if [ -n "$pywire_src" ]; then
-    python -m pip install pygls pyright -e "$pywire_src" -t "$TARGET_DIR"
+if [ -z "$pywire_src" ]; then
+    pywire_src="$(resolve_pywire_src "../pywire")" || pywire_src=""
+fi
+if [ -z "$pywire_src" ]; then
+    pywire_src="$(resolve_pywire_src "pywire")" || pywire_src=""
+fi
+
+pywire_ls_src="$(resolve_pywire_src "$PYWIRE_LANGUAGE_SERVER_SRC")" || pywire_ls_src=""
+if [ -z "$pywire_ls_src" ]; then
+    pywire_ls_src="$(resolve_pywire_src "../pywire-language-server")" || pywire_ls_src=""
+fi
+if [ -z "$pywire_ls_src" ]; then
+    pywire_ls_src="$(resolve_pywire_src "pywire-language-server")" || pywire_ls_src=""
+fi
+
+if [ -n "$pywire_src" ] || [ -n "$pywire_ls_src" ]; then
+    set -- pygls pyright
+    if [ -n "$pywire_src" ]; then
+        set -- "$@" "$pywire_src"
+    fi
+    if [ -n "$pywire_ls_src" ]; then
+        set -- "$@" "$pywire_ls_src"
+    fi
+    if "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+        "$PYTHON_BIN" -m pip install "$@" -t "$TARGET_DIR"
+    elif "$PYTHON_BIN" -m ensurepip --upgrade >/dev/null 2>&1; then
+        "$PYTHON_BIN" -m pip install "$@" -t "$TARGET_DIR"
+    elif command -v uv >/dev/null 2>&1; then
+        uv pip install "$@" --target "$TARGET_DIR"
+    else
+        echo "pip is not available and uv is missing; cannot bundle deps" >&2
+        exit 1
+    fi
     exit 0
 fi
 
-pywire_src="$(resolve_pywire_src "../pywire")" || pywire_src=""
-if [ -n "$pywire_src" ]; then
-    python -m pip install pygls pyright -e "$pywire_src" -t "$TARGET_DIR"
-    exit 0
+if command -v uv >/dev/null 2>&1; then
+    uv pip install \
+        pygls \
+        pyright \
+        git+https://github.com/pywire/pywire.git \
+        git+https://github.com/pywire/pywire-language-server.git \
+        --target "$TARGET_DIR"
+else
+    python -m pip install \
+        pygls \
+        pyright \
+        git+https://github.com/pywire/pywire.git \
+        git+https://github.com/pywire/pywire-language-server.git \
+        -t "$TARGET_DIR"
 fi
-
-pywire_src="$(resolve_pywire_src "pywire")" || pywire_src=""
-if [ -n "$pywire_src" ]; then
-    python -m pip install pygls pyright -e "$pywire_src" -t "$TARGET_DIR"
-    exit 0
-fi
-
-python -m pip install pygls pyright git+https://github.com/pywire/pywire.git -t "$TARGET_DIR"
