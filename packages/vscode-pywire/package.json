@@ -122,7 +122,7 @@
   },
   "dependencies": {
     "prettier": "^3.6.2",
-    "prettier-plugin-pywire": "file:../prettier-plugin-pywire",
+    "prettier-plugin-pywire": "git+https://github.com/pywire/prettier-plugin-pywire.git",
     "vscode-languageclient": "^9.0.1",
     "web-tree-sitter": "^0.26.3"
   }
