@@ -222,7 +222,7 @@ def dev(
 )
 @click.option(
     "--out-dir",
-    default=".pywire_build",
+    default=".pywire/build",
     help="Output directory for build artifacts.",
 )
 @click.option(

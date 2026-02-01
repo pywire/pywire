@@ -334,7 +334,9 @@ def build_artifacts(
     pages_dir: Path, out_dir: Optional[Path] = None, optimize: bool = False
 ) -> BuildSummary:
     if out_dir is None:
-        out_dir = Path(".pywire_build")
+        from pywire.compiler.paths import get_build_path
+
+        out_dir = get_build_path()
 
     builder = ArtifactBuilder(pages_dir=pages_dir, out_dir=out_dir)
     return builder.build(optimize=optimize)
