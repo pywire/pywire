@@ -13,6 +13,9 @@ import {
   TextEditor,
   TextEditorEdit,
   TextEdit,
+  Diagnostic,
+  InlayHint,
+  DocumentHighlight,
   extensions,
   Uri,
   TextDocument,
@@ -24,6 +27,7 @@ import {
   CompletionList,
   ReferenceContext,
   CompletionContext,
+  WorkspaceEdit,
 } from 'vscode'
 import {
   LanguageClient,
@@ -410,13 +414,12 @@ export function activate(context: ExtensionContext) {
 
         // 2. Add to .gitignore (Self-contained)
         try {
-          const pywireGitIgnore = path.join(rootPath, '.pywire', '.gitignore')
-          // Ensure .pywire exists
           const pywireDir = path.join(rootPath, '.pywire')
           if (!fs.existsSync(pywireDir)) {
             fs.mkdirSync(pywireDir, { recursive: true })
           }
 
+          const pywireGitIgnore = path.join(pywireDir, '.gitignore')
           if (!fs.existsSync(pywireGitIgnore)) {
             fs.writeFileSync(pywireGitIgnore, '*\n')
           }
@@ -425,7 +428,28 @@ export function activate(context: ExtensionContext) {
         }
       }
 
-      async function updateShadowFile(uri: string) {
+      const shadowUpdateTimers = new Map<string, ReturnType<typeof setTimeout>>()
+      const shadowUpdateTexts = new Map<string, string | undefined>()
+
+      const scheduleShadowUpdate = (uri: string, text?: string) => {
+        shadowUpdateTexts.set(uri, text)
+        const existing = shadowUpdateTimers.get(uri)
+        if (existing) {
+          clearTimeout(existing)
+        }
+        const timer = setTimeout(() => {
+          shadowUpdateTimers.delete(uri)
+          const latestText = shadowUpdateTexts.get(uri)
+          shadowUpdateTexts.delete(uri)
+          updateShadowFile(uri, latestText).catch((e) => {
+            console.error('Failed to update shadow file (debounced)', e)
+            log(`Failed to update shadow file (debounced): ${String(e)}`)
+          })
+        }, 200)
+        shadowUpdateTimers.set(uri, timer)
+      }
+
+      async function updateShadowFile(uri: string, text?: string) {
         if (!client) return
 
         // Setup directory logic
@@ -441,6 +465,7 @@ export function activate(context: ExtensionContext) {
         try {
           const response = (await client.sendRequest('pywire/virtualCode', {
             uri: uri,
+            text: text,
           })) as VirtualCodeResponse | null
           if (response && response.content) {
             // Determine shadow path
@@ -465,6 +490,7 @@ export function activate(context: ExtensionContext) {
             const relPath = path.relative(rootPath, Uri.parse(uri).fsPath)
             const shadowRelPath = relPath + '.py'
             const shadowPath = path.join(pywireDir, shadowRelPath)
+            const shadowUri = Uri.file(shadowPath)
 
             const shadowDir = path.dirname(shadowPath)
             if (!fs.existsSync(shadowDir)) {
@@ -472,10 +498,84 @@ export function activate(context: ExtensionContext) {
             }
 
             fs.writeFileSync(shadowPath, response.content)
+
+            if (!useBundledPyright) {
+              try {
+                const shadowDoc = await workspace.openTextDocument(shadowUri)
+                if (shadowDoc.getText() !== response.content) {
+                  const edit = new WorkspaceEdit()
+                  const fullRange = new Range(
+                    shadowDoc.positionAt(0),
+                    shadowDoc.positionAt(shadowDoc.getText().length)
+                  )
+                  edit.replace(shadowUri, fullRange, response.content)
+                  await workspace.applyEdit(edit)
+                }
+                // Save the shadow doc to trigger Pylint reanalysis
+                await shadowDoc.save()
+              } catch (e) {
+                console.error('Failed to open/save shadow document', e)
+                log(`Failed to open/save shadow document: ${String(e)}`)
+              }
+            }
           }
         } catch (e) {
           console.error('Failed to update shadow file', e)
           log(`Failed to update shadow file: ${String(e)}`)
+        }
+      }
+
+      const getShadowUriForWire = (wireUri: Uri): Uri | null => {
+        const workspaceFolder = workspace.getWorkspaceFolder(wireUri)
+        if (!workspaceFolder) {
+          return null
+        }
+        const rootPath = workspaceFolder.uri.fsPath
+        const relPath = path.relative(rootPath, wireUri.fsPath)
+        const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
+        return Uri.file(shadowPath)
+      }
+
+      const mapFromGenerated = async (
+        wireUri: Uri,
+        position: Position
+      ): Promise<Position | null> => {
+        if (!client) {
+          return null
+        }
+        try {
+          const mapped = (await client.sendRequest('pywire/mapFromGenerated', {
+            uri: wireUri.toString(),
+            position: position,
+          })) as PositionMapping | null
+          if (!mapped) {
+            return null
+          }
+          return new Position(mapped.line, mapped.character)
+        } catch (e) {
+          console.error('Failed to map position', e)
+          log(`Failed to map position: ${String(e)}`)
+          return null
+        }
+      }
+
+      const mapToGenerated = async (wireUri: Uri, position: Position): Promise<Position | null> => {
+        if (!client) {
+          return null
+        }
+        try {
+          const mapped = (await client.sendRequest('pywire/mapToGenerated', {
+            uri: wireUri.toString(),
+            position: position,
+          })) as PositionMapping | null
+          if (!mapped) {
+            return null
+          }
+          return new Position(mapped.line, mapped.character)
+        } catch (e) {
+          console.error('Failed to map position', e)
+          log(`Failed to map position: ${String(e)}`)
+          return null
         }
       }
 
@@ -694,7 +794,7 @@ export function activate(context: ExtensionContext) {
                 }
 
                 log(`Completion mapping: ${mapping.line}:${mapping.character}`)
-                await updateShadowFile(document.uri.toString())
+                await updateShadowFile(document.uri.toString(), document.getText())
 
                 const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
                 if (!workspaceFolder) {
@@ -788,25 +888,201 @@ export function activate(context: ExtensionContext) {
       console.log('PyWire language server started')
       log('PyWire language server started')
 
+      const inlayHintsProvider = languages.registerInlayHintsProvider(
+        { language: 'pywire' },
+        {
+          async provideInlayHints(document, range, token) {
+            if (!client) {
+              return []
+            }
+            if (token.isCancellationRequested) {
+              return []
+            }
+            const shadowUri = getShadowUriForWire(document.uri)
+            if (!shadowUri) {
+              return []
+            }
+            if (!fs.existsSync(shadowUri.fsPath)) {
+              await updateShadowFile(document.uri.toString(), document.getText())
+            }
+            // Query the entire shadow file instead of trying to map the visible range
+            // Use a large range to cover the whole file
+            const fullRange = new Range(new Position(0, 0), new Position(100000, 0))
+            const hints = await commands.executeCommand<InlayHint[]>(
+              'vscode.executeInlayHintProvider',
+              shadowUri,
+              fullRange
+            )
+            if (!hints || !Array.isArray(hints)) {
+              return []
+            }
+            const mapped: InlayHint[] = []
+            for (const hint of hints) {
+              if (token.isCancellationRequested) {
+                return mapped
+              }
+              const mappedPos = await mapFromGenerated(document.uri, hint.position)
+              if (!mappedPos) {
+                continue
+              }
+              // Only include hints within the requested range
+              if (mappedPos.line < range.start.line || mappedPos.line > range.end.line) {
+                continue
+              }
+              const newHint = new InlayHint(mappedPos, hint.label, hint.kind)
+              newHint.paddingLeft = hint.paddingLeft
+              newHint.paddingRight = hint.paddingRight
+              newHint.tooltip = hint.tooltip
+              // Copy textEdits to enable double-click to insert
+              if (hint.textEdits && hint.textEdits.length > 0) {
+                const mappedEdits: TextEdit[] = []
+                for (const edit of hint.textEdits) {
+                  const editStart = await mapFromGenerated(document.uri, edit.range.start)
+                  const editEnd = await mapFromGenerated(document.uri, edit.range.end)
+                  if (editStart && editEnd) {
+                    mappedEdits.push(TextEdit.replace(new Range(editStart, editEnd), edit.newText))
+                  }
+                }
+                if (mappedEdits.length > 0) {
+                  newHint.textEdits = mappedEdits
+                }
+              }
+              mapped.push(newHint)
+            }
+            return mapped
+          },
+        }
+      )
+      context.subscriptions.push(inlayHintsProvider)
+
+      const documentHighlightProvider = languages.registerDocumentHighlightProvider(
+        { language: 'pywire' },
+        {
+          async provideDocumentHighlights(document, position, token) {
+            if (!client) {
+              return []
+            }
+            if (token.isCancellationRequested) {
+              return []
+            }
+            const shadowUri = getShadowUriForWire(document.uri)
+            if (!shadowUri) {
+              return []
+            }
+            if (!fs.existsSync(shadowUri.fsPath)) {
+              await updateShadowFile(document.uri.toString(), document.getText())
+            }
+            const mappedPos = await mapToGenerated(document.uri, position)
+            if (!mappedPos) {
+              return []
+            }
+            const highlights = await commands.executeCommand<DocumentHighlight[]>(
+              'vscode.executeDocumentHighlights',
+              shadowUri,
+              new Position(mappedPos.line, mappedPos.character)
+            )
+            if (!highlights || !Array.isArray(highlights)) {
+              return []
+            }
+            const mapped: DocumentHighlight[] = []
+            for (const hl of highlights) {
+              if (token.isCancellationRequested) {
+                return mapped
+              }
+              const mappedStart = await mapFromGenerated(document.uri, hl.range.start)
+              if (!mappedStart) {
+                continue
+              }
+              const mappedEnd = (await mapFromGenerated(document.uri, hl.range.end)) ?? mappedStart
+              const mappedRange = new Range(mappedStart, mappedEnd)
+              mapped.push(new DocumentHighlight(mappedRange, hl.kind))
+            }
+            return mapped
+          },
+        }
+      )
+      context.subscriptions.push(documentHighlightProvider)
+
+      if (!useBundledPyright) {
+        const pythonDiagnostics = languages.createDiagnosticCollection('pywire-python')
+        context.subscriptions.push(pythonDiagnostics)
+
+        const mapShadowUriToWireUri = (shadowUri: Uri): Uri | null => {
+          const shadowPath = shadowUri.fsPath
+          const marker = `${path.sep}.pywire${path.sep}`
+          const markerIndex = shadowPath.indexOf(marker)
+          if (markerIndex < 0) {
+            return null
+          }
+          const rootPath = shadowPath.slice(0, markerIndex)
+          const relPath = shadowPath.slice(markerIndex + marker.length)
+          if (!relPath.endsWith('.py')) {
+            return null
+          }
+          const wirePath = path.join(rootPath, relPath.slice(0, -3))
+          return Uri.file(wirePath)
+        }
+
+        const diagnosticsListener = languages.onDidChangeDiagnostics(async (e) => {
+          if (e.uris.length === 0) {
+            return
+          }
+          const updates = new Map<string, Diagnostic[]>()
+          for (const uri of e.uris) {
+            const wireUri = mapShadowUriToWireUri(uri)
+            if (!wireUri) {
+              continue
+            }
+            const rawDiagnostics = languages.getDiagnostics(uri)
+            const mappedDiagnostics: Diagnostic[] = []
+            for (const diag of rawDiagnostics) {
+              const mappedStart = await mapFromGenerated(wireUri, diag.range.start)
+              if (!mappedStart) {
+                continue
+              }
+              const mappedEnd = (await mapFromGenerated(wireUri, diag.range.end)) ?? mappedStart
+              const mappedRange = new Range(mappedStart, mappedEnd)
+              const mappedDiagnostic = new Diagnostic(mappedRange, diag.message, diag.severity)
+              mappedDiagnostic.code = diag.code
+              mappedDiagnostic.source = diag.source
+              mappedDiagnostic.tags = diag.tags
+              mappedDiagnostic.relatedInformation = diag.relatedInformation
+              mappedDiagnostics.push(mappedDiagnostic)
+            }
+            updates.set(wireUri.toString(), mappedDiagnostics)
+          }
+          for (const [wireUri, diagnostics] of updates) {
+            pythonDiagnostics.set(Uri.parse(wireUri), diagnostics)
+          }
+        })
+        context.subscriptions.push(diagnosticsListener)
+      }
+
       // Listen for document changes to update shadow files
       workspace.onDidChangeTextDocument(async (e) => {
         if (e.document.languageId === 'pywire') {
-          // Debounce?
-          await updateShadowFile(e.document.uri.toString())
+          scheduleShadowUpdate(e.document.uri.toString(), e.document.getText())
+        }
+      })
+
+      // Ensure a full sync on save (no debounce)
+      workspace.onDidSaveTextDocument(async (doc) => {
+        if (doc.languageId === 'pywire') {
+          await updateShadowFile(doc.uri.toString(), doc.getText())
         }
       })
 
       // Also on initial open/startup for visible editors
       window.visibleTextEditors.forEach((editor) => {
         if (editor.document.languageId === 'pywire') {
-          updateShadowFile(editor.document.uri.toString())
+          updateShadowFile(editor.document.uri.toString(), editor.document.getText())
         }
       })
 
       // On open
       workspace.onDidOpenTextDocument(async (doc) => {
         if (doc.languageId === 'pywire') {
-          await updateShadowFile(doc.uri.toString())
+          await updateShadowFile(doc.uri.toString(), doc.getText())
         }
       })
 

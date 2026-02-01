@@ -10,7 +10,7 @@
   "repository": {
     "python-header": {
       "begin": "\\A",
-      "end": "^(?=\\s*---+\\s*html\\s*---+\\s*$)",
+      "end": "^(?=\\s*---+\\s*html\\s*---+\\s*$)|^(?=[ \\t]*<[!a-zA-Z/])",
       "contentName": "meta.embedded.block.python",
       "patterns": [
         { "include": "#directives" },

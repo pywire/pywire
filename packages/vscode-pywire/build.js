@@ -1,5 +1,14 @@
 import esbuild from 'esbuild'
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'fs'
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'fs'
 import { join, resolve } from 'path'
 
 // Recursively find a file by name in a directory
@@ -16,7 +25,9 @@ function findFile(dir, filename, maxDepth = 6) {
         if (found) return found
       }
     }
-  } catch { /* ignore permission errors */ }
+  } catch {
+    /* ignore permission errors */
+  }
   return null
 }
 
@@ -54,13 +65,16 @@ async function main() {
               console.error(`    ${location.file}:${location.line}:${location.column}:`)
             })
             console.log('[watch] build finished')
-            
+
             // Copy lsp_launcher.py to out/ after successful build
             if (result.errors.length === 0) {
               try {
                 const outDir = join(projectRoot, 'out')
                 mkdirSync(outDir, { recursive: true })
-                copyFileSync(join(projectRoot, 'src/lsp_launcher.py'), join(outDir, 'lsp_launcher.py'))
+                copyFileSync(
+                  join(projectRoot, 'src/lsp_launcher.py'),
+                  join(outDir, 'lsp_launcher.py')
+                )
                 console.log('Copied lsp_launcher.py to out/')
               } catch (e) {
                 console.error('Failed to copy lsp_launcher.py:', e)
@@ -91,12 +105,19 @@ async function main() {
 
                 // Copy ruff WASM file next to the plugin's CJS bundle
                 // The CJS build uses import.meta.url shim which resolves to the CJS file location
-                const wasmDest = join(outNodeModulesDir, 'prettier-plugin-pywire', 'dist', 'ruff_fmt_bg.wasm')
+                const wasmDest = join(
+                  outNodeModulesDir,
+                  'prettier-plugin-pywire',
+                  'dist',
+                  'ruff_fmt_bg.wasm'
+                )
                 const wasmSource = findFile(join(projectRoot, 'node_modules'), 'ruff_fmt_bg.wasm')
-                
+
                 if (wasmSource) {
                   copyFileSync(wasmSource, wasmDest)
-                  console.log('Copied ruff_fmt_bg.wasm to out/node_modules/prettier-plugin-pywire/dist/')
+                  console.log(
+                    'Copied ruff_fmt_bg.wasm to out/node_modules/prettier-plugin-pywire/dist/'
+                  )
                 } else {
                   console.warn('WASM file ruff_fmt_bg.wasm not found in node_modules')
                 }
