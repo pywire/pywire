@@ -51,14 +51,14 @@ def test_smart_static_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_static_dir_missing_warning(
-    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify warning when static directory is missing."""
     monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
-    PyWire(static_dir="non_existent")
-    captured = capsys.readouterr()
-    assert "Warning: Configured static directory" in captured.out
-    assert "non_existent" in captured.out
+    with caplog.at_level("WARNING"):
+        PyWire(static_dir="non_existent")
+    assert "Configured static directory" in caplog.text
+    assert "non_existent" in caplog.text
 
 
 def test_custom_static_path(tmp_path: Path) -> None:
