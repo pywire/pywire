@@ -153,7 +153,7 @@ class PageLoader:
 
         current_dir = pywire_file.parent.resolve()
         while True:
-            manifest_path = current_dir / ".pywire_build" / "manifest.json"
+            manifest_path = current_dir / ".pywire" / "build" / "manifest.json"
             if manifest_path.exists():
                 return manifest_path
 

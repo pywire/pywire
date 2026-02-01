@@ -267,11 +267,9 @@ async def run_dev_server(
     cert_path, key_path = ssl_certfile, ssl_keyfile
 
     # Ensure .pywire/ exists for dev artifacts
-    dot_pywire = Path(".pywire")
-    if not dot_pywire.exists():
-        dot_pywire.mkdir()
-        # Setup gitignore for it
-        (dot_pywire / ".gitignore").write_text("*")
+    from pywire.compiler.paths import ensure_pywire_folder
+
+    dot_pywire = ensure_pywire_folder()
 
     if not cert_path or not key_path:
         # Check for existing trusted certificates (e.g. from mkcert) in .pywire or root
