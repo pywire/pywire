@@ -19,6 +19,8 @@ dependencies = [
     "msgpack>=1.0.0",
     "lxml>=4.9.0",
     "pydantic>=2.0.0",
+    "textual>=7.4.0",
+    "rich-click>=1.9.6",
 ]
 
 [project.optional-dependencies]

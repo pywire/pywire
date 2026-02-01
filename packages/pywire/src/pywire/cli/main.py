@@ -5,7 +5,54 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import click
+import rich.panel
+import rich_click as click
+
+# Astro-like styling configuration (Cyan Theme)
+click.rich_click.USE_RICH_MARKUP = True
+click.rich_click.STYLE_HELPTEXT_FIRST = True
+click.rich_click.STYLE_COMMANDS_TABLE_SHOW_LINES = False
+click.rich_click.STYLE_COMMANDS_TABLE_PAD_EDGE = False
+click.rich_click.STYLE_COMMANDS_TABLE_BOX = None
+click.rich_click.STYLE_COMMANDS_TABLE_EXPAND = False
+click.rich_click.STYLE_OPTIONS_TABLE_EXPAND = False
+click.rich_click.STYLE_COMMANDS_TABLE_HEADER = "bold magenta"
+click.rich_click.STYLE_COMMANDS_TABLE_COLUMN_WIDTH_RATIO = None
+click.rich_click.SHOW_ARGUMENTS = True
+click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
+click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
+click.rich_click.ERRORS_SUGGESTION = "Try running 'pywire --help' for more information."
+click.rich_click.ERRORS_EPILOGUE = "To find out more, visit [link=https://github.com/pywire/pywire]https://github.com/pywire/pywire[/link]"
+click.rich_click.STYLE_OPTIONS_TABLE_BOX = None
+click.rich_click.STYLE_COMMANDS_PANEL_BOX = None
+click.rich_click.STYLE_OPTIONS_PANEL_BOX = None
+
+# Cyan theme
+click.rich_click.STYLE_HEADER_TEXT = "bold cyan"
+click.rich_click.STYLE_OPTION = "cyan"
+click.rich_click.STYLE_SWITCH = "cyan"
+click.rich_click.STYLE_METAVAR = "dim white"
+click.rich_click.STYLE_USAGE_COMMAND = "cyan"
+click.rich_click.STYLE_USAGE = "dim"
+
+# Grouping options and commands
+click.rich_click.OPTION_GROUPS = {
+    "pywire": [
+        {
+            "name": "Global Flags",
+            "options": ["--help", "--version"],
+        }
+    ]
+}
+
+click.rich_click.COMMAND_GROUPS = {
+    "pywire": [
+        {
+            "name": "Commands",
+            "commands": ["dev", "run", "build"],
+        }
+    ]
+}
 
 
 def import_app(app_str: str) -> Any:
@@ -81,16 +128,30 @@ def _discover_app_str() -> str:
     )
 
 
+# Workaround: rich-click wraps tables in Panels which default to expand=True.
+# We monkeypatch Panel to default expand=False to allow natural resizing.
+original_panel_init = rich.panel.Panel.__init__
+
+
+def panel_init(self, *args, **kwargs):
+    kwargs.setdefault("expand", False)
+    original_panel_init(self, *args, **kwargs)
+
+
+rich.panel.Panel.__init__ = panel_init  # type: ignore[method-assign]
+
+
 @click.group()
 @click.version_option()
 def cli() -> None:
-    """PyWire framework CLI.
+    """
+    [bold white on cyan] pywire [/] [bold cyan]v0.0.1[/] Build faster python web apps.
 
-    Run 'pywire dev APP' to start development server.
-    Run 'pywire run APP' to start production server.
+    Run [bold cyan]pywire dev APP[/] to start development server.
+    Run [bold cyan]pywire run APP[/] to start production server.
 
-    APP should be a string in format 'module:instance', e.g. 'main:app'
-    If not provided, PyWire tries to discover it in main.py, app.py, etc.
+    [dim]APP should be a string in format 'module:instance', e.g. 'src.main:app' or 'main:app'
+    If not provided, pywire tries to discover it in main.py, app.py, etc.[/dim]
     """
     pass
 
@@ -102,6 +163,7 @@ def cli() -> None:
 @click.option("--ssl-keyfile", default=None, help="SSL key file")
 @click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.option("--env-file", default=None, help="Environment configuration file")
+@click.option("--no-tui", is_flag=True, help="Disable TUI dashboard")
 def dev(
     app: Optional[str],
     host: str,
@@ -109,6 +171,7 @@ def dev(
     ssl_keyfile: Optional[str],
     ssl_certfile: Optional[str],
     env_file: Optional[str],
+    no_tui: bool,
 ) -> None:
     """Start development server."""
     import asyncio
@@ -117,24 +180,37 @@ def dev(
 
     if not app:
         app = _discover_app_str()
-        click.echo(f"🔍 Auto-discovered app: {app}")
+        if no_tui:
+            click.echo(f"🔍 Auto-discovered app: {app}")
 
     # Verify import
     import_app(app)
 
-    click.echo(f"🚀 Starting PyWire dev server on http://{host}:{port}")
-    if ssl_certfile:
-        click.echo("🔒 SSL enabled")
+    if no_tui:
+        click.echo(f"🚀 Starting pywire dev server on http://{host}:{port}")
+        if ssl_certfile:
+            click.echo("🔒 SSL enabled")
 
-    asyncio.run(
-        run_dev_server(
-            app_str=app,  # Pass string for reloadability hooks if needed
+        asyncio.run(
+            run_dev_server(
+                app_str=app,  # Pass string for reloadability hooks if needed
+                host=host,
+                port=port,
+                ssl_keyfile=ssl_keyfile,
+                ssl_certfile=ssl_certfile,
+            )
+        )
+    else:
+        from pywire.cli.tui import start_tui
+
+        start_tui(
+            app_path=app,
             host=host,
             port=port,
             ssl_keyfile=ssl_keyfile,
             ssl_certfile=ssl_certfile,
+            env_file=env_file,
         )
-    )
 
 
 @cli.command()
