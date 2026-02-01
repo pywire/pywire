@@ -1,3 +1,4 @@
+from importlib.util import find_spec
 import json
 import logging
 import os
@@ -22,6 +23,12 @@ class PyrightClient:
         self._request_id = 0
         self._lock = threading.Lock()
         self.running = False
+        self._diagnostics_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+
+    def set_diagnostics_callback(
+        self, callback: Callable[[Dict[str, Any]], None]
+    ) -> None:
+        self._diagnostics_callback = callback
 
     def start(self) -> bool:
         """Start the pyright-langserver process."""
@@ -34,18 +41,23 @@ class PyrightClient:
             # Setup environment with bundled libs in PYTHONPATH
             env = os.environ.copy()
             import sys
+
             # Check if we have bundled libs in sys.path (set by lsp_launcher.py)
             bundled_libs = None
             for path_entry in sys.path:
-                if 'bundled' in path_entry and 'libs' in path_entry:
+                if "bundled" in path_entry and "libs" in path_entry:
                     bundled_libs = path_entry
                     break
-            
+
             if bundled_libs:
                 # Add bundled libs to PYTHONPATH so subprocess can find pyright module
-                existing_pythonpath = env.get('PYTHONPATH', '')
-                env['PYTHONPATH'] = bundled_libs + (os.pathsep + existing_pythonpath if existing_pythonpath else '')
-                logger.info(f"Setting PYTHONPATH to include bundled libs: {bundled_libs}")
+                existing_pythonpath = env.get("PYTHONPATH", "")
+                env["PYTHONPATH"] = bundled_libs + (
+                    os.pathsep + existing_pythonpath if existing_pythonpath else ""
+                )
+                logger.info(
+                    f"Setting PYTHONPATH to include bundled libs: {bundled_libs}"
+                )
 
             logger.info(f"Starting Pyright: {cmd}")
             self.process = subprocess.Popen(
@@ -81,21 +93,18 @@ class PyrightClient:
     def _build_pyright_command(self) -> Optional[list]:
         """Build command to start pyright-langserver."""
         import sys
-        
+
         # First, try to use pyright module directly (works with bundled libs)
         # This avoids shebang issues with scripts
-        try:
-            import pyright.langserver
+        if find_spec("pyright.langserver") is not None:
             # Use current Python interpreter to run pyright module
             return [sys.executable, "-m", "pyright.langserver", "--stdio"]
-        except ImportError:
-            pass
-        
+
         # Fallback: try to find pyright-langserver executable
         executable = self._find_pyright_executable()
         if executable:
             return [executable, "--stdio"]
-        
+
         return None
 
     def _find_pyright_executable(self) -> Optional[str]:
@@ -284,6 +293,14 @@ class PyrightClient:
 
             # Handle notifications (NO 'id', has 'method')
             if "method" in msg:
+                if msg["method"] == "textDocument/publishDiagnostics":
+                    if self._diagnostics_callback:
+                        params = msg.get("params") or {}
+                        try:
+                            self._diagnostics_callback(params)
+                        except Exception as e:
+                            logger.error(f"Diagnostics callback failed: {e}")
+                    return
                 if msg["method"] == "window/logMessage":
                     params = msg.get("params", {})
                     message = params.get("message", "")

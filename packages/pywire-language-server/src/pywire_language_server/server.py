@@ -122,6 +122,21 @@ class ShadowFileManager:
         except ValueError:
             return None
 
+    def get_source_uri_from_shadow(self, shadow_uri: str) -> Optional[str]:
+        if not shadow_uri.startswith("file://"):
+            return None
+        if not self.root_path or not self.pywire_dir:
+            return None
+        shadow_path = shadow_uri[7:]
+        try:
+            rel_path = os.path.relpath(shadow_path, self.pywire_dir)
+        except ValueError:
+            return None
+        if not rel_path.endswith(".py"):
+            return None
+        source_path = os.path.join(self.root_path, rel_path[:-3])
+        return f"file://{source_path}"
+
 
 # Setup logging for debugging
 # Setup logging for debugging
@@ -187,6 +202,7 @@ server = LanguageServer(
 # Global state for Pyright fallback
 pyright_client: Optional[PyrightClient] = None
 shadow_manager: Optional[ShadowFileManager] = None
+pyright_diagnostics: dict[str, List[Diagnostic]] = {}
 
 
 @server.feature("initialize")
@@ -218,6 +234,9 @@ def initialize(ls: LanguageServer, params: Any):
                 if client.start():
                     pyright_client = client
                     logger.info("Pyright fallback started successfully")
+                    pyright_client.set_diagnostics_callback(
+                        lambda params: publish_pyright_diagnostics(ls, params)
+                    )
 
                     # Perform async init in a task
                     import asyncio
@@ -600,9 +619,112 @@ def validate(ls: LanguageServer, uri: str):
                 )
 
         doc.diagnostics = diagnostics
-        ls.text_document_publish_diagnostics(
-            PublishDiagnosticsParams(uri=uri, diagnostics=doc.diagnostics)
+        _publish_diagnostics(ls, uri)
+
+
+def _map_generated_position(
+    doc: PyWireDocument, line: int, col: int
+) -> Optional[Tuple[int, int]]:
+    mapped = doc.map_to_original(line, col)
+    if mapped:
+        return mapped
+
+    best: Optional[Tuple[int, int]] = None
+    best_distance = 10**9
+    for mapping in doc.source_map.mappings:
+        if mapping.generated_line != line:
+            continue
+        if col < mapping.generated_col:
+            distance = mapping.generated_col - col
+            candidate_col = mapping.original_col
+        elif col > mapping.generated_col + mapping.length:
+            distance = col - (mapping.generated_col + mapping.length)
+            candidate_col = mapping.original_col + mapping.length
+        else:
+            distance = 0
+            candidate_col = mapping.original_col + (col - mapping.generated_col)
+        if distance < best_distance:
+            best_distance = distance
+            best = (mapping.original_line, candidate_col)
+            if distance == 0:
+                break
+    return best
+
+
+def _publish_diagnostics(ls: LanguageServer, uri: str) -> None:
+    doc = documents.get(uri)
+    if not doc:
+        return
+    diagnostics = list(doc.diagnostics)
+    diagnostics.extend(pyright_diagnostics.get(uri, []))
+    ls.text_document_publish_diagnostics(
+        PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
+    )
+
+
+def _coerce_diagnostic_severity(
+    value: Optional[int | DiagnosticSeverity],
+) -> Optional[DiagnosticSeverity]:
+    if value is None:
+        return None
+    if isinstance(value, DiagnosticSeverity):
+        return value
+    try:
+        return DiagnosticSeverity(value)
+    except ValueError:
+        return None
+
+
+def publish_pyright_diagnostics(ls: LanguageServer, params: Dict[str, Any]) -> None:
+    if not shadow_manager:
+        return
+    shadow_uri = params.get("uri")
+    if not shadow_uri:
+        return
+    source_uri = shadow_manager.get_source_uri_from_shadow(shadow_uri)
+    if not source_uri:
+        return
+    doc = documents.get(source_uri)
+    if not doc:
+        return
+
+    raw_diagnostics = params.get("diagnostics") or []
+    mapped: List[Diagnostic] = []
+    for diag in raw_diagnostics:
+        diag_range = diag.get("range")
+        if not diag_range:
+            continue
+        start = diag_range.get("start")
+        end = diag_range.get("end")
+        if not start or not end:
+            continue
+        mapped_start = _map_generated_position(
+            doc, start.get("line", 0), start.get("character", 0)
         )
+        if not mapped_start:
+            continue
+        mapped_end = _map_generated_position(
+            doc, end.get("line", 0), end.get("character", 0)
+        )
+        if not mapped_end:
+            mapped_end = mapped_start
+
+        mapped_range = Range(
+            start=Position(line=mapped_start[0], character=mapped_start[1]),
+            end=Position(line=mapped_end[0], character=mapped_end[1]),
+        )
+        mapped.append(
+            Diagnostic(
+                range=mapped_range,
+                message=diag.get("message", ""),
+                severity=_coerce_diagnostic_severity(diag.get("severity")),
+                source=diag.get("source"),
+                code=diag.get("code"),
+            )
+        )
+
+    pyright_diagnostics[source_uri] = mapped
+    _publish_diagnostics(ls, source_uri)
 
 
 @server.feature("textDocument/didOpen")
@@ -1320,15 +1442,26 @@ def virtual_code(ls: LanguageServer, params: Any) -> Optional[Dict[str, Any]]:
 
     # Check if params is a dict or object
     uri = None
+    text = None
     if isinstance(params, dict):
         uri = params.get("uri")
+        text = params.get("text")
     elif hasattr(params, "uri"):
         uri = params.uri
+        text = getattr(params, "text", None)
 
     if not uri:
         return None
 
-    doc = documents.get(uri)
+    if text is not None:
+        doc = documents.get(uri)
+        if doc:
+            doc.update(text)
+        else:
+            doc = PyWireDocument(uri, text)
+            documents[uri] = doc
+    else:
+        doc = documents.get(uri)
     if not doc:
         return None
 

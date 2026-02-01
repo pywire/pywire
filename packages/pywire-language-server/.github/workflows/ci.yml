@@ -15,16 +15,6 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: pywire-language-server
-      
-      # Checkout the pywire dependency manually since it's a sibling repo
-      - name: Checkout PyWire
-        uses: actions/checkout@v4
-        with:
-          repository: pywire/pywire
-          path: pywire
-          token: ${{ secrets.GH_PAT }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -33,12 +23,7 @@ jobs:
           enable-cache: true
       
       - name: Install dependencies
-        working-directory: pywire-language-server
-        # Install the sibling pywire package in editable mode or direct path
-        run: |
-           uv add --editable ../pywire
-           uv sync --all-extras
+        run: uv sync --all-extras
       
       - name: Run tests
-        working-directory: pywire-language-server
         run: uv run pytest
