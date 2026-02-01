@@ -26,12 +26,26 @@ class PyrightClient:
     def start(self) -> bool:
         """Start the pyright-langserver process."""
         try:
-            executable = self._find_pyright_executable()
-            if not executable:
+            cmd = self._build_pyright_command()
+            if not cmd:
                 logger.warning("pyright-langserver not found in PATH or venv.")
                 return False
 
-            cmd = [executable, "--stdio"]
+            # Setup environment with bundled libs in PYTHONPATH
+            env = os.environ.copy()
+            import sys
+            # Check if we have bundled libs in sys.path (set by lsp_launcher.py)
+            bundled_libs = None
+            for path_entry in sys.path:
+                if 'bundled' in path_entry and 'libs' in path_entry:
+                    bundled_libs = path_entry
+                    break
+            
+            if bundled_libs:
+                # Add bundled libs to PYTHONPATH so subprocess can find pyright module
+                existing_pythonpath = env.get('PYTHONPATH', '')
+                env['PYTHONPATH'] = bundled_libs + (os.pathsep + existing_pythonpath if existing_pythonpath else '')
+                logger.info(f"Setting PYTHONPATH to include bundled libs: {bundled_libs}")
 
             logger.info(f"Starting Pyright: {cmd}")
             self.process = subprocess.Popen(
@@ -40,6 +54,7 @@ class PyrightClient:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,  # Capture stderr to avoid polluting our log?
                 bufsize=0,
+                env=env,
             )
 
             self.running = True
@@ -62,6 +77,26 @@ class PyrightClient:
         except Exception as e:
             logger.error(f"Failed to start pyright: {e}")
             return False
+
+    def _build_pyright_command(self) -> Optional[list]:
+        """Build command to start pyright-langserver."""
+        import sys
+        
+        # First, try to use pyright module directly (works with bundled libs)
+        # This avoids shebang issues with scripts
+        try:
+            import pyright.langserver
+            # Use current Python interpreter to run pyright module
+            return [sys.executable, "-m", "pyright.langserver", "--stdio"]
+        except ImportError:
+            pass
+        
+        # Fallback: try to find pyright-langserver executable
+        executable = self._find_pyright_executable()
+        if executable:
+            return [executable, "--stdio"]
+        
+        return None
 
     def _find_pyright_executable(self) -> Optional[str]:
         import shutil
