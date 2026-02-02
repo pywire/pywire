@@ -267,6 +267,25 @@ class BasePage:
     ) -> Dict[str, Any]:
         """Handle client event (from @click, etc.)."""
 
+        # Security: Validate handler is allowed (prevents arbitrary method invocation)
+        allowed = getattr(self, "__allowed_handlers__", None)
+
+        # Framework-generated handlers are always allowed (form wrappers, bindings)
+        is_framework_handler = (
+            event_name.startswith("_handle_bind_")
+            or event_name.startswith("_handler_")
+            or event_name.startswith("_form_submit_")
+        )
+
+        if not is_framework_handler:
+            # Block private methods (leading underscore) unless in allowlist
+            if event_name.startswith("_"):
+                raise ValueError(f"Handler '{event_name}' not allowed")
+
+            # Check explicit allowlist if defined
+            if allowed is not None and event_name not in allowed:
+                raise ValueError(f"Handler '{event_name}' not allowed")
+
         # Retrieve handler
         handler = getattr(self, event_name, None)
         if not handler:

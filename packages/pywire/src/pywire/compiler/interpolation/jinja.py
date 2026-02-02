@@ -105,6 +105,12 @@ class JinjaInterpolationParser(InterpolationParser):
 
                     expr = text[i + 1 : j - 1]  # Extract expression without braces
 
+                    # Check for {$html expr} syntax for raw/unescaped output
+                    is_raw = False
+                    if expr.lstrip().startswith("$html "):
+                        is_raw = True
+                        expr = expr.lstrip()[6:]  # Strip "$html " prefix
+
                     if self._is_valid_python(expr):
                         # Calculate accurate line/col
                         # Count newlines before this position (relative to start of text)
@@ -127,6 +133,7 @@ class JinjaInterpolationParser(InterpolationParser):
                                 expression=expr,
                                 line=current_line,
                                 column=current_column,
+                                is_raw=is_raw,
                             )
                         )
                     else:

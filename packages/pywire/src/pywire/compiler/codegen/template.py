@@ -196,6 +196,12 @@ class TemplateCodegen:
                 names=[ast.alias(name="ensure_async_iterator", asname=None)],
                 level=0,
             ),
+            # import escape_html for XSS prevention
+            ast.ImportFrom(
+                module="pywire.runtime.escape",
+                names=[ast.alias(name="escape_html", asname=None)],
+                level=0,
+            ),
         ]
 
         root_element = self._get_root_element(nodes)
@@ -1195,11 +1201,22 @@ class TemplateCodegen:
                                 line_offset=part.line,
                                 col_offset=part.column,
                             )
-                            term = ast.Call(
-                                func=ast.Name(id="str", ctx=ast.Load()),
-                                args=[self._wrap_unwrap_wire(expr)],
-                                keywords=[],
-                            )
+                            # Check if this is a raw (unescaped) interpolation
+                            is_raw = getattr(part, "is_raw", False)
+                            if is_raw:
+                                # Raw HTML - no escaping
+                                term = ast.Call(
+                                    func=ast.Name(id="str", ctx=ast.Load()),
+                                    args=[self._wrap_unwrap_wire(expr)],
+                                    keywords=[],
+                                )
+                            else:
+                                # Default: escape HTML for XSS prevention
+                                term = ast.Call(
+                                    func=ast.Name(id="escape_html", ctx=ast.Load()),
+                                    args=[self._wrap_unwrap_wire(expr)],
+                                    keywords=[],
+                                )
 
                         if current_concat is None:
                             current_concat = term
@@ -1234,11 +1251,22 @@ class TemplateCodegen:
                     line_offset=interp.line,
                     col_offset=interp.column,
                 )
-                term = ast.Call(
-                    func=ast.Name(id="str", ctx=ast.Load()),
-                    args=[self._wrap_unwrap_wire(expr)],
-                    keywords=[],
-                )
+                # Check if this is a raw (unescaped) interpolation
+                is_raw = getattr(interp, "is_raw", False)
+                if is_raw:
+                    # Raw HTML - no escaping
+                    term = ast.Call(
+                        func=ast.Name(id="str", ctx=ast.Load()),
+                        args=[self._wrap_unwrap_wire(expr)],
+                        keywords=[],
+                    )
+                else:
+                    # Default: escape HTML for XSS prevention
+                    term = ast.Call(
+                        func=ast.Name(id="escape_html", ctx=ast.Load()),
+                        args=[self._wrap_unwrap_wire(expr)],
+                        keywords=[],
+                    )
                 append_stmt = ast.Expr(
                     value=ast.Call(
                         func=ast.Attribute(

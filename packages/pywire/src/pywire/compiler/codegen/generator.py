@@ -151,7 +151,9 @@ class CodeGenerator:
         # but _process_handlers mostly cares about wrapping logic.
         # Actually _process_handlers calls _transform_inline_code which uses known_methods.
         # Ideally it should know about all globals too.
-        handlers = self._process_handlers(parsed, all_globals, async_methods)
+        handlers, allowed_handlers = self._process_handlers(
+            parsed, all_globals, async_methods
+        )
 
         # Page class
         page_class = self._generate_page_class(
@@ -162,6 +164,7 @@ class CodeGenerator:
             known_imports,
             async_methods,
             component_map,
+            allowed_handlers,
         )
         module_body.append(page_class)
 
@@ -388,12 +391,31 @@ class CodeGenerator:
         known_imports: Set[str],
         async_methods: Set[str],
         component_map: Dict[str, str],
+        allowed_handlers: Optional[Set[str]] = None,
     ) -> ast.ClassDef:
         """Generate page class definition."""
         class_body: List[ast.stmt] = []
 
         # Add generated handlers
         class_body.extend(handlers)
+
+        # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
+        if allowed_handlers is None:
+            allowed_handlers = set()
+        # Include _handle_bind_* handlers that may be generated later
+        # These will be added dynamically, but we pre-allow the pattern
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="__allowed_handlers__", ctx=ast.Store())],
+                value=ast.Set(
+                    elts=[ast.Constant(value=h) for h in sorted(allowed_handlers)]
+                )
+                if allowed_handlers
+                else ast.Call(
+                    func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[]
+                ),
+            )
+        )
 
         # Generate directive assignments (e.g., __routes__)
         for directive in parsed.directives:
@@ -569,9 +591,14 @@ class CodeGenerator:
 
     def _process_handlers(
         self, parsed: ParsedPyWire, known_methods: Set[str], async_methods: Set[str]
-    ) -> List[ast.AsyncFunctionDef]:
-        """Extract inline handlers and wrap handlers for bindings."""
+    ) -> Tuple[List[ast.AsyncFunctionDef], Set[str]]:
+        """Extract inline handlers and wrap handlers for bindings.
+
+        Returns:
+            Tuple of (handler_methods, allowed_handler_names)
+        """
         handlers = []
+        allowed_handlers: Set[str] = set()
         handler_count = 0
         from pywire.compiler.ast_nodes import EventAttribute
 
@@ -631,16 +658,21 @@ class CodeGenerator:
                                 )
 
                                 attr.handler_name = method_name
+                                # Add generated handler to allowlist
+                                allowed_handlers.add(method_name)
 
                             except Exception as e:
                                 print(
                                     f"Error compiling handler '{attr.handler_name}': {e}"
                                 )
+                        else:
+                            # Simple identifier handler - add to allowlist
+                            allowed_handlers.add(attr.handler_name)
 
                 visit_nodes(node.children)
 
         visit_nodes(parsed.template)
-        return handlers
+        return handlers, allowed_handlers
 
     def _transform_inline_code(
         self,
