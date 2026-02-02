@@ -36,13 +36,19 @@ export interface StackFrame {
 }
 
 export interface ServerMessage {
-  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace'
+  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace' | 'init'
   html?: string
   regions?: Array<{ region: string; html: string }>
   error?: string
   level?: 'info' | 'warn' | 'error'
   lines?: string[]
   trace?: StackFrame[]
+  version?: string
+}
+
+export interface InitMessage {
+  type: 'init'
+  version: string
 }
 
 export interface ConsoleMessage {

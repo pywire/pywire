@@ -12,6 +12,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
+from pywire import __version__
 
 
 class WebSocketHandler:
@@ -33,6 +34,11 @@ class WebSocketHandler:
 
         await websocket.accept()
         self.active_connections.add(websocket)
+
+        # Send init message
+        await websocket.send_bytes(
+            msgpack.packb({"type": "init", "version": __version__})
+        )
 
         try:
             # Create isolated page instance for this connection

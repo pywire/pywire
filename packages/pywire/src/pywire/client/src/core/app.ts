@@ -1,4 +1,5 @@
 import { TransportManager, TransportConfig } from './transport-manager'
+import { version as clientVersion } from '../../package.json'
 import { DOMUpdater } from './dom-updater'
 import { ServerMessage, ClientMessage, EventData, RelocateMessage } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
@@ -240,6 +241,10 @@ export class PyWireApp {
             console.log(prefix, joined)
           }
         }
+        break
+
+      case 'init':
+        console.log(`PyWire Client v${clientVersion} • Server v${msg.version}`)
         break
 
       default:

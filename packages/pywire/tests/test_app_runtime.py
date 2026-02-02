@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from pywire import __version__
 from pywire.runtime.app import PyWire
 from pywire.runtime.page import BasePage
 from starlette.requests import Request
@@ -33,7 +34,7 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
 
         data = json.loads(response.body)
         self.assertIn("transports", data)
-        self.assertEqual(data["version"], "0.1.0")
+        self.assertEqual(data["version"], __version__)
 
     def test_scan_directory_routing(self) -> None:
         # Create a nested structure

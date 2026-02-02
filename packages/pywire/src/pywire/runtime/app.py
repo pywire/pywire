@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
+from pywire import __version__
 from pywire.runtime.error_page import ErrorPage
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.router import Router
@@ -208,7 +209,7 @@ class PyWire:
                 "transports": ["websocket", "http"],
                 # WebTransport requires HTTP/3 - only available when running with Hypercorn
                 "webtransport": False,
-                "version": "0.1.0",
+                "version": __version__,
             }
         )
 

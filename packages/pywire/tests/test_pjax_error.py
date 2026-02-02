@@ -26,6 +26,9 @@ def test_pjax_relocate_error_trigger_reload(tmp_path: Path) -> None:
     client = TestClient(app)
 
     with client.websocket_connect("/_pywire/ws") as websocket:
+        # Drain init message
+        websocket.receive_bytes()
+
         # Simulate PJAX navigation to the failing page
         websocket.send_bytes(msgpack.packb({"type": "relocate", "path": "/fail"}))
 

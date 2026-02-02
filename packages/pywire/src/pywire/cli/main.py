@@ -8,6 +8,8 @@ from typing import Any, Optional
 import rich.panel
 import rich_click as click
 
+from pywire import __version__
+
 # Astro-like styling configuration (Cyan Theme)
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.STYLE_HELPTEXT_FIRST = True
@@ -141,18 +143,19 @@ def panel_init(self, *args, **kwargs):
 rich.panel.Panel.__init__ = panel_init  # type: ignore[method-assign]
 
 
-@click.group()
-@click.version_option()
+@click.group(
+    help=f"""
+[bold white on cyan] pywire [/] [bold cyan]v{__version__}[/] Build faster python web apps.
+
+Run [bold cyan]pywire dev APP[/] to start development server.
+Run [bold cyan]pywire run APP[/] to start production server.
+
+[dim]APP should be a string in format 'module:instance', e.g. 'src.main:app' or 'main:app'
+If not provided, pywire tries to discover it in main.py, app.py, etc.[/dim]
+"""
+)
+@click.version_option(__version__)
 def cli() -> None:
-    """
-    [bold white on cyan] pywire [/] [bold cyan]v0.1.3[/] Build faster python web apps.
-
-    Run [bold cyan]pywire dev APP[/] to start development server.
-    Run [bold cyan]pywire run APP[/] to start production server.
-
-    [dim]APP should be a string in format 'module:instance', e.g. 'src.main:app' or 'main:app'
-    If not provided, pywire tries to discover it in main.py, app.py, etc.[/dim]
-    """
     pass
 
 

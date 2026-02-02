@@ -10,7 +10,8 @@
     "declaration": false,
     "outDir": "./dist",
     "rootDir": "./src",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"]
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
