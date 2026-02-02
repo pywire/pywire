@@ -12,13 +12,13 @@ import {
 import { join, resolve } from 'path'
 
 // Recursively find a file by name in a directory
-function findFile(dir, filename, maxDepth = 6) {
+function findFile(dir, filename, maxDepth = 10) {
   if (maxDepth <= 0 || !existsSync(dir)) return null
   try {
     for (const entry of readdirSync(dir)) {
       const fullPath = join(dir, entry)
-      if (entry === filename) return fullPath
       const stat = statSync(fullPath, { throwIfNoEntry: false })
+      if (entry === filename && stat?.isFile()) return fullPath
       // Include .pnpm directory for pnpm package manager
       if (stat?.isDirectory() && (entry === '.pnpm' || !entry.startsWith('.'))) {
         const found = findFile(fullPath, filename, maxDepth - 1)
@@ -90,6 +90,7 @@ async function main() {
                 mkdirSync(outNodeModulesDir, { recursive: true })
 
                 const modulesToCopy = ['prettier', 'prettier-plugin-pywire']
+                let prettierPluginSourceDir = null
                 for (const moduleName of modulesToCopy) {
                   const symlinkedPath = join(projectRoot, 'node_modules', moduleName)
                   if (!existsSync(symlinkedPath)) {
@@ -98,6 +99,9 @@ async function main() {
                   }
                   // Follow symlinks (pnpm uses symlinks)
                   const realSourceDir = realpathSync(symlinkedPath)
+                  if (moduleName === 'prettier-plugin-pywire') {
+                    prettierPluginSourceDir = realSourceDir
+                  }
                   const targetDir = join(outNodeModulesDir, moduleName)
                   cpSync(realSourceDir, targetDir, { recursive: true, dereference: true })
                   console.log(`Copied ${moduleName} to out/node_modules/`)
@@ -105,24 +109,40 @@ async function main() {
 
                 // Copy ruff WASM file next to the plugin's CJS bundle
                 // The CJS build uses import.meta.url shim which resolves to the CJS file location
+                if (!prettierPluginSourceDir) {
+                  throw new Error('prettier-plugin-pywire was not found for bundling')
+                }
                 const wasmDest = join(
                   outNodeModulesDir,
                   'prettier-plugin-pywire',
                   'dist',
                   'ruff_fmt_bg.wasm'
                 )
-                const wasmSource = findFile(join(projectRoot, 'node_modules'), 'ruff_fmt_bg.wasm')
-
-                if (wasmSource) {
-                  copyFileSync(wasmSource, wasmDest)
-                  console.log(
-                    'Copied ruff_fmt_bg.wasm to out/node_modules/prettier-plugin-pywire/dist/'
-                  )
-                } else {
-                  console.warn('WASM file ruff_fmt_bg.wasm not found in node_modules')
+                const wasmSearchRoots = [
+                  prettierPluginSourceDir,
+                  join(prettierPluginSourceDir, 'node_modules'),
+                  join(projectRoot, 'node_modules'),
+                ]
+                let wasmSource = null
+                for (const root of wasmSearchRoots) {
+                  if (!root) continue
+                  const found = findFile(root, 'ruff_fmt_bg.wasm')
+                  if (!found) continue
+                  wasmSource = found
+                  break
                 }
+                if (!wasmSource) {
+                  throw new Error(
+                    'ruff_fmt_bg.wasm not found. Ensure @wasm-fmt/ruff_fmt is installed and its WASM artifact is present.'
+                  )
+                }
+                copyFileSync(wasmSource, wasmDest)
+                console.log(
+                  'Copied ruff_fmt_bg.wasm to out/node_modules/prettier-plugin-pywire/dist/'
+                )
               } catch (e) {
                 console.error('Failed to copy node_modules:', e)
+                process.exit(1)
               }
             }
           })

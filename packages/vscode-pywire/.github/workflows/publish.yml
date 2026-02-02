@@ -39,4 +39,4 @@ jobs:
       - name: Compile
         run: pnpm run compile
       - name: Publish to Marketplace
-        run: pnpm exec vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: pnpm exec vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
