@@ -47,6 +47,16 @@ pywire = "pywire.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pywire"]
+include = [
+    "src/pywire/static/**",
+    "src/pywire/templates/**",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/pywire/static/**",
+    "src/pywire/templates/**",
+]
 
 [tool.mypy]
 python_version = "3.11"
