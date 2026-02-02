@@ -128,6 +128,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@wasm-fmt/ruff_fmt": "^0.9.0",
     "prettier": "^3.6.2",
     "prettier-plugin-pywire": "git+https://github.com/pywire/prettier-plugin-pywire.git",
     "vscode-languageclient": "^9.0.1",
