@@ -7,5 +7,6 @@ __pycache__/
 
 src/pywire/client/node_modules/
 src/pywire/client/dist/
+src/pywire/static/
 .coverage
 .pywire/

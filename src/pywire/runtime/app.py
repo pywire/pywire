@@ -196,7 +196,7 @@ class PyWire:
                 "transports": ["websocket", "http"],
                 # WebTransport requires HTTP/3 - only available when running with Hypercorn
                 "webtransport": False,
-                "version": "0.0.1",
+                "version": "0.1.0",
             }
         )
 

@@ -18,6 +18,7 @@ if [ -d "src/pywire/client" ]; then
         pnpm format:check
         pnpm lint
         pnpm typecheck
+        pnpm build
         pnpm test
     )
 fi

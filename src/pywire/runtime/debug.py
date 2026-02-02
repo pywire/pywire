@@ -184,7 +184,7 @@ class DevErrorMiddleware:
             f"### Error\n`{exc_type}: {exc_msg}`\n\n### Traceback\n"
             f"(Please paste relevant traceback here)"
         )
-        github_url = f"https://github.com/reecelikesramen/pywire/issues/new?title={issue_title}&body={issue_body}"
+        github_url = f"https://github.com/pywire/pywire/issues/new?title={issue_title}&body={issue_body}"
 
         return render_template(
             "error/500.html",
