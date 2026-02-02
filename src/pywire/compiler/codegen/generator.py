@@ -1485,45 +1485,8 @@ class CodeGenerator:
 
         for node in python_ast.body:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
-                # Skip imports - already handled
+                # Skip imports - already handled at module level
                 continue
-            elif isinstance(node, ast.Assign):
-                # Module-level assignments become class attributes
-                # UNLESS they target 'self' (e.g. self.x = 1), which makes no sense at class level
-                # and implies instance initialization.
-
-                is_instance_assign = False
-                for target in node.targets:
-                    # Check if target is Attribute(value=Name(id='self'))
-                    if (
-                        isinstance(target, ast.Attribute)
-                        and isinstance(target.value, ast.Name)
-                        and target.value.id == "self"
-                    ):
-                        is_instance_assign = True
-                        break
-
-                # Also check if value is a Call (like wire()) or mutable structure.
-                # These should be instance-level to avoid shared state.
-                is_mutable_init = isinstance(
-                    node.value,
-                    (
-                        ast.Call,
-                        ast.List,
-                        ast.Dict,
-                        ast.Set,
-                        ast.ListComp,
-                        ast.DictComp,
-                        ast.SetComp,
-                    ),
-                )
-
-                if is_instance_assign or is_mutable_init:
-                    top_level_statements.append(node)
-                else:
-                    # Simple literals (int, str) stay class attributes
-                    transformed.append(node)
-
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Check for decorators
                 new_decorators = []
@@ -1544,8 +1507,10 @@ class CodeGenerator:
                 # Classes are moved to module level, skip here
                 continue
             else:
-                # Other statements (Expr, If, For, While, Try)
-                # Move to top-level init
+                # ALL other statements (Assign, AnnAssign, AugAssign, Expr, If, For, While, Try, etc.)
+                # are moved to __top_level_init__ for consistent instance-scope execution.
+                # This ensures that dependent code (e.g., conn = ...; conn.row_factory = ...)
+                # all runs in the same scope at instance creation time.
                 top_level_statements.append(node)
 
         if top_level_statements:
