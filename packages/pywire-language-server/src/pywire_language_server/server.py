@@ -36,6 +36,7 @@ from lsprotocol.types import (
 )
 from pygls.lsp.server import LanguageServer
 
+from . import __version__
 from .pyright import PyrightClient
 from .transpiler import Transpiler
 
@@ -197,7 +198,7 @@ SEMANTIC_TOKENS_LEGEND = SemanticTokensLegend(
 # Create the language server
 server = LanguageServer(
     "pywire-language-server",
-    "v0.1.0",
+    __version__,
     text_document_sync_kind=TextDocumentSyncKind.Full,
 )
 

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,7 +7,7 @@ name = "pywire-language-server"
 authors = [
     { name="Reece Holmdahl", email="reece@pywire.dev" },
 ]
-version = "0.1.1"
+dynamic = ["version"]
 description = "Language Server Protocol implementation for PyWire"
 requires-python = ">=3.11"
 dependencies = [
@@ -31,3 +31,9 @@ asyncio_mode = "auto"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pywire_language_server"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/pywire_language_server/_version.py"
