@@ -14,10 +14,29 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'src/pywire/client/pnpm-lock.yaml'
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      - name: Build client assets
+        run: |
+          cd src/pywire/client
+          pnpm install
+          pnpm build
+
       - name: Build
         run: uv build
 
