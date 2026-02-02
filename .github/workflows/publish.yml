@@ -31,12 +31,6 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Build client assets
-        run: |
-          cd src/pywire/client
-          pnpm install
-          pnpm build
-
       - name: Build
         run: uv build
 

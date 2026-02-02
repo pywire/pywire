@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pywire.runtime.page import BasePage
+from pywire import __version__
 
 
 @dataclass
@@ -118,7 +119,8 @@ class HTTPTransportHandler:
         self.start_cleanup_task()
 
         return Response(
-            msgpack.packb({"sessionId": session_id}), media_type="application/x-msgpack"
+            msgpack.packb({"sessionId": session_id, "version": __version__}),
+            media_type="application/x-msgpack",
         )
 
     async def poll(self, request: Request) -> Response:

@@ -63,6 +63,9 @@ def test_spa_relocation_failure_forces_reload(app_dev: PyWire) -> None:
     client = TestClient(app_dev.app)
 
     with client.websocket_connect("/_pywire/ws") as websocket:
+        # Drain init message
+        websocket.receive_bytes()
+
         # Trigger a relocation to a non-existent path that will cause an error
         # normally _handle_relocate catches route not found and serves 404 page,
         # but if we FORCE an exception in the router or page creation, it should trigger 'reload'.

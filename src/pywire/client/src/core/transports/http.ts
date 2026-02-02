@@ -35,8 +35,12 @@ export class HTTPTransport extends BaseTransport {
       }
 
       const buffer = await response.arrayBuffer()
-      const data = decode(buffer) as { sessionId: string }
+      const data = decode(buffer) as { sessionId: string; version?: string }
       this.sessionId = data.sessionId
+
+      if (data.version) {
+        this.notifyHandlers({ type: 'init', version: data.version })
+      }
 
       console.log('PyWire: HTTP transport connected')
       this.notifyStatus(true)

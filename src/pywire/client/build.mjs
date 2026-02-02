@@ -1,6 +1,9 @@
 import * as esbuild from 'esbuild'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const { version } = require('./package.json')
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -38,7 +41,7 @@ function getBuildOptions(bundle) {
       'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
     },
     banner: {
-      js: `/* PyWire Client ${bundle.name} v0.1.3 - https://github.com/pywire/pywire */`,
+      js: `/* PyWire Client ${bundle.name} v${version} - https://github.com/pywire/pywire */`,
     },
   }
 }
