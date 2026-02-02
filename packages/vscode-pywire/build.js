@@ -4,29 +4,29 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  readdirSync,
   realpathSync,
   rmSync,
-  statSync,
 } from 'fs'
-import { join, resolve } from 'path'
+import { createRequire } from 'module'
+import { dirname, join, resolve } from 'path'
 
-// Recursively find a file by name in a directory
-function findFile(dir, filename, maxDepth = 10) {
-  if (maxDepth <= 0 || !existsSync(dir)) return null
+const require = createRequire(import.meta.url)
+
+// Resolve a package's directory using Node's module resolution (works with pnpm symlinks)
+function resolvePackageDir(packageName) {
   try {
-    for (const entry of readdirSync(dir)) {
-      const fullPath = join(dir, entry)
-      const stat = statSync(fullPath, { throwIfNoEntry: false })
-      if (entry === filename && stat?.isFile()) return fullPath
-      // Include .pnpm directory for pnpm package manager
-      if (stat?.isDirectory() && (entry === '.pnpm' || !entry.startsWith('.'))) {
-        const found = findFile(fullPath, filename, maxDepth - 1)
-        if (found) return found
+    // Resolve the package's main entry point and get its directory
+    const entryPath = require.resolve(packageName)
+    // Walk up to find the package root (directory containing package.json)
+    let dir = dirname(entryPath)
+    while (dir !== dirname(dir)) {
+      if (existsSync(join(dir, 'package.json'))) {
+        return dir
       }
+      dir = dirname(dir)
     }
   } catch {
-    /* ignore permission errors */
+    /* package not found */
   }
   return null
 }
@@ -90,7 +90,6 @@ async function main() {
                 mkdirSync(outNodeModulesDir, { recursive: true })
 
                 const modulesToCopy = ['prettier', 'prettier-plugin-pywire']
-                let prettierPluginSourceDir = null
                 for (const moduleName of modulesToCopy) {
                   const symlinkedPath = join(projectRoot, 'node_modules', moduleName)
                   if (!existsSync(symlinkedPath)) {
@@ -99,41 +98,29 @@ async function main() {
                   }
                   // Follow symlinks (pnpm uses symlinks)
                   const realSourceDir = realpathSync(symlinkedPath)
-                  if (moduleName === 'prettier-plugin-pywire') {
-                    prettierPluginSourceDir = realSourceDir
-                  }
                   const targetDir = join(outNodeModulesDir, moduleName)
                   cpSync(realSourceDir, targetDir, { recursive: true, dereference: true })
                   console.log(`Copied ${moduleName} to out/node_modules/`)
                 }
 
                 // Copy ruff WASM file next to the plugin's CJS bundle
-                // The CJS build uses import.meta.url shim which resolves to the CJS file location
-                if (!prettierPluginSourceDir) {
-                  throw new Error('prettier-plugin-pywire was not found for bundling')
-                }
+                // Use Node's module resolution to find the package (works reliably with pnpm)
                 const wasmDest = join(
                   outNodeModulesDir,
                   'prettier-plugin-pywire',
                   'dist',
                   'ruff_fmt_bg.wasm'
                 )
-                const wasmSearchRoots = [
-                  prettierPluginSourceDir,
-                  join(prettierPluginSourceDir, 'node_modules'),
-                  join(projectRoot, 'node_modules'),
-                ]
-                let wasmSource = null
-                for (const root of wasmSearchRoots) {
-                  if (!root) continue
-                  const found = findFile(root, 'ruff_fmt_bg.wasm')
-                  if (!found) continue
-                  wasmSource = found
-                  break
-                }
-                if (!wasmSource) {
+                const ruffPkgDir = resolvePackageDir('@wasm-fmt/ruff_fmt')
+                if (!ruffPkgDir) {
                   throw new Error(
-                    'ruff_fmt_bg.wasm not found. Ensure @wasm-fmt/ruff_fmt is installed and its WASM artifact is present.'
+                    '@wasm-fmt/ruff_fmt package not found. Ensure it is installed.'
+                  )
+                }
+                const wasmSource = join(ruffPkgDir, 'ruff_fmt_bg.wasm')
+                if (!existsSync(wasmSource)) {
+                  throw new Error(
+                    `ruff_fmt_bg.wasm not found at ${wasmSource}. The @wasm-fmt/ruff_fmt package may be corrupted.`
                   )
                 }
                 copyFileSync(wasmSource, wasmDest)
