@@ -6,7 +6,7 @@ set -x
 uv sync --all-extras --frozen
 
 # Install Client dependencies
-cd src/pywire/client && pnpm install
+cd src/pywire/client && pnpm install && pnpm build
 cd -
 
 # Install Docs dependencies
