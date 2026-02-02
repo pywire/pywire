@@ -145,7 +145,7 @@ rich.panel.Panel.__init__ = panel_init  # type: ignore[method-assign]
 @click.version_option()
 def cli() -> None:
     """
-    [bold white on cyan] pywire [/] [bold cyan]v0.1.0[/] Build faster python web apps.
+    [bold white on cyan] pywire [/] [bold cyan]v0.1.3[/] Build faster python web apps.
 
     Run [bold cyan]pywire dev APP[/] to start development server.
     Run [bold cyan]pywire run APP[/] to start production server.

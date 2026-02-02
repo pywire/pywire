@@ -274,7 +274,6 @@ async def run_dev_server(
     if not cert_path or not key_path:
         # Check for existing trusted certificates (e.g. from mkcert) in .pywire or root
         potential_certs = [
-            (dot_pywire / "localhost-key.pem", dot_pywire / "localhost.pem"),
             (dot_pywire / "localhost.pem", dot_pywire / "localhost-key.pem"),
             (Path("localhost+2.pem"), Path("localhost+2-key.pem")),
             (Path("localhost.pem"), Path("localhost-key.pem")),
