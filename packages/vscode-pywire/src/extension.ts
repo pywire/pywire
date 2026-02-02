@@ -27,7 +27,6 @@ import {
   CompletionList,
   ReferenceContext,
   CompletionContext,
-  WorkspaceEdit,
 } from 'vscode'
 import {
   LanguageClient,
@@ -514,7 +513,6 @@ export function activate(context: ExtensionContext) {
             const relPath = path.relative(rootPath, Uri.parse(uri).fsPath)
             const shadowRelPath = relPath + '.py'
             const shadowPath = path.join(pywireDir, shadowRelPath)
-            const shadowUri = Uri.file(shadowPath)
 
             const shadowDir = path.dirname(shadowPath)
             if (!fs.existsSync(shadowDir)) {
