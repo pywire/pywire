@@ -2,9 +2,10 @@
   "name": "pywire",
   "displayName": "PyWire",
   "description": "Language support for PyWire files",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "publisher": "pywire",
+  "icon": "images/icon.jpg",
   "engines": {
     "vscode": "^1.75.0"
   },
