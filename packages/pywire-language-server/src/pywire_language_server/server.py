@@ -196,7 +196,9 @@ SEMANTIC_TOKENS_LEGEND = SemanticTokensLegend(
 
 # Create the language server
 server = LanguageServer(
-    "pywire-language-server", "v0.1", text_document_sync_kind=TextDocumentSyncKind.Full
+    "pywire-language-server",
+    "v0.1.0",
+    text_document_sync_kind=TextDocumentSyncKind.Full,
 )
 
 
