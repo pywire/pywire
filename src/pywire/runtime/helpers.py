@@ -84,7 +84,14 @@ def render_attrs(
         elif v is False or v is None:
             continue
         else:
-            val = str(v).replace('"', "&quot;")
+            # Escape HTML special characters in attribute values for XSS prevention
+            val = (
+                str(v)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+            )
             parts.append(f' {k}="{val}"')
 
     return "".join(parts)

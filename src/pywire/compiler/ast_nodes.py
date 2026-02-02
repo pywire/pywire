@@ -239,12 +239,17 @@ class SpreadAttribute(SpecialAttribute):
 
 @dataclass
 class InterpolationNode(ASTNode):
-    """Represents {variable} in text."""
+    """Represents {variable} in text.
+
+    Use {$html expr} syntax for raw/unescaped output.
+    """
 
     expression: str  # Python expression to evaluate
+    is_raw: bool = False  # If True, output is not HTML-escaped (use {$html expr})
 
     def __str__(self) -> str:
-        return f"InterpolationNode(expr={self.expression})"
+        raw_str = ", raw=True" if self.is_raw else ""
+        return f"InterpolationNode(expr={self.expression}{raw_str})"
 
 
 @dataclass
