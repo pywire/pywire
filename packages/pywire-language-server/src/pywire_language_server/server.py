@@ -23,6 +23,7 @@ from lsprotocol.types import (
     DidOpenTextDocumentParams,
     Hover,
     HoverParams,
+    InsertTextFormat,
     Location,
     MarkupContent,
     Position,
@@ -416,6 +417,26 @@ def _get_word_at_position(line_text: str, char: int) -> str:
     ):
         end += 1
     return line_text[start:end]
+
+
+def _is_inside_opening_tag(line_text: str, character: int) -> bool:
+    """Check if the cursor is inside an opening HTML tag (after tag name, before >)."""
+    # Find the last < before cursor
+    before_cursor = line_text[:character]
+    last_open = before_cursor.rfind("<")
+    if last_open == -1:
+        return False
+
+    # Check if there's a > between < and cursor
+    between = before_cursor[last_open:]
+    if ">" in between:
+        return False
+
+    # Check it's not a closing tag
+    if between.startswith("</"):
+        return False
+
+    return True
 
 
 def _get_section(lines: List[str], line_number: int) -> str:
@@ -931,6 +952,28 @@ Define routes for this page.
     if word in framework_hovers:
         return Hover(contents=framework_hovers[word])
 
+    # Check for scoped attribute on <style> tag
+    if word == "scoped":
+        # Check if we're in a <style> tag context
+        line_text = doc.lines[position.line] if position.line < len(doc.lines) else ""
+        if "<style" in line_text.lower():
+            return Hover(
+                contents="""**Scoped Styles**
+
+Styles in this block are automatically scoped to this component/page/layout.
+
+- CSS rules are prefixed to only apply within this component's DOM subtree
+- Styles are merged and auto-updated during development
+- Prevents style leakage between components
+
+Example:
+```html
+<style scoped>
+  .button { color: blue; }
+</style>
+```"""
+            )
+
     hover_docs = {
         "@click": "**@click**\n\nClick event handler. Value can be a function name or Python expression.\n\nExample: `@click={change_name}` or `@click={count += 1}`",
         "@submit": "**@submit**\n\nForm submit event handler. Value can be a function name or Python expression.",
@@ -1304,35 +1347,120 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     if section == "python":
         return CompletionList(is_incomplete=False, items=[])
 
-    # If not mapped, fallback to simple directives
-    items = [
-        CompletionItem(
-            label="$if",
-            kind=CompletionItemKind.Keyword,
-            documentation="Conditional rendering",
-        ),
-        CompletionItem(
-            label="$show",
-            kind=CompletionItemKind.Keyword,
-            documentation="Conditional visibility",
-        ),
-        CompletionItem(
-            label="$for", kind=CompletionItemKind.Keyword, documentation="Loop"
-        ),
-        CompletionItem(
-            label="$key", kind=CompletionItemKind.Keyword, documentation="List key"
-        ),
-        CompletionItem(
-            label="@click", kind=CompletionItemKind.Event, documentation="Click handler"
-        ),
-        CompletionItem(
-            label="@submit",
-            kind=CompletionItemKind.Event,
-            documentation="Submit handler",
-        ),
-    ]
+    # Get line text and check context
+    line_text = doc.lines[position.line] if position.line < len(doc.lines) else ""
+    in_tag = _is_inside_opening_tag(line_text, position.character)
 
-    return CompletionList(is_incomplete=False, items=items)
+    # Only suggest directives and event handlers when inside an opening tag
+    if not in_tag:
+        return CompletionList(is_incomplete=False, items=[])
+
+    # Get the prefix to filter suggestions
+    before_cursor = line_text[: position.character]
+    prefix_match = re.search(r"[@$][\w.]*$", before_cursor)
+    prefix = prefix_match.group(0) if prefix_match else ""
+
+    suggestion_items: List[CompletionItem] = []
+
+    # Add directive suggestions when prefix starts with $ or is empty and user might want them
+    if prefix.startswith("$") or not prefix:
+        suggestion_items.extend(
+            [
+                CompletionItem(
+                    label="$if",
+                    kind=CompletionItemKind.Keyword,
+                    documentation="Conditional rendering. Element is excluded from DOM when condition is falsy.",
+                    insert_text="$if={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="$show",
+                    kind=CompletionItemKind.Keyword,
+                    documentation="Conditional visibility. Element stays in DOM but is hidden via CSS when condition is falsy.",
+                    insert_text="$show={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="$for",
+                    kind=CompletionItemKind.Keyword,
+                    documentation="Loop directive. Repeats the element for each item in a collection.",
+                    insert_text="$for={$1 in $2}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="$key",
+                    kind=CompletionItemKind.Keyword,
+                    documentation="Stable key for loops. Provides a unique identifier for efficient DOM diffing.",
+                    insert_text="$key={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+            ]
+        )
+
+    # Add event handler suggestions when prefix starts with @ or is empty
+    if prefix.startswith("@") or not prefix:
+        suggestion_items.extend(
+            [
+                CompletionItem(
+                    label="@click",
+                    kind=CompletionItemKind.Event,
+                    documentation="Click event handler.",
+                    insert_text="@click={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@submit",
+                    kind=CompletionItemKind.Event,
+                    documentation="Form submit event handler.",
+                    insert_text="@submit={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@change",
+                    kind=CompletionItemKind.Event,
+                    documentation="Change event handler.",
+                    insert_text="@change={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@input",
+                    kind=CompletionItemKind.Event,
+                    documentation="Input event handler.",
+                    insert_text="@input={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@keydown",
+                    kind=CompletionItemKind.Event,
+                    documentation="Keydown event handler.",
+                    insert_text="@keydown={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@keyup",
+                    kind=CompletionItemKind.Event,
+                    documentation="Keyup event handler.",
+                    insert_text="@keyup={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@focus",
+                    kind=CompletionItemKind.Event,
+                    documentation="Focus event handler.",
+                    insert_text="@focus={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+                CompletionItem(
+                    label="@blur",
+                    kind=CompletionItemKind.Event,
+                    documentation="Blur event handler.",
+                    insert_text="@blur={$1}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                ),
+            ]
+        )
+
+    return CompletionList(is_incomplete=False, items=suggestion_items)
 
 
 def _get_semantic_token_type(name_type: str) -> int:
