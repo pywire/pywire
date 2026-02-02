@@ -42,10 +42,12 @@ import {
 type PrettierModule = typeof import('prettier')
 type PrettierPlugin = import('prettier').Plugin
 
-let client: LanguageClient
+let client: LanguageClient | null = null
 let prettierModule: PrettierModule | null = null
 let pywirePluginModule: unknown = null
 let extensionDir: string = ''
+let clientSubscriptions: { dispose(): void }[] = []
+let isRestarting = false
 
 function loadPrettierModule(): PrettierModule {
   if (prettierModule) {
@@ -349,18 +351,40 @@ export function activate(context: ExtensionContext) {
   )
   context.subscriptions.push(formattingProvider)
 
-  // Get Python path from settings
-  const config = workspace.getConfiguration('pywire')
-  let pythonPath = config.get<string>('pythonPath')
-
   // Path to LSP server script (launcher)
   const serverScript = context.asAbsolutePath(path.join('out', 'lsp_launcher.py'))
 
   console.log('LSP server script:', serverScript)
   log(`LSP server script: ${serverScript}`)
 
-  // Start services asynchronously to allow for python path resolution
-  ;(async () => {
+  // Function to stop the language client and clean up subscriptions
+  async function stopLanguageClient() {
+    // Dispose all client-related subscriptions
+    for (const sub of clientSubscriptions) {
+      try {
+        sub.dispose()
+      } catch {
+        // Ignore disposal errors
+      }
+    }
+    clientSubscriptions = []
+
+    // Stop the client
+    if (client) {
+      try {
+        await client.stop()
+      } catch (e) {
+        console.error('Error stopping client', e)
+      }
+      client = null
+    }
+  }
+
+  // Function to start the language client
+  async function startLanguageClient() {
+    // Get Python path from settings
+    const config = workspace.getConfiguration('pywire')
+    let pythonPath = config.get<string>('pythonPath')
     try {
       // If no explicit path set, try to get it from the Python extension
       if (!pythonPath) {
@@ -498,26 +522,10 @@ export function activate(context: ExtensionContext) {
             }
 
             fs.writeFileSync(shadowPath, response.content)
-
-            if (!useBundledPyright) {
-              try {
-                const shadowDoc = await workspace.openTextDocument(shadowUri)
-                if (shadowDoc.getText() !== response.content) {
-                  const edit = new WorkspaceEdit()
-                  const fullRange = new Range(
-                    shadowDoc.positionAt(0),
-                    shadowDoc.positionAt(shadowDoc.getText().length)
-                  )
-                  edit.replace(shadowUri, fullRange, response.content)
-                  await workspace.applyEdit(edit)
-                }
-                // Save the shadow doc to trigger Pylint reanalysis
-                await shadowDoc.save()
-              } catch (e) {
-                console.error('Failed to open/save shadow document', e)
-                log(`Failed to open/save shadow document: ${String(e)}`)
-              }
-            }
+            // Note: We only write to disk via fs.writeFileSync.
+            // Pylance will detect the file change automatically.
+            // We intentionally avoid opening/saving via VS Code API to prevent
+            // "file is newer" conflicts during rapid typing.
           }
         } catch (e) {
           console.error('Failed to update shadow file', e)
@@ -595,6 +603,9 @@ export function activate(context: ExtensionContext) {
             ) => {
               // 1. Ask server for mapping
               try {
+                if (!client) {
+                  return await next(document, position, token)
+                }
                 const mapping = (await client.sendRequest('pywire/mapToGenerated', {
                   uri: document.uri.toString(),
                   position: position,
@@ -640,6 +651,9 @@ export function activate(context: ExtensionContext) {
               next: ProvideDefinitionSignature
             ) => {
               try {
+                if (!client) {
+                  return await next(document, position, token)
+                }
                 const mapping = (await client.sendRequest('pywire/mapToGenerated', {
                   uri: document.uri.toString(),
                   position: position,
@@ -710,6 +724,9 @@ export function activate(context: ExtensionContext) {
               next: ProvideReferencesSignature
             ) => {
               try {
+                if (!client) {
+                  return await next(document, position, context, token)
+                }
                 const mapping = (await client.sendRequest('pywire/mapToGenerated', {
                   uri: document.uri.toString(),
                   position: position,
@@ -770,14 +787,16 @@ export function activate(context: ExtensionContext) {
                 }
 
                 let mapping: PositionMapping | null = null
-                try {
-                  mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                    uri: document.uri.toString(),
-                    position: position,
-                  })) as PositionMapping | null
-                } catch (e) {
-                  console.error('Completion mapping failed', e)
-                  log(`Completion mapping failed: ${String(e)}`)
+                if (client) {
+                  try {
+                    mapping = (await client.sendRequest('pywire/mapToGenerated', {
+                      uri: document.uri.toString(),
+                      position: position,
+                    })) as PositionMapping | null
+                  } catch (e) {
+                    console.error('Completion mapping failed', e)
+                    log(`Completion mapping failed: ${String(e)}`)
+                  }
                 }
 
                 const usePython = section === 'python' || Boolean(mapping)
@@ -953,7 +972,7 @@ export function activate(context: ExtensionContext) {
           },
         }
       )
-      context.subscriptions.push(inlayHintsProvider)
+      clientSubscriptions.push(inlayHintsProvider)
 
       const documentHighlightProvider = languages.registerDocumentHighlightProvider(
         { language: 'pywire' },
@@ -1001,11 +1020,11 @@ export function activate(context: ExtensionContext) {
           },
         }
       )
-      context.subscriptions.push(documentHighlightProvider)
+      clientSubscriptions.push(documentHighlightProvider)
 
       if (!useBundledPyright) {
         const pythonDiagnostics = languages.createDiagnosticCollection('pywire-python')
-        context.subscriptions.push(pythonDiagnostics)
+        clientSubscriptions.push(pythonDiagnostics)
 
         const mapShadowUriToWireUri = (shadowUri: Uri): Uri | null => {
           const shadowPath = shadowUri.fsPath
@@ -1055,7 +1074,7 @@ export function activate(context: ExtensionContext) {
             pythonDiagnostics.set(Uri.parse(wireUri), diagnostics)
           }
         })
-        context.subscriptions.push(diagnosticsListener)
+        clientSubscriptions.push(diagnosticsListener)
       }
 
       // Listen for document changes to update shadow files
@@ -1092,7 +1111,44 @@ export function activate(context: ExtensionContext) {
       window.showErrorMessage('Failed to start PyWire services: ' + err)
       log(`Failed to start PyWire services: ${String(err)}`)
     }
-  })()
+  }
+
+  // Function to restart the language client
+  async function restartLanguageClient() {
+    if (isRestarting) {
+      return
+    }
+    isRestarting = true
+    log('Restarting language server...')
+    try {
+      await stopLanguageClient()
+      await startLanguageClient()
+      log('Language server restarted successfully')
+    } catch (e) {
+      log(`Failed to restart language server: ${String(e)}`)
+      window.showErrorMessage('Failed to restart PyWire Language Server: ' + e)
+    } finally {
+      isRestarting = false
+    }
+  }
+
+  // Register restart command
+  const restartCmd = commands.registerCommand('pywire.restartLanguageServer', async () => {
+    await restartLanguageClient()
+  })
+  context.subscriptions.push(restartCmd)
+
+  // Listen for useBundledPyright configuration changes
+  const configListener = workspace.onDidChangeConfiguration(async (e) => {
+    if (e.affectsConfiguration('pywire.useBundledPyright')) {
+      log('useBundledPyright setting changed, restarting language server...')
+      await restartLanguageClient()
+    }
+  })
+  context.subscriptions.push(configListener)
+
+  // Start the client initially
+  startLanguageClient()
 }
 
 export function deactivate(): Promise<void> | undefined {
