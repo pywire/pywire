@@ -79,6 +79,9 @@ class PageLoader:
         module_any = cast(Any, module)
         module_any.load_layout = self.load_layout
         module_any.load_component = self.load_component
+        
+        # Inject __file__ for relative path resolution
+        module.__file__ = str(pywire_file)
 
         exec(code, module.__dict__)
 
