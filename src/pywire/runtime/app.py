@@ -122,12 +122,24 @@ class PyWire:
             # Upload endpoint
             Route("/_pywire/upload", self._handle_upload, methods=["POST"]),
             # Internal Static files
-            Mount(
-                "/_pywire/static",
-                app=StaticFiles(directory=str(internal_static_dir)),
-                name="internal_static",
+            *(
+                [
+                    Mount(
+                        "/_pywire/static",
+                        app=StaticFiles(directory=str(internal_static_dir)),
+                        name="internal_static",
+                    )
+                ]
+                if internal_static_dir.exists()
+                else []
             ),
         ]
+        if not internal_static_dir.exists():
+            logger.warning(
+                "Internal static assets not found at '%s'. "
+                "Reinstall pywire or verify package data inclusion.",
+                internal_static_dir,
+            )
 
         # Mount User Static Files if configured
         if self.static_dir:
