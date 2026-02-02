@@ -7,7 +7,7 @@ name = "pywire"
 authors = [
     { name="Reece Holmdahl", email="reece@pywire.dev" },
 ]
-version = "0.1.1"
+version = "0.1.2"
 description = "HTML-over-the-wire Python web framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -54,6 +54,7 @@ include = [
 
 [tool.hatch.build.targets.sdist]
 include = [
+    "src/pywire/**",
     "src/pywire/static/**",
     "src/pywire/templates/**",
 ]
