@@ -2,33 +2,78 @@ import esbuild from 'esbuild'
 import {
   copyFileSync,
   cpSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   realpathSync,
   rmSync,
+  statSync,
 } from 'fs'
+import https from 'https'
 import { createRequire } from 'module'
 import { dirname, join, resolve } from 'path'
 
 const require = createRequire(import.meta.url)
 
-// Resolve a package's directory using Node's module resolution (works with pnpm symlinks)
-function resolvePackageDir(packageName) {
+// Find the WASM file, trying local resolution first, then downloading from unpkg
+async function findOrDownloadWasm(destPath) {
+  // Try to find locally via require.resolve
   try {
-    // Resolve the package's main entry point and get its directory
-    const entryPath = require.resolve(packageName)
-    // Walk up to find the package root (directory containing package.json)
+    const entryPath = require.resolve('@wasm-fmt/ruff_fmt')
     let dir = dirname(entryPath)
     while (dir !== dirname(dir)) {
       if (existsSync(join(dir, 'package.json'))) {
-        return dir
+        const wasmPath = join(dir, 'ruff_fmt_bg.wasm')
+        // Check file actually exists and has content (not a broken symlink)
+        try {
+          const stats = statSync(wasmPath)
+          if (stats.isFile() && stats.size > 0) {
+            console.log(`Found ruff_fmt_bg.wasm locally at ${wasmPath}`)
+            copyFileSync(wasmPath, destPath)
+            return
+          }
+        } catch {
+          // File doesn't exist or is broken symlink
+        }
+        break
       }
       dir = dirname(dir)
     }
   } catch {
-    /* package not found */
+    // Package not resolvable
   }
-  return null
+
+  // Fallback: download from unpkg
+  console.log('WASM not found locally, downloading from unpkg...')
+  const url = 'https://unpkg.com/@wasm-fmt/ruff_fmt@0.9.7/ruff_fmt_bg.wasm'
+  await new Promise((resolve, reject) => {
+    const file = createWriteStream(destPath)
+    https
+      .get(url, (response) => {
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          // Follow redirect
+          https
+            .get(response.headers.location, (res) => {
+              res.pipe(file)
+              file.on('finish', () => {
+                file.close()
+                resolve()
+              })
+            })
+            .on('error', reject)
+        } else if (response.statusCode === 200) {
+          response.pipe(file)
+          file.on('finish', () => {
+            file.close()
+            resolve()
+          })
+        } else {
+          reject(new Error(`Failed to download WASM: HTTP ${response.statusCode}`))
+        }
+      })
+      .on('error', reject)
+  })
+  console.log('Downloaded ruff_fmt_bg.wasm from unpkg')
 }
 
 const production = process.argv.includes('--production')
@@ -59,7 +104,7 @@ async function main() {
           build.onStart(() => {
             console.log('[watch] build started')
           })
-          build.onEnd((result) => {
+          build.onEnd(async (result) => {
             result.errors.forEach(({ text, location }) => {
               console.error(`✘ [ERROR] ${text}`)
               console.error(`    ${location.file}:${location.line}:${location.column}:`)
@@ -104,29 +149,10 @@ async function main() {
                 }
 
                 // Copy ruff WASM file next to the plugin's CJS bundle
-                // Use Node's module resolution to find the package (works reliably with pnpm)
-                const wasmDest = join(
-                  outNodeModulesDir,
-                  'prettier-plugin-pywire',
-                  'dist',
-                  'ruff_fmt_bg.wasm'
-                )
-                const ruffPkgDir = resolvePackageDir('@wasm-fmt/ruff_fmt')
-                if (!ruffPkgDir) {
-                  throw new Error(
-                    '@wasm-fmt/ruff_fmt package not found. Ensure it is installed.'
-                  )
-                }
-                const wasmSource = join(ruffPkgDir, 'ruff_fmt_bg.wasm')
-                if (!existsSync(wasmSource)) {
-                  throw new Error(
-                    `ruff_fmt_bg.wasm not found at ${wasmSource}. The @wasm-fmt/ruff_fmt package may be corrupted.`
-                  )
-                }
-                copyFileSync(wasmSource, wasmDest)
-                console.log(
-                  'Copied ruff_fmt_bg.wasm to out/node_modules/prettier-plugin-pywire/dist/'
-                )
+                const pluginDistDir = join(outNodeModulesDir, 'prettier-plugin-pywire', 'dist')
+                mkdirSync(pluginDistDir, { recursive: true })
+                const wasmDest = join(pluginDistDir, 'ruff_fmt_bg.wasm')
+                await findOrDownloadWasm(wasmDest)
               } catch (e) {
                 console.error('Failed to copy node_modules:', e)
                 process.exit(1)
