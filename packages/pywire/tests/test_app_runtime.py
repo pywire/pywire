@@ -33,7 +33,7 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
 
         data = json.loads(response.body)
         self.assertIn("transports", data)
-        self.assertEqual(data["version"], "0.0.1")
+        self.assertEqual(data["version"], "0.1.0")
 
     def test_scan_directory_routing(self) -> None:
         # Create a nested structure

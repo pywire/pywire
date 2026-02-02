@@ -38,7 +38,7 @@ function getBuildOptions(bundle) {
       'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
     },
     banner: {
-      js: `/* PyWire Client ${bundle.name} v0.0.1 - https://github.com/reecelikesramen/pywire */`,
+      js: `/* PyWire Client ${bundle.name} v0.1.0 - https://github.com/pywire/pywire */`,
     },
   }
 }
