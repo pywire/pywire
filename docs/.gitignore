@@ -19,3 +19,7 @@ pnpm-debug.log*
 
 # macOS-specific files
 .DS_Store
+
+# Compiled Workers
+public/sw.js
+public/pywire-worker.js

@@ -28,12 +28,14 @@ export class UnifiedEventHandler {
   // Events that should be suppressed during DOM updates to prevent loops
   private suppressDuringUpdate = ['focus', 'blur', 'mouseenter', 'mouseleave']
 
+  private static ENABLE_TRACE = false
+
   constructor(app: Application) {
     this.app = app
   }
 
   private debugLog(...args: unknown[]): void {
-    if (this.app.getConfig().debug) {
+    if (UnifiedEventHandler.ENABLE_TRACE) {
       console.log(...args)
     }
   }
@@ -46,10 +48,10 @@ export class UnifiedEventHandler {
     this.supportedEvents.forEach((eventType) => {
       const options =
         eventType === 'mouseenter' ||
-        eventType === 'mouseleave' ||
-        eventType === 'focus' ||
-        eventType === 'blur' ||
-        eventType === 'scroll'
+          eventType === 'mouseleave' ||
+          eventType === 'focus' ||
+          eventType === 'blur' ||
+          eventType === 'scroll'
           ? { capture: true } // These don't bubble nicely or at all in some cases
           : undefined
 

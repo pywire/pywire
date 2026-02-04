@@ -1,6 +1,8 @@
 import { BaseTransport, ServerMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
 
+const DEBUG_CONNECTION = false
+
 /**
  * HTTP polling transport as a fallback when WebTransport and WebSocket are unavailable.
  * Uses long-polling for receiving updates and POST for sending events.
@@ -20,6 +22,7 @@ export class HTTPTransport extends BaseTransport {
 
   async connect(): Promise<void> {
     try {
+      if (DEBUG_CONNECTION) console.log(`PyWire: Connecting HTTP transport to ${this.baseUrl}`)
       // Initialize session with the server
       const response = await fetch(`${this.baseUrl}/session`, {
         method: 'POST',
@@ -42,7 +45,7 @@ export class HTTPTransport extends BaseTransport {
         this.notifyHandlers({ type: 'init', version: data.version })
       }
 
-      console.log('PyWire: HTTP transport connected')
+      if (DEBUG_CONNECTION) console.log('PyWire: HTTP transport connected')
       this.notifyStatus(true)
 
       // Start polling for updates
@@ -72,7 +75,7 @@ export class HTTPTransport extends BaseTransport {
         if (!response.ok) {
           if (response.status === 404) {
             // Session expired, try to reconnect
-            console.warn('PyWire: HTTP session expired, reconnecting...')
+            if (DEBUG_CONNECTION) console.warn('PyWire: HTTP session expired, reconnecting...')
             this.notifyStatus(false)
             await this.connect()
             return
