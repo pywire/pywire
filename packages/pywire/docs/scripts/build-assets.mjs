@@ -4,17 +4,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT_DIR = path.resolve(__dirname, '../../..');
+const REPO_ROOT = path.resolve(__dirname, '../..');
 const DOCS_DIR = path.resolve(__dirname, '..');
 const DOCS_PUBLIC_DIR = path.resolve(DOCS_DIR, 'public');
-const CLIENT_DIR = path.resolve(ROOT_DIR, 'pywire/src/pywire/client');
+const CLIENT_DIR = path.resolve(REPO_ROOT, 'src/pywire/client');
 
 function run(cmd, cwd) {
     console.log(`> ${cmd} (in ${cwd})`);
     execSync(cmd, { cwd, stdio: 'inherit' });
 }
 
-function bundleWorkers() {
+function bundleWorkers(wheelFile = "unknown") {
     console.log('\n--- Bundling Workers ---');
     const workers = [
         { src: 'src/sw.ts', dest: 'public/sw.js' },
@@ -24,15 +24,13 @@ function bundleWorkers() {
     for (const worker of workers) {
         const swSrc = path.resolve(DOCS_DIR, worker.src);
         const swDest = path.resolve(DOCS_DIR, worker.dest);
-        run(`npx esbuild ${swSrc} --bundle --outfile=${swDest} --minify --platform=browser`, DOCS_DIR);
+        const define = `--define:__PYWIRE_WHEEL_NAME__='"${wheelFile}"'`;
+        run(`npx esbuild ${swSrc} --bundle --outfile=${swDest} --minify --platform=browser ${define}`, DOCS_DIR);
     }
 }
 
 async function main() {
     console.log('Building Assets for Docs...');
-
-    // 0. Bundle Workers
-    bundleWorkers();
 
     // 1. Build Client
     console.log('\n--- Building Client ---');
@@ -46,15 +44,7 @@ async function main() {
     const staticDest = path.join(DOCS_PUBLIC_DIR, '_pywire/static');
     fs.mkdirSync(staticDest, { recursive: true });
 
-    const clientDist = path.join(CLIENT_DIR, '../static');
-    // note: client build outputs to ../static relative to src/pywire/client/build.mjs 
-    // which is pywire/src/pywire/static
-    // Let's verify where build.mjs puts it. 
-    // build.mjs says: outfile: resolve(__dirname, '../static/pywire.core.min.js')
-    // So it is in src/pywire/static.
-
     const clientSrcDir = path.resolve(CLIENT_DIR, '../static');
-
     if (fs.existsSync(clientSrcDir)) {
         const files = fs.readdirSync(clientSrcDir);
         for (const file of files) {
@@ -70,18 +60,27 @@ async function main() {
 
     // 2. Build Python Wheel
     console.log('\n--- Building Python Wheel ---');
-    // Clean dist
-    const distDir = path.join(ROOT_DIR, 'dist');
-    // If we want to ensure a fresh build, we can clean, but uv handles it well.
-    // fs.rmSync(distDir, { recursive: true, force: true });
+    const publicDistDir = path.join(DOCS_PUBLIC_DIR, 'dist');
 
-    run('uv build', path.join(ROOT_DIR, 'pywire'));
+    // Clean old wheels in public/dist
+    if (fs.existsSync(publicDistDir)) {
+        console.log(`Cleaning ${publicDistDir}...`);
+        const oldWheels = fs.readdirSync(publicDistDir).filter(f => f.endsWith('.whl'));
+        for (const old of oldWheels) {
+            fs.unlinkSync(path.join(publicDistDir, old));
+        }
+    } else {
+        fs.mkdirSync(publicDistDir, { recursive: true });
+    }
+
+    // Build directly to public/dist
+    run(`uv build --wheel --out-dir ${publicDistDir}`, REPO_ROOT);
 
     // Find the wheel
-    const distFiles = fs.readdirSync(distDir);
+    const distFiles = fs.readdirSync(publicDistDir);
     const wheelFiles = distFiles
         .filter(f => f.endsWith('.whl'))
-        .map(f => ({ name: f, time: fs.statSync(path.join(distDir, f)).mtime.getTime() }))
+        .map(f => ({ name: f, time: fs.statSync(path.join(publicDistDir, f)).mtime.getTime() }))
         .sort((a, b) => b.time - a.time);
 
     const wheelFile = wheelFiles.length > 0 ? wheelFiles[0].name : null;
@@ -91,34 +90,10 @@ async function main() {
         process.exit(1);
     }
 
-    const publicDistDir = path.join(DOCS_PUBLIC_DIR, 'dist');
-    fs.mkdirSync(publicDistDir, { recursive: true });
+    console.log(`Generated wheel: ${wheelFile}`);
 
-    // Clean old wheels in public/dist
-    const oldWheels = fs.readdirSync(publicDistDir).filter(f => f.endsWith('.whl'));
-    for (const old of oldWheels) {
-        fs.unlinkSync(path.join(publicDistDir, old));
-    }
-
-    console.log(`Copying ${wheelFile} to ${publicDistDir}`);
-    fs.copyFileSync(path.join(distDir, wheelFile), path.join(publicDistDir, wheelFile));
-
-    // 3. Update pywire-worker.js with new wheel filename
-    console.log('\n--- Updating Worker Config ---');
-    const workerPath = path.join(DOCS_PUBLIC_DIR, 'pywire-worker.js');
-    let workerContent = fs.readFileSync(workerPath, 'utf-8');
-
-    // Regex to replace the wheel file name
-    // Assuming line like: await micropip.install(`${baseUrl}dist/pywire-....whl`);
-    const regex = /dist\/pywire-.*?\.whl/g;
-
-    if (regex.test(workerContent)) {
-        const newContent = workerContent.replace(regex, `dist/${wheelFile}`);
-        fs.writeFileSync(workerPath, newContent);
-        console.log(`Updated pywire-worker.js to use ${wheelFile}`);
-    } else {
-        console.warn('Could not find wheel path pattern in pywire-worker.js to update!');
-    }
+    // 3. Bundle Workers (now that we have the wheel filename)
+    bundleWorkers(wheelFile);
 }
 
 main().catch(err => {

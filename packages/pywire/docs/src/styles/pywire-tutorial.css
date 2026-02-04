@@ -20,8 +20,9 @@
   margin-right: 0 !important;
 }
 
-/* Directly counteract Starlight's * + * { margin-top: 1rem } rule */
-.pw-tutorial * + * {
+/* Directly counteract Starlight's * + * { margin-top: 1rem } rule 
+   but EXEMPT markdown content which needs those margins! */
+.pw-tutorial *:not(.sl-markdown-content, .sl-markdown-content *) + * {
   margin-top: 0 !important;
 }
 
@@ -207,6 +208,62 @@
   .pw-instructions-container {
     padding: 1.5rem !important;
   }
+}
+
+/* Starlight-like heading anchors */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) .anchor {
+  opacity: 0;
+  text-decoration: none;
+  color: var(--sl-color-accent);
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):hover .anchor {
+  opacity: 1;
+}
+
+.sl-markdown-content h1 {
+  font-size: var(--sl-text-h1, 2.25rem);
+  line-height: var(--sl-line-height-headings, 1.2);
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content h2 {
+  font-size: var(--sl-text-h2, 1.5rem);
+  line-height: var(--sl-line-height-headings, 1.2);
+  margin-top: 2rem !important;
+  margin-bottom: 1rem;
+  font-weight: 600;
+  color: var(--sl-color-white);
+  border-bottom: 1px solid var(--sl-color-hairline, var(--sl-color-border));
+  padding-bottom: 0.3em;
+  width: 100%;
+}
+
+.sl-markdown-content h3 {
+  font-size: var(--sl-text-h3, 1.25rem);
+  line-height: var(--sl-line-height-headings, 1.2);
+  margin-top: 1.5rem !important;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content p {
+  margin-bottom: 1rem;
+  line-height: 1.7;
+  font-size: var(--sl-text-body, 1rem);
+  color: var(--sl-color-text);
 }
 
 /* Buttons */
