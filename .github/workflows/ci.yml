@@ -54,6 +54,12 @@ jobs:
         with:
           version: 9
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
       - name: Install dependencies
         # This will install both client and doc dependencies if pnpm-workspace is set up,
         # otherwise we might need to be specific. Assuming standard pnpm install works for the root/client.
