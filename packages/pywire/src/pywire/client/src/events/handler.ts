@@ -48,10 +48,10 @@ export class UnifiedEventHandler {
     this.supportedEvents.forEach((eventType) => {
       const options =
         eventType === 'mouseenter' ||
-          eventType === 'mouseleave' ||
-          eventType === 'focus' ||
-          eventType === 'blur' ||
-          eventType === 'scroll'
+        eventType === 'mouseleave' ||
+        eventType === 'focus' ||
+        eventType === 'blur' ||
+        eventType === 'scroll'
           ? { capture: true } // These don't bubble nicely or at all in some cases
           : undefined
 

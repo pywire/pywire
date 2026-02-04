@@ -646,9 +646,9 @@ class PyWireParser:
         for name, value in attrs.items():
             # Unescape special characters encoded for lxml compatibility
             if name.startswith("__pw_on_"):
-                name = "@" + name[len("__pw_on_"):]
+                name = "@" + name[len("__pw_on_") :]
             elif name.startswith("__pw_dir_"):
-                name = "$" + name[len("__pw_dir_"):]
+                name = "$" + name[len("__pw_dir_") :]
 
             if value is None:
                 value = ""
