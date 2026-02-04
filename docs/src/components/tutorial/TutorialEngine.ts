@@ -45,19 +45,41 @@ export class TutorialEngine {
         }
     }
 
+    private sanitizePayload(obj: any): any {
+        if (obj === null || typeof obj !== 'object') {
+            return obj;
+        }
+
+        if (Array.isArray(obj)) {
+            return obj.map(item => this.sanitizePayload(item));
+        }
+
+        const sanitized: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+            if (value !== undefined) {
+                sanitized[key] = this.sanitizePayload(value);
+            }
+        }
+        return sanitized;
+    }
+
+    private postToWorker(message: any) {
+        this.worker.postMessage(this.sanitizePayload(message));
+    }
+
     public updateFile(filename: string, content: string) {
-        this.worker.postMessage({
+        this.postToWorker({
             type: 'UPDATE_FILE',
             payload: { filename, content },
         });
     }
 
     public reset() {
-        this.worker.postMessage({ type: 'RESET' });
+        this.postToWorker({ type: 'RESET' });
     }
 
     public httpRequest(method: string, path: string, body?: any) {
-        this.worker.postMessage({
+        this.postToWorker({
             type: 'REQUEST',
             payload: {
                 type: 'http_request',
@@ -71,7 +93,7 @@ export class TutorialEngine {
     }
 
     public wsConnect(path: string) {
-        this.worker.postMessage({
+        this.postToWorker({
             type: 'REQUEST',
             payload: {
                 type: 'ws_connect',
@@ -87,7 +109,7 @@ export class TutorialEngine {
             ? data
             : Array.from(data as ArrayLike<number>);
 
-        this.worker.postMessage({
+        this.postToWorker({
             type: 'REQUEST',
             payload: {
                 type: 'ws_send',

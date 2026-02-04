@@ -120,8 +120,13 @@ export const Editor: React.FC<EditorProps> = ({ content, language, onChange }) =
                             });
                         }
 
+                        const [mochaTheme, latteTheme] = await Promise.all([
+                            import('shiki/themes/catppuccin-mocha.mjs'),
+                            import('shiki/themes/catppuccin-latte.mjs')
+                        ]);
+
                         const highlighter = await createHighlighter({
-                            themes: ['catppuccin-mocha', 'catppuccin-latte'],
+                            themes: [mochaTheme.default, latteTheme.default],
                             langs: langs,
                         });
 

@@ -66,7 +66,15 @@ class CustomBuildHook(BuildHookInterface):
             # Check if we need to install
             if self._should_install(client_dir):
                 log.info("Installing client dependencies...")
-                subprocess.run(["pnpm", "install"], cwd=client_dir, check=True, shell=False)
+                env = os.environ.copy()
+                env["CI"] = "true"
+                subprocess.run(
+                    ["pnpm", "install", "--config.confirmModulesPurge=false"],
+                    cwd=client_dir,
+                    check=True,
+                    shell=False,
+                    env=env
+                )
             else:
                 log.debug("Client dependencies up to date.")
 
