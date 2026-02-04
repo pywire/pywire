@@ -13,7 +13,7 @@ export interface PyWireConfig extends TransportConfig {
 
 const DEFAULT_CONFIG: PyWireConfig = {
   autoInit: true,
-  enableWebTransport: true,
+  enableWebTransport: false,
   enableWebSocket: true,
   enableHTTP: true,
   debug: false,

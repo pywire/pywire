@@ -1,0 +1,175 @@
+---
+import { getCollection, render } from 'astro:content';
+import { ClientRouter } from 'astro:transitions';
+import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace';
+import '../../styles/custom.css';
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+
+export async function getStaticPaths() {
+  const tutorialEntries = await getCollection('docs', ({ id }) => {
+    return id.startsWith('tutorial/');
+  });
+  
+  const sorted = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
+
+  return sorted.map((entry, index) => {
+    const slug = entry.id.replace('tutorial/', '');
+    return {
+      params: { slug },
+      props: { 
+        entry,
+        stepIndex: index + 1,
+        stepId: slug,
+        nextStep: sorted[index + 1] ? { slug: sorted[index + 1].id.replace('tutorial/', ''), title: sorted[index + 1].data.title } : undefined,
+        prevStep: sorted[index - 1] ? { slug: sorted[index - 1].id.replace('tutorial/', ''), title: sorted[index - 1].data.title } : undefined,
+      },
+    };
+  });
+}
+
+const { entry, nextStep, prevStep, stepIndex, stepId } = Astro.props;
+const { Content } = await render(entry);
+const displayTitle = `Interactive Tutorial | ${String(stepIndex).padStart(2, '0')}. ${entry.data.title}`;
+
+
+---
+
+<StarlightPage 
+    frontmatter={{ 
+        title: displayTitle,
+        template: 'splash',
+        prev: false,
+        next: false
+    }}
+    hasSidebar={false}
+>
+    <!-- Enable client-side routing for persistence -->
+    <ClientRouter />
+
+    <style is:global>
+        /* 
+         * NUCLEAR RESET: Remove ALL Starlight layout constraints.
+         * We manually define flex utilities because Tailwind may not be loaded.
+         */
+         
+        /* 1. Define missing utilities */
+        .flex { display: flex !important; }
+        .flex-col { flex-direction: column !important; }
+        .flex-1 { flex: 1 1 0% !important; }
+        .h-full { height: 100% !important; }
+        .w-full { width: 100% !important; }
+        .overflow-hidden { overflow: hidden !important; }
+
+        /* 2. Global Reset */
+        html, body {
+            height: 100vh !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+
+        /* 3. Starlight Layout Hierarchy Reset */
+        .page {
+            height: 100vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        .main-frame {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            padding: 0 !important;
+            padding-top: var(--sl-nav-height) !important;
+            height: calc(100vh - var(--sl-nav-height)) !important;
+        }
+
+        /* Unwrap nested layout divs so they don't trap height/width */
+        .lg\:sl-flex, .main-pane, .content-panel, .sl-container, .sl-markdown-content {
+            display: contents !important;
+        }
+
+        main {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow: hidden !important;
+        }
+
+        /* 4. Hide all UI noise */
+        footer,
+        [data-starlight-pagination],
+        h1,
+        .page-title,
+        .right-sidebar-container,
+        aside,
+        .sidebar {
+            display: none !important;
+        }
+
+        /* If :has is supported, hide the title container specifically */
+        .content-panel:has(h1) {
+            display: none !important;
+        }
+
+        /* 5. Force Tutorial Workspace to fill the viewport */
+        .not-content {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+
+        /* Ensure variables are defined */
+        :root {
+            --sl-nav-height: 4rem;
+            --sl-content-width: 100% !important;
+            --sl-sidebar-width: 0rem !important;
+        }
+
+        /* 6. Fix Header Grid/Alignment */
+        @media (min-width: 50rem) {
+            .header {
+                /* Use auto 1fr auto to match default docs layout */
+                grid-template-columns: auto 1fr auto !important;
+                column-gap: var(--sl-nav-gap);
+            }
+            .header > .title-wrapper {
+                /* Title only takes necessary space */
+                width: fit-content !important;
+                min-width: 0 !important;
+            }
+            .header > div:nth-child(2) {
+                /* Search container fills middle and centers content */
+                display: flex !important;
+                justify-content: center !important;
+                width: 100% !important;
+            }
+        }
+    </style>
+
+    <div class="not-content h-[calc(100vh-var(--sl-nav-height))] w-full overflow-hidden">
+        <TutorialWorkspace
+            client:only="react"
+            transition:persist="tutorial-workspace"
+            stepId={stepId}
+            title={entry.data.title}
+            stepNumber={stepIndex}
+            initialCode={entry.data.initialCode}
+            files={entry.data.files}
+            nextStep={nextStep}
+            prevStep={prevStep}
+        >
+            <Content />
+        </TutorialWorkspace>
+    </div>
+</StarlightPage>

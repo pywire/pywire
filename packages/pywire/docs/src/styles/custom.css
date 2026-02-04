@@ -9,6 +9,9 @@
   --sl-color-bg-sidebar: #090a11;
   --sl-color-border: #2a2d3d; /* --theme-dark-border */
   --sl-color-text-accent: var(--sl-color-accent);
+
+  /* New: Invert text for dark mode primary buttons */
+  --sl-color-text-invert: #000000;
 }
 
 /* Apply to Starlight's Light Mode */
@@ -20,23 +23,43 @@
   --sl-color-bg-nav: rgba(243, 244, 246, 0.8);
   --sl-color-bg-sidebar: #ffffff;
   --sl-color-text-accent: var(--sl-color-accent);
+
+  /* New: Invert text for light mode primary buttons */
+  --sl-color-text-invert: #ffffff;
 }
 
-/* Apply the Technical Grid to the Body */
 body {
   background-color: var(--sl-color-bg);
-  background-image:
-    linear-gradient(to right, rgba(128, 128, 128, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(128, 128, 128, 0.1) 1px, transparent 1px);
-  background-size: 24px 24px;
+  /* Grid removed as requested */
 }
 
-/* Use the brand cyan for links globally */
-a {
-  color: var(--sl-color-accent);
+/* Specifically style primary buttons in the hero/sidebar to ensure readability */
+.sl-link-button.primary {
+  color: var(--sl-color-text-invert) !important;
 }
 
-/* Add the "Wire" font feel to code blocks */
+/* Fix link color collision - use a slightly more muted color for inline links 
+   to distinguish them from primary actions while keeping brand feel */
+a:not(.sl-link-button) {
+  color: var(--sl-color-text-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+a:not(.sl-link-button):hover {
+  color: var(--sl-color-accent-high);
+}
+
+/* Improve sidebar active item contrast */
+[aria-current='page'],
+[aria-current='page']:hover {
+  color: var(--sl-color-accent) !important;
+  background-color: var(--sl-color-accent-low) !important;
+  font-weight: 600;
+}
+
+/* Monospace for code */
 code {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
+

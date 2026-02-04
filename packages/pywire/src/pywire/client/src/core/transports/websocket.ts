@@ -1,6 +1,8 @@
 import { BaseTransport, ServerMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
 
+const DEBUG_CONNECTION = false
+
 /**
  * WebSocket transport implementation.
  */
@@ -26,11 +28,12 @@ export class WebSocketTransport extends BaseTransport {
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        if (DEBUG_CONNECTION) console.log(`PyWire: Connecting WebSocket to ${this.url}`)
         this.socket = new WebSocket(this.url)
         this.socket.binaryType = 'arraybuffer'
 
         this.socket.onopen = () => {
-          console.log('PyWire: WebSocket connected')
+          if (DEBUG_CONNECTION) console.log('PyWire: WebSocket connected')
           this.notifyStatus(true)
           this.reconnectAttempts = 0
           resolve()
@@ -46,7 +49,7 @@ export class WebSocketTransport extends BaseTransport {
         }
 
         this.socket.onclose = () => {
-          console.log('PyWire: WebSocket disconnected')
+          if (DEBUG_CONNECTION) console.log('PyWire: WebSocket disconnected')
           this.notifyStatus(false)
           if (this.shouldReconnect) {
             this.scheduleReconnect()
@@ -85,7 +88,7 @@ export class WebSocketTransport extends BaseTransport {
   private scheduleReconnect(): void {
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay)
 
-    console.log(`PyWire: Reconnecting in ${delay}ms...`)
+    if (DEBUG_CONNECTION) console.log(`PyWire: Reconnecting in ${delay}ms...`)
 
     setTimeout(() => {
       this.reconnectAttempts++
