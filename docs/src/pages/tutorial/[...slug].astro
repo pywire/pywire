@@ -1,6 +1,5 @@
 ---
-import { getCollection, render } from 'astro:content';
-import { ClientRouter } from 'astro:transitions';
+import { getCollection } from 'astro:content';
 import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace';
 import '../../styles/custom.css';
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
@@ -12,25 +11,35 @@ export async function getStaticPaths() {
   
   const sorted = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
 
-  return sorted.map((entry, index) => {
+  return sorted.map((entry) => {
     const slug = entry.id.replace('tutorial/', '');
     return {
       params: { slug },
       props: { 
-        entry,
-        stepIndex: index + 1,
-        stepId: slug,
-        nextStep: sorted[index + 1] ? { slug: sorted[index + 1].id.replace('tutorial/', ''), title: sorted[index + 1].data.title } : undefined,
-        prevStep: sorted[index - 1] ? { slug: sorted[index - 1].id.replace('tutorial/', ''), title: sorted[index - 1].data.title } : undefined,
+        slug
       },
     };
   });
 }
 
-const { entry, nextStep, prevStep, stepIndex, stepId } = Astro.props;
-const { Content } = await render(entry);
-const displayTitle = `Interactive Tutorial | ${String(stepIndex).padStart(2, '0')}. ${entry.data.title}`;
+const { slug } = Astro.props;
 
+// Fetch all tutorial steps for the SPA
+const tutorialEntries = await getCollection('docs', ({ id }) => id.startsWith('tutorial/'));
+const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
+
+const allSteps = sortedEntries.map(entry => ({
+    slug: entry.id.replace('tutorial/', ''),
+    title: entry.data.title,
+    description: entry.data.description,
+    initialCode: entry.data.initialCode,
+    files: entry.data.files || ['index.wire'],
+    content: entry.body // Raw markdown content for React to render
+}));
+
+// Find current step index for display title
+const currentIndex = allSteps.findIndex(s => s.slug === slug);
+const displayTitle = `Interactive Tutorial | ${String(currentIndex + 1).padStart(2, '0')}. ${allSteps[currentIndex]?.title || 'Loading'}`;
 
 ---
 
@@ -43,9 +52,6 @@ const displayTitle = `Interactive Tutorial | ${String(stepIndex).padStart(2, '0'
     }}
     hasSidebar={false}
 >
-    <!-- Enable client-side routing for persistence -->
-    <ClientRouter />
-
     <style is:global>
         /* 
          * NUCLEAR RESET: Remove ALL Starlight layout constraints.
@@ -160,16 +166,8 @@ const displayTitle = `Interactive Tutorial | ${String(stepIndex).padStart(2, '0'
     <div class="not-content h-[calc(100vh-var(--sl-nav-height))] w-full overflow-hidden">
         <TutorialWorkspace
             client:only="react"
-            transition:persist="tutorial-workspace"
-            stepId={stepId}
-            title={entry.data.title}
-            stepNumber={stepIndex}
-            initialCode={entry.data.initialCode}
-            files={entry.data.files}
-            nextStep={nextStep}
-            prevStep={prevStep}
-        >
-            <Content />
-        </TutorialWorkspace>
+            initialSlug={slug}
+            allSteps={allSteps}
+        />
     </div>
 </StarlightPage>

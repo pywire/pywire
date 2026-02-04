@@ -7,32 +7,34 @@ import { LoadingSpinner } from './LoadingSpinner';
 import { TutorialEngine } from './TutorialEngine';
 import { useTutorialStorage } from '../../hooks/useTutorialStorage';
 import { ChevronLeft, ChevronRight, Menu, Wrench, ArrowLeft, ArrowRight } from 'lucide-react';
+import type { TutorialStep } from './types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 import '../../styles/pywire-tutorial.css';
 
-const DEBUG_TUTORIAL = false;
-
 interface TutorialWorkspaceProps {
-    stepId: string;
-    title: string;
-    stepNumber?: number;
-    initialCode: string;
-    files?: string[];
-    nextStep?: { slug: string; title: string };
-    prevStep?: { slug: string; title: string };
-    children?: React.ReactNode;
+    initialSlug: string;
+    allSteps: TutorialStep[];
 }
 
 export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
-    stepId,
-    title,
-    stepNumber,
-    initialCode,
-    files = ['index.wire'],
-    nextStep,
-    prevStep,
-    children
+    initialSlug,
+    allSteps
 }) => {
+    // SPA Routing State
+    const [currentSlug, setCurrentSlug] = useState(initialSlug);
+
+    // Derived State
+    const currentIndex = allSteps.findIndex(s => s.slug === currentSlug);
+    const currentStep = allSteps[currentIndex !== -1 ? currentIndex : 0];
+    const nextStep = currentIndex < allSteps.length - 1 ? allSteps[currentIndex + 1] : undefined;
+    const prevStep = currentIndex > 0 ? allSteps[currentIndex - 1] : undefined;
+
+    // Safety check if slug is invalid
+    if (currentIndex === -1 && allSteps.length > 0) {
+        console.warn(`Invalid slug ${currentSlug}, falling back to first step`);
+    }
+
     // Persistence: engineRef stays alive across props changes because the component stays mounted
     const engineRef = useRef<TutorialEngine | null>(null);
     const [isReady, setIsReady] = useState(false);
@@ -40,17 +42,40 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
     // Code state - using step-specific storage
-    const [code, setCode] = useTutorialStorage(stepId, initialCode);
-    const [activeFile, setActiveFile] = useState(files[0]);
+    const [code, setCode] = useTutorialStorage(currentStep.slug, currentStep.initialCode);
+    const [activeFile, setActiveFile] = useState(currentStep.files[0] || 'index.wire');
     const debouncedCode = useDebounce(code, 600);
+
+    // Handle History (Browser Back/Forward)
+    useEffect(() => {
+        const handlePopState = (event: PopStateEvent) => {
+            // If state has step, use it. Otherwise try to parse URL.
+            // But simpler: just parse URL always.
+            const path = window.location.pathname;
+            const match = path.match(/\/docs\/tutorial\/([^/]+)/);
+            if (match && match[1]) {
+                setCurrentSlug(match[1]);
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    // Navigation function
+    const navigateTo = (slug: string) => {
+        setCurrentSlug(slug);
+        const newUrl = `/docs/tutorial/${slug}`;
+        window.history.pushState({ slug }, '', newUrl);
+    };
 
     // Re-initialize code when step changes (if not already in storage)
     useEffect(() => {
-        setActiveFile(files[0]);
+        setActiveFile(currentStep.files[0] || 'index.wire');
         if (isReady && engineRef.current) {
             engineRef.current.reset();
         }
-    }, [stepId, files, isReady]);
+    }, [currentStep.slug, isReady]);
 
     const handlePreviewMessage = (msg: any) => {
         if (!engineRef.current) return;
@@ -141,18 +166,26 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     </button>
                     <div className="flex items-center gap-1 ml-2">
                         {prevStep ? (
-                            <a href={`/docs/tutorial/${prevStep.slug}`} className="pw-btn-icon-sm" title={`Previous: ${prevStep.title}`}>
+                            <button
+                                onClick={() => navigateTo(prevStep.slug)}
+                                className="pw-btn-icon-sm"
+                                title={`Previous: ${prevStep.title}`}
+                            >
                                 <ArrowLeft size={18} />
-                            </a>
+                            </button>
                         ) : (
                             <div className="pw-btn-icon-sm disabled">
                                 <ArrowLeft size={18} />
                             </div>
                         )}
                         {nextStep ? (
-                            <a href={`/docs/tutorial/${nextStep.slug}`} className="pw-btn-icon-sm" title={`Next: ${nextStep.title}`}>
+                            <button
+                                onClick={() => navigateTo(nextStep.slug)}
+                                className="pw-btn-icon-sm"
+                                title={`Next: ${nextStep.title}`}
+                            >
                                 <ArrowRight size={18} />
-                            </a>
+                            </button>
                         ) : (
                             <div className="pw-btn-icon-sm disabled">
                                 <ArrowRight size={18} />
@@ -163,7 +196,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     <div className="pw-breadcrumb ml-4">
                         <span className="pw-breadcrumb-prefix">PyWire Tutorial</span>
                         <span className="pw-breadcrumb-separator">/</span>
-                        <span className="pw-breadcrumb-title">{title}</span>
+                        <span className="pw-breadcrumb-title">{currentStep.title}</span>
                     </div>
                 </div>
 
@@ -180,31 +213,29 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
             <div className="pw-workspace-main">
                 <Group orientation="horizontal" className="h-full">
                     {/* Left: Instructions */}
-                    <Panel defaultSize={"30%"} minSize={"20%"} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)]">
+                    <Panel defaultSize={30} minSize={20} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)]">
                         <div className="h-full overflow-y-auto pw-instructions-container">
-                            <div className="prose prose-sm dark:prose-invert max-w-none">
-                                {children}
-                            </div>
+                            <MarkdownRenderer content={currentStep.content} />
                         </div>
                     </Panel>
 
                     <Separator className="pw-separator-h" />
 
                     {/* Right: Work Area (Split Top/Bottom) */}
-                    <Panel defaultSize={"70%"} minSize={"40%"} className="h-full">
+                    <Panel defaultSize={70} minSize={40} className="h-full">
                         <Group orientation="vertical" className="h-full">
                             {/* Top: Files + Editor */}
-                            <Panel defaultSize={"50%"} minSize={"25%"} className="h-full flex flex-col">
+                            <Panel defaultSize={50} minSize={25} className="h-full flex flex-col">
                                 <Group orientation="horizontal" className="flex-1 min-h-0">
-                                    <Panel defaultSize={"20%"} minSize={"15%"} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)] overflow-y-auto">
+                                    <Panel defaultSize={20} minSize={15} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)] overflow-y-auto">
                                         <TutorialFileTree
-                                            files={files}
+                                            files={currentStep.files}
                                             activeFile={activeFile}
                                             onFileSelect={setActiveFile}
                                         />
                                     </Panel>
                                     <Separator className="pw-separator-h" />
-                                    <Panel defaultSize={"80%"} minSize={"50%"} style={{ height: '100%' }}>
+                                    <Panel defaultSize={80} minSize={50} style={{ height: '100%' }}>
                                         <div className="h-full w-full relative overflow-hidden">
                                             <Editor
                                                 content={code}
@@ -219,7 +250,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                             <Separator className="pw-separator-v" />
 
                             {/* Bottom: Browser Preview */}
-                            <Panel defaultSize={"50%"} minSize={"25%"} style={{ height: '100%' }}>
+                            <Panel defaultSize={50} minSize={25} style={{ height: '100%' }}>
                                 <div className="h-full w-full">
                                     <BrowserPreview url="/" onMessage={handlePreviewMessage} theme={theme} />
                                 </div>
@@ -240,3 +271,4 @@ function useDebounce<T>(value: T, delay: number): T {
     }, [value, delay]);
     return debouncedValue;
 }
+

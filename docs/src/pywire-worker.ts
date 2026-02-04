@@ -6,6 +6,8 @@ import type { PyodideInterface } from 'pyodide';
 declare global {
     function loadPyodide(options?: any): Promise<PyodideInterface>;
     function importScripts(...urls: string[]): void;
+    /** Injected at build time via esbuild --define */
+    const __PYWIRE_WHEEL_NAME__: string;
 }
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js");
@@ -114,8 +116,8 @@ if marker_exists:
             console.log("[Worker] Base dependencies installed in IDBFS");
 
             // Install PyWire
-            // NOTE: The wheel filename is updated during build-assets.mjs
-            const pywireWhlUrl = `${baseUrl}dist/pywire-0.1.6.dev0+g303329e26.d20260204-py3-none-any.whl`;
+            // NOTE: __PYWIRE_WHEEL_NAME__ is injected at build time via esbuild --define
+            const pywireWhlUrl = `${baseUrl}dist/${__PYWIRE_WHEEL_NAME__}`;
             const wheelFileName = pywireWhlUrl.split('/').pop()!;
             console.log("[Worker] Installing pywire from:", pywireWhlUrl, "to", wheelFileName);
 
