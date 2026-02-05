@@ -5,10 +5,37 @@ import { RefreshCw, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 interface BrowserPreviewProps {
     url: string;
     onMessage: (msg: any) => void;
+    onNavigate?: (path: string) => void;
     theme?: 'light' | 'dark';
 }
 
-export const BrowserPreview: React.FC<BrowserPreviewProps> = ({ url, onMessage, theme = 'dark' }) => {
+export const BrowserPreview: React.FC<BrowserPreviewProps> = ({ url, onMessage, onNavigate, theme = 'dark' }) => {
+    const [inputValue, setInputValue] = React.useState(url);
+    const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+    // Sync input value with external url prop changes
+    React.useEffect(() => {
+        setInputValue(url);
+    }, [url]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            onNavigate?.(inputValue);
+        }
+    };
+
+    const handleReload = React.useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
+
+        setIsRefreshing(true);
+        (window as any).__PYWIRE_PREVIEW_RELOAD__?.();
+
+        // Reset animation after 500ms (duration of one spin)
+        setTimeout(() => setIsRefreshing(false), 500);
+    }, []);
+
     return (
         <div style={{
             display: 'flex',
@@ -55,24 +82,32 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({ url, onMessage, 
                     </button>
                     <button
                         type="button"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.nativeEvent.stopImmediatePropagation();
-                            (window as any).__PYWIRE_PREVIEW_RELOAD__?.();
-                        }}
+                        onClick={handleReload}
                         title="Reload"
                         className="pw-btn-icon"
                     >
-                        <RefreshCw size={14} />
+                        <RefreshCw size={14} className={isRefreshing ? 'pw-spinning' : ''} />
                     </button>
                 </div>
 
                 <div className="pw-browser-url-display">
                     <Globe size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {url.startsWith('/') ? url : `/${url}`}
-                    </span>
+                    <input
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="pw-browser-input"
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'inherit',
+                            fontSize: 'inherit',
+                            width: '100%',
+                            outline: 'none',
+                            marginLeft: '4px'
+                        }}
+                    />
                 </div>
             </div>
 

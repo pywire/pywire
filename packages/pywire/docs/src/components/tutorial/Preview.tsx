@@ -127,8 +127,8 @@ const INJECTED_SCRIPT = `
       e.preventDefault();
       const path = link.getAttribute('href');
       window.parent.postMessage({
-        type: 'HTTP_REQUEST',
-        payload: { method: 'GET', path: path, headers: {} }
+        type: 'NAVIGATE',
+        payload: { path: path }
       }, '*');
       return;
     }

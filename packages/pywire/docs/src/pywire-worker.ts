@@ -13,6 +13,7 @@ declare global {
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js");
 
 let pyodide: PyodideInterface | null = null;
+let currentPagesDir: string = "";
 
 async function loadPywire(baseUrl: string) {
     console.log("[Worker] Starting loadPywire with baseUrl:", baseUrl);
@@ -150,8 +151,10 @@ if marker_exists:
         postMessage({ type: "STDOUT", message: "PyWire ready." });
 
         // Initialize File System
-        pyodide.FS.mkdir("/pages");
-        console.log("[Worker] /pages directory created");
+        if (!pyodide.FS.analyzePath("/app").exists) {
+            pyodide.FS.mkdir("/app");
+        }
+        console.log("[Worker] /app directory created");
 
         // Load the Shim
         console.log("[Worker] Fetching shim.py from:", `${baseUrl}shim.py`);
@@ -182,25 +185,56 @@ self.onmessage = async (event) => {
 
     else if (type === "UPDATE_FILE") {
         // Write user code to virtual FS
-        const path = `/pages/${payload.filename}`;
+        const path = `/app/${payload.filename}`;
+
+        // Ensure parent directory exists
+        const dir = path.substring(0, path.lastIndexOf('/'));
+        const parts = dir.split('/').filter(Boolean);
+        let current = '';
+        for (const part of parts) {
+            current += `/${part}`;
+            if (!pyodide!.FS.analyzePath(current).exists) {
+                pyodide!.FS.mkdir(current);
+            }
+        }
+
         pyodide!.FS.writeFile(path, payload.content);
 
         // Invalidate app cache for this file
         pyodide!.globals.get("reload_page")(path);
     }
 
-    else if (type === "RESET") {
-        console.log("[Worker] Resetting virtual FS...");
-        try {
-            const files = pyodide!.FS.readdir("/pages");
-            for (const file of files) {
-                if (file !== "." && file !== "..") {
-                    pyodide!.FS.unlink(`/pages/${file}`);
+    else if (type === "RESTART") {
+        console.log("[Worker] Restarting pywire server...");
+        const { pagesDir } = payload || {};
+
+        function recursiveDelete(dir: string) {
+            if (!pyodide!.FS.analyzePath(dir).exists) return;
+            const entries = pyodide!.FS.readdir(dir);
+            for (const entry of entries) {
+                if (entry === "." || entry === "..") continue;
+                const fullPath = `${dir}/${entry}`;
+                const stat = pyodide!.FS.stat(fullPath);
+                if (pyodide!.FS.isDir(stat.mode)) {
+                    recursiveDelete(fullPath);
+                    pyodide!.FS.rmdir(fullPath);
+                } else {
+                    pyodide!.FS.unlink(fullPath);
                 }
             }
-            console.log("[Worker] Virtual FS reset successful");
+        }
+
+        try {
+            recursiveDelete("/app");
+            currentPagesDir = pagesDir || "";
+
+            // Re-initialize app cache in shim
+            // Pass the new pagesDir to the shim
+            const fullPagesDir = pagesDir ? `/app/${pagesDir}` : "/app";
+            pyodide!.globals.get("restart_server")(fullPagesDir);
+            console.log("[Worker] Server restart successful, fullPagesDir:", fullPagesDir);
         } catch (e) {
-            console.error("[Worker] Error during reset:", e);
+            console.error("[Worker] Error during restart:", e);
         }
     }
 

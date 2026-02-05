@@ -10,6 +10,7 @@ DEBUG_SHIM = False
 # 1. Initialize App (Lazy)
 # We wait to initialize until the first request to ensure FS is ready
 app_instance = None
+current_pages_dir = "/app" # Default
 
 import re
 
@@ -35,10 +36,10 @@ def escape_pywire_content(content: str) -> str:
     return python_part + separator + html_part
 
 def get_app():
-    global app_instance
+    global app_instance, current_pages_dir
     if app_instance is None:
         try:
-            print("Initializing PyWire app...")
+            print(f"Initializing PyWire app with pages_dir={current_pages_dir}...")
             
             # Monkey-patch the PyWireParser class to escape @/$ attributes for Pyodide lxml compatibility
             # This must be done BEFORE initializing PyWire so initial load is covered.
@@ -51,10 +52,10 @@ def get_app():
                 PyWireParser.parse = patched_parse
                 print("PyWireParser class monkey-patched for Pyodide")
 
-            app_instance = PyWire(pages_dir="/pages", debug=True)
+            app_instance = PyWire(pages_dir=current_pages_dir, debug=True)
             app_instance._is_dev_mode = True
             
-            print("PyWire app initialized successfully with Pyodide attribute escaping")
+            print("PyWire app initialized successfully")
         except Exception as e:
             print(f"Failed to initialize PyWire app: {repr(e)}")
             traceback.print_exc()
@@ -303,3 +304,17 @@ def reload_page(path_str):
         return False
 
 js.reload_page = reload_page
+
+def restart_server(pages_dir="/app"):
+    global app_instance, current_pages_dir
+    print(f"DEBUG: restart_server called with pages_dir={pages_dir}")
+    app_instance = None
+    current_pages_dir = pages_dir
+    # Also invalidate the loader cache
+    try:
+        from pywire.runtime.loader import get_loader
+        get_loader().invalidate_cache()
+    except Exception as e:
+        print(f"DEBUG: Failed to invalidate loader cache: {e}")
+
+js.restart_server = restart_server

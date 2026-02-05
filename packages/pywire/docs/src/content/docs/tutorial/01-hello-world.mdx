@@ -1,35 +1,64 @@
 ---
-title: Hello World
-description: Welcome to PyWire! Let's start with the basics.
-initialCode: |
-  <div>
-    <h1>Welcome</h1>
-  </div>
-files: ["index.wire"]
+title: Introduction
+description: Welcome to PyWire! Let's build your first reactive component.
+files:
+  - path: pages/index.wire
+    initial: |
+      <div class="p-8 text-center">
+        <h1 class="text-4xl font-bold">PyWire</h1>
+        <p class="mt-4 text-xl text-gray-400">
+          Edit index.wire to see changes live.
+        </p>
+      </div>
+    solution: |
+      !title "Welcome"
+
+      ---html---
+      <div class="p-8 text-center text-cyan-400">
+        <h1 class="text-4xl font-bold">Hello PyWire!</h1>
+        <p class="mt-4 text-xl">
+          You've just built your first component.
+        </p>
+      </div>
+  - path: pages/test.wire
+    initial: |
+      <div class="p-8 text-center">
+        <h1 class="text-4xl font-bold">PyWire</h1>
+        <p class="mt-4 text-xl text-gray-400">
+          Edit index.wire to see changes live.
+        </p>
+      </div>
+    solution: |
+      !title "Welcome"
+
+      ---html---
+      <div class="p-8 text-center text-cyan-400">
+        <h1 class="text-4xl font-bold">Hello PyWire!</h1>
+        <p class="mt-4 text-xl">
+          You've just built your first component.
+        </p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Change the heading text to 'Hello PyWire!'"
+    target: pages/index.wire
+    pattern: "Hello PyWire!"
+pagesDir: pages
 ---
 
-## 1. Hello World
+Welcome to the **PyWire Interactive Tutorial**! 
 
-Welcome to PyWire! Let's start with the basics. 
-
-In this first step, we'll look at a simple PyWire component. PyWire uses a fusion of Python and HTML to create interactive web components.
+PyWire is a pythonic framework for building reactive web interfaces with minimal boilerplate. In this tutorial, you'll learn the core concepts by building real examples directly in your browser.
 
 ### Your Task
 
-Add a title directive and change the content to say "Hello PyWire".
+Look at the code in the editor. Inside the `---html---` block, change the `<h1>` text from "PyWire" to **"Hello PyWire!"**.
 
-### Your Task
+Notice how the preview on the right updates instantly as you type. Once you complete the task, the "Next" button will light up!
 
-Add a title directive and change the content to say "Hello PyWire".
-
-### Your Task
-
-Add a title directive and change the content to say "Hello PyWire".
-
-### Your Task
-
-Add a title directive and change the content to say "Hello PyWire".
-
-### Your Task
-
-Add a title directive and change the content to say "Hello PyWire".
+```wire
+count = wire(0)
+---html---
+<h1>Count: {count}</h1>
+<button @click={$count += 1}>Increment</button>
+```

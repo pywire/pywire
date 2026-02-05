@@ -1,45 +1,96 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import type { TutorialFile } from '../components/tutorial/types';
 
-export function useTutorialStorage(stepId: string, initialCode: string) {
-    const storageKey = `pywire-tutorial-${stepId}`;
+export function useTutorialStorage(stepId: string, initialFiles: TutorialFile[]) {
+    const storageKey = `pywire-tutorial-files-${stepId}`;
 
-    // Initialize state with value from localStorage or initialCode
-    const [code, setCode] = useState(() => {
-        if (typeof window === 'undefined') return initialCode;
+    const [files, setFiles] = useState<Record<string, string>>(() => {
+        if (typeof window === 'undefined') {
+            return Object.fromEntries(initialFiles.map(f => [f.path, f.initialContent]));
+        }
         try {
             const saved = localStorage.getItem(storageKey);
-            return saved !== null ? saved : initialCode;
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // Merge with initial files to ensure new files in the step are present
+                const merged = { ...Object.fromEntries(initialFiles.map(f => [f.path, f.initialContent])), ...parsed };
+                return merged;
+            }
         } catch (e) {
             console.warn('Failed to load from localStorage', e);
-            return initialCode;
         }
+        return Object.fromEntries(initialFiles.map(f => [f.path, f.initialContent]));
     });
 
-    // Update localStorage when code changes
+    // Reset files when stepId changes
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        try {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                const merged = { ...Object.fromEntries(initialFiles.map(f => [f.path, f.initialContent])), ...parsed };
+                setFiles(merged);
+                return;
+            }
+        } catch (e) {
+            console.warn('Failed to load from localStorage', e);
+        }
+
+        setFiles(Object.fromEntries(initialFiles.map(f => [f.path, f.initialContent])));
+    }, [stepId, initialFiles, storageKey]);
+
+    // Update localStorage when files change
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
         const handler = setTimeout(() => {
             try {
-                localStorage.setItem(storageKey, code);
+                localStorage.setItem(storageKey, JSON.stringify(files));
             } catch (e) {
                 console.warn('Failed to save to localStorage', e);
             }
         }, 1000); // 1s debounce
 
         return () => clearTimeout(handler);
-    }, [code, storageKey]);
+    }, [files, storageKey]);
 
-    // Handle cross-tab updates (optional but good)
-    useEffect(() => {
-        const handleStorageChange = (e: StorageEvent) => {
-            if (e.key === storageKey && e.newValue !== null) {
-                setCode(e.newValue);
-            }
-        };
-        window.addEventListener('storage', handleStorageChange);
-        return () => window.removeEventListener('storage', handleStorageChange);
-    }, [storageKey]);
+    const updateFile = useCallback((path: string, content: string) => {
+        setFiles(prev => ({ ...prev, [path]: content }));
+    }, []);
 
-    return [code, setCode] as const;
+    const addFile = useCallback((path: string, content: string = '') => {
+        setFiles(prev => ({ ...prev, [path]: content }));
+    }, []);
+
+    const deleteFile = useCallback((path: string) => {
+        setFiles(prev => {
+            const newFiles = { ...prev };
+            delete newFiles[path];
+            return newFiles;
+        });
+    }, []);
+
+    const resetFiles = useCallback(() => {
+        const reset = Object.fromEntries(initialFiles.map(f => [f.path, f.initialContent]));
+        setFiles(reset);
+    }, [initialFiles]);
+
+    const solveFiles = useCallback(() => {
+        const solved = Object.fromEntries(initialFiles.map(f => [
+            f.path,
+            f.solutionContent !== undefined ? f.solutionContent : f.initialContent
+        ]));
+        setFiles(solved);
+    }, [initialFiles]);
+
+    return {
+        files,
+        updateFile,
+        addFile,
+        deleteFile,
+        resetFiles,
+        solveFiles
+    };
 }

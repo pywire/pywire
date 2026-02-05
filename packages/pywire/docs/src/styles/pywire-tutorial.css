@@ -140,20 +140,22 @@
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background-color: var(--pw-accent) !important;
-  color: white !important;
+  background-color: var(--pw-border) !important;
+  color: var(--pw-text-bright) !important;
   font-size: 0.75rem !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   border-radius: 4px !important;
   text-transform: lowercase;
-  height: 28px;
-  padding: 0 12px !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  height: 26px;
+  padding: 0 10px !important;
+  border: 1px solid transparent !important;
+  transition: all 0.2s ease;
   line-height: 1;
 }
 
 .pw-btn-solve:hover {
-  filter: brightness(1.1);
+  background-color: var(--pw-accent) !important;
+  color: white !important;
 }
 
 .pw-btn-icon-sm {
@@ -164,10 +166,13 @@
   height: 32px;
   width: 32px;
   border-radius: 4px;
+  background: transparent !important;
+  border: none !important;
+  transition: all 0.2s ease;
 }
 
 .pw-btn-icon-sm:hover:not(.disabled) {
-  background-color: var(--pw-border);
+  background-color: var(--pw-border) !important;
   color: var(--pw-text-main);
 }
 
@@ -311,7 +316,8 @@
   border-radius: 4px;
   padding: 0 !important;
   border: none !important;
-  background: transparent;
+  background: transparent !important;
+  transition: all 0.2s ease;
 }
 
 .pw-btn-icon:hover {
@@ -321,6 +327,10 @@
 
 .pw-btn-icon svg {
   display: block;
+}
+
+.pw-spinning {
+  animation: pw-spin 0.5s ease-in-out infinite;
 }
 
 /* Panels & Dividers */
@@ -480,6 +490,232 @@
   text-align: center;
 }
 
-@keyframes pw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes pw-spin-reverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-@keyframes pw-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+/* Modals */
+.pw-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.pw-modal-content {
+  background-color: var(--pw-bg-panel);
+  border: 1px solid var(--pw-border);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+  animation: pw-modal-in 0.3s ease-out;
+}
+
+@keyframes pw-modal-in {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.pw-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--pw-border);
+}
+
+.pw-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--pw-text-main);
+}
+
+.pw-modal-body {
+  padding: 20px;
+  color: var(--pw-text-bright);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.pw-modal-list {
+  margin: 12px 0 0 0;
+  padding: 0 0 0 20px;
+  list-style-type: disc;
+}
+
+.pw-modal-list li {
+  margin-bottom: 4px;
+  color: var(--pw-accent);
+}
+
+.pw-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid var(--pw-border);
+}
+
+.pw-btn-primary {
+  background-color: var(--pw-accent);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.pw-btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+/* Tree Actions */
+.pw-filetree-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.pw-filetree-file:hover .pw-filetree-actions,
+.pw-filetree-folder:hover .pw-filetree-actions,
+.pw-filetree-header:hover .pw-filetree-actions {
+  opacity: 1;
+}
+
+.pw-btn-tree-action {
+  color: var(--pw-text-dim);
+  padding: 4px;
+  border-radius: 4px;
+  background: transparent !important;
+  border: none !important;
+  transition: all 0.2s ease;
+}
+
+.pw-btn-tree-action:hover {
+  background-color: var(--pw-border) !important;
+  color: var(--pw-text-main);
+}
+
+.pw-btn-tree-action.delete:hover {
+  color: #ef4444;
+}
+
+.pw-btn-icon-sm.success-glow {
+  background-color: #22c55e !important;
+  color: white !important;
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.5);
+  animation: pw-pulse-success 2s infinite;
+}
+
+@keyframes pw-pulse-success {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+.pw-success-banner {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background-color: #22c55e;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  animation: pw-slide-up 0.3s ease-out;
+}
+
+@keyframes pw-slide-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pw-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pw-spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes pw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pw-success-banner span {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+/* Tasks Checklist */
+.pw-tasks-checklist {
+  padding: 16px 20px;
+  background-color: var(--pw-bg-panel);
+  border-top: 1px solid var(--pw-border);
+}
+
+.pw-tasks-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--pw-text-dim);
+  margin-bottom: 12px !important;
+  letter-spacing: 0.05em;
+}
+
+.pw-tasks-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pw-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+  color: var(--pw-text-dim);
+  transition: all 0.2s;
+  padding: 4px 0;
+}
+
+.pw-task-item.completed {
+  color: var(--pw-text-main);
+}
+
+.pw-task-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px; /* align with text line-height */
+}
+
+.pw-task-desc {
+  line-height: 1.4;
+  flex: 1;
+}
+
+.text-green-500 {
+  color: #22c55e;
+}
+
+.text-gray-500 {
+  color: #6b7280;
+}
