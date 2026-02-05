@@ -20,6 +20,9 @@ export default defineConfig({
     starlight({
       title: 'pywire',
       customCss: ['./src/styles/custom.css'],
+      components: {
+        Head: './src/components/Head.astro',
+      },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/pywire/pywire' },
         { icon: 'discord', label: 'Discord', href: 'https://discord.gg/pywire' },
@@ -27,7 +30,10 @@ export default defineConfig({
       expressiveCode: {
         shiki: {
           langs: [
-            JSON.parse(fs.readFileSync('./public/grammars/pywire.tmLanguage.json', 'utf-8')),
+            {
+              ...JSON.parse(fs.readFileSync('./public/grammars/pywire.tmLanguage.json', 'utf-8')),
+              name: 'pywire'
+            },
           ],
         },
       },

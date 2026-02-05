@@ -5,6 +5,7 @@ import { BrowserPreview } from './BrowserPreview';
 import { TutorialFileTree } from './tree/TutorialFileTree';
 import { LoadingSpinner } from './LoadingSpinner';
 import { TutorialEngine } from './TutorialEngine';
+import { TutorialHierarchy } from './TutorialHierarchy';
 import { useTutorialStorage } from '../../hooks/useTutorialStorage';
 import { ChevronLeft, ChevronRight, Menu, Wrench, ArrowLeft, ArrowRight, CheckCircle, RotateCcw } from 'lucide-react';
 import type { TutorialStep } from './types';
@@ -12,21 +13,38 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { Modal } from './Modal';
 import { SuccessValidator, type ValidationResult } from './SuccessValidator';
 import { TasksChecklist } from './TasksChecklist';
+import { navigate } from 'astro:transitions/client';
 
 import '../../styles/pywire-tutorial.css';
 
-interface TutorialWorkspaceProps {
+interface TutorialWorkspaceProps extends React.PropsWithChildren {
     initialSlug: string;
     allSteps: TutorialStep[];
 }
 
 export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     initialSlug,
-    allSteps
+    allSteps,
+    children
 }) => {
-    console.log('[TutorialWorkspace] Render', { initialSlug, stepsCount: allSteps.length });
-    // SPA Routing State
+    // console.log('[TutorialWorkspace] Render', { initialSlug, stepsCount: allSteps.length });
+    const isFirstRender = useRef(true);
+    useEffect(() => {
+        if (!isFirstRender.current) {
+            console.log('[TutorialWorkspace] PERSISTED - Props updated to:', initialSlug);
+        }
+        isFirstRender.current = false;
+    }, [initialSlug]);
+
+    // SPA Routing State -> Now Driven by Props + Persistence
     const [currentSlug, setCurrentSlug] = useState(initialSlug);
+
+    // Sync state with props when View Transitions navigate
+    useEffect(() => {
+        if (initialSlug !== currentSlug) {
+            setCurrentSlug(initialSlug);
+        }
+    }, [initialSlug]);
 
     // Derived State
     const currentIndex = allSteps.findIndex(s => s.slug === currentSlug);
@@ -81,13 +99,15 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     } | null>(null);
     const [inputName, setInputName] = useState('');
 
+    const [hierarchyOpen, setHierarchyOpen] = useState(false);
+
     // Handle History (Browser Back/Forward)
     // ... (lines 50-70 unchanged)
     // Navigation function
     const navigateTo = (slug: string) => {
-        setCurrentSlug(slug);
-        const newUrl = `/docs/tutorial/${slug}`;
-        window.history.pushState({ slug }, '', newUrl);
+        if (slug === currentSlug) return;
+        // Trigger Astro View Transition
+        navigate(`/docs/tutorial/${slug}`);
     };
 
     const handleNavigate = useCallback((path: string) => {
@@ -163,7 +183,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         }
     }, [deleteFile, activeFile, files]);
 
-    // Initialize engine once
+    // Initialize engine once (singleton persists across navigation)
     useEffect(() => {
         console.log('[TutorialWorkspace] Engine Init Effect');
         // Register Service Worker
@@ -173,33 +193,47 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                 .catch(err => console.warn('[Tutorial] Service Worker registration failed:', err));
         }
 
-        if (!engineRef.current) {
-            console.log('[TutorialWorkspace] Creating TutorialEngine');
-            engineRef.current = new TutorialEngine({
-                onReady: () => {
-                    console.log('[TutorialWorkspace] Engine Ready');
-                    setIsReady(true);
-                },
-                onResponse: (data) => {
-                    if (data.type === 'http_response' && data.message.type === 'http.response.body') {
-                        const body = data.message.body;
-                        const html = Array.isArray(body) ? new TextDecoder().decode(new Uint8Array(body)) : body;
-                        setLastRenderedHtml(html);
-                        (window as any).__PYWIRE_UPDATE_PREVIEW__?.(html);
-                    }
-                    else if (data.type === 'ws_message') {
-                        (window as any).__PYWIRE_SEND_TO_PREVIEW__?.(data);
-                    }
-                },
-                onLog: (msg) => {
-                    console.log('[TutorialWorkspace] Engine Log:', msg);
-                    if (!isReady) {
-                        const cleanMsg = msg.replace(/\u001b\[\d+m/g, '');
-                        setLoadingMessage(cleanMsg);
-                    }
+        // Use getInstance to get/create the global singleton engine
+        console.log('[TutorialWorkspace] Getting TutorialEngine singleton');
+        engineRef.current = TutorialEngine.getInstance({
+            onReady: () => {
+                console.log('[TutorialWorkspace] Engine Ready');
+                setIsReady(true);
+            },
+            onResponse: (data) => {
+                if (data.type === 'http_response' && data.message.type === 'http.response.body') {
+                    const body = data.message.body;
+                    const html = Array.isArray(body) ? new TextDecoder().decode(new Uint8Array(body)) : body;
+                    setLastRenderedHtml(html);
+                    // HTTP response means a fresh version of the app (e.g. code change)
+                    // We must use INIT to create a fresh document and WebSocket connection
+                    (window as any).__PYWIRE_INIT_PREVIEW__?.(html);
                 }
-            });
-        }
+                else if (data.type === 'ws_message') {
+                    // Check if shim.py decoded the payload for us
+                    const payload = data.decoded_payload;
+                    if (payload && payload.type === 'update' && payload.html) {
+                        console.log('[TutorialWorkspace] Intercepted WS update, using __PYWIRE_PATCH_PREVIEW__');
+                        setLastRenderedHtml(payload.html);
+                        // WebSocket update means a stateful interaction (e.g. click)
+                        // We must use PATCH to preserve the existing WebSocket connection
+                        (window as any).__PYWIRE_PATCH_PREVIEW__?.(payload.html);
+                        return;
+                    }
+                    // For all other messages (including accept, close, etc.), forward to preview
+                    (window as any).__PYWIRE_SEND_TO_PREVIEW__?.(data);
+                }
+            },
+            onLog: (msg) => {
+                console.log('[TutorialWorkspace] Engine Log:', msg);
+                if (!isReady) {
+                    const cleanMsg = msg.replace(/\u001b\[\d+m/g, '');
+                    setLoadingMessage(cleanMsg);
+                }
+            }
+        });
+
+        // If engine is already ready (from previous mount), setIsReady will be called by updateCallbacks
 
         // Handle theme sync with Starlight/system
         const initialTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
@@ -307,9 +341,15 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     return (
         <div className="pw-workspace-container bg-[#03060a]">
             {/* Refined Header inspired by Svelte Tutorial */}
-            <header className="pw-header">
+            <header className="pw-header relative">
+                {/* TutorialHierarchy moved outside so it can escape overflow:hidden */}
+
                 <div className="pw-header-group">
-                    <button className="pw-btn-icon-sm" title="Menu">
+                    <button
+                        className={`pw-btn-icon-sm ${hierarchyOpen ? 'bg-[var(--pw-border)] text-[var(--pw-text-main)]' : ''}`}
+                        title="Menu"
+                        onClick={() => setHierarchyOpen(!hierarchyOpen)}
+                    >
                         <Menu size={18} />
                     </button>
                     <div className="flex items-center gap-1 ml-2">
@@ -338,8 +378,10 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     </div>
 
                     <div className="pw-breadcrumb ml-4">
-                        <span className="pw-breadcrumb-prefix">PyWire Tutorial</span>
+                        <span className="pw-breadcrumb-prefix">{currentStep.tutorial || 'Tutorial'}</span>
                         <span className="pw-breadcrumb-separator">/</span>
+                        <span className="pw-breadcrumb-prefix">{currentStep.section}</span>
+                        {currentStep.section && <span className="pw-breadcrumb-separator">/</span>}
                         <span className="pw-breadcrumb-title">{currentStep.title}</span>
                     </div>
                 </div>
@@ -357,9 +399,13 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
             <div className="pw-workspace-main">
                 <Group orientation="horizontal" className="h-full">
                     {/* Left: Instructions */}
+                    {/* Left: Instructions */}
                     <Panel defaultSize={"30%"} minSize={"20%"} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)]">
                         <div className="h-full overflow-y-auto pw-instructions-container">
-                            <MarkdownRenderer content={currentStep.content} />
+                            {/* We now use native Starlight markdown passed as children */}
+                            <div className="pw-markdown-content sl-markdown-content p-8 max-w-3xl mx-auto pb-20">
+                                {children}
+                            </div>
                             <TasksChecklist
                                 criteria={currentStep.successCriteria}
                                 results={validationResults}
@@ -469,6 +515,18 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     <span>Tutorial Step Complete!</span>
                 </div>
             )}
+
+            {/* TutorialHierarchy rendered here - outside all overflow:hidden containers */}
+            <TutorialHierarchy
+                allSteps={allSteps}
+                currentSlug={currentSlug}
+                onSelect={(slug) => {
+                    setHierarchyOpen(false);
+                    navigateTo(slug);
+                }}
+                isOpen={hierarchyOpen}
+                onClose={() => setHierarchyOpen(false)}
+            />
         </div >
     );
 };

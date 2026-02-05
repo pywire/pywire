@@ -7,11 +7,22 @@ export type TutorialStep = {
     validation?: (code: string) => boolean;
 };
 
+// Global singleton key
+const GLOBAL_ENGINE_KEY = '__PYWIRE_TUTORIAL_ENGINE__';
+
+// Type declaration for window
+declare global {
+    interface Window {
+        [GLOBAL_ENGINE_KEY]?: TutorialEngine;
+    }
+}
+
 export class TutorialEngine {
     private worker: Worker;
     private onReady: () => void;
     private onResponse: (data: any) => void;
     private onLog: (msg: string) => void;
+    private _isReady: boolean = false;
 
     constructor(options: {
         onReady: () => void;
@@ -33,10 +44,62 @@ export class TutorialEngine {
         this.worker.postMessage({ type: 'INIT', payload: { baseUrl } });
     }
 
+    /**
+     * Get or create the global TutorialEngine singleton.
+     * This persists across React component remounts during navigation.
+     */
+    public static getInstance(options: {
+        onReady: () => void;
+        onResponse: (data: any) => void;
+        onLog: (msg: string) => void;
+    }): TutorialEngine {
+        if (typeof window !== 'undefined' && window[GLOBAL_ENGINE_KEY]) {
+            console.log('[TutorialEngine] Reusing existing global engine instance');
+            const engine = window[GLOBAL_ENGINE_KEY]!;
+            // Update callbacks for the new component instance
+            engine.updateCallbacks(options);
+            return engine;
+        }
+
+        console.log('[TutorialEngine] Creating new global engine instance');
+        const engine = new TutorialEngine(options);
+        if (typeof window !== 'undefined') {
+            window[GLOBAL_ENGINE_KEY] = engine;
+        }
+        return engine;
+    }
+
+    /**
+     * Update the callbacks. Called when the component remounts.
+     */
+    public updateCallbacks(options: {
+        onReady: () => void;
+        onResponse: (data: any) => void;
+        onLog: (msg: string) => void;
+    }) {
+        this.onReady = options.onReady;
+        this.onResponse = options.onResponse;
+        this.onLog = options.onLog;
+
+        // If already ready, immediately call the new onReady callback
+        if (this._isReady) {
+            console.log('[TutorialEngine] Already ready, calling new onReady callback');
+            this.onReady();
+        }
+    }
+
+    /**
+     * Check if the engine is already initialized and ready.
+     */
+    public get isReady(): boolean {
+        return this._isReady;
+    }
+
     private handleWorkerMessage(event: MessageEvent) {
         const { type, message, id } = event.data;
 
         if (type === 'READY') {
+            this._isReady = true;
             this.onReady();
         } else if (type === 'http_response' || type === 'ws_message') {
             this.onResponse(event.data);
@@ -126,3 +189,4 @@ export class TutorialEngine {
         });
     }
 }
+

@@ -173,66 +173,149 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
     }
   }, [theme]);
 
-  const updateContent = useCallback((html: string) => {
-    if (DEBUG_PREVIEW) console.log('[Preview] updateContent called, html length:', html?.length);
+  // Track if we've done the initial document setup
+  const isInitialized = useRef(false);
+
+  // Reset when URL changes (navigation) to require fresh document setup
+  useEffect(() => {
+    isInitialized.current = false;
+  }, [url]);
+
+  // Helper to get processed HTML and styles
+  const getProcessedContent = useCallback((html: string) => {
+    const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+      ? import.meta.env.BASE_URL
+      : `${import.meta.env.BASE_URL}/`;
+    const processedHtml = html.replace(/src="\/_pywire\//g, `src="${baseUrl}_pywire/`);
+    const isFullDocument = /<html/i.test(processedHtml) || /<!DOCTYPE/i.test(processedHtml);
+
+    const styles = `
+      <style id="pw-injected-styles">
+        body {
+          background-color: ${theme === 'dark' ? '#0f1117' : '#f8fafc'};
+          color: ${theme === 'dark' ? '#e5e7eb' : '#0f172a'};
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          margin: 0;
+          padding: 1rem;
+        }
+        h1, h2, h3, h4, h5, h6 { margin-top: 0; }
+      </style>
+    `;
+
+    return { processedHtml, isFullDocument, styles };
+  }, [theme]);
+
+  // initContent: Full document setup via doc.write (used for HTTP responses / code changes)
+  // This creates a fresh document with new MockWebSocket connection
+  const initContent = useCallback((html: string) => {
+    if (DEBUG_PREVIEW) console.log('[Preview] initContent called (full doc.write)');
+    if (iframeRef.current && iframeRef.current.contentDocument) {
+      const doc = iframeRef.current.contentDocument;
+      const { processedHtml, isFullDocument, styles } = getProcessedContent(html);
+
+      const pushStateScript = `
+        <script>
+          try {
+            if (window.location.pathname !== "${url}") {
+              window.history.pushState({ pwPath: "${url}" }, "", "${url}");
+            }
+          } catch (e) {}
+        </script>
+      `;
+
+      let finalHtml = '';
+
+      if (isFullDocument) {
+        finalHtml = processedHtml;
+        if (finalHtml.includes('<head>')) {
+          finalHtml = finalHtml.replace('<head>', `<head>${styles}<script>${INJECTED_SCRIPT}</script>`);
+        } else if (finalHtml.includes('<html>')) {
+          finalHtml = finalHtml.replace('<html>', `<html><head>${styles}<script>${INJECTED_SCRIPT}</script></head>`);
+        } else {
+          finalHtml = `${styles}<script>${INJECTED_SCRIPT}</script>${finalHtml}`;
+        }
+        if (finalHtml.includes('</body>')) {
+          finalHtml = finalHtml.replace('</body>', `${pushStateScript}</body>`);
+        } else {
+          finalHtml += pushStateScript;
+        }
+      } else {
+        finalHtml = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="UTF-8">
+              ${styles}
+              <script>${INJECTED_SCRIPT}</script>
+            </head>
+            <body>
+              ${processedHtml}
+              ${pushStateScript}
+            </body>
+          </html>
+        `;
+      }
+
+      doc.open();
+      doc.write(finalHtml);
+      doc.close();
+      isInitialized.current = true;
+    }
+  }, [url, theme, getProcessedContent]);
+
+  // patchContent: Incremental update via innerHTML (used for WebSocket updates)
+  // This preserves the existing MockWebSocket connection and page state
+  const patchContent = useCallback((html: string) => {
+    if (DEBUG_PREVIEW) console.log('[Preview] patchContent called (innerHTML only)');
     if (iframeRef.current && iframeRef.current.contentDocument) {
       const doc = iframeRef.current.contentDocument;
 
-      // Handle base path for assets if serving from a subdir (like /docs/)
-      const baseUrl = import.meta.env.BASE_URL.endsWith('/')
-        ? import.meta.env.BASE_URL
-        : `${import.meta.env.BASE_URL}/`;
+      // If not initialized yet, fall back to full init
+      if (!isInitialized.current || !doc.body) {
+        if (DEBUG_PREVIEW) console.log('[Preview] patchContent: not initialized, falling back to initContent');
+        initContent(html);
+        return;
+      }
 
-      // Rewrite asset paths to match Astro's base URL
-      // PyWire generates root-relative paths like /_pywire/static/...
-      const processedHtml = html.replace(/src="\/_pywire\//g, `src="${baseUrl}_pywire/`);
+      const { processedHtml, isFullDocument } = getProcessedContent(html);
 
-      if (DEBUG_PREVIEW) console.log('[Preview] Writing to iframe doc, current history length:', doc.defaultView?.history.length);
+      // Extract body content from processedHtml
+      let bodyContent = processedHtml;
+      if (isFullDocument) {
+        const bodyMatch = processedHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+        if (bodyMatch && bodyMatch[1]) {
+          bodyContent = bodyMatch[1];
+        }
+      }
 
-      doc.open();
-      doc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              body {
-                background-color: ${theme === 'dark' ? '#0f1117' : '#f8fafc'};
-                color: ${theme === 'dark' ? '#e5e7eb' : '#0f172a'};
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                margin: 0;
-                padding: 1rem;
-              }
-              /* Basic reset for h1/p to match tutorial feel */
-              h1, h2, h3, h4, h5, h6 { margin-top: 0; }
-            </style>
-            <script>${INJECTED_SCRIPT}</script>
-          </head>
-          <body>
-            ${processedHtml}
-            <script>
-              // Update the iframe's URL display (virtual)
-              try {
-                if (window.location.pathname !== "${url}") {
-                  window.history.pushState({ pwPath: "${url}" }, "", "${url}");
-                  if (${DEBUG_PREVIEW}) console.log('[PreviewScript] pushState to ${url}');
-                }
-              } catch (e) {
-                if (${DEBUG_PREVIEW}) console.error('[PreviewScript] pushState failed:', e);
-              }
-            </script>
-          </body>
-        </html>
-      `);
-      doc.close();
+      // Update body innerHTML only
+      doc.body.innerHTML = bodyContent;
+
+      // Update styles if theme changed
+      const existingStyles = doc.getElementById('pw-injected-styles');
+      if (existingStyles) {
+        existingStyles.innerHTML = `
+          body {
+            background-color: ${theme === 'dark' ? '#0f1117' : '#f8fafc'};
+            color: ${theme === 'dark' ? '#e5e7eb' : '#0f172a'};
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 1rem;
+          }
+          h1, h2, h3, h4, h5, h6 { margin-top: 0; }
+        `;
+      }
     }
-  }, [url, theme]);
+  }, [theme, getProcessedContent, initContent]);
 
   // Expose methods to parent
   useEffect(() => {
     const targetWindow = window;
 
-    (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__ = updateContent;
+    (targetWindow as any).__PYWIRE_INIT_PREVIEW__ = initContent;
+    (targetWindow as any).__PYWIRE_PATCH_PREVIEW__ = patchContent;
+    // Keep this for generic use, map to initContent
+    (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__ = initContent;
 
     (targetWindow as any).__PYWIRE_PREVIEW_BACK__ = () => {
       const iframe = iframeRef.current;
@@ -279,13 +362,15 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
     };
 
     return () => {
+      delete (targetWindow as any).__PYWIRE_INIT_PREVIEW__;
+      delete (targetWindow as any).__PYWIRE_PATCH_PREVIEW__;
       delete (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__;
       delete (targetWindow as any).__PYWIRE_PREVIEW_BACK__;
       delete (targetWindow as any).__PYWIRE_PREVIEW_FORWARD__;
       delete (targetWindow as any).__PYWIRE_PREVIEW_RELOAD__;
       delete (targetWindow as any).__PYWIRE_SEND_TO_PREVIEW__;
     };
-  }, [url, updateContent]);
+  }, [url, initContent, patchContent]);
 
   return (
     <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>

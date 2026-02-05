@@ -505,6 +505,47 @@
   backdrop-filter: blur(4px);
 }
 
+/* Heading Anchors Fix */
+.pw-instructions-container h1,
+.pw-instructions-container h2,
+.pw-instructions-container h3,
+.pw-instructions-container h4 {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    flex-wrap: wrap;
+    position: relative;
+}
+
+.pw-instructions-container .heading-anchor {
+    display: inline-flex !important;
+    order: -1; /* Place anchor before text */
+    text-decoration: none !important;
+    color: var(--pw-accent) !important;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.pw-instructions-container h1:hover .heading-anchor,
+.pw-instructions-container h2:hover .heading-anchor,
+.pw-instructions-container h3:hover .heading-anchor {
+    opacity: 1;
+}
+
+.pw-instructions-container h1::after,
+.pw-instructions-container h2::after {
+    display: none !important; /* Remove Starlight's default underlines if they interfere with flex */
+}
+
+/* Re-add the horizontal line after H1/H2 if needed, but in a flex-safe way */
+.pw-instructions-container h1,
+.pw-instructions-container h2 {
+    border-bottom: 1px solid var(--sl-color-border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    width: 100%;
+}
+
 .pw-modal-content {
   background-color: var(--pw-bg-panel);
   border: 1px solid var(--pw-border);
@@ -718,4 +759,38 @@
 
 .text-gray-500 {
   color: #6b7280;
+}
+/* Heading Anchors Fix - Robust Phase 3.5 */
+.pw-instructions-container :is(h1, h2, h3, h4) {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    flex-wrap: nowrap !important; /* Force single line unless text wraps */
+    position: relative;
+    width: 100%;
+}
+
+.pw-instructions-container .heading-anchor {
+    display: inline-flex !important;
+    order: -1; /* Place anchor before text */
+    text-decoration: none !important;
+    color: var(--pw-accent) !important;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    flex-shrink: 0; /* Prevent anchor from squishing */
+}
+
+.pw-instructions-container :is(h1, h2, h3, h4):hover .heading-anchor {
+    opacity: 1;
+}
+
+.pw-instructions-container :is(h1, h2)::after {
+    display: none !important; /* Remove Starlight's default underlines */
+}
+
+/* Re-add the horizontal line after H1/H2 */
+.pw-instructions-container :is(h1, h2) {
+    border-bottom: 1px solid var(--sl-color-border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
 }
