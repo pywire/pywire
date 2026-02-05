@@ -9,10 +9,13 @@ export async function getStaticPaths() {
     return id.startsWith('tutorial/');
   });
   
+  console.log('[Tutorial] Found entries:', tutorialEntries.map(e => e.id));
+
   const sorted = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
 
   return sorted.map((entry) => {
-    const slug = entry.id.replace('tutorial/', '');
+    // Remove tutorial/ prefix and any file extension
+    const slug = entry.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, '');
     return {
       params: { slug },
       props: { 
@@ -29,12 +32,22 @@ const tutorialEntries = await getCollection('docs', ({ id }) => id.startsWith('t
 const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
 
 const allSteps = sortedEntries.map(entry => ({
-    slug: entry.id.replace('tutorial/', ''),
+    slug: entry.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, ''),
     title: entry.data.title,
     description: entry.data.description,
-    initialCode: entry.data.initialCode,
-    files: entry.data.files || ['index.wire'],
-    content: entry.body // Raw markdown content for React to render
+    content: entry.body,
+    files: (entry.data.files || []).map(f => ({
+        path: f.path,
+        initialContent: f.initial,
+        solutionContent: f.solution,
+        editable: f.editable,
+        deletable: f.deletable
+    })),
+    behaviors: entry.data.behaviors,
+    successCriteria: entry.data.successCriteria,
+    hints: entry.data.hints,
+    initialRoute: entry.data.initialRoute,
+    pagesDir: entry.data.pagesDir
 }));
 
 // Find current step index for display title

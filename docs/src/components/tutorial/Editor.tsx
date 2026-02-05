@@ -18,6 +18,7 @@ interface EditorProps {
     content: string;
     language: string;
     onChange?: (value: string) => void;
+    readOnly?: boolean;
 }
 
 // Initialize Monaco environment for workers (once)
@@ -60,11 +61,16 @@ function setupMonacoEnvironment(monaco: any) {
 let highlighterInstance: any = null;
 let highlighterPromise: Promise<any> | null = null;
 
-export const Editor: React.FC<EditorProps> = ({ content, language, onChange }) => {
+export const Editor: React.FC<EditorProps> = ({ content, language, onChange, readOnly = false }) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const monacoInstanceRef = useRef<any>(null);
     const editorInstanceRef = useRef<any>(null);
     const [isLoaded, setIsLoaded] = useState(false);
+
+    const onChangeRef = useRef(onChange);
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
 
     useEffect(() => {
         let editor: any;
@@ -155,13 +161,14 @@ export const Editor: React.FC<EditorProps> = ({ content, language, onChange }) =
                 scrollBeyondLastLine: false,
                 roundedSelection: false,
                 padding: { top: 10 },
+                readOnly: readOnly,
             });
 
             editorInstanceRef.current = editor;
             setIsLoaded(true);
 
             editor.onDidChangeModelContent(() => {
-                onChange?.(editor.getValue());
+                onChangeRef.current?.(editor.getValue());
             });
 
             // Watch for theme changes from Starlight
@@ -184,10 +191,13 @@ export const Editor: React.FC<EditorProps> = ({ content, language, onChange }) =
     }, []);
 
     useEffect(() => {
-        if (editorInstanceRef.current && editorInstanceRef.current.getValue() !== content) {
-            editorInstanceRef.current.setValue(content);
+        if (editorInstanceRef.current) {
+            if (editorInstanceRef.current.getValue() !== content) {
+                editorInstanceRef.current.setValue(content);
+            }
+            editorInstanceRef.current.updateOptions({ readOnly: readOnly });
         }
-    }, [content]);
+    }, [content, readOnly]);
 
     return <div ref={editorRef} style={{ height: '100%', width: '100%' }} />;
 };

@@ -67,6 +67,13 @@ export class TutorialEngine {
         this.worker.postMessage(this.sanitizePayload(message));
     }
 
+    public restart(pagesDir?: string) {
+        this.postToWorker({
+            type: 'RESTART',
+            payload: { pagesDir },
+        });
+    }
+
     public updateFile(filename: string, content: string) {
         this.postToWorker({
             type: 'UPDATE_FILE',

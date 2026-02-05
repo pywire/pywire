@@ -1,0 +1,41 @@
+---
+title: Locked Files & Constraints
+description: Learn how to manage project configuration and enforced rules.
+files:
+  - path: pages/index.wire
+    initial: |
+      !title "Secure App"
+      
+      import config
+      
+      ---html---
+      <div class="p-8">
+        <h2 class="text-2xl mb-4">Settings</h2>
+        <p>App Name: <span id="app-name">{config.APP_NAME}</span></p>
+        <p>Debug Mode: {str(config.DEBUG)}</p>
+      </div>
+  - path: config.py
+    editable: false
+    initial: |
+      # This file is critical and cannot be edited by the user.
+      APP_NAME = "My Super App"
+      DEBUG = True
+successCriteria:
+  - type: browser_route_text
+    description: "The App Name is correctly displayed from the locked config"
+pagesDir: pages
+---
+
+Sometimes you'll have project files that should not be modified, like configuration or core logic.
+
+### Immutability
+
+Notice the `config.py` file in the tree. It has a **lock icon** next to it.
+- If you click it, you'll see the code, but you **cannot type** in the editor.
+- You also **cannot delete** this file because it is marked as protected.
+
+### Your Task
+
+Make sure the app is working correctly. The preview should display "App Name: My Super App". 
+
+Try changing `pages/index.wire` to add a bit of styling to the App Name span. As soon as the "My Super App" text appears in the preview, the tutorial step will be complete!

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { Editor } from './Editor';
 import { BrowserPreview } from './BrowserPreview';
@@ -6,9 +6,12 @@ import { TutorialFileTree } from './tree/TutorialFileTree';
 import { LoadingSpinner } from './LoadingSpinner';
 import { TutorialEngine } from './TutorialEngine';
 import { useTutorialStorage } from '../../hooks/useTutorialStorage';
-import { ChevronLeft, ChevronRight, Menu, Wrench, ArrowLeft, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, Wrench, ArrowLeft, ArrowRight, CheckCircle, RotateCcw } from 'lucide-react';
 import type { TutorialStep } from './types';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { Modal } from './Modal';
+import { SuccessValidator, type ValidationResult } from './SuccessValidator';
+import { TasksChecklist } from './TasksChecklist';
 
 import '../../styles/pywire-tutorial.css';
 
@@ -21,6 +24,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     initialSlug,
     allSteps
 }) => {
+    console.log('[TutorialWorkspace] Render', { initialSlug, stepsCount: allSteps.length });
     // SPA Routing State
     const [currentSlug, setCurrentSlug] = useState(initialSlug);
 
@@ -40,28 +44,45 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     const [isReady, setIsReady] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('Initializing Pyodide...');
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    // Browser URL State
+    const [currentUrl, setCurrentUrl] = useState(currentStep.initialRoute || '/');
 
-    // Code state - using step-specific storage
-    const [code, setCode] = useTutorialStorage(currentStep.slug, currentStep.initialCode);
-    const [activeFile, setActiveFile] = useState(currentStep.files[0] || 'index.wire');
-    const debouncedCode = useDebounce(code, 600);
+    // Code state - using step-specific storage for MULTIPLE files
+    const {
+        files,
+        updateFile,
+        addFile,
+        deleteFile,
+        resetFiles,
+        solveFiles
+    } = useTutorialStorage(currentStep.slug, currentStep.files);
+
+    const [activeFile, setActiveFile] = useState(currentStep.files[0]?.path || 'index.wire');
+    const code = files[activeFile] || '';
+    const debouncedFiles = useDebounce(files, 600);
+
+    // Validation State
+    const [isCompleted, setIsCompleted] = useState(false);
+    const [lastRenderedHtml, setLastRenderedHtml] = useState('');
+    const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
+
+    // Modal States
+    const [modal, setModal] = useState<{
+        isOpen: boolean;
+        title?: string;
+        message: string;
+        allowedItems?: string[];
+    }>({ isOpen: false, message: '' });
+
+    const [inputModal, setInputModal] = useState<{
+        isOpen: boolean;
+        folderPath: string;
+        isFolder: boolean;
+    } | null>(null);
+    const [inputName, setInputName] = useState('');
 
     // Handle History (Browser Back/Forward)
-    useEffect(() => {
-        const handlePopState = (event: PopStateEvent) => {
-            // If state has step, use it. Otherwise try to parse URL.
-            // But simpler: just parse URL always.
-            const path = window.location.pathname;
-            const match = path.match(/\/docs\/tutorial\/([^/]+)/);
-            if (match && match[1]) {
-                setCurrentSlug(match[1]);
-            }
-        };
-
-        window.addEventListener('popstate', handlePopState);
-        return () => window.removeEventListener('popstate', handlePopState);
-    }, []);
-
+    // ... (lines 50-70 unchanged)
     // Navigation function
     const navigateTo = (slug: string) => {
         setCurrentSlug(slug);
@@ -69,25 +90,82 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         window.history.pushState({ slug }, '', newUrl);
     };
 
-    // Re-initialize code when step changes (if not already in storage)
-    useEffect(() => {
-        setActiveFile(currentStep.files[0] || 'index.wire');
-        if (isReady && engineRef.current) {
-            engineRef.current.reset();
-        }
-    }, [currentStep.slug, isReady]);
+    const handleNavigate = useCallback((path: string) => {
+        setCurrentUrl(path);
+        engineRef.current?.httpRequest('GET', path);
+    }, [engineRef.current]);
 
-    const handlePreviewMessage = (msg: any) => {
+    const handlePreviewMessage = useCallback((msg: any) => {
         if (!engineRef.current) return;
         switch (msg.type) {
             case 'WS_CONNECT': engineRef.current.wsConnect(msg.payload.path); break;
             case 'WS_SEND': engineRef.current.wsSend(msg.payload.data); break;
             case 'HTTP_REQUEST': engineRef.current.httpRequest(msg.payload.method, msg.payload.path, msg.payload.headers); break;
+            case 'NAVIGATE': handleNavigate(msg.payload.path); break;
         }
-    };
+    }, [engineRef.current, handleNavigate]);
+
+
+    const handleFileAddRequest = useCallback((folderPath: string, isFolder: boolean = false) => {
+        setInputName('');
+        setInputModal({ isOpen: true, folderPath, isFolder });
+    }, []);
+
+    const handleFileAddSubmit = useCallback(() => {
+        if (!inputModal) return;
+        const { folderPath, isFolder } = inputModal;
+        const name = inputName.trim();
+        if (!name) return;
+
+        // Simple validation
+        if (name.includes('/') || name.includes('\\')) {
+            alert('Name cannot contain slashes.');
+            return;
+        }
+
+        const fullPath = folderPath ? `${folderPath}/${name}` : name;
+
+        // Check behaviors
+        const allowedPatterns = Object.keys(currentStep.behaviors?.canAddFiles || {});
+        const isAllowed = allowedPatterns.some(p => {
+            if (isFolder) {
+                return p.startsWith(fullPath + '/');
+            } else {
+                const regex = new RegExp('^' + p.replace(/\*/g, '.*') + '$');
+                return regex.test(fullPath);
+            }
+        });
+
+        if (!isAllowed && allowedPatterns.length > 0) {
+            setModal({
+                isOpen: true,
+                message: `Only specific files and folders are allowed in this exercise:`,
+                allowedItems: allowedPatterns
+            });
+            return;
+        }
+
+        if (isFolder) {
+            addFile(`${fullPath}/.keep`, '');
+        } else {
+            addFile(fullPath, '');
+            setActiveFile(fullPath);
+        }
+        setInputModal(null);
+    }, [inputModal, inputName, currentStep.behaviors, addFile]);
+
+    const handleFileDelete = useCallback((path: string) => {
+        if (window.confirm(`Are you sure you want to delete ${path}?`)) {
+            deleteFile(path);
+            if (activeFile === path) {
+                setActiveFile(Object.keys(files).find(f => f !== path) || '');
+            }
+        }
+    }, [deleteFile, activeFile, files]);
 
     // Initialize engine once
     useEffect(() => {
+        console.log('[TutorialWorkspace] Engine Init Effect');
         // Register Service Worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/docs/sw.js')
@@ -96,12 +174,17 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         }
 
         if (!engineRef.current) {
+            console.log('[TutorialWorkspace] Creating TutorialEngine');
             engineRef.current = new TutorialEngine({
-                onReady: () => setIsReady(true),
+                onReady: () => {
+                    console.log('[TutorialWorkspace] Engine Ready');
+                    setIsReady(true);
+                },
                 onResponse: (data) => {
                     if (data.type === 'http_response' && data.message.type === 'http.response.body') {
                         const body = data.message.body;
                         const html = Array.isArray(body) ? new TextDecoder().decode(new Uint8Array(body)) : body;
+                        setLastRenderedHtml(html);
                         (window as any).__PYWIRE_UPDATE_PREVIEW__?.(html);
                     }
                     else if (data.type === 'ws_message') {
@@ -109,6 +192,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     }
                 },
                 onLog: (msg) => {
+                    console.log('[TutorialWorkspace] Engine Log:', msg);
                     if (!isReady) {
                         const cleanMsg = msg.replace(/\u001b\[\d+m/g, '');
                         setLoadingMessage(cleanMsg);
@@ -133,13 +217,77 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         return () => observer.disconnect();
     }, []);
 
-    // Push updates to engine when code or file changes
+
+    // ... (rest of derived state)
+
+    // Update currentUrl when step changes
+    useEffect(() => {
+        setCurrentUrl(currentStep.initialRoute || '/');
+    }, [currentStep.slug, currentStep.initialRoute]);
+
+    // 1. Initialize engine state when step changes
     useEffect(() => {
         if (isReady && engineRef.current) {
-            engineRef.current.updateFile(activeFile, debouncedCode);
-            engineRef.current.httpRequest('GET', '/');
+            console.log('[TutorialWorkspace] Step Change Reset (RESTART)');
+            engineRef.current.restart(currentStep.pagesDir);
+            setActiveFile(currentStep.files[0]?.path || 'index.wire');
+
+            // Push files immediately on step change instead of waiting for debounce
+            Object.entries(files).forEach(([path, content]) => {
+                engineRef.current?.updateFile(path, content);
+            });
+            engineRef.current.httpRequest('GET', currentUrl);
         }
-    }, [isReady, debouncedCode, activeFile]);
+    }, [currentStep.slug, isReady]);
+
+    // 2. Sync changes to engine (debounced)
+    useEffect(() => {
+        if (isReady && engineRef.current) {
+            // Push all files to engine to ensure full consistency
+            Object.entries(debouncedFiles).forEach(([path, content]) => {
+                engineRef.current?.updateFile(path, content);
+            });
+            // Reload current URL to reflect changes
+            engineRef.current.httpRequest('GET', currentUrl);
+        }
+    }, [isReady, debouncedFiles]);
+
+    // 3. Independent URL navigation
+    useEffect(() => {
+        if (isReady && engineRef.current) {
+            engineRef.current.httpRequest('GET', currentUrl);
+        }
+    }, [isReady, currentUrl]);
+
+    // Validation Effect
+    useEffect(() => {
+        if (!currentStep.successCriteria) return;
+
+        const results = SuccessValidator.validate(
+            files,
+            currentStep.successCriteria,
+            lastRenderedHtml
+        );
+
+        // Expose results for TasksChecklist later
+        setValidationResults(results);
+
+        const allPassed = results.every(r => r.passed);
+
+        if (allPassed && !isCompleted) {
+            setIsCompleted(true);
+            // Optionally play sound or show confetti here
+        } else if (!allPassed && isCompleted) {
+            setIsCompleted(false);
+        }
+    }, [files, lastRenderedHtml, currentStep.successCriteria, isCompleted]);
+
+    // Reset completion on step change
+    useEffect(() => {
+        setIsCompleted(false);
+        setValidationResults([]);
+        setLastRenderedHtml('');
+    }, [currentStep.slug]);
 
     const toggleTheme = () => {
         const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -178,19 +326,15 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                                 <ArrowLeft size={18} />
                             </div>
                         )}
-                        {nextStep ? (
-                            <button
-                                onClick={() => navigateTo(nextStep.slug)}
-                                className="pw-btn-icon-sm"
-                                title={`Next: ${nextStep.title}`}
-                            >
-                                <ArrowRight size={18} />
-                            </button>
-                        ) : (
-                            <div className="pw-btn-icon-sm disabled">
-                                <ArrowRight size={18} />
-                            </div>
-                        )}
+                        <button
+                            className={`pw-btn-icon-sm ${isCompleted ? 'success-glow' : ''}`}
+                            onClick={() => nextStep && navigateTo(nextStep.slug)}
+                            disabled={!nextStep}
+                            style={{ opacity: nextStep ? 1 : 0.3 }}
+                            title={nextStep ? `Next: ${nextStep.title}` : "Next"}
+                        >
+                            <ArrowRight size={18} />
+                        </button>
                     </div>
 
                     <div className="pw-breadcrumb ml-4">
@@ -201,11 +345,11 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                 </div>
 
                 <div className="pw-header-group">
-                    <button className="pw-btn-solve mr-2">
+                    <button className="pw-btn-solve mr-2" onClick={solveFiles} title="Show solution">
                         solve
                     </button>
-                    <button className="pw-btn-icon-sm">
-                        <Wrench size={18} />
+                    <button className="pw-btn-icon-sm mr-2" onClick={resetFiles} title="Reset to initial code">
+                        <RotateCcw size={18} />
                     </button>
                 </div>
             </header>
@@ -213,34 +357,43 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
             <div className="pw-workspace-main">
                 <Group orientation="horizontal" className="h-full">
                     {/* Left: Instructions */}
-                    <Panel defaultSize={30} minSize={20} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)]">
+                    <Panel defaultSize={"30%"} minSize={"20%"} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)]">
                         <div className="h-full overflow-y-auto pw-instructions-container">
                             <MarkdownRenderer content={currentStep.content} />
+                            <TasksChecklist
+                                criteria={currentStep.successCriteria}
+                                results={validationResults}
+                            />
                         </div>
                     </Panel>
 
                     <Separator className="pw-separator-h" />
 
                     {/* Right: Work Area (Split Top/Bottom) */}
-                    <Panel defaultSize={70} minSize={40} className="h-full">
+                    <Panel defaultSize={"70%"} minSize={"40%"} className="h-full">
                         <Group orientation="vertical" className="h-full">
                             {/* Top: Files + Editor */}
-                            <Panel defaultSize={50} minSize={25} className="h-full flex flex-col">
+                            <Panel defaultSize={"50%"} minSize={"25%"} className="h-full flex flex-col">
                                 <Group orientation="horizontal" className="flex-1 min-h-0">
-                                    <Panel defaultSize={20} minSize={15} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)] overflow-y-auto">
+                                    <Panel defaultSize={"20%"} minSize={"15%"} className="h-full border-r border-[var(--sl-color-border)] bg-[var(--sl-color-bg)] overflow-y-auto">
                                         <TutorialFileTree
-                                            files={currentStep.files}
+                                            files={Object.keys(files)}
                                             activeFile={activeFile}
                                             onFileSelect={setActiveFile}
+                                            onFileAdd={handleFileAddRequest}
+                                            onFileDelete={handleFileDelete}
+                                            behaviors={currentStep.behaviors}
+                                            originalFiles={currentStep.files}
                                         />
                                     </Panel>
                                     <Separator className="pw-separator-h" />
-                                    <Panel defaultSize={80} minSize={50} style={{ height: '100%' }}>
+                                    <Panel defaultSize={"80%"} minSize={"50%"} style={{ height: '100%' }}>
                                         <div className="h-full w-full relative overflow-hidden">
                                             <Editor
                                                 content={code}
                                                 language="pywire"
-                                                onChange={setCode}
+                                                onChange={(newVal) => updateFile(activeFile, newVal)}
+                                                readOnly={currentStep.files.find(f => f.path === activeFile)?.editable === false}
                                             />
                                         </div>
                                     </Panel>
@@ -250,15 +403,72 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                             <Separator className="pw-separator-v" />
 
                             {/* Bottom: Browser Preview */}
-                            <Panel defaultSize={50} minSize={25} style={{ height: '100%' }}>
+                            <Panel defaultSize={"50%"} minSize={"25%"} style={{ height: '100%' }}>
                                 <div className="h-full w-full">
-                                    <BrowserPreview url="/" onMessage={handlePreviewMessage} theme={theme} />
+                                    <BrowserPreview url={currentUrl} onNavigate={handleNavigate} onMessage={handlePreviewMessage} theme={theme} />
                                 </div>
                             </Panel>
                         </Group>
                     </Panel>
                 </Group>
             </div>
+
+            {/* Modals */}
+            <Modal
+                isOpen={modal.isOpen}
+                onClose={() => setModal({ ...modal, isOpen: false })}
+                title={modal.title || "Action Not Allowed"}
+            >
+                <div className="pw-modal-body">
+                    <p>{modal.message}</p>
+                    {modal.allowedItems && modal.allowedItems.length > 0 && (
+                        <ul className="pw-modal-list mt-3">
+                            {modal.allowedItems.map((item, i) => (
+                                <li key={i}>{item}</li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+                <div className="pw-modal-footer">
+                    <button className="pw-btn-primary" onClick={() => setModal({ ...modal, isOpen: false })}>
+                        OK
+                    </button>
+                </div>
+            </Modal>
+
+            <Modal
+                isOpen={!!inputModal?.isOpen}
+                onClose={() => setInputModal(null)}
+                title={`Create New ${inputModal?.isFolder ? 'Folder' : 'File'}`}
+            >
+                <div className="pw-modal-body">
+                    <p className="mb-3 text-dim">
+                        {inputModal?.folderPath
+                            ? `Creating in ${inputModal.folderPath}`
+                            : 'Creating in project root'
+                        }
+                    </p>
+                    <input
+                        autoFocus
+                        className="pw-input w-full"
+                        placeholder={`Enter ${inputModal?.isFolder ? 'folder' : 'file'} name...`}
+                        value={inputName}
+                        onChange={(e) => setInputName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleFileAddSubmit()}
+                    />
+                </div>
+                <div className="pw-modal-footer">
+                    <button className="pw-btn-secondary" onClick={() => setInputModal(null)}>Cancel</button>
+                    <button className="pw-btn-primary" onClick={handleFileAddSubmit}>Create</button>
+                </div>
+            </Modal>
+
+            {isCompleted && (
+                <div className="pw-success-banner">
+                    <CheckCircle size={20} />
+                    <span>Tutorial Step Complete!</span>
+                </div>
+            )}
         </div >
     );
 };
