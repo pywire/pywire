@@ -8,6 +8,8 @@ export const collections = {
     schema: docsSchema({
       extend: z.object({
         // Tutorial specific fields
+        tutorial: z.string().optional(),
+        section: z.string().optional(),
         files: z.array(z.object({
           path: z.string(),
           initial: z.string(),

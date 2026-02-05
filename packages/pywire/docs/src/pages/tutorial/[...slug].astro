@@ -1,8 +1,9 @@
 ---
-import { getCollection } from 'astro:content';
+import { getCollection, render } from 'astro:content';
 import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace';
 import '../../styles/custom.css';
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { ClientRouter } from 'astro:transitions';
 
 export async function getStaticPaths() {
   const tutorialEntries = await getCollection('docs', ({ id }) => {
@@ -34,6 +35,8 @@ const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
 const allSteps = sortedEntries.map(entry => ({
     slug: entry.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, ''),
     title: entry.data.title,
+    tutorial: entry.data.tutorial,
+    section: entry.data.section,
     description: entry.data.description,
     content: entry.body,
     files: (entry.data.files || []).map(f => ({
@@ -49,6 +52,10 @@ const allSteps = sortedEntries.map(entry => ({
     initialRoute: entry.data.initialRoute,
     pagesDir: entry.data.pagesDir
 }));
+
+// Find current entry for content rendering
+const currentEntry = sortedEntries.find(e => e.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, '') === slug);
+const { Content } = currentEntry ? await render(currentEntry) : { Content: () => null };
 
 // Find current step index for display title
 const currentIndex = allSteps.findIndex(s => s.slug === slug);
@@ -176,11 +183,19 @@ const displayTitle = `Interactive Tutorial | ${String(currentIndex + 1).padStart
         }
     </style>
 
+    <!-- 
+        NOTE: transition:persist keeps the React island across navigation, 
+        but this means children (Content) won't update!
+        For now, we'll NOT use persist and accept full re-initialization.
+        A better solution would require fetching markdown client-side.
+    -->
     <div class="not-content h-[calc(100vh-var(--sl-nav-height))] w-full overflow-hidden">
         <TutorialWorkspace
             client:only="react"
             initialSlug={slug}
             allSteps={allSteps}
-        />
+        >
+            <Content />
+        </TutorialWorkspace>
     </div>
 </StarlightPage>

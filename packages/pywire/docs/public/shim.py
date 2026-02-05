@@ -195,6 +195,18 @@ async def handle_js_message(event_data):
                     if DEBUG_SHIM:
                         print(f"DEBUG: WebSocket closed by app. Code: {msg.get('code')}")
 
+                # For websocket.send messages, try to decode msgpack payload
+                decoded_payload = None
+                if msg.get("type") == "websocket.send" and "bytes" in msg and isinstance(msg["bytes"], bytes):
+                    try:
+                        import msgpack
+                        decoded_payload = msgpack.unpackb(msg["bytes"])
+                        if DEBUG_SHIM:
+                            print(f"DEBUG: Decoded WS payload type: {decoded_payload.get('type') if isinstance(decoded_payload, dict) else 'N/A'}")
+                    except Exception as e:
+                        if DEBUG_SHIM:
+                            print(f"DEBUG: Failed to decode WS msgpack: {e}")
+
                 # Convert bytes to list for JS transfer
                 if "bytes" in msg and isinstance(msg["bytes"], bytes):
                     msg["bytes"] = list(msg["bytes"])
@@ -206,6 +218,11 @@ async def handle_js_message(event_data):
                     "id": req_id,
                     "message": msg
                 }
+                
+                # Include decoded payload if available
+                if decoded_payload is not None:
+                    response_payload["decoded_payload"] = decoded_payload
+
                 try:
                     js_payload = to_js(response_payload, dict_converter=js.Object.fromEntries)
                     js.postMessage(js_payload)

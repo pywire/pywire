@@ -29,6 +29,8 @@ export interface SuccessCriteria {
 export interface TutorialStep {
     slug: string;
     title: string;
+    tutorial?: string;
+    section?: string;
     description?: string;
     content: string;                 // Markdown body
     files: TutorialFile[];           // Full file definitions
