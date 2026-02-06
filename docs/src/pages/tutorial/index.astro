@@ -1,3 +1,51 @@
 ---
-const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-return Astro.redirect(`${base}/tutorial/introduction/welcome/`);
+// src/pages/tutorial/index.astro
+// We do not import StarlightPage. We want a raw, fast HTML response.
+
+// 1. Determine the base path for the environment
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '') + "/tutorial/";
+const DEFAULT_START_SLUG = 'introduction/welcome';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resuming Tutorial...</title>
+    <meta name="robots" content="noindex">
+
+    <script is:inline define:vars={{ BASE, DEFAULT_START_SLUG }}>
+        (function() {
+            try {
+                // 1. Retrieve the saved slug (e.g. "introduction/step-02")
+                let savedSlug = localStorage.getItem('tutorial-current-slug');
+
+                // 2. Validate/Clean the slug
+                if (!savedSlug || typeof savedSlug !== 'string') {
+                    savedSlug = DEFAULT_START_SLUG;
+                }
+
+                // Remove any leading/trailing slashes to avoid double slashes
+                // (e.g. "/introduction/welcome/" -> "introduction/welcome")
+                savedSlug = savedSlug.replace(/^\/+|\/+$/g, '');
+
+                // 3. Construct the full URL
+                // BASE already ends in a slash (e.g. "/docs/tutorial/")
+                const targetUrl = BASE + savedSlug + '/';
+
+                // 4. Redirect immediately
+                window.location.replace(targetUrl);
+                
+            } catch (err) {
+                console.error('Redirect failed', err);
+                // Safety fallback
+                window.location.replace(BASE + DEFAULT_START_SLUG + '/');
+            }
+        })();
+    </script>
+</head>
+<body style="background-color: #111; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0;">
+    <p>Resuming...</p>
+</body>
+</html>
