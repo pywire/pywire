@@ -73,12 +73,17 @@ async function main() {
         fs.mkdirSync(publicDistDir, { recursive: true });
     }
 
-    // Build directly to public/dist using uv if available, otherwise fall back to .venv
+    // Build directly to public/dist using uv build if available (most robust)
     try {
-        run(`uv run python -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+        run(`uv build --wheel --out-dir ${publicDistDir}`, REPO_ROOT);
     } catch (e) {
-        console.warn('uv run failed, falling back to .venv/bin/python3');
-        run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+        console.warn('uv build failed, trying uv run python -m build');
+        try {
+            run(`uv run --all-extras python -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+        } catch (e2) {
+            console.warn('uv run failed, falling back to .venv/bin/python3');
+            run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+        }
     }
 
     // Find the wheel
