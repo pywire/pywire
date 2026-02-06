@@ -7,7 +7,7 @@ Building a component in PyWire is as simple as writing HTML and adding a bit of 
 
 Let's look at a classic counter example.
 
-```html
+```pywire
 count = wire(0)
 
 def increment():

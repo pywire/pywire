@@ -4,35 +4,69 @@ import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace';
 import '../../styles/custom.css';
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 
+// --- 1. Global Helper for Component Scope ---
+function cleanSlug(id: string) {
+  return id
+    .replace(/^tutorial\//, '')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/(^|\/)\d+-/g, '$1');
+}
+
 export async function getStaticPaths() {
+  // --- 2. Local Helper for getStaticPaths Scope ---
+  function cleanSlug(id: string) {
+    return id
+      .replace(/^tutorial\//, '')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/(^|\/)\d+-/g, '$1');
+  }
+
   const tutorialEntries = await getCollection('docs', ({ id }) => {
     return id.startsWith('tutorial/');
   });
   
-  console.log('[Tutorial] Found entries:', tutorialEntries.map(e => e.id));
-
   const sorted = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
 
-  return sorted.map((entry) => {
-    // Remove tutorial/ prefix and any file extension
-    const slug = entry.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, '');
-    return {
-      params: { slug },
-      props: { 
-        slug
-      },
-    };
+  // Use flatMap to potentially return TWO paths for every entry (Original + Clean)
+  return sorted.flatMap((entry) => {
+    const clean = cleanSlug(entry.id);
+    const originalPath = entry.id
+        .replace(/^tutorial\//, '')
+        .replace(/\.[^/.]+$/, '');
+
+    // A. Always return the clean path
+    const paths = [{
+      params: { slug: clean },
+      props: { slug: clean },
+    }];
+
+    // B. If the original path has numbers (is different from clean), 
+    // create a redirect route for it.
+    if (originalPath !== clean) {
+      paths.push({
+        params: { slug: originalPath },
+        props: { slug: clean, redirectTo: clean },
+      });
+    }
+
+    return paths;
   });
 }
 
-const { slug } = Astro.props;
+// Destructure props. 'redirectTo' will only exist if matched via the numbered path.
+const { slug, redirectTo } = Astro.props;
 
-// Fetch all tutorial steps for the SPA
+// --- 3. REDIRECT LOGIC ---
+if (redirectTo) {
+  return Astro.redirect(`/tutorial/${redirectTo}`);
+}
+
+// Fetch all tutorial steps for the SPA context
 const tutorialEntries = await getCollection('docs', ({ id }) => id.startsWith('tutorial/'));
 const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
 
 const allSteps = sortedEntries.map(entry => ({
-    slug: entry.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, ''),
+    slug: cleanSlug(entry.id),
     title: entry.data.title,
     tutorial: entry.data.tutorial,
     section: entry.data.section,
@@ -52,11 +86,11 @@ const allSteps = sortedEntries.map(entry => ({
     pagesDir: entry.data.pagesDir
 }));
 
-// Find current entry for content rendering
-const currentEntry = sortedEntries.find(e => e.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, '') === slug);
+// Find current entry
+const currentEntry = sortedEntries.find(e => cleanSlug(e.id) === slug);
 const { Content } = currentEntry ? await render(currentEntry) : { Content: () => null };
 
-// Find current step index for display title
+// Find current step index
 const currentIndex = allSteps.findIndex(s => s.slug === slug);
 const displayTitle = `Interactive Tutorial | ${String(currentIndex + 1).padStart(2, '0')}. ${allSteps[currentIndex]?.title || 'Loading'}`;
 

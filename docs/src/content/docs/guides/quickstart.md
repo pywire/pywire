@@ -7,9 +7,9 @@ Welcome to PyWire! This guide will help you set up your first project instantly 
 
 ## The Fastest Way: `create-pywire-app`
 
-The recommended way to start a new project is using `uvx` (part of the [uv](https://github.com/astral-sh/uv)) package manager to run our interactive scaffolding tool.
+The easiest way to start a new project is using `uvx` to run our interactive scaffolding tool.
 
-```bash
+```sh
 uvx create-pywire-app
 ```
 
@@ -17,32 +17,22 @@ This command will launch an interactive wizard that guides you through:
 
 1. **Project Name**: Naming your new application.
 2. **Template Selection**: Choosing a starter template (e.g., Counter, Blog, SaaS Starter).
-3. **Routing Style**: Selecting between file-system based routing (like Next.js) or explicit routing (like Flask/FastAPI).
+3. **Routing Style**: Selecting between file-system based routing (like Svelte) or explicit routing (more like Flask/FastAPI).
 4. **Configuration**: Setting up Git, VS Code extensions, and more.
 
 Once the setup is complete, navigate into your new project directory:
 
-```bash
+```sh
 cd my-pywire-app
 ```
 
-## Running the Development Server
-
-To start your application in development mode, use the `pywire dev` command. This starts a high-performance server with hot-reloading and a live TUI dashboard.
-
-```bash
-pywire dev
-```
-
-Your app will be available at `http://localhost:3000`.
-
-## Installation Scripts (No `uv`?)
+## Installation Scripts
 
 If you don't have `uv` installed yet, you can use our automated installation scripts to set up everything for you.
 
 ### macOS / Linux
 
-```bash
+```sh
 curl -fsSL pywire.dev/install | sh
 ```
 
@@ -51,6 +41,16 @@ curl -fsSL pywire.dev/install | sh
 ```powershell
 irm pywire.dev/install.ps1 | iex
 ```
+
+## Running the Development Server
+
+To start your application in development mode, use the `pywire dev` command. This starts a high-performance server with hot-reloading and a live TUI dashboard.
+
+```sh
+pywire dev
+```
+
+Your app will be available at `http://localhost:3000`.
 
 ## What's Next?
 

@@ -7,10 +7,9 @@ Layouts allow you to wrap multiple pages in a consistent UI structure (like head
 
 ## Creating a Layout
 
-A layout is just a `.wire` file that uses the `<slot />` tag to indicate where page content should be injected.
+A layout is just an ordinary `.wire` file that uses the `<slot />` tag to indicate where page content should be injected.
 
 ```html
-<!-- layouts/main.wire -->
 <nav>
     <a href="/">Home</a>
     <a href="/about">About</a>
@@ -20,20 +19,23 @@ A layout is just a `.wire` file that uses the `<slot />` tag to indicate where p
     <slot />
 </main>
 
-<footer>© 2024 PyWire</footer>
+<footer>© 2026 PyWire</footer>
 ```
 
 ## Using a Layout
 
-In your page file, specify the layout using the `layout` keyword in the Python block.
+Using a layout depends on whether your project uses path-based routing (default) or explicit routing.
 
-```html
-# pages/index.wire
-layout = "layouts/main.wire"
+### Layouts in Path-based Routing
 
----html---
-<h1>Welcome!</h1>
-<p>This content is inside the layout.</p>
+The layout system functions similar to Svelte in this way--via hierarchy. You create your layout with the name `__layout__.wire` in the path where it should apply. For example, if you created a layout in the root of the pages directory, `src/pages/`, it would apply to all pages automatically
+
+### Layouts in Explicit Routing
+
+Since file path and hierarchy do not determine routing in projects using explicit routing, you can give your layout any name and put it in any file path. You can use a layout on a `.wire` page with the `!layout` directive.
+
+```pywire
+!path "/my-page"
+!layout "path/to/layout.wire"
+
 ```
-
-Layouts can also be nested by having a layout itself use another layout.

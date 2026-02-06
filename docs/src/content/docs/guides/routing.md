@@ -17,25 +17,41 @@ By default, PyWire looks in the `pages/` directory and automatically creates rou
 
 Use square brackets to define dynamic parameters.
 
-- `pages/posts/[slug].wire` -> `/posts/my-first-post` (accessible via `self.params['slug']`)
-- `pages/users/[id]/profile.wire` -> `/users/42/profile`
+- `pages/posts/[slug].wire` -> `/posts/my-first-post` (accessible via `slug` variable on the page)
+- `pages/users/[uid]/profile.wire` -> `/users/42/profile` (accessible via `uid` variable on the page)
 
 ## Explicit Routing
 
-You can also define routes manually using the `@app.page` decorator.
+You can also define routes explicitly. First, set `path_based_routing` (default True) to False in your PyWire app init.
 
 ```python
 from pywire import PyWire
 
 app = PyWire(path_based_routing=False)
+```
 
-@app.page("/")
-def home():
-    return "index.wire"
+Then, add `!path` declarations to your pages.
 
-@app.page("/users/{id}")
-def user_profile(id: int):
-    return "profile.wire"
+```pywire
+# A single route matching path
+!path "/home"
+
+<section>
+    <h1>Home</h1>
+</section>
+```
+
+You can match multiple routes, handle URL parameters, and automatically create SPA-like apps but with deep linking.
+
+```pywire
+# A single pages matching multiple paths
+!path { "/home": "home", "/user/:uid": "user" }
+
+<!-- Conditionally render based on route matched -->
+<section>
+    <h1 $if={path.home}>Home</h1>
+    <h1 $if={path.user}>User {params.uid}</h1>
+</section>
 ```
 
 ## Navigation
@@ -44,10 +60,4 @@ Standard `<a>` tags work out of the box. If `enable_pjax=True` (default), PyWire
 
 ```html
 <a href="/about">About Us</a>
-```
-
-To force a full page reload, add the `wire-ignore` attribute.
-
-```html
-<a href="/external" wire-ignore>External Link</a>
 ```

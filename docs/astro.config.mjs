@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import react from '@astrojs/react'
 import tailwind from '@astrojs/tailwind'
+import starlightLlmsTxt from 'starlight-llms-txt'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -11,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://pywire.dev',
+  site: 'https://pywire.dev/',
   base: '/docs',
   vite: {
     ssr: {
@@ -21,6 +22,7 @@ export default defineConfig({
   integrations: [
     tailwind({ applyBaseStyles: false }), // Don't override Starlight's base styles
     react(),
+    starlightLlmsTxt(),
     starlight({
       title: 'pywire',
       customCss: ['./src/styles/custom.css'],
@@ -32,6 +34,7 @@ export default defineConfig({
         { icon: 'discord', label: 'Discord', href: 'https://discord.gg/pywire' },
       ],
       expressiveCode: {
+        themes: ['catppuccin-latte', 'catppuccin-mocha'],
         shiki: {
           langs: [
             {
@@ -48,11 +51,8 @@ export default defineConfig({
             { label: 'Quickstart', slug: 'guides/quickstart' },
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Your First Component', slug: 'guides/your-first-component' },
+            { label: 'Interactive Tutorial', slug: 'tutorial/01-introduction/01-welcome' },
           ],
-        },
-        {
-          label: 'Tutorial',
-          autogenerate: { directory: 'tutorial' },
         },
         {
           label: 'Core Concepts',
@@ -77,7 +77,6 @@ export default defineConfig({
             { label: 'Routing', slug: 'guides/routing' },
             { label: 'Layouts', slug: 'guides/layouts' },
             { label: 'Forms & Validation', slug: 'guides/forms' },
-            { label: 'Tutorial Architecture', slug: 'guides/tutorial-architecture' },
           ],
         },
         {
@@ -86,7 +85,6 @@ export default defineConfig({
             { label: 'Editor Setup', slug: 'guides/editor-setup' },
             { label: 'CLI Reference', slug: 'guides/cli' },
             { label: 'Deployment', slug: 'guides/deployment' },
-            { label: 'Testing', slug: 'guides/testing' },
           ],
         },
         {
