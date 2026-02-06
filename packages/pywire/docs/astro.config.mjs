@@ -51,7 +51,7 @@ export default defineConfig({
             { label: 'Quickstart', slug: 'guides/quickstart' },
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Your First Component', slug: 'guides/your-first-component' },
-            { label: 'Interactive Tutorial', slug: 'tutorial/01-introduction/01-welcome' },
+            { label: 'Interactive Tutorial', link: 'tutorial/' },
           ],
         },
         {
