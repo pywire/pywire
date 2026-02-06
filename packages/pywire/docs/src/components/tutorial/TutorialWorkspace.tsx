@@ -109,9 +109,18 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
 
         // Normalize BASE_URL (remove trailing slash)
         const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+        const targetPath = `${baseUrl}/tutorial/${slug}`;
 
-        // Trigger Astro View Transition
-        navigate(`${baseUrl}/tutorial/${slug}`);
+        console.log('[TutorialWorkspace] Navigation requested:', {
+            slug,
+            baseUrl,
+            targetPath,
+            origin: window.location.origin
+        });
+
+        // Use absolute URL to prevent any ambiguity with base paths
+        const fullUrl = `${window.location.origin}${targetPath}`;
+        navigate(fullUrl);
     };
 
     const handleNavigate = useCallback((path: string) => {
