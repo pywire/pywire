@@ -164,6 +164,8 @@ class TestPageRendering(unittest.TestCase):
                 return "<html><head></head><body></body></html>"
 
         request = MagicMock()
+        request.app.state.enable_pjax = False
+        request.app.state.debug = False
         page = StylePage(request, {}, {})
         page._style_collector.add("s1", ".test { color: red; }")
 

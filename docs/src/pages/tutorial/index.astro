@@ -1,3 +1,2 @@
----
-return Astro.redirect('/docs/tutorial/01-hello-world');
----
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+return Astro.redirect(`${base}/tutorial/01-hello-world`);

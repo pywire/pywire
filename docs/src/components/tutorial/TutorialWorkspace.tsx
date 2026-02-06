@@ -106,8 +106,12 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     // Navigation function
     const navigateTo = (slug: string) => {
         if (slug === currentSlug) return;
+
+        // Normalize BASE_URL (remove trailing slash)
+        const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+
         // Trigger Astro View Transition
-        navigate(`/docs/tutorial/${slug}`);
+        navigate(`${baseUrl}/tutorial/${slug}`);
     };
 
     const handleNavigate = useCallback((path: string) => {
@@ -191,7 +195,8 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         console.log('[TutorialWorkspace] Engine Init Effect');
         // Register Service Worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/docs/sw.js')
+            const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+            navigator.serviceWorker.register(`${baseUrl}/sw.js`)
                 .then(reg => console.log('[Tutorial] Service Worker registered:', reg.scope))
                 .catch(err => console.warn('[Tutorial] Service Worker registration failed:', err));
         }

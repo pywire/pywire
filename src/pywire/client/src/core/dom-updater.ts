@@ -169,7 +169,7 @@ export class DOMUpdater {
     }
 
     if (!el) return // Restore focus
-      ; (el as HTMLElement).focus()
+    ;(el as HTMLElement).focus()
 
     // Restore selection/caret position
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
@@ -288,7 +288,7 @@ export class DOMUpdater {
    */
   update(newHtml: string): void {
     // Stricter check: only treat as full document if it STARTS with <html or <!DOCTYPE
-    // This prevents accidental full doc updates if a fragment contains a nested <html> 
+    // This prevents accidental full doc updates if a fragment contains a nested <html>
     // (though that shouldn't happen with valid HTML, it can with partial renders)
     const hasHtmlRoot = /^\s*(<!DOCTYPE|<html)/i.test(newHtml)
 

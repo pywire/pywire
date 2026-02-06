@@ -212,8 +212,11 @@ class BasePage:
         # and return only the inner content. This prevents nested HTML on the client.
         if not init:
             import re
+
             # Try to match body content
-            body_match = re.search(r"<body[^>]*>(.*?)</body>", html, re.IGNORECASE | re.DOTALL)
+            body_match = re.search(
+                r"<body[^>]*>(.*?)</body>", html, re.IGNORECASE | re.DOTALL
+            )
             if body_match:
                 html = body_match.group(1)
             else:
@@ -234,45 +237,46 @@ class BasePage:
         # Components and WebSocket updates (init=False) should NOT include these scripts,
         # otherwise they trigger redundant re-initialization and loops.
         if init:
-             no_spa = getattr(self, "__no_spa__", False)
-             is_component = getattr(self, "__is_component__", False)
-             
-             # Check if SPA features are enabled via attribute or app state
-             spa_enabled = getattr(self, "__spa_enabled__", False)
-             pjax_enabled = False
-             debug_mode = False
-             try:
-                 pjax_enabled = self.request.app.state.enable_pjax
-                 debug_mode = self.request.app.state.debug
-             except (AttributeError, KeyError):
-                 pass
+            no_spa = getattr(self, "__no_spa__", False)
+            is_component = getattr(self, "__is_component__", False)
 
-             if not no_spa and not is_component and (spa_enabled or pjax_enabled):
-                 meta = {
-                     "sibling_paths": getattr(self, "__sibling_paths__", []),
-                     "enable_pjax": pjax_enabled,
-                     "debug": debug_mode
-                 }
-                 import json
-                 meta_json = json.dumps(meta)
-                 meta_script = f'<script id="_pywire_spa_meta" type="application/json">{meta_json}</script>'
-                 
-                 # Determine client script URL
-                 script_url = "/_pywire/static/pywire.core.min.js"
-                 try:
-                     pywire_app = self.request.app.state.pywire
-                     script_url = pywire_app._get_client_script_url()
-                 except (AttributeError, KeyError):
-                     # Fallback to dev if we can't detect, or keep core default
-                     pass
-                     
-                 client_script = f'<script src="{script_url}"></script>'
-                 injection = f"{meta_script}{client_script}"
-                 
-                 if "</body>" in html:
-                     html = html.replace("</body>", f"{injection}</body>", 1)
-                 else:
-                     html += injection
+            # Check if SPA features are enabled via attribute or app state
+            spa_enabled = getattr(self, "__spa_enabled__", False)
+            pjax_enabled = False
+            debug_mode = False
+            try:
+                pjax_enabled = self.request.app.state.enable_pjax
+                debug_mode = self.request.app.state.debug
+            except (AttributeError, KeyError):
+                pass
+
+            if not no_spa and not is_component and (spa_enabled or pjax_enabled):
+                meta = {
+                    "sibling_paths": getattr(self, "__sibling_paths__", []),
+                    "enable_pjax": pjax_enabled,
+                    "debug": debug_mode,
+                }
+                import json
+
+                meta_json = json.dumps(meta)
+                meta_script = f'<script id="_pywire_spa_meta" type="application/json">{meta_json}</script>'
+
+                # Determine client script URL
+                script_url = "/_pywire/static/pywire.core.min.js"
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    script_url = pywire_app._get_client_script_url()
+                except (AttributeError, KeyError):
+                    # Fallback to dev if we can't detect, or keep core default
+                    pass
+
+                client_script = f'<script src="{script_url}"></script>'
+                injection = f"{meta_script}{client_script}"
+
+                if "</body>" in html:
+                    html = html.replace("</body>", f"{injection}</body>", 1)
+                else:
+                    html += injection
 
         # Run post-render hooks (always run on render)
         for hook_name in self.RENDER_HOOKS:
@@ -403,9 +407,11 @@ class BasePage:
         # DEBUG: Trace region state
         has_regions = hasattr(self, "__region_renderers__")
         region_map = getattr(self, "__region_renderers__", {})
-        dirty = getattr(self, "_dirty_regions", set())
-        print(f"DEBUG render_update: has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}")
-        
+        dirty: Set[str] = getattr(self, "_dirty_regions", set())
+        print(
+            f"DEBUG render_update: has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}"
+        )
+
         if hasattr(self, "__region_renderers__") and self._dirty_regions:
             updates = []
             region_map = getattr(self, "__region_renderers__", {}) or {}
@@ -423,7 +429,9 @@ class BasePage:
                 updates.append({"region": region_id, "html": region_html})
             self._dirty_regions.clear()
             if updates:
-                print(f"DEBUG render_update: returning regions update with {len(updates)} regions")
+                print(
+                    f"DEBUG render_update: returning regions update with {len(updates)} regions"
+                )
                 return {"type": "regions", "regions": updates}
 
         response = await self.render(init=init)
