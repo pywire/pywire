@@ -81,6 +81,8 @@ jobs:
            # Assuming these have package.json files
            cd docs && pnpm install --frozen-lockfile
            cd ../src/pywire/client && pnpm install --frozen-lockfile
+           cd ../../..
+           uv sync --all-extras
 
       - name: Run build script
         run: ./scripts/build
