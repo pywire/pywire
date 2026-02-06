@@ -34,6 +34,9 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
             console.log('[TutorialWorkspace] PERSISTED - Props updated to:', initialSlug);
         }
         isFirstRender.current = false;
+        if (initialSlug) {
+            localStorage.setItem('tutorial-current-slug', initialSlug);
+        }
     }, [initialSlug]);
 
     // SPA Routing State -> Now Driven by Props + Persistence
