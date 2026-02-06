@@ -11,19 +11,16 @@ When you use the `@submit` event on a `<form>`, PyWire automatically scans the f
 
 You don't need to define a Pydantic model manually (though you can). The HTML *is* the schema.
 
-```html
+```pywire
+
 errors = wire({})
 
 def handle_submit(data):
     # data is a dictionary of the form inputs
     print("Form valid:", data)
 
-def handle_error(validation_errors):
-    # validation_errors maps field names to error messages
-    $errors = validation_errors
-
 ---html---
-<form @submit={handle_submit} @submit.error={handle_error}>
+<form @submit={handle_submit}>
     <div>
         <label>Username</label>
         <input name="username" required minlength="3">
@@ -40,7 +37,7 @@ def handle_error(validation_errors):
         </span>
     </div>
 
-    <button>Register</button>
+    <button type="submit">Register</button>
 </form>
 ```
 
@@ -52,7 +49,7 @@ def handle_error(validation_errors):
 4. **Validation**: Before calling `handle_submit`, PyWire validates the incoming data against the extracted rules.
 5. **Routing**:
     * **Valid**: Calls `handle_submit(data)`.
-    * **Invalid**: Calls `handle_error(errors)` (if defined).
+    * **Invalid**: Intercepted before calling `handle_submit` and populates `errors` dict.
 
 ## Reactive Validation Attributes
 
@@ -60,18 +57,5 @@ You can bind validation attributes dynamically.
 
 ```html
 <!-- Field is required only if 'is_company' checkbox is checked -->
-<input name="company_name" :required={is_company.value}>
-```
-
-## Custom Server-Side Validation
-
-For complex logic (e.g., "is this username taken?"), perform checks inside your handler.
-
-```python
-def register(data):
-    if db.user_exists(data['username']):
-        $errors = {"username": "This username is already taken."}
-        return
-    
-    # Proceed...
+<input name="company_name" required={is_company.value}>
 ```

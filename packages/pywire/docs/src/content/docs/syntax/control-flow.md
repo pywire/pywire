@@ -9,15 +9,13 @@ PyWire provides special attributes for controlling the structure of your HTML.
 
 Use `$if` to conditionally include an element in the DOM.
 
-```html
+```pywire
+
 user = wire(None)
 
 ---html---
 <div $if={user.value}>
     Welcome back, {user.name}!
-</div>
-<div $else>
-    Please <a href="/login">log in</a>.
 </div>
 ```
 
@@ -25,7 +23,8 @@ user = wire(None)
 
 Use `$for` to render a list of items.
 
-```html
+```pywire
+
 items = wire(["Apple", "Banana", "Cherry"])
 
 ---html---
@@ -33,19 +32,18 @@ items = wire(["Apple", "Banana", "Cherry"])
     <li $for={item in items.value}>
         {item}
     </li>
-    <li $empty>
+    <li $if={len(items) == 0}>
         No items found.
     </li>
 </ul>
 ```
 
-The `$empty` block is optionally rendered if the list is empty.
-
 ## Visibility (`$show`)
 
 Unlike `$if`, which adds or removes elements from the DOM, `$show` toggles the `display: none` CSS property. Use this for elements that need to toggle frequently without full DOM reconstruction.
 
-```html
+```pywire
+
 is_visible = wire(False)
 
 ---html---

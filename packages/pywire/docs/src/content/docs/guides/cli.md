@@ -14,7 +14,7 @@ The `pywire` CLI is your primary tool for developing, building, and serving appl
 
 Starts the development server.
 
-```bash
+```sh
 pywire dev [APP] [OPTIONS]
 ```
 
@@ -44,7 +44,7 @@ Running `dev` opens a rich dashboard:
 
 Starts the production server (Uvicorn wrapper). Optimizes for performance and concurrency.
 
-```bash
+```sh
 pywire run [APP] [OPTIONS]
 ```
 
@@ -59,7 +59,7 @@ pywire run [APP] [OPTIONS]
 
 Compiles `.wire` files into optimized Python bytecode and generates build artifacts.
 
-```bash
+```sh
 pywire build [APP] [OPTIONS]
 ```
 

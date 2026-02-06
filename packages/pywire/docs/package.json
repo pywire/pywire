@@ -38,6 +38,7 @@
     "remark-gfm": "^4.0.1",
     "sharp": "^0.34.2",
     "shiki": "^3.22.0",
+    "starlight-llms-txt": "^0.7.0",
     "typescript": "^5.9.3",
     "vscode-oniguruma": "^2.0.1",
     "xterm": "^5.3.0",

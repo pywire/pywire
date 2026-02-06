@@ -22,7 +22,7 @@ You can customize the application behavior by passing arguments to the construct
 
 ```python
 app = PyWire(
-    # Directory containing your .wire pages (default: "pages")
+    # Directory (relative to project root) containing your .wire pages (default: "pages")
     pages_dir="src/pages",
     
     # Enable file-system based routing (default: True)
@@ -34,7 +34,7 @@ app = PyWire(
     # Enable debug mode (exposes source maps, etc.) (default: False)
     debug=True,
     
-    # Path for static assets (default: "/static")
+    # Directory (relative to project root) containing your static assets (default: "/static")
     static_path="/assets"
 )
 ```
@@ -43,21 +43,24 @@ app = PyWire(
 
 ### Development
 
-When you run `pywire dev`, the CLI automatically looks for a module exposing an `app` or `api` variable that is an instance of `PyWire`.
+When you run `pywire dev`, the CLI automatically looks for a module exposing an `app` variable that is an instance of `PyWire`.
 
-```bash
+```sh
 # Auto-discovery
 pywire dev
 
 # Explicit pointer
 pywire dev src.main:app
+
+# No TUI
+pywire dev --no-tui
 ```
 
 ### Production
 
 For production, you use `pywire run`, which wraps Uvicorn.
 
-```bash
+```sh
 pywire run src.main:app --workers 4
 ```
 
