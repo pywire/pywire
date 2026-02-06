@@ -107,13 +107,23 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     const navigateTo = (slug: string) => {
         if (slug === currentSlug) return;
 
-        // Normalize BASE_URL (remove trailing slash)
-        const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+        // Dynamic base detection to be robust against env var mismatches
+        // We assume we are currently ON a tutorial page, e.g. /docs/tutorial/...
+        // We capture everything before /tutorial/ as the base
+        let baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+        if (typeof window !== 'undefined') {
+            const match = window.location.pathname.match(/^(.*)\/tutorial\//);
+            if (match) {
+                baseUrl = match[1];
+            }
+        }
+
         const targetPath = `${baseUrl}/tutorial/${slug}`;
 
-        console.log('[TutorialWorkspace] Navigation requested:', {
+        console.log('[TutorialWorkspace] Navigation requested (Dynamic Base):', {
             slug,
-            baseUrl,
+            detectedBaseUrl: baseUrl,
             targetPath,
             origin: window.location.origin
         });
@@ -204,7 +214,15 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         console.log('[TutorialWorkspace] Engine Init Effect');
         // Register Service Worker
         if ('serviceWorker' in navigator) {
-            const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+            // Dynamic base detection (same as navigateTo)
+            let baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
+            if (typeof window !== 'undefined') {
+                const match = window.location.pathname.match(/^(.*)\/tutorial\//);
+                if (match) {
+                    baseUrl = match[1];
+                }
+            }
+
             navigator.serviceWorker.register(`${baseUrl}/sw.js`)
                 .then(reg => console.log('[Tutorial] Service Worker registered:', reg.scope))
                 .catch(err => console.warn('[Tutorial] Service Worker registration failed:', err));
