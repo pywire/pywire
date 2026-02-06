@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight, Check, BookOpen, X } from 'lucide-react';
 interface TutorialHierarchyProps {
     allSteps: TutorialStep[];
     currentSlug: string;
-    onSelect: (slug: string) => void;
+    getStepUrl: (slug: string) => string;
     isOpen: boolean;
     onClose: () => void;
 }
@@ -20,7 +20,7 @@ type Hierarchy = Record<string, { // Tutorial Name
 export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
     allSteps,
     currentSlug,
-    onSelect,
+    getStepUrl,
     isOpen,
     onClose
 }) => {
@@ -184,12 +184,12 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
                                                     {secData.steps.map(step => {
                                                         const isActive = step.slug === currentSlug;
                                                         return (
-                                                            <button
+                                                            <a
                                                                 key={step.slug}
+                                                                href={getStepUrl(step.slug)}
                                                                 onClick={() => {
                                                                     if (!isActive) {
-                                                                        onSelect(step.slug);
-                                                                        onClose();
+                                                                        onClose(); // Just close, let browser navigate
                                                                     }
                                                                 }}
                                                                 style={{
@@ -205,13 +205,14 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
                                                                     background: isActive ? 'rgba(34,211,238,0.1)' : 'transparent',
                                                                     color: isActive ? 'var(--pw-accent, #22d3ee)' : 'var(--pw-text-dim, #9ca3af)',
                                                                     fontWeight: isActive ? 500 : 400,
+                                                                    textDecoration: 'none'
                                                                 }}
                                                             >
                                                                 <div style={{ width: '16px', flexShrink: 0 }}>
                                                                     {isActive && <Check size={12} />}
                                                                 </div>
                                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{step.title}</span>
-                                                            </button>
+                                                            </a>
                                                         );
                                                     })}
                                                 </div>

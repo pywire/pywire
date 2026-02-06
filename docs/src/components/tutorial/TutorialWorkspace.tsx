@@ -103,13 +103,9 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
 
     // Handle History (Browser Back/Forward)
     // ... (lines 50-70 unchanged)
-    // Navigation function
-    const navigateTo = (slug: string) => {
-        if (slug === currentSlug) return;
-
+    // URL Generation Helper
+    const getStepUrl = useCallback((slug: string) => {
         // Dynamic base detection to be robust against env var mismatches
-        // We assume we are currently ON a tutorial page, e.g. /docs/tutorial/...
-        // We capture everything before /tutorial/ as the base
         let baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
 
         if (typeof window !== 'undefined') {
@@ -119,20 +115,8 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
             }
         }
 
-        const targetPath = `${baseUrl}/tutorial/${slug}`;
-
-        console.log('[TutorialWorkspace] Navigation requested (Dynamic Base):', {
-            slug,
-            detectedBaseUrl: baseUrl,
-            targetPath,
-            origin: window.location.origin
-        });
-
-        // Use absolute URL to prevent any ambiguity with base paths
-        const fullUrl = `${window.location.origin}${targetPath}`;
-        navigate(fullUrl);
-    };
-
+        return `${baseUrl}/tutorial/${slug}`;
+    }, []);
     const handleNavigate = useCallback((path: string) => {
         setCurrentUrl(path);
         engineRef.current?.httpRequest('GET', path);
@@ -398,27 +382,36 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     </button>
                     <div className="flex items-center gap-1 ml-2">
                         {prevStep ? (
-                            <button
-                                onClick={() => navigateTo(prevStep.slug)}
+                            <a
+                                href={getStepUrl(prevStep.slug)}
                                 className="pw-btn-icon-sm"
                                 title={`Previous: ${prevStep.title}`}
                             >
                                 <ArrowLeft size={18} />
-                            </button>
+                            </a>
                         ) : (
                             <div className="pw-btn-icon-sm disabled">
                                 <ArrowLeft size={18} />
                             </div>
                         )}
-                        <button
-                            className={`pw-btn-icon-sm ${isCompleted ? 'success-glow' : ''}`}
-                            onClick={() => nextStep && navigateTo(nextStep.slug)}
-                            disabled={!nextStep}
-                            style={{ opacity: nextStep ? 1 : 0.3 }}
-                            title={nextStep ? `Next: ${nextStep.title}` : "Next"}
-                        >
-                            <ArrowRight size={18} />
-                        </button>
+                        {nextStep ? (
+                            <a
+                                href={getStepUrl(nextStep.slug)}
+                                className={`pw-btn-icon-sm ${isCompleted ? 'success-glow' : ''}`}
+                                title={`Next: ${nextStep.title}`}
+                            >
+                                <ArrowRight size={18} />
+                            </a>
+                        ) : (
+                            <button
+                                className="pw-btn-icon-sm"
+                                disabled
+                                style={{ opacity: 0.3 }}
+                                title="Next"
+                            >
+                                <ArrowRight size={18} />
+                            </button>
+                        )}
                     </div>
 
                     <div className="pw-breadcrumb ml-4">
@@ -561,13 +554,11 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
             )}
 
             {/* TutorialHierarchy rendered here - outside all overflow:hidden containers */}
+            {/* TutorialHierarchy rendered here - outside all overflow:hidden containers */}
             <TutorialHierarchy
                 allSteps={allSteps}
                 currentSlug={currentSlug}
-                onSelect={(slug) => {
-                    setHierarchyOpen(false);
-                    navigateTo(slug);
-                }}
+                getStepUrl={getStepUrl}
                 isOpen={hierarchyOpen}
                 onClose={() => setHierarchyOpen(false)}
             />
