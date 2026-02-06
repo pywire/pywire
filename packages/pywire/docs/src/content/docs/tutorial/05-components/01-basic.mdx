@@ -1,0 +1,50 @@
+---
+title: Basic components
+tutorial: Basic PyWire
+section: Components
+description: Break your UI into reusable pieces with components.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---html---
+      <div>
+        <h1>My App</h1>
+        <MyButton />
+      </div>
+  - path: components/MyButton.wire
+    initial: |
+      ---html---
+      <button>
+        I am a component
+      </button>
+    solution: |
+      ---html---
+      <button class="hover-effect">
+        I am a component!
+      </button>
+      
+      <style scoped>
+        .hover-effect:hover {
+            opacity: 0.8;
+        }
+      </style>
+successCriteria:
+  - type: browser_element
+    description: "The component button should be rendered"
+    target: "button"
+  - type: file_contains
+    description: "Add a hover effect (opacity opacity) via scoped style"
+    target: components/MyButton.wire
+    pattern: "opacity: 0.8"
+pagesDir: pages
+---
+
+Components in PyWire are just `.wire` files. Any `.wire` file in your `components/` directory (or other configured paths) can be used as a custom HTML tag.
+
+### Your Task
+
+1.  Switch to `components/MyButton.wire` in the file tree.
+2.  Add a `<style scoped>` block to add a hover effect (e.g. `opacity: 0.8`) to the button.
+3.  Observe that the button in the preview updates immediately.
+
+In PyWire, directory structure often dictates availability. Files in `components/` are automatically available to your pages.

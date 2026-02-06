@@ -1,0 +1,59 @@
+---
+title: "Loops ($for)"
+tutorial: Basic PyWire
+section: Framework attributes
+description: Use the $for attribute to render lists of elements.
+files:
+  - path: pages/index.wire
+    initial: |
+      items = wire(["Apple", "Banana", "Cherry"])
+
+      ---html---
+      <div>
+        <h1>Loops</h1>
+        
+        <ul>
+            <li>Item goes here</li>
+        </ul>
+
+        <button @click={$items.append("Date")}>
+            Add Date
+        </button>
+      </div>
+    solution: |
+      items = wire(["Apple", "Banana", "Cherry"])
+
+      ---html---
+      <div>
+        <h1>Loops</h1>
+        
+        <ul>
+            <li $for={item in items}>
+                {item}
+            </li>
+        </ul>
+
+        <button @click={$items.append("Date")}>
+            Add Date
+        </button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Use $for={item in items} on the li tag"
+    target: pages/index.wire
+    pattern: "$for={item in items}"
+  - type: browser_route_text
+    description: "Verify Date is added to the list"
+    pattern: "Date"
+pagesDir: pages
+---
+
+The `$for` attribute allows you to repeat an element for each item in a list. It uses Python's standard `for ... in ...` syntax.
+
+### Your Task
+
+1.  Add `$for={item in items}` to the `<li>` tag.
+2.  Use `{item}` inside the `<li>` to display the fruit name.
+3.  Click the "Add Date" button and watch the list grow!
+
+For better performance when list items move or change, you can also use `$key` to give each item a unique identity.

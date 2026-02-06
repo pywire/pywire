@@ -169,7 +169,7 @@ export class DOMUpdater {
     }
 
     if (!el) return // Restore focus
-    ;(el as HTMLElement).focus()
+      ; (el as HTMLElement).focus()
 
     // Restore selection/caret position
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
@@ -287,9 +287,16 @@ export class DOMUpdater {
    * Update the DOM with new HTML content.
    */
   update(newHtml: string): void {
-    const hasHtmlRoot = /<html[\s>]/i.test(newHtml)
-    const hasBodyRoot = /<body[\s>]/i.test(newHtml)
+    // Stricter check: only treat as full document if it STARTS with <html or <!DOCTYPE
+    // This prevents accidental full doc updates if a fragment contains a nested <html> 
+    // (though that shouldn't happen with valid HTML, it can with partial renders)
+    const hasHtmlRoot = /^\s*(<!DOCTYPE|<html)/i.test(newHtml)
+
+    // Fallback: Check if body exists. If so, and we don't have a definitive root tag at the start,
+    // we assume it's a fragment/body update.
     if (!hasHtmlRoot && document.body) {
+      // Check if it has a body tag?
+      const hasBodyRoot = /<body[\s>]/i.test(newHtml)
       if (hasBodyRoot) {
         this.applyUpdate(document.body, newHtml)
         return

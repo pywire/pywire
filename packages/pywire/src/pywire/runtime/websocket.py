@@ -296,6 +296,11 @@ class WebSocketHandler:
 
                 self.connection_pages[websocket] = page
 
+                # Force initial render to establish wire tracking
+                # This ensures _track_read is called and regions are registered
+                # so that subsequent writes in handlers trigger updates
+                await page._render_template()
+
                 if hasattr(page, "on_load"):
                     if inspect.iscoroutinefunction(page.on_load):
                         await page.on_load()

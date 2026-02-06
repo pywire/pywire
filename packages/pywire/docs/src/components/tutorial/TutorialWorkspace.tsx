@@ -183,6 +183,9 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         }
     }, [deleteFile, activeFile, files]);
 
+
+
+
     // Initialize engine once (singleton persists across navigation)
     useEffect(() => {
         console.log('[TutorialWorkspace] Engine Init Effect');
@@ -210,17 +213,8 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                     (window as any).__PYWIRE_INIT_PREVIEW__?.(html);
                 }
                 else if (data.type === 'ws_message') {
-                    // Check if shim.py decoded the payload for us
-                    const payload = data.decoded_payload;
-                    if (payload && payload.type === 'update' && payload.html) {
-                        console.log('[TutorialWorkspace] Intercepted WS update, using __PYWIRE_PATCH_PREVIEW__');
-                        setLastRenderedHtml(payload.html);
-                        // WebSocket update means a stateful interaction (e.g. click)
-                        // We must use PATCH to preserve the existing WebSocket connection
-                        (window as any).__PYWIRE_PATCH_PREVIEW__?.(payload.html);
-                        return;
-                    }
-                    // For all other messages (including accept, close, etc.), forward to preview
+                    // Forward all WebSocket messages to the preview
+                    // This allows the PyWire client inside the iframe to handle its own updates
                     (window as any).__PYWIRE_SEND_TO_PREVIEW__?.(data);
                 }
             },
@@ -259,39 +253,57 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         setCurrentUrl(currentStep.initialRoute || '/');
     }, [currentStep.slug, currentStep.initialRoute]);
 
-    // 1. Initialize engine state when step changes
+    // Unified Engine Sync Effect
+    // Handles step changes, code updates, and URL navigation efficiently
+    const lastSyncedSlug = useRef<string | null>(null);
+    const lastSyncedUrl = useRef<string | null>(null);
+    const lastSyncedFiles = useRef<string | null>(null);
+
     useEffect(() => {
-        if (isReady && engineRef.current) {
+        if (!isReady || !engineRef.current) return;
+
+        const slugChanged = currentStep.slug !== lastSyncedSlug.current;
+        const urlChanged = currentUrl !== lastSyncedUrl.current;
+        const filesJson = JSON.stringify(debouncedFiles);
+        const filesChanged = filesJson !== lastSyncedFiles.current;
+
+        if (slugChanged) {
             console.log('[TutorialWorkspace] Step Change Reset (RESTART)');
             engineRef.current.restart(currentStep.pagesDir);
             setActiveFile(currentStep.files[0]?.path || 'index.wire');
+            lastSyncedSlug.current = currentStep.slug;
 
-            // Push files immediately on step change instead of waiting for debounce
+            // Push files immediately on step change
             Object.entries(files).forEach(([path, content]) => {
                 engineRef.current?.updateFile(path, content);
             });
-            engineRef.current.httpRequest('GET', currentUrl);
-        }
-    }, [currentStep.slug, isReady]);
+            lastSyncedFiles.current = JSON.stringify(files);
 
-    // 2. Sync changes to engine (debounced)
-    useEffect(() => {
-        if (isReady && engineRef.current) {
-            // Push all files to engine to ensure full consistency
+            // Mark URL as synced as well to prevent double-fire
+            lastSyncedUrl.current = currentUrl;
+            engineRef.current.httpRequest('GET', currentUrl);
+            return;
+        }
+
+        if (filesChanged) {
+            console.log('[TutorialWorkspace] Syncing Files (Debounced)');
             Object.entries(debouncedFiles).forEach(([path, content]) => {
                 engineRef.current?.updateFile(path, content);
             });
+            lastSyncedFiles.current = filesJson;
+
             // Reload current URL to reflect changes
             engineRef.current.httpRequest('GET', currentUrl);
+            lastSyncedUrl.current = currentUrl;
+            return;
         }
-    }, [isReady, debouncedFiles]);
 
-    // 3. Independent URL navigation
-    useEffect(() => {
-        if (isReady && engineRef.current) {
+        if (urlChanged) {
+            console.log('[TutorialWorkspace] URL Navigation');
             engineRef.current.httpRequest('GET', currentUrl);
+            lastSyncedUrl.current = currentUrl;
         }
-    }, [isReady, currentUrl]);
+    }, [isReady, currentStep.slug, currentUrl, debouncedFiles]);
 
     // Validation Effect
     useEffect(() => {
@@ -404,7 +416,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                         <div className="h-full overflow-y-auto pw-instructions-container">
                             {/* We now use native Starlight markdown passed as children */}
                             <div className="pw-markdown-content sl-markdown-content p-8 max-w-3xl mx-auto pb-20">
-                                {children}
+                                <MarkdownRenderer content={currentStep.content || ''} />
                             </div>
                             <TasksChecklist
                                 criteria={currentStep.successCriteria}

@@ -1,0 +1,42 @@
+---
+title: Your first page
+tutorial: Basic PyWire
+section: Introduction
+description: Build your first reactive page by modifying HTML and adding styles.
+files:
+  - path: pages/index.wire
+    initial: |
+      <div>
+        <h1>PyWire</h1>
+        <p>
+          Edit index.wire to see changes live.
+        </p>
+      </div>
+    solution: |
+      <div>
+        <h1>Hello PyWire!</h1>
+        <p>
+          You've just built your first component.
+        </p>
+        <strong>Success!</strong>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Change the heading text to 'Hello PyWire!'"
+    target: pages/index.wire
+    pattern: "Hello PyWire!"
+  - type: file_contains
+    description: "Add a <strong> tag with text 'Success!'"
+    target: pages/index.wire
+    pattern: "<strong>Success!</strong>"
+pagesDir: pages
+---
+
+Let's start by modifying the HTML of your first PyWire page.
+
+### Your Task
+
+1.  Inside `index.wire`, change the text inside the `<h1>` tag from "PyWire" to **"Hello PyWire!"**.
+2.  Add a `<strong>` tag with the text "Success!" below the paragraph.
+
+Notice how the preview updates instantly as you make changes. The checklist on the left will track your progress!

@@ -1,0 +1,54 @@
+---
+title: Event handlers
+tutorial: Basic PyWire
+section: Event handlers
+description: Listen for browser events using the @ prefix.
+files:
+  - path: pages/index.wire
+    initial: |
+      count = wire(0)
+
+      def increment():
+          $count += 1
+
+      ---html---
+      <div>
+        <h1>Events</h1>
+        <p>Count: {count}</p>
+        <button>
+          Click to Increment
+        </button>
+      </div>
+    solution: |
+      count = wire(0)
+
+      def increment():
+          $count += 1
+
+      ---html---
+      <div>
+        <h1>Events</h1>
+        <p>Count: {count}</p>
+        <button @click={increment}>
+          Click to Increment
+        </button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Add @click={increment} to the button"
+    target: pages/index.wire
+    pattern: "@click={increment}"
+  - type: browser_route_text
+    description: "Increment count to 3"
+    pattern: "Count: 3"
+pagesDir: pages
+---
+
+In PyWire, event listeners are added using the `@` prefix, followed by the event name (like `@click`, `@input`, `@submit`).
+
+### Your Task
+
+1.  Add `@click={increment}` to the `<button>` tag.
+2.  Test it by clicking the button 3 times in the preview.
+
+Events in PyWire automatically prevent default behavior if they are on a form submission, but otherwise behave like standard DOM events.

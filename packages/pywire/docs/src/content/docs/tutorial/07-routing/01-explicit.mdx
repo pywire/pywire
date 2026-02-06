@@ -1,0 +1,46 @@
+---
+title: Explicit routing
+tutorial: Basic PyWire
+section: Routing
+description: Create single-page applications (SPAs) with ease.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---html---
+      <div>
+        <h1>Home Page</h1>
+        <a href="/about">Go to About</a>
+      </div>
+  - path: pages/about.wire
+    initial: |
+      ---html---
+      <div>
+        <h1>About Page</h1>
+        <a href="/">Go Home</a>
+      </div>
+    solution: |
+      ---html---
+      <div>
+        <h1>About Page</h1>
+        <a href="/">Go Home</a>
+      </div>
+successCriteria:
+  - type: browser_route_text
+    description: "Click 'Go to About' and verify you are on the About page"
+    route: "/about"
+    pattern: "About Page"
+  - type: browser_route_text
+    description: "Click 'Go Home' and verify you are back on the Home page"
+    route: "/"
+    pattern: "Home Page"
+pagesDir: pages
+---
+
+PyWire makes building Single Page Applications (SPAs) effortless. Standard `<a>` tags automatically handle client-side navigation if the target route exists in your PyWire project.
+
+### Your Task
+
+1.  In the preview, click the **"Go to About"** link.
+2.  Once on the About page, click the **"Go Home"** link.
+
+Notice how the navigation is instant – there's no full browser refresh! This is deep-linking and SPA behavior out of the box.

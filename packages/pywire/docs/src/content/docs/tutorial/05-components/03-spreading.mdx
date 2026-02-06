@@ -1,0 +1,47 @@
+---
+title: Prop spreading
+tutorial: Basic PyWire
+section: Components
+description: Spread attributes onto elements for better flexibility.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---html---
+      <div>
+        <h1>Spreading</h1>
+        <CustomInput placeholder="Type here..." type="password" />
+      </div>
+  - path: components/CustomInput.wire
+    initial: |
+      !props **attrs
+
+      ---html---
+      <div>
+        <input />
+      </div>
+    solution: |
+      !props **attrs
+
+      ---html---
+      <div>
+        <input {**attrs} />
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Spread attributes onto the input tag using {**attrs}"
+    target: components/CustomInput.wire
+    pattern: "{**attrs}"
+  - type: browser_element
+    description: "Verify the input is a password field"
+    target: "input[type='password']"
+pagesDir: pages
+---
+
+Sometimes you want a component to accept any arbitrary HTML attributes and apply them to an internal element. This is called "prop spreading".
+
+### Your Task
+
+1.  In `components/CustomInput.wire`, add **`{**attrs}`** to the `<input>` tag.
+2.  Note how the `placeholder` and `type="password"` from `index.wire` are now correctly applied to the real input element.
+
+The `**attrs` catch-all prop collects all attributes not explicitly named, similar to Python's `**kwargs`.

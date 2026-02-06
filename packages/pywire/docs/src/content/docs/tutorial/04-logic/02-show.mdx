@@ -1,0 +1,56 @@
+---
+title: Visibility ($show)
+tutorial: Basic PyWire
+section: Framework attributes
+description: "Use the $show attribute to toggle visibility with CSS (display: none)."
+files:
+  - path: pages/index.wire
+    initial: |
+      visible = wire(True)
+
+      ---html---
+      <div>
+        <h1>Visibility</h1>
+        
+        <button @click={$visible = not visible}>
+            Toggle Visibility
+        </button>
+
+        <div>
+            I am hiding in plain sight!
+        </div>
+      </div>
+    solution: |
+      visible = wire(True)
+
+      ---html---
+      <div>
+        <h1>Visibility</h1>
+        
+        <button @click={$visible = not visible}>
+            Toggle Visibility
+        </button>
+
+        <div $show={visible}>
+            I am hiding in plain sight!
+        </div>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Add $show={visible} to the div"
+    target: pages/index.wire
+    pattern: "$show={visible}"
+  - type: browser_route_text
+    description: "Toggle visibility"
+    pattern: "hiding in plain sight"
+pagesDir: pages
+---
+
+The `$show` attribute toggles an element's visibility using the CSS `display` property. This is useful when you want to keep the element in the DOM (e.g., for transitions or maintaining focus) but hide it from view.
+
+### Your Task
+
+1.  Add `$show={visible}` to the message `<div>`.
+2.  Toggle the visibility using the button.
+
+Compare this to `$if` from the previous step – visually they look similar, but under the hood `$show` just applies `display: none`.

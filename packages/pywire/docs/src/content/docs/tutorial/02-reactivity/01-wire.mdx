@@ -1,0 +1,60 @@
+---
+title: The wire primitive
+tutorial: Basic PyWire
+section: Reactivity
+description: Create reactive state with wire() and mutate it with the $ prefix.
+files:
+  - path: pages/index.wire
+    initial: |
+      # 1. Create a reactive variable 'count' with initial value 0
+
+      def increment():
+          # 2. Use $count to increment the value
+          pass
+
+      ---html---
+      <div>
+        <h1>Reactivity</h1>
+        <p>Count: {count}</p>
+        <button @click={increment}>
+          Increment
+        </button>
+      </div>
+    solution: |
+      count = wire(0)
+
+      def increment():
+          $count += 1
+
+      ---html---
+      <div>
+        <h1>Reactivity</h1>
+        <p>Count: {count}</p>
+        <button @click={increment}>
+          Increment
+        </button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Initialize count = wire(0)"
+    target: pages/index.wire
+    pattern: "count = wire(0)"
+  - type: file_contains
+    description: "Mutate count using $count += 1"
+    target: pages/index.wire
+    pattern: "$count +="
+  - type: browser_route_text
+    description: "Increment the count to 5"
+    pattern: "Count: 5"
+pagesDir: pages
+---
+
+Reactivity in PyWire centers around the `wire()` primitive and the `$` shorthand for mutation.
+
+### Your Task
+
+1.  Initialize a reactive variable named `count` with a value of `0` using `wire(0)`.
+2.  Inside the `increment` function, use the magic **`$count`** syntax to add 1 to the count.
+3.  Click the button until the count reaches **5**.
+
+In PyWire, whenever you use `$name = value` or `$name += value`, it doesn't just change the local variable – it updates the reactive state and triggers a UI patch!
