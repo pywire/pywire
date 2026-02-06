@@ -105,18 +105,10 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     // ... (lines 50-70 unchanged)
     // URL Generation Helper
     const getStepUrl = useCallback((slug: string) => {
-        // Dynamic base detection to be robust against env var mismatches
-        let baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
-
-        if (typeof window !== 'undefined') {
-            const match = window.location.pathname.match(/^(.*)\/tutorial\//);
-            if (match) {
-                baseUrl = match[1];
-            }
-        }
-
+        const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
         return `${baseUrl}/tutorial/${slug}`;
     }, []);
+
     const handleNavigate = useCallback((path: string) => {
         setCurrentUrl(path);
         engineRef.current?.httpRequest('GET', path);
@@ -198,15 +190,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
         console.log('[TutorialWorkspace] Engine Init Effect');
         // Register Service Worker
         if ('serviceWorker' in navigator) {
-            // Dynamic base detection (same as navigateTo)
-            let baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
-            if (typeof window !== 'undefined') {
-                const match = window.location.pathname.match(/^(.*)\/tutorial\//);
-                if (match) {
-                    baseUrl = match[1];
-                }
-            }
-
+            const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
             navigator.serviceWorker.register(`${baseUrl}/sw.js`)
                 .then(reg => console.log('[Tutorial] Service Worker registered:', reg.scope))
                 .catch(err => console.warn('[Tutorial] Service Worker registration failed:', err));
