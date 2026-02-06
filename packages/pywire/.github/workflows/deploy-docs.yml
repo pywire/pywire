@@ -6,6 +6,17 @@ on:
       - main
     tags:
       - "v*"
+      - "docs-*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'nightly'
+        type: choice
+        options:
+          - nightly
+          - production
 
 jobs:
   deploy-docs:
@@ -49,4 +60,5 @@ jobs:
           projectName: pywire-docs
           directory: docs/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref_name == 'main' && 'nightly' || 'main' }}
+          branch: ${{ (github.event.inputs.environment == 'production' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/docs-')) && 'main' || 'nightly' }}
+
