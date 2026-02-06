@@ -22,10 +22,10 @@ export default defineConfig({
   integrations: [
     tailwind({ applyBaseStyles: false }), // Don't override Starlight's base styles
     react(),
-    starlightLlmsTxt(),
     starlight({
       title: 'pywire',
       customCss: ['./src/styles/custom.css'],
+      plugins: [starlightLlmsTxt()],
       components: {
         Head: resolve(__dirname, './src/components/Head.astro'),
       },
