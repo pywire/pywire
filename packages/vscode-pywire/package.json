@@ -2,7 +2,7 @@
   "name": "pywire",
   "displayName": "PyWire",
   "description": "Language support for PyWire files",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "publisher": "pywire",
   "icon": "images/icon.jpg",
@@ -75,8 +75,40 @@
       {
         "command": "pywire.restartLanguageServer",
         "title": "PyWire: Restart Language Server"
+      },
+      {
+        "command": "pywire.openDocs",
+        "title": "PyWire: Open Docs"
+      },
+      {
+        "command": "pywire.openDocsNightly",
+        "title": "PyWire: Open Docs (Nightly)"
+      },
+      {
+        "command": "pywire.runDev",
+        "title": "PyWire: Run Dev Server",
+        "icon": "$(play)"
+      },
+      {
+        "command": "pywire.stopDev",
+        "title": "PyWire: Stop Dev Server",
+        "icon": "$(debug-stop)"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "pywire.runDev",
+          "when": "editorLangId == pywire && !pywire.devServerRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "pywire.stopDev",
+          "when": "editorLangId == pywire && pywire.devServerRunning",
+          "group": "navigation"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "pywire.toggleComment",
