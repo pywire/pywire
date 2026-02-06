@@ -1,0 +1,52 @@
+---
+title: Interpolation
+tutorial: Basic PyWire
+section: Introduction
+description: Use curly braces to embed Python expressions directly into your HTML.
+files:
+  - path: pages/index.wire
+    initial: |
+      count = wire(0)
+
+      ---html---
+      <div>
+        <h1>Interpolation</h1>
+        <p>
+          The count is: 0
+        </p>
+        <button @click={$count += 1}>
+          Increment
+        </button>
+      </div>
+    solution: |
+      count = wire(0)
+
+      ---html---
+      <div>
+        <h1>Interpolation</h1>
+        <p>
+          The count is: {count}
+        </p>
+        <button @click={$count += 1}>
+          Increment
+        </button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Use {count} to display the count value"
+    target: pages/index.wire
+    pattern: "{count}"
+  - type: browser_route_text
+    description: "Click the button to increment the count to 3"
+    pattern: "The count is: 3"
+pagesDir: pages
+---
+
+In PyWire, you can embed any Python expression inside your HTML by wrapping it in curly braces `{}`.
+
+### Your Task
+
+1.  Replace the static "0" in the `<p>` tag with **`{count}`**.
+2.  Once you've done that, click the **Increment** button in the preview 3 times until the text shows "The count is: 3".
+
+PyWire automatically tracks dependencies, so whenever `count` changes, the UI updates instantly!

@@ -73,8 +73,8 @@ async function main() {
         fs.mkdirSync(publicDistDir, { recursive: true });
     }
 
-    // Build directly to public/dist
-    run(`uv build --wheel --out-dir ${publicDistDir}`, REPO_ROOT);
+    // Build directly to public/dist using local venv
+    run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
 
     // Find the wheel
     const distFiles = fs.readdirSync(publicDistDir);
@@ -90,10 +90,19 @@ async function main() {
         process.exit(1);
     }
 
-    console.log(`Generated wheel: ${wheelFile}`);
+    // Rename wheel to include timestamp to bust cache
+    const timestamp = new Date().getTime();
+    const newWheelName = wheelFile.replace('.whl', `.${timestamp}.whl`);
+    const oldPath = path.join(publicDistDir, wheelFile);
+    const newPath = path.join(publicDistDir, newWheelName);
+
+    fs.renameSync(oldPath, newPath);
+    console.log(`Renamed wheel to: ${newWheelName}`);
+
+    console.log(`Generated wheel: ${newWheelName}`);
 
     // 3. Bundle Workers (now that we have the wheel filename)
-    bundleWorkers(wheelFile);
+    bundleWorkers(newWheelName);
 }
 
 main().catch(err => {

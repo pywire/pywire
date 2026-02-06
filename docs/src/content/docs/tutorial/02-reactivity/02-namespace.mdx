@@ -1,0 +1,63 @@
+---
+title: Wire as a namespace
+tutorial: Basic PyWire
+section: Reactivity
+description: Use wire() to manage complex state objects as namespaces.
+files:
+  - path: pages/index.wire
+    initial: |
+      user = wire({
+          "name": "Anonymous",
+          "clicks": 0
+      })
+
+      def track_click():
+          # Update user.clicks
+          pass
+
+      ---html---
+      <div>
+        <h1>State Namespaces</h1>
+        <p>User: {user.name}</p>
+        <p>Clicks: {user.clicks}</p>
+        <button @click={track_click}>
+          Click Me
+        </button>
+      </div>
+    solution: |
+      user = wire({
+          "name": "Dev",
+          "clicks": 0
+      })
+
+      def track_click():
+          $user.clicks += 1
+
+      ---html---
+      <div>
+        <h1>State Namespaces</h1>
+        <p>User: {user.name}</p>
+        <p>Clicks: {user.clicks}</p>
+        <button @click={track_click}>
+          Click Me
+        </button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Mutate nested property using $user.clicks += 1"
+    target: pages/index.wire
+    pattern: "$user.clicks +="
+  - type: browser_route_text
+    description: "Register at least 3 clicks"
+    pattern: "Clicks: 3"
+pagesDir: pages
+---
+
+The `wire()` function can take a dictionary or object, creating a reactive namespace. You can access and mutate nested properties using the same `$` shorthand.
+
+### Your Task
+
+1.  In the `track_click` function, increment `user.clicks` using the **`$user.clicks`** syntax.
+2.  Click the button 3 times.
+
+Using `wire()` for objects lets you group related state together while keeping everything reactive.

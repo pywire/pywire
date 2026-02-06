@@ -1,0 +1,69 @@
+---
+title: Expressions vs Functions
+tutorial: Basic PyWire
+section: Event handlers
+description: Use inline Python expressions or function names as event handlers.
+files:
+  - path: pages/index.wire
+    initial: |
+      count = wire(0)
+
+      def reset():
+          $count = 0
+
+      ---html---
+      <div>
+        <h1>Inline Expressions</h1>
+        <p>Count: {count}</p>
+        
+        <div class="row">
+            <button @click={$count += 1}>
+                +1 (Inline)
+            </button>
+            
+            <button>
+                Reset (Function)
+            </button>
+        </div>
+      </div>
+    solution: |
+      count = wire(0)
+
+      def reset():
+          $count = 0
+
+      ---html---
+      <div>
+        <h1>Inline Expressions</h1>
+        <p>Count: {count}</p>
+        
+        <div class="row">
+            <button @click={$count += 1}>
+                +1 (Inline)
+            </button>
+            
+            <button @click={reset()}>
+                Reset (Function)
+            </button>
+        </div>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Use @click={reset()} for the reset button"
+    target: pages/index.wire
+    pattern: "@click={reset()}"
+  - type: browser_route_text
+    description: "Click +1 then Reset"
+    pattern: "Count: 0"
+pagesDir: pages
+---
+
+Event handlers in PyWire can be either a reference to a function, a function call, or a raw Python expression.
+
+### Your Task
+
+1.  The first button already uses an inline expression: `@click={$count += 1}`.
+2.  Add `@click={reset()}` to the second button to call the `reset` function.
+3.  Increment the count, then verify that the Reset button works.
+
+Inline expressions are great for simple updates, while functions are better for complex logic.

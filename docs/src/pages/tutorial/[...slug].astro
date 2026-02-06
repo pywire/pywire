@@ -3,7 +3,6 @@ import { getCollection, render } from 'astro:content';
 import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace';
 import '../../styles/custom.css';
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
-import { ClientRouter } from 'astro:transitions';
 
 export async function getStaticPaths() {
   const tutorialEntries = await getCollection('docs', ({ id }) => {
@@ -192,10 +191,9 @@ const displayTitle = `Interactive Tutorial | ${String(currentIndex + 1).padStart
     <div class="not-content h-[calc(100vh-var(--sl-nav-height))] w-full overflow-hidden">
         <TutorialWorkspace
             client:only="react"
+            transition:persist="tutorial-workspace"
             initialSlug={slug}
             allSteps={allSteps}
-        >
-            <Content />
-        </TutorialWorkspace>
+        />
     </div>
 </StarlightPage>

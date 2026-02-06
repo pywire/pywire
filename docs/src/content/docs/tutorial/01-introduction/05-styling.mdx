@@ -1,0 +1,52 @@
+---
+title: Styling
+tutorial: Basic PyWire
+section: Introduction
+description: Learn how to use scoped CSS in your PyWire components.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---html---
+      <div>
+        <h1 class="title">Scoped Styling</h1>
+        <p>This paragraph should be styled.</p>
+      </div>
+
+      <style scoped>
+      </style>
+    solution: |
+      ---html---
+      <div>
+        <h1 class="title">Scoped Styling</h1>
+        <p>This paragraph should be styled.</p>
+      </div>
+
+      <style scoped>
+        .title {
+          color: #22d3ee;
+          font-size: 3rem;
+        }
+        p {
+          color: #94a3b8;
+        }
+      </style>
+successCriteria:
+  - type: file_contains
+    description: "Add color styling for the .title class"
+    target: pages/index.wire
+    pattern: "color: #22d3ee"
+  - type: file_contains
+    description: "Add color styling for the p tag"
+    target: pages/index.wire
+    pattern: "color: #94a3b8"
+pagesDir: pages
+---
+
+PyWire supports scoped styling via the `<style scoped>` tag. Styles defined here only apply to elements within this file.
+
+### Your Task
+
+1.  Inside the `<style scoped>` block, set the color of the `.title` class to `#22d3ee`.
+2.  Set the color of all `<p>` tags to `#94a3b8`.
+
+Notice how these styles don't leak out to other components (if we had any), and global styles don't easily override them!

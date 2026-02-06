@@ -1,0 +1,62 @@
+---
+title: Event modifiers
+tutorial: Basic PyWire
+section: Event handlers
+description: Use modifiers to change event behavior, like @click.once.
+files:
+  - path: pages/index.wire
+    initial: |
+      count = wire(0)
+
+      ---html---
+      <div>
+        <h1>Modifiers</h1>
+        <p>Count: {count}</p>
+        
+        <div class="stack">
+          <button @click={$count += 1}>
+              Click Many Times
+          </button>
+  
+          <button>
+              Click Only Once
+          </button>
+        </div>
+      </div>
+    solution: |
+      count = wire(0)
+
+      ---html---
+      <div>
+        <h1>Modifiers</h1>
+        <p>Count: {count}</p>
+        
+        <div class="stack">
+          <button @click={$count += 1}>
+              Click Many Times
+          </button>
+  
+          <button @click.once={$count += 1}>
+              Click Only Once
+          </button>
+        </div>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Use @click.once on the second button"
+    target: pages/index.wire
+    pattern: "@click.once"
+  - type: browser_route_text
+    description: "Click the 'Once' button and verify count is 1"
+    pattern: "Count: 1"
+pagesDir: pages
+---
+
+PyWire supports event modifiers to handle common patterns without writing extra boilerplate. Modifiers are added after the event name with a dot.
+
+### Your Task
+
+1.  Add `@click.once={$count += 1}` to the "Click Only Once" button.
+2.  Click that button multiple times and notice that the count only increments once.
+
+Other common modifiers include `.prevent` (to prevent default), `.stop` (to stop propagation), and `.enter` (for keyup events).

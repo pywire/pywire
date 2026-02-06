@@ -1,0 +1,57 @@
+---
+title: "Conditional logic ($if)"
+tutorial: Basic PyWire
+section: Framework attributes
+description: Use the $if attribute to conditionally render elements.
+files:
+  - path: pages/index.wire
+    initial: |
+      show = wire(False)
+
+      ---html---
+      <div>
+        <h1>Conditional Logic</h1>
+        
+        <button @click={$show = not show}>
+            Toggle Message
+        </button>
+
+        <div>
+            Hey! You found the hidden message.
+        </div>
+      </div>
+    solution: |
+      show = wire(False)
+
+      ---html---
+      <div>
+        <h1>Conditional Logic</h1>
+        
+        <button @click={$show = not show}>
+            Toggle Message
+        </button>
+
+        <div $if={show}>
+            Hey! You found the hidden message.
+        </div>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Add $if={show} to the message div"
+    target: pages/index.wire
+    pattern: "$if={show}"
+  - type: browser_route_text
+    description: "Click toggle to reveal the message"
+    pattern: "found the hidden message"
+pagesDir: pages
+---
+
+PyWire provides several "framework attributes" that start with `$`. The `$if` attribute controls whether an element is even present in the DOM.
+
+### Your Task
+
+1.  Add `$if={show}` to the `<div>` containing the "hidden message".
+2.  The message should disappear.
+3.  Click the button to reveal it.
+
+Unlike hiding with CSS, `$if` completely adds or removes the element from the document.

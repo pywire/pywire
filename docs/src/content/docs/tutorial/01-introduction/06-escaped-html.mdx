@@ -1,0 +1,46 @@
+---
+title: Escaping HTML
+tutorial: Basic PyWire
+section: Introduction
+description: Render raw HTML strings safely using the $html directive.
+files:
+  - path: pages/index.wire
+    initial: |
+      content = "<strong>Bold</strong> <em>Italic</em>"
+
+      ---html---
+      <div>
+        <h1>HTML Content</h1>
+        <div>
+          {content}
+        </div>
+      </div>
+    solution: |
+      content = "<strong>Bold</strong> <em>Italic</em>"
+
+      ---html---
+      <div>
+        <h1>HTML Content</h1>
+        <div>
+          {$html content}
+        </div>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Use {$html content} to render raw HTML"
+    target: pages/index.wire
+    pattern: "{$html content}"
+  - type: browser_element
+    description: "Verify that the content is rendered as HTML (strong tag exists)"
+    target: "strong"
+pagesDir: pages
+---
+
+By default, PyWire escapes all interpolated values to prevent XSS attacks. If you have trust-worthy HTML that you want to render as-is, use the `{$html ...}` directive.
+
+### Your Task
+
+1.  Change `{content}` to **`{$html content}`** inside the `<div>`.
+2.  Observe how the raw text transforms into formatted HTML (Bold and Italic).
+
+**Caution**: Never use `{$html ...}` with untrusted user input!

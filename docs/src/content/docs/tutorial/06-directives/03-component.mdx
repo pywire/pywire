@@ -1,0 +1,44 @@
+---
+title: "!component"
+tutorial: Basic PyWire
+section: Directives
+description: Explicitly name a component or register it at a custom tag name.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---html---
+      <div>
+        <MyCustomTag />
+      </div>
+  - path: lib/ui/FancyButton.wire
+    initial: |
+      ---html---
+      <button style="background: linear-gradient(to right, #06b6d4, #3b82f6); border: none;">
+        Fancy Button
+      </button>
+    solution: |
+      !component MyCustomTag
+
+      ---html---
+      <button style="background: linear-gradient(to right, #06b6d4, #3b82f6); border: none;">
+        Fancy Button
+      </button>
+successCriteria:
+  - type: file_contains
+    description: "Add !component MyCustomTag to FancyButton.wire"
+    target: lib/ui/FancyButton.wire
+    pattern: "!component MyCustomTag"
+  - type: browser_element
+    description: "Verify the fancy button is rendered"
+    target: "button"
+pagesDir: pages
+---
+
+While PyWire automatically discovers components in certain folders, you can use the `!component` directive to explicitly name a component, which is especially useful for files in deep subdirectories.
+
+### Your Task
+
+1.  In `lib/ui/FancyButton.wire`, add `!component MyCustomTag` at the top.
+2.  Switch back to `pages/index.wire` to see that `<MyCustomTag />` now correctly renders the fancy button.
+
+This gives you full control over how your components are referenced in HTML.

@@ -149,6 +149,140 @@ const INJECTED_SCRIPT = `
 
 const DEBUG_PREVIEW = true; // Temporary enable for debugging
 
+const getStylesInner = (theme: 'light' | 'dark') => `
+  :root {
+    /* Light theme variables */
+    --bg: #ffffff;
+    --fg: #1f2937;
+    --border: #e5e7eb;
+    --primary: #0ea5e9;
+    --primary-hover: #0284c7;
+    --surface: #f3f4f6;
+    --code-bg: #f3f4f6;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171717;
+      --fg: #e5e7eb;
+      --border: #404040;
+      --surface: #262626;
+      --code-bg: #262626;
+    }
+  }
+
+  /* Override with explicit theme prop */
+  ${theme === 'dark' ? `
+    :root {
+      --bg: #171717;
+      --fg: #e5e7eb;
+      --border: #404040;
+      --surface: #262626;
+      --code-bg: #262626;
+    }
+  ` : `
+    :root {
+      --bg: #ffffff;
+      --fg: #1f2937;
+      --border: #e5e7eb;
+      --surface: #f3f4f6;
+      --code-bg: #f3f4f6;
+    }
+  `}
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    margin: 0;
+    padding: 2rem;
+    line-height: 1.5;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0 0 0.5em 0;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  h1 { font-size: 2em; }
+  h2 { font-size: 1.5em; }
+  
+  p { margin: 0 0 1em 0; }
+
+  button {
+    font-family: inherit;
+    font-size: inherit;
+    padding: 0.4em 0.8em;
+    color: white;
+    background-color: var(--primary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+  }
+
+  button:hover {
+    background-color: var(--primary-hover);
+  }
+
+  button:active {
+    transform: translateY(1px);
+  }
+
+  input, textarea, select {
+    font-family: inherit;
+    font-size: inherit;
+    padding: 0.4em;
+    margin: 0 0 0.5em 0;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--surface);
+    color: var(--fg);
+  }
+
+  input:focus, textarea:focus, select:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+  }
+
+  /* Utilities that might be useful for layout */
+  .stack { display: flex; flex-direction: column; gap: 0.5em; }
+  .row { display: flex; gap: 0.5em; align-items: center; }
+
+  code {
+      font-family: menlo, inconsolata, monospace;
+      font-size: 0.9em;
+      color: var(--fg);
+      background-color: var(--code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+  }
+  
+  pre {
+      background-color: var(--code-bg);
+      padding: 1em;
+      border-radius: 4px;
+      overflow-x: auto;
+  }
+
+  a {
+      color: var(--primary);
+      text-decoration: none;
+  }
+  
+  a:hover {
+      text-decoration: underline;
+  }
+  
+  ul, ol {
+      padding-left: 2em;
+      margin: 0 0 1em 0;
+  }
+`;
+
 export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark' }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -167,8 +301,8 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
     if (iframe && iframe.contentDocument) {
       const body = iframe.contentDocument.body;
       if (body) {
-        body.style.backgroundColor = theme === 'dark' ? '#0f1117' : '#f8fafc';
-        body.style.color = theme === 'dark' ? '#e5e7eb' : '#0f172a';
+        body.style.backgroundColor = theme === 'dark' ? '#171717' : '#ffffff';
+        body.style.color = theme === 'dark' ? '#e5e7eb' : '#1f2937';
       }
     }
   }, [theme]);
@@ -191,14 +325,7 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
 
     const styles = `
       <style id="pw-injected-styles">
-        body {
-          background-color: ${theme === 'dark' ? '#0f1117' : '#f8fafc'};
-          color: ${theme === 'dark' ? '#e5e7eb' : '#0f172a'};
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          margin: 0;
-          padding: 1rem;
-        }
-        h1, h2, h3, h4, h5, h6 { margin-top: 0; }
+        ${getStylesInner(theme)}
       </style>
     `;
 
@@ -294,16 +421,7 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
       // Update styles if theme changed
       const existingStyles = doc.getElementById('pw-injected-styles');
       if (existingStyles) {
-        existingStyles.innerHTML = `
-          body {
-            background-color: ${theme === 'dark' ? '#0f1117' : '#f8fafc'};
-            color: ${theme === 'dark' ? '#e5e7eb' : '#0f172a'};
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            padding: 1rem;
-          }
-          h1, h2, h3, h4, h5, h6 { margin-top: 0; }
-        `;
+        existingStyles.innerHTML = getStylesInner(theme);
       }
     }
   }, [theme, getProcessedContent, initContent]);

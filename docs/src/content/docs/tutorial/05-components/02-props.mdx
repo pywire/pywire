@@ -1,0 +1,55 @@
+---
+title: Components with props
+tutorial: Basic PyWire
+section: Components
+description: Pass data to components using props.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---html---
+      <div>
+        <h1>Passing Props</h1>
+        <div class="row">
+           <Badge text="Admin" color="red" />
+           <Badge text="User" color="green" />
+        </div>
+      </div>
+  - path: components/Badge.wire
+    initial: |
+      # 1. Define props 'text' and 'color' (default color to 'gray')
+      
+      ---html---
+      <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
+        Text here
+      </span>
+    solution: |
+      !props text, color="gray"
+      
+      ---html---
+      <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
+        {text}
+      </span>
+successCriteria:
+  - type: file_contains
+    description: "Define props using !props text, color='gray'"
+    target: components/Badge.wire
+    pattern: "!props"
+  - type: file_contains
+    description: "Use {text} inside the span"
+    target: components/Badge.wire
+    pattern: "{text}"
+  - type: browser_route_text
+    description: "Verify 'Admin' badge is visible"
+    pattern: "Admin"
+pagesDir: pages
+---
+
+To make components flexible, you can pass data to them using props. Use the `!props` directive at the top of your component file to declare what it accepts.
+
+### Your Task
+
+1.  In `components/Badge.wire`, add `!props text, color="gray"` at the very top.
+2.  Replace "Text here" with **`{text}`**.
+3.  Check the preview to see the "Admin" and "User" badges rendered with different colors.
+
+Props can have default values, like `color="gray"` in this example.

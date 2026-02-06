@@ -4,6 +4,10 @@ import starlight from '@astrojs/starlight'
 import react from '@astrojs/react'
 import tailwind from '@astrojs/tailwind'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // https://astro.build/config
 export default defineConfig({
@@ -21,7 +25,7 @@ export default defineConfig({
       title: 'pywire',
       customCss: ['./src/styles/custom.css'],
       components: {
-        Head: './src/components/Head.astro',
+        Head: resolve(__dirname, './src/components/Head.astro'),
       },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/pywire/pywire' },

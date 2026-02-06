@@ -197,19 +197,59 @@ async def handle_js_message(event_data):
 
                 # For websocket.send messages, try to decode msgpack payload
                 decoded_payload = None
+                is_modified = False
+
                 if msg.get("type") == "websocket.send" and "bytes" in msg and isinstance(msg["bytes"], bytes):
                     try:
                         import msgpack
                         decoded_payload = msgpack.unpackb(msg["bytes"])
+                        
+                        # Fix 2: Sanitize nested HTML in updates (Server -> Client)
+                        if isinstance(decoded_payload, dict):
+                            if decoded_payload.get("type") == "update" and "html" in decoded_payload:
+                                html_content = decoded_payload["html"]
+                                lower_html = html_content.lower()
+                                if "<html" in lower_html or "<!doctype" in lower_html:
+                                    import re
+                                    # Extract content inside <body>...</body>
+                                    # Extract content inside <body>...</body> using a more robust regex
+                                    body_match = re.search(r"<body[\s>](.*?)</body>", html_content, re.IGNORECASE | re.DOTALL)
+                                    if not body_match:
+                                        # Fallback: maybe body has attributes? <body class="foo">
+                                        # The previous regex <body[^>]*> covers it, but let's be sure.
+                                        # Let's try splitting by body tag
+                                        parts = re.split(r"<body[^>]*>", html_content, flags=re.IGNORECASE)
+                                        if len(parts) > 1:
+                                            # Take everything after the first <body> match
+                                            # And then strip </body> and anything after
+                                            content = parts[1]
+                                            content = re.split(r"</body>", content, flags=re.IGNORECASE)[0]
+                                            decoded_payload["html"] = content
+                                            is_modified = True
+                                            if DEBUG_SHIM:
+                                                print("DEBUG: Stripped full HTML wrapper (fallback method)")
+                                    
+                                    if body_match and not is_modified:
+
+                                        decoded_payload["html"] = body_match.group(1)
+                                        is_modified = True
+                                        if DEBUG_SHIM:
+                                            print("DEBUG: Stripped full HTML wrapper from Server->Client update payload")
+
                         if DEBUG_SHIM:
-                            print(f"DEBUG: Decoded WS payload type: {decoded_payload.get('type') if isinstance(decoded_payload, dict) else 'N/A'}")
+                            print(f"DEBUG: Decoded WS payload: {decoded_payload}")
                     except Exception as e:
                         if DEBUG_SHIM:
-                            print(f"DEBUG: Failed to decode WS msgpack: {e}")
+                            print(f"DEBUG: Failed to decode/sanitize WS msgpack: {e}")
 
                 # Convert bytes to list for JS transfer
                 if "bytes" in msg and isinstance(msg["bytes"], bytes):
-                    msg["bytes"] = list(msg["bytes"])
+                    # Use modified payload if applicable
+                    if is_modified and decoded_payload is not None:
+                         msg["bytes"] = list(msgpack.packb(decoded_payload))
+                    else:
+                         msg["bytes"] = list(msg["bytes"])
+                
                 if "text" in msg and isinstance(msg["text"], bytes):
                     msg["text"] = msg["text"].decode("utf-8")
 
@@ -269,7 +309,7 @@ async def handle_js_message(event_data):
                                 data_bytes = msgpack.packb(payload)
                     except Exception as e:
                         if DEBUG_SHIM:
-                            print(f"DEBUG: Failed to rewrite msgpack path: {e}")
+                            print(f"DEBUG: Failed to process msgpack in shim: {e}")
                     
                     if DEBUG_SHIM:
                         print(f"DEBUG: ws_send binary data length: {len(data_bytes)}")

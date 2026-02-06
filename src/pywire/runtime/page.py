@@ -208,19 +208,71 @@ class BasePage:
         self._clear_wire_tracking()
         html = await self._render_template()
 
-        # Inject styles if this is the root render (not a component or partial update)
-        # Actually, BasePage.render() is called for the ROOT page response.
-        # Components use _render_template directly.
-        # So here we can inject the styles into <head>.
+        # If this is an update (init=False), strip the surrounding <html>/<body> tags
+        # and return only the inner content. This prevents nested HTML on the client.
+        if not init:
+            import re
+            # Try to match body content
+            body_match = re.search(r"<body[^>]*>(.*?)</body>", html, re.IGNORECASE | re.DOTALL)
+            if body_match:
+                html = body_match.group(1)
+            else:
+                # Fallback: if no body tag found, maybe it's already a fragment?
+                # But if it has <html, strip it?
+                # For safety, let's look for html tags and warn/strip if we can't find body
+                pass
 
+        # Inject styles if this is the root render (not a component or partial update)
         styles = self._style_collector.render()
         if styles:
-            # Inject into head
             if "</head>" in html:
                 html = html.replace("</head>", f"{styles}</head>", 1)
             else:
-                # Fallback: prepend to body or just prepend
                 html = f"{styles}{html}"
+
+        # Inject PyWire client and SPA metadata only on initial page load (init=True)
+        # Components and WebSocket updates (init=False) should NOT include these scripts,
+        # otherwise they trigger redundant re-initialization and loops.
+        if init:
+             no_spa = getattr(self, "__no_spa__", False)
+             is_component = getattr(self, "__is_component__", False)
+             
+             # Check if SPA features are enabled via attribute or app state
+             spa_enabled = getattr(self, "__spa_enabled__", False)
+             pjax_enabled = False
+             debug_mode = False
+             try:
+                 pjax_enabled = self.request.app.state.enable_pjax
+                 debug_mode = self.request.app.state.debug
+             except (AttributeError, KeyError):
+                 pass
+
+             if not no_spa and not is_component and (spa_enabled or pjax_enabled):
+                 meta = {
+                     "sibling_paths": getattr(self, "__sibling_paths__", []),
+                     "enable_pjax": pjax_enabled,
+                     "debug": debug_mode
+                 }
+                 import json
+                 meta_json = json.dumps(meta)
+                 meta_script = f'<script id="_pywire_spa_meta" type="application/json">{meta_json}</script>'
+                 
+                 # Determine client script URL
+                 script_url = "/_pywire/static/pywire.core.min.js"
+                 try:
+                     pywire_app = self.request.app.state.pywire
+                     script_url = pywire_app._get_client_script_url()
+                 except (AttributeError, KeyError):
+                     # Fallback to dev if we can't detect, or keep core default
+                     pass
+                     
+                 client_script = f'<script src="{script_url}"></script>'
+                 injection = f"{meta_script}{client_script}"
+                 
+                 if "</body>" in html:
+                     html = html.replace("</body>", f"{injection}</body>", 1)
+                 else:
+                     html += injection
 
         # Run post-render hooks (always run on render)
         for hook_name in self.RENDER_HOOKS:
@@ -348,6 +400,12 @@ class BasePage:
         return await self.render_update(init=False)
 
     async def render_update(self, init: bool = False) -> Dict[str, Any]:
+        # DEBUG: Trace region state
+        has_regions = hasattr(self, "__region_renderers__")
+        region_map = getattr(self, "__region_renderers__", {})
+        dirty = getattr(self, "_dirty_regions", set())
+        print(f"DEBUG render_update: has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}")
+        
         if hasattr(self, "__region_renderers__") and self._dirty_regions:
             updates = []
             region_map = getattr(self, "__region_renderers__", {}) or {}
@@ -365,10 +423,12 @@ class BasePage:
                 updates.append({"region": region_id, "html": region_html})
             self._dirty_regions.clear()
             if updates:
+                print(f"DEBUG render_update: returning regions update with {len(updates)} regions")
                 return {"type": "regions", "regions": updates}
 
         response = await self.render(init=init)
         html = bytes(response.body).decode("utf-8")
+        print(f"DEBUG render_update: returning FULL update (len={len(html)})")
         return {"type": "full", "html": html}
 
     async def push_state(self) -> None:
