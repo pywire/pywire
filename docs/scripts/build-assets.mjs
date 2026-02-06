@@ -73,8 +73,13 @@ async function main() {
         fs.mkdirSync(publicDistDir, { recursive: true });
     }
 
-    // Build directly to public/dist using local venv
-    run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+    // Build directly to public/dist using uv if available, otherwise fall back to .venv
+    try {
+        run(`uv run python -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+    } catch (e) {
+        console.warn('uv run failed, falling back to .venv/bin/python3');
+        run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT);
+    }
 
     // Find the wheel
     const distFiles = fs.readdirSync(publicDistDir);
