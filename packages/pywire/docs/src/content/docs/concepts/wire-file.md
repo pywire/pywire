@@ -12,7 +12,7 @@ A `.wire` file typically has two parts:
 1. **Python Block**: (Top) Define your reactive state, imports, and event handlers.
 2. **HTML Block**: (Bottom) Define the UI using standard HTML and PyWire template syntax.
 
-```html
+```pywire
 # Python Block
 name = wire("World")
 
@@ -27,6 +27,6 @@ When you run your app, PyWire compiles these files into standard Python classes.
 
 The HTML block supports:
 - **Interpolation**: `{variable.value}`
-- **Attributes**: `:attr={value}` or `$attr={condition}`
+- **Attributes**: `attr={value}` or `{attr}`
 - **Events**: `@click={handler}`
 - **Control Flow**: `$if`, `$for`

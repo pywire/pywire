@@ -106,7 +106,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
     // URL Generation Helper
     const getStepUrl = useCallback((slug: string) => {
         const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, '');
-        return `${baseUrl}/tutorial/${slug}`;
+        return `${baseUrl}/tutorial/${slug}/`;
     }, []);
 
     const handleNavigate = useCallback((path: string) => {
