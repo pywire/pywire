@@ -370,7 +370,6 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                                 href={getStepUrl(prevStep.slug)}
                                 className="pw-btn-icon-sm"
                                 title={`Previous: ${prevStep.title}`}
-                                data-astro-reload
                             >
                                 <ArrowLeft size={18} />
                             </a>
@@ -384,7 +383,6 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({
                                 href={getStepUrl(nextStep.slug)}
                                 className={`pw-btn-icon-sm ${isCompleted ? 'success-glow' : ''}`}
                                 title={`Next: ${nextStep.title}`}
-                                data-astro-reload
                             >
                                 <ArrowRight size={18} />
                             </a>
