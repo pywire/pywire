@@ -192,6 +192,7 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
                                                                         onClose(); // Just close, let browser navigate
                                                                     }
                                                                 }}
+                                                                data-astro-reload
                                                                 style={{
                                                                     display: 'flex',
                                                                     alignItems: 'center',
