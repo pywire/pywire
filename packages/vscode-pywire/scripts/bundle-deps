@@ -35,6 +35,17 @@ resolve_pywire_src() {
     return 1
 }
 
+get_latest_tag() {
+    REPO_URL="$1"
+    # Get the latest tag matching v* sorted by version number
+    TAG=$(git ls-remote --tags --sort='v:refname' "$REPO_URL" 'refs/tags/v*' | tail -n1 | sed 's|.*refs/tags/||')
+    if [ -z "$TAG" ]; then
+        echo "main"
+    else
+        echo "$TAG"
+    fi
+}
+
 pywire_src="$(resolve_pywire_src "$PYWIRE_SRC")" || pywire_src=""
 if [ -z "$pywire_src" ]; then
     pywire_src="$(resolve_pywire_src "../pywire")" || pywire_src=""
@@ -72,18 +83,32 @@ if [ -n "$pywire_src" ] || [ -n "$pywire_ls_src" ]; then
     exit 0
 fi
 
+PYWIRE_REPO="https://github.com/pywire/pywire.git"
+PYWIRE_LS_REPO="https://github.com/pywire/pywire-language-server.git"
+
+if [ "$PYWIRE_RELEASE" = "1" ]; then
+    echo "Release mode detected. Fetching latest tags..."
+    PYWIRE_REF="$(get_latest_tag "$PYWIRE_REPO")"
+    PYWIRE_LS_REF="$(get_latest_tag "$PYWIRE_LS_REPO")"
+    echo "Using pywire@$PYWIRE_REF and pywire-language-server@$PYWIRE_LS_REF"
+else
+    PYWIRE_REF="main"
+    PYWIRE_LS_REF="main"
+fi
+
 if command -v uv >/dev/null 2>&1; then
     uv pip install \
         pygls \
         pyright \
-        git+https://github.com/pywire/pywire.git \
-        git+https://github.com/pywire/pywire-language-server.git \
+        "git+$PYWIRE_REPO@$PYWIRE_REF" \
+        "git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF" \
         --target "$TARGET_DIR"
 else
-    python -m pip install \
+    "$PYTHON_BIN" -m pip install \
         pygls \
         pyright \
-        git+https://github.com/pywire/pywire.git \
-        git+https://github.com/pywire/pywire-language-server.git \
+        "git+$PYWIRE_REPO@$PYWIRE_REF" \
+        "git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF" \
         -t "$TARGET_DIR"
 fi
+
