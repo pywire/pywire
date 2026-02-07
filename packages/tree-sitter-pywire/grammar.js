@@ -59,7 +59,9 @@ module.exports = grammar({
             $.self_closing_tag,
             $.text,
             $.hyphen,
-            $.interpolation
+            $.interpolation,
+            $.brace_block,
+            $.end_brace_block
         ),
 
         tag: $ => seq(
@@ -80,14 +82,17 @@ module.exports = grammar({
             '/>'
         ),
 
-        tag_name: $ => /\w+/,
+        tag_name: $ => /[a-zA-Z0-9_$-]+/,
 
-        attribute: $ => seq(
-            $._attribute_name,
-            optional(seq(
-                '=',
-                $.attribute_value
-            ))
+        attribute: $ => choice(
+            seq(
+                $._attribute_name,
+                optional(seq(
+                    '=',
+                    $.attribute_value
+                ))
+            ),
+            $.interpolation
         ),
 
         _attribute_name: $ => choice(
@@ -108,6 +113,23 @@ module.exports = grammar({
         ),
 
         _interpolation_content: $ => /[^}]+/,
+
+        brace_block: $ => seq(
+            '{',
+            '$',
+            alias(choice('if', 'elif', 'else', 'for', 'await', 'then', 'catch', 'try', 'except', 'finally', 'html'), $.keyword_control),
+            optional(alias($._python_code, $.python_code)),
+            '}'
+        ),
+
+        end_brace_block: $ => seq(
+            '{',
+            '/',
+            alias(choice('if', 'for', 'await', 'try'), $.keyword_control),
+            '}'
+        ),
+
+        _python_code: $ => /[^}]+/,
 
         // Separator must be on its own line (roughly)
         separator: $ => token(seq(
