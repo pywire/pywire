@@ -10,3 +10,4 @@ src/pywire/client/dist/
 src/pywire/static/
 .coverage
 .pywire/
+src/pywire/_version.py
