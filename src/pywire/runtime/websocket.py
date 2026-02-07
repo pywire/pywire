@@ -81,6 +81,8 @@ class WebSocketHandler:
 
         if msg_type == "event":
             await self._handle_event(websocket, data)
+        elif msg_type == "init":
+            await self._handle_init(websocket, data)
         elif msg_type == "relocate":
             await self._handle_relocate(websocket, data)
         else:
@@ -198,6 +200,100 @@ class WebSocketHandler:
         # Fallback: force full reload
         await websocket.send_bytes(msgpack.packb({"type": "reload"}))
 
+    async def _handle_init(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
+        """Handle initial page load."""
+        path = data.get("path", "/")
+
+        # Define callback for log streaming
+        async def send_log(msg: str, level: str = "info") -> None:
+            if msg and msg.strip():
+                await self._send_console_message(websocket, output=msg, level=level)
+
+        token = log_callback_ctx.set(send_log)
+
+        try:
+            # Logic similar to _handle_relocate to create page
+            from urllib.parse import parse_qs, urlparse
+            from starlette.requests import Request
+
+            parsed_url = urlparse(path)
+            pathname = parsed_url.path
+            query_string = parsed_url.query
+
+            match = self.app.router.match(pathname)
+            if not match:
+                print(f"Init: No route found for path: {pathname}")
+                # 404 behavior? Just return error
+                await websocket.send_bytes(
+                    msgpack.packb({"type": "error", "error": "Not Found"})
+                )
+                return
+
+            page_class, params, variant_name = match
+
+            # Create request
+            scope = dict(websocket.scope)
+            scope["type"] = "http"
+            scope["path"] = pathname
+            scope["raw_path"] = pathname.encode("ascii")
+            scope["query_string"] = (
+                query_string.encode("ascii") if query_string else b""
+            )
+            # Ensure minimal requirements for valid Request
+            if "headers" not in scope:
+                scope["headers"] = [(b"host", b"localhost")]
+            if "method" not in scope:
+                scope["method"] = "GET"
+            if "scheme" not in scope:
+                scope["scheme"] = "http"
+            if "server" not in scope:
+                scope["server"] = ("localhost", 80)
+            if "client" not in scope:
+                scope["client"] = ("127.0.0.1", 0)
+
+            request = Request(scope)
+
+            # Parse query params
+
+            if query_string:
+                parsed = parse_qs(query_string)
+                query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+            else:
+                query = {}
+
+            # Instantiate page
+            page = page_class(request=request, params=params, query=query)
+            self.connection_pages[websocket] = page
+
+            # Define update broadcaster for background tasks (like await blocks)
+            async def broadcast_update() -> None:
+                update = await page.render_update(init=False)
+                await self._send_update_payload(websocket, update)
+
+            page._on_update = broadcast_update
+            print(f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init")
+
+            # Render initial state to register dependencies
+            # We don't send the HTML back because client already has it (static load)
+            print(
+                f"DEBUG: [{page._instance_id}] Calling page.render(init=True) in _handle_init"
+            )
+            await page.render(init=True)
+            print(
+                f"DEBUG: [{page._instance_id}] Done with page.render(init=True) in _handle_init"
+            )
+
+            # Send ack
+            await websocket.send_bytes(msgpack.packb({"type": "init_ack"}))
+
+        except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            await self._send_error_trace(websocket, e)
+        finally:
+            log_callback_ctx.reset(token)
+
     async def _handle_event(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
         """Handle UI event (click, etc)."""
         handler_name = data.get("handler")
@@ -299,7 +395,7 @@ class WebSocketHandler:
                 # Force initial render to establish wire tracking
                 # This ensures _track_read is called and regions are registered
                 # so that subsequent writes in handlers trigger updates
-                await page._render_template()
+                await page.render(init=True)
 
                 if hasattr(page, "on_load"):
                     if inspect.iscoroutinefunction(page.on_load):
@@ -326,6 +422,9 @@ class WebSocketHandler:
 
         except Exception as e:
             # Send structured trace to client (no print - trace is sufficient)
+            import traceback
+
+            traceback.print_exc()
             await self._send_error_trace(websocket, e)
         finally:
             log_callback_ctx.reset(token)
@@ -419,6 +518,13 @@ class WebSocketHandler:
                     page.user = self.app.get_user(websocket)
 
                 self.connection_pages[websocket] = page
+
+                # Set update hook
+                async def broadcast_update() -> None:
+                    update = await page.render_update(init=False)
+                    await self._send_update_payload(websocket, update)
+
+                page._on_update = broadcast_update
 
                 # Run on_load lifecycle hook
                 if hasattr(page, "on_load"):
@@ -549,11 +655,8 @@ class WebSocketHandler:
 
             # Set update hook
             async def broadcast_update() -> None:
-                up_response = await new_page.render(init=False)
-                up_html = up_response.body.decode("utf-8")
-                await websocket.send_bytes(
-                    msgpack.packb({"type": "update", "html": up_html})
-                )
+                update = await new_page.render_update(init=False)
+                await self._send_update_payload(websocket, update)
 
             new_page._on_update = broadcast_update
 

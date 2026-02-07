@@ -689,45 +689,66 @@ class CodeGenerator:
         from pywire.compiler.preprocessor import preprocess_python_code
 
         code = preprocess_python_code(code)
-
         tree = ast.parse(code)
         extracted_args: List[str] = []
 
         class ArgumentLifter(ast.NodeTransformer):
-            def visit_Call(self, node: ast.Call) -> Any:
-                # Check arguments for unbound variables
-                new_args: List[ast.expr] = []
-                for arg in node.args:
-                    # Quick check: does this arg contain unbound names?
-                    unbound = False
-                    for child in ast.walk(arg):
-                        if isinstance(child, ast.Name):
-                            if child.id not in known_methods and child.id not in dir(
-                                builtins
-                            ):
-                                unbound = True
-                                break
-
-                    if unbound:
-                        # Lift it!
-                        arg_index = len(extracted_args)
-                        extracted_args.append(ast.unparse(arg))
-                        new_args.append(ast.Name(id=f"arg{arg_index}", ctx=ast.Load()))
-                    else:
-                        new_args.append(self.visit(arg))
-
-                node.args = new_args
-                return self.generic_visit(node)
+            def __init__(self):
+                self.local_names = set()
+                # 'event' is a special implicit local in handlers
+                self.local_names.add("event")
 
             def visit_Name(self, node: ast.Name) -> Any:
-                # Transform known methods and globals to self.X
+                # 1. Locally defined or event - keep as is
+                if node.id in self.local_names:
+                    return node
+
+                # 2. Known method - transform to self.X
                 if node.id in known_methods:
                     return ast.Attribute(
                         value=ast.Name(id="self", ctx=ast.Load()),
                         attr=node.id,
                         ctx=node.ctx,
                     )
+
+                # 3. Builtin - keep as is
+                if node.id in dir(builtins):
+                    return node
+
+                # 4. Handle Store context (e.g. assignments in handler)
+                if isinstance(node.ctx, ast.Store):
+                    self.local_names.add(node.id)
+                    return node
+
+                # 5. Otherwise, if Load/Del and not in local_names, it's unbound!
+                # Lift it as a handler argument.
+                arg_index = len(extracted_args)
+                extracted_args.append(node.id)
+                return ast.Name(id=f"arg{arg_index}", ctx=node.ctx)
+
+            def visit_Assign(self, node: ast.Assign) -> Any:
+                # Process targets first to register locals
+                node.targets = [self.visit(t) for t in node.targets]
+                node.value = self.visit(node.value)
                 return node
+
+            def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
+                node.target = self.visit(node.target)
+                if node.value:
+                    node.value = self.visit(node.value)
+                return node
+
+            def visit_For(self, node: ast.For) -> Any:
+                node.target = self.visit(node.target)
+                node.iter = self.visit(node.iter)
+                node.body = [self.visit(s) for s in node.body]
+                node.orelse = [self.visit(s) for s in node.orelse]
+                return node
+
+            def visit_ListComp(self, node: ast.ListComp) -> Any:
+                # Generators/Comprehensions introduce their own scopes, but for simplicity
+                # let's just visit everything. Unbound names inside should still be lifted.
+                return self.generic_visit(node)
 
         # Run transformer
         transformer = ArgumentLifter()

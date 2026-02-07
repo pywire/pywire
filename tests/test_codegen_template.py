@@ -62,7 +62,7 @@ class TestCodegenTemplate(unittest.TestCase):
         # Parameterless method should be auto-called
         expr = "my_method"
         transformed = self.codegen._transform_reactive_expr(
-            expr, local_vars=set(), known_methods={"my_method"}
+            expr, local_vars=set(), known_methods={"my_method"}, cached=False
         )
         self.assert_ast_equal(transformed, "self.my_method()")
 

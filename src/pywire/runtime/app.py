@@ -3,6 +3,7 @@
 import logging
 import re
 import traceback
+import inspect
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, cast
 
@@ -37,6 +38,7 @@ class PyWire:
     ) -> None:
         if pages_dir is None:
             # Auto-discovery
+            # 1. Try CWD first (standard behavior)
             cwd = Path.cwd()
             potential_paths = [cwd / "pages", cwd / "src" / "pages"]
 
@@ -46,6 +48,37 @@ class PyWire:
                     self.pages_dir = path
                     discovered = True
                     break
+
+            if not discovered:
+                # 2. Try relative to the module that instantiated PyWire
+                # This helps when running from a different CWD (e.g. root of workspace)
+                try:
+                    # Find first frame outside of pywire
+                    stack = inspect.stack()
+                    for frame_info in stack:
+                        module = inspect.getmodule(frame_info.frame)
+                        if (
+                            module
+                            and module.__name__
+                            and not module.__name__.startswith("pywire.")
+                            and module.__name__ != "pywire"
+                        ):
+                            caller_dir = Path(frame_info.filename).parent
+                            app_potential = [
+                                caller_dir / "pages",
+                                caller_dir / "src" / "pages",
+                                caller_dir.parent / "pages",
+                                caller_dir.parent / "src" / "pages",
+                            ]
+                            for path in app_potential:
+                                if path.exists() and path.is_dir():
+                                    self.pages_dir = path
+                                    discovered = True
+                                    break
+                            if discovered:
+                                break
+                except Exception:
+                    pass
 
             if not discovered:
                 # Default to 'pages' and let it fail/warn later if missing
@@ -67,6 +100,19 @@ class PyWire:
                     src_potential = Path.cwd() / "src" / path
                     if src_potential.exists():
                         potential = src_potential
+                    else:
+                        # Try relative to the discovered pages_dir's parent
+                        # (The project root for this app)
+                        proj_root = self.pages_dir.parent
+                        if proj_root.name == "src":
+                            proj_root = proj_root.parent
+
+                        potential = proj_root / path
+                        if not potential.exists():
+                            src_potential = proj_root / "src" / path
+                            if src_potential.exists():
+                                potential = src_potential
+
                 self.static_dir = potential.resolve()
             else:
                 self.static_dir = path
