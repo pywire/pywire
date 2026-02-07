@@ -1,6 +1,6 @@
 {
   "name": "pywire-client",
-  "version": "20260207-dev2+g98fe6b486.d20260207",
+  "version": "20260207-dev3+g991cad9a0.d20260207",
   "description": "PyWire client-side library with transport fallbacks",
   "type": "module",
   "private": true,
