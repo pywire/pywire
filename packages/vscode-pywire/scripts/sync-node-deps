@@ -1,0 +1,36 @@
+#!/bin/sh -e
+
+# This script ensures that prettier-plugin-pywire is pinned to the correct version
+# (tag for release, main for development/nightly).
+
+REPO_URL="https://github.com/pywire/prettier-plugin-pywire.git"
+
+get_latest_tag() {
+    # Get the latest tag matching v* sorted by version number
+    TAG=$(git ls-remote --tags --sort='v:refname' "$REPO_URL" 'refs/tags/v*' | tail -n1 | sed 's|.*refs/tags/||')
+    if [ -z "$TAG" ]; then
+        echo "main"
+    else
+        echo "$TAG"
+    fi
+}
+
+if [ "$PYWIRE_RELEASE" = "1" ]; then
+    echo "Release mode detected for Node dependencies. Fetching latest tag..."
+    REF=$(get_latest_tag)
+    echo "Using prettier-plugin-pywire@$REF"
+else
+    REF="main"
+    echo "Dev/CI mode. Using prettier-plugin-pywire@main"
+fi
+
+# Check current version in package.json to avoid unnecessary pnpm add
+CURRENT=$(grep -o "prettier-plugin-pywire\": \"git+$REPO_URL#[^\"]*" package.json | sed "s|.*#||" || echo "")
+
+if [ "$CURRENT" != "$REF" ]; then
+    echo "Updating prettier-plugin-pywire dependency to #$REF..."
+    # We use pnpm add to update package.json and pnpm-lock.yaml
+    pnpm add "git+$REPO_URL#$REF"
+else
+    echo "prettier-plugin-pywire is already at #$REF."
+fi
