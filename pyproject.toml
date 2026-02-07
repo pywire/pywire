@@ -69,6 +69,7 @@ exclude = [
 
 [tool.hatch.version]
 source = "vcs"
+raw-options = { version_scheme = "post-release", git_describe_command = "git describe --dirty --tags --long --match v*", tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+.*)" }
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/pywire/_version.py"
