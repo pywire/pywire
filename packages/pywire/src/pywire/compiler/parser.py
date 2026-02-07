@@ -140,6 +140,40 @@ class PyWireParser:
                 r'(?<=[\s"\'])(\{\*\*.*?\})', r'__pywire_spread__="\1"', template_html
             )
 
+            # Preprocess shorthand bindings: {attr} -> __pw_sh_attr=""
+            # We must limit this to inside tags to avoid replacing content.
+            # Heuristic: Match <tag ...> blocks and replace inside them.
+            def tag_shorthand_wrapper(match: re.Match[str]) -> str:
+                tag_content = match.group(0)
+
+                # Replace {identifier} with __pw_sh_identifier=""
+                # Lookbehind for whitespace, Lookahead for whitespace/>/end
+                # Regex: (?<=\s)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?=\s|/|>)
+                processed_tag = re.sub(
+                    r"(?<=\s)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?=\s|/|>)",
+                    r'__pw_sh_\1=""',
+                    tag_content,
+                )
+
+                # Replace @attr= with __pw_on_attr= (lxml compatibility for Windows)
+                processed_tag = re.sub(
+                    r"@([a-zA-Z0-9_-]+)=", r"__pw_on_\1=", processed_tag
+                )
+                # Replace $attr= with __pw_dir_attr= (lxml compatibility for Windows)
+                processed_tag = re.sub(
+                    r"\$([a-zA-Z0-9_-]+)=", r"__pw_dir_\1=", processed_tag
+                )
+
+                return processed_tag
+
+            # Apply to all tags
+            template_html = re.sub(
+                r"(<[a-zA-Z0-9_-].*?>)",
+                tag_shorthand_wrapper,
+                template_html,
+                flags=re.DOTALL,
+            )
+
             # lxml.html.fragments_fromstring handles multiple top-level elements
             # It returns a list of elements and strings (for top-level text)
             try:
