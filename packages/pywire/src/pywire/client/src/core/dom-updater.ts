@@ -195,6 +195,9 @@ export class DOMUpdater {
     DOMUpdater.isUpdating = true
     if (this.debug) {
       console.log('[DOMUpdater] Starting update, isUpdating =', DOMUpdater.isUpdating)
+      console.log('[DOMUpdater] Target:', target)
+      console.log('[DOMUpdater] New HTML length:', newHtml.length)
+      console.log('[DOMUpdater] New HTML preview:', newHtml.substring(0, 100))
     }
 
     try {
@@ -203,6 +206,7 @@ export class DOMUpdater {
 
       if (morphdom) {
         try {
+          console.log('[DOMUpdater] Calling morphdom on', target.tagName)
           morphdom(target, newHtml, {
             // Custom key function for stable element matching
             getNodeKey: (node: Node) => this.getNodeKey(node),

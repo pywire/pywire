@@ -81,7 +81,14 @@ export class PyWireApp {
    */
   protected handleStatusChange(connected: boolean): void {
     this.isConnected = connected
-    // Base implementation: no UI, just track state
+
+    if (connected) {
+      // Send init message to register this client and setup page instance
+      this.transport.send({
+        type: 'init',
+        path: window.location.pathname + window.location.search,
+      })
+    }
   }
 
   /**

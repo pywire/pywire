@@ -8,7 +8,13 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from pywire.compiler.ast_nodes import (
+    AwaitAttribute,
+    CatchAttribute,
+    ElifAttribute,
+    ElseAttribute,
     EventAttribute,
+    ExceptAttribute,
+    FinallyAttribute,
     ForAttribute,
     IfAttribute,
     InterpolationNode,
@@ -16,6 +22,8 @@ from pywire.compiler.ast_nodes import (
     ReactiveAttribute,
     ShowAttribute,
     TemplateNode,
+    ThenAttribute,
+    TryAttribute,
 )
 from pywire.compiler.interpolation.jinja import JinjaInterpolationParser
 
@@ -49,6 +57,7 @@ class TemplateCodegen:
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers: Dict[str, str] = {}
+        self._expr_id_counter = 0
 
     def generate_render_method(
         self,
@@ -147,6 +156,12 @@ class TemplateCodegen:
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
+        self._expr_id_counter = 0
+        self._slot_default_counter = 0
+        self.auxiliary_functions = []
+        self.has_file_inputs = False
+        self._region_counter = 0
+        self.region_renderers = {}
 
     def _generate_function(
         self,
@@ -181,28 +196,32 @@ class TemplateCodegen:
             component_map = {}
 
         # 'json' is imported in the body, so we treat it as local to avoid transforming to self.json
-        initial_locals.add("json")
-
         # parts = []
-        body: List[ast.stmt] = [
+        body: List[ast.stmt] = []
+
+        body.append(
             ast.Assign(
                 targets=[ast.Name(id="parts", ctx=ast.Store())],
                 value=ast.List(elts=[], ctx=ast.Load()),
-            ),
-            ast.Import(names=[ast.alias(name="json", asname=None)]),
-            # import helper
+            )
+        )
+        body.append(ast.Import(names=[ast.alias(name="json", asname=None)]))
+        # import helper
+        body.append(
             ast.ImportFrom(
                 module="pywire.runtime.helpers",
                 names=[ast.alias(name="ensure_async_iterator", asname=None)],
                 level=0,
-            ),
-            # import escape_html for XSS prevention
+            )
+        )
+        # import escape_html for XSS prevention
+        body.append(
             ast.ImportFrom(
                 module="pywire.runtime.escape",
                 names=[ast.alias(name="escape_html", asname=None)],
                 level=0,
-            ),
-        ]
+            )
+        )
 
         root_element = self._get_root_element(nodes)
 
@@ -272,6 +291,7 @@ class TemplateCodegen:
         known_globals: Optional[Set[str]] = None,
         line_offset: int = 0,
         col_offset: int = 0,
+        cached: bool = False,
     ) -> ast.expr:
         """Transform expression string to AST with self. handling."""
         expr_str = expr_str.strip()
@@ -342,7 +362,80 @@ class TemplateCodegen:
                     ctx=node.ctx,
                 )
 
+            def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
+                # The target of a walrus operator must be a Name node.
+                # We should NOT transform it to self.Attribute.
+                if isinstance(node.target, ast.Name):
+                    local_vars.add(node.target.id)
+
+                # Visit the value (the expression on the right)
+                node.value = self.visit(node.value)
+                # Ensure the target itself is not transformed to self.Target
+                # (visit_Name would normally do that if not in local_vars)
+                node.target = self.visit(node.target)
+                return node
+
         new_tree = AddSelfTransformer().visit(tree)
+
+        # Check if we should disable caching based on content
+        if cached:
+            # 1. Local variable usage
+            class LocalVarChecker(ast.NodeVisitor):
+                def __init__(self) -> None:
+                    self.found = False
+
+                def visit_Name(self, node: ast.Name) -> None:
+                    if node.id in local_vars:
+                        self.found = True
+                    self.generic_visit(node)
+
+                def visit_Await(self, node: ast.Await) -> None:
+                    self.found = True
+                    self.generic_visit(node)
+
+                def visit_Yield(self, node: ast.Yield) -> None:
+                    self.found = True
+                    self.generic_visit(node)
+
+                def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
+                    self.found = True
+                    self.generic_visit(node)
+
+            checker = LocalVarChecker()
+            checker.visit(new_tree)
+            if checker.found:
+                cached = False
+
+        if cached:
+            # Wrap in _render_expr(id, lambda: expr)
+            expr_id = f"expr_{self._expr_id_counter}"
+            self._expr_id_counter += 1
+
+            # Extract expression body
+            expr_body = cast(ast.Expression, new_tree).body
+
+            lambda_node = ast.Lambda(
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=expr_body,
+            )
+
+            return ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_render_expr",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Constant(value=expr_id), lambda_node],
+                keywords=[],
+            )
+
         # Returns the expression node
         return cast(ast.Expression, new_tree).body
 
@@ -355,10 +448,59 @@ class TemplateCodegen:
         async_methods: Optional[Set[str]] = None,
         line_offset: int = 0,
         col_offset: int = 0,
+        cached: bool = True,
     ) -> ast.expr:
         """Transform reactive expression to AST, handling async calls and self."""
+        # For reactive expressions (attributes), we typically prefer caching
+        # unless async is involved.
+        # But wait, async handling happens AFTER _transform_expr via AsyncAwaiter below.
+        # AsyncAwaiter adds Await nodes. _transform_expr returns the sync base.
+        # If we cache the sync base, we get a coroutine back from _render_expr (if it was async).
+        # We need to await that.
+
+        # We must check if async_methods are used in the expression string
+        # before we decide to cache.
+
+        # Just use defaults - _transform_expr will disable cache if it sees explicit Await.
+        # But if it sees `self.async_call()`, it doesn't know it's async yet (AsyncAwaiter runs later).
+        # So we must inform _transform_expr to disable cache if we detect async method usage.
+
+        # We'll rely on local_vars logic in _transform_expr.
+        # For async methods, we can just pass cached=False if any async methods are known?
+        # That's too aggressive (disables caching for everything if page has 1 async method).
+
+        # Let's just disable caching for reactive attrs to be safe?
+        # Requires complex logic to safely cache async calls.
+        # Given "Regular variables interpolated", those are usually sync.
+        # So we can pass cached=True, but we need to ensure we don't break async.
+
+        # If we wrap `lambda: self.async_method()`, it returns coroutine.
+        # `base_expr` is `_render_expr(...)`.
+        # `AsyncAwaiter` visits `base_expr`. It sees `Call(_render_expr)`.
+        # It does NOT verify `async_method`.
+        # So `Await` is NOT added.
+
+        # Result: we return coroutine object to template. Template renders string representation of coroutine.
+        # BUG.
+
+        # Fix: We must not cache if async methods are involved.
+        # We can implement a check here strings.
+
+        has_async_usage = False
+        if async_methods is not None:
+            # simple regex check?
+            for method in async_methods:
+                if method in expr_str:
+                    has_async_usage = True
+                    break
+
         base_expr = self._transform_expr(
-            expr_str, local_vars, known_globals, line_offset, col_offset
+            expr_str,
+            local_vars,
+            known_globals,
+            line_offset,
+            col_offset,
+            cached=False,
         )
 
         # Auto-call if it matches self.method
@@ -403,6 +545,33 @@ class TemplateCodegen:
             AsyncAwaiter().visit(mod)
             base_expr = cast(ast.Expr, mod.body[0]).value
 
+        # Cache the final expression (including auto-call if added)
+        if cached and not has_async_usage:
+            expr_id = f"expr_{self._expr_id_counter}"
+            self._expr_id_counter += 1
+
+            lambda_node = ast.Lambda(
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=base_expr,
+            )
+
+            return ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_render_expr",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Constant(value=expr_id), lambda_node],
+                keywords=[],
+            )
+
         return base_expr
 
     def _wrap_unwrap_wire(self, expr: ast.expr) -> ast.expr:
@@ -419,22 +588,20 @@ class TemplateCodegen:
     def _node_is_dynamic(
         self, node: TemplateNode, known_globals: Optional[Set[str]] = None
     ) -> bool:
+        # Check special attributes (Interpolation, If, For, Show, Reactive, etc.)
+        for attr in node.special_attributes:
+            if isinstance(attr, EventAttribute):
+                continue
+            return True
+
         if node.tag is None:
-            if any(
-                isinstance(attr, InterpolationNode) for attr in node.special_attributes
-            ):
-                return True
+            # Check text content for interpolations
             if node.text_content and not node.is_raw:
                 parts = self.interpolation_parser.parse(
                     node.text_content, node.line, node.column
                 )
                 return any(isinstance(part, InterpolationNode) for part in parts)
             return False
-
-        for attr in node.special_attributes:
-            if isinstance(attr, EventAttribute):
-                continue
-            return True
 
         return any(
             self._node_is_dynamic(child, known_globals) for child in node.children
@@ -512,6 +679,207 @@ class TemplateCodegen:
             ast.Try(body=render_body, orelse=[], finalbody=[reset_stmt], handlers=[]),
         ]
         return func_def
+
+    def _generate_await_renderer(
+        self,
+        nodes: List[TemplateNode],
+        func_name: str,
+        region_id: str,
+        await_attr: AwaitAttribute,
+        pending_nodes: List[TemplateNode],
+        then_nodes: List[TemplateNode],
+        then_var: Optional[str],
+        catch_nodes: List[TemplateNode],
+        catch_var: Optional[str],
+        layout_id: Optional[str],
+        known_methods: Optional[Set[str]],
+        known_globals: Optional[Set[str]],
+        async_methods: Optional[Set[str]],
+        component_map: Optional[Dict[str, str]],
+        scope_id: Optional[str],
+    ) -> ast.AsyncFunctionDef:
+        """Generate a renderer for an await block region."""
+        body: List[ast.stmt] = []
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id="parts", ctx=ast.Store())],
+                value=ast.List(elts=[], ctx=ast.Load()),
+            )
+        )
+        # Import helpers
+        body.append(
+            ast.ImportFrom(
+                module="pywire.runtime.escape",
+                names=[ast.alias(name="escape_html", asname=None)],
+                level=0,
+            )
+        )
+        body.append(
+            ast.ImportFrom(
+                module="pywire.runtime.helpers",
+                names=[ast.alias(name="ensure_async_iterator", asname=None)],
+                level=0,
+            )
+        )
+        body.append(ast.Import(names=[ast.alias(name="json", asname=None)]))
+
+        # state = self._await_states.get(region_id, {"status": "pending"})
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id="state", ctx=ast.Store())],
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_await_states",
+                            ctx=ast.Load(),
+                        ),
+                        attr="get",
+                        ctx=ast.Load(),
+                    ),
+                    args=[
+                        ast.Constant(value=region_id),
+                        ast.Dict(
+                            keys=[ast.Constant(value="status")],
+                            values=[ast.Constant(value="pending")],
+                        ),
+                    ],
+                    keywords=[],
+                ),
+            )
+        )
+
+        # 1. Pending branch
+        pending_ast: List[ast.stmt] = []
+        for n in pending_nodes:
+            self._add_node(
+                n,
+                pending_ast,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                enable_regions=False,
+            )
+
+        # 2. Then branch
+        then_ast: List[ast.stmt] = []
+        then_locals = set()
+        if then_var:
+            then_locals.add(then_var)
+            then_ast.append(
+                ast.Assign(
+                    targets=[ast.Name(id=then_var, ctx=ast.Store())],
+                    value=ast.Subscript(
+                        value=ast.Name(id="state", ctx=ast.Load()),
+                        slice=ast.Constant(value="result"),
+                        ctx=ast.Load(),
+                    ),
+                )
+            )
+
+        for n in then_nodes:
+            self._add_node(
+                n,
+                then_ast,
+                local_vars=then_locals,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                enable_regions=False,
+            )
+
+        # 3. Catch branch
+        catch_ast: List[ast.stmt] = []
+        catch_locals = set()
+        if catch_var:
+            catch_locals.add(catch_var)
+            catch_ast.append(
+                ast.Assign(
+                    targets=[ast.Name(id=catch_var, ctx=ast.Store())],
+                    value=ast.Subscript(
+                        value=ast.Name(id="state", ctx=ast.Load()),
+                        slice=ast.Constant(value="error"),
+                        ctx=ast.Load(),
+                    ),
+                )
+            )
+
+        for n in catch_nodes:
+            self._add_node(
+                n,
+                catch_ast,
+                local_vars=catch_locals,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                enable_regions=False,
+            )
+
+        # if state["status"] == "pending": ...
+        if_stmt = ast.If(
+            test=ast.Compare(
+                left=ast.Subscript(
+                    value=ast.Name(id="state", ctx=ast.Load()),
+                    slice=ast.Constant(value="status"),
+                    ctx=ast.Load(),
+                ),
+                ops=[ast.Eq()],
+                comparators=[ast.Constant(value="pending")],
+            ),
+            body=pending_ast if pending_ast else [ast.Pass()],
+            orelse=[
+                ast.If(
+                    test=ast.Compare(
+                        left=ast.Subscript(
+                            value=ast.Name(id="state", ctx=ast.Load()),
+                            slice=ast.Constant(value="status"),
+                            ctx=ast.Load(),
+                        ),
+                        ops=[ast.Eq()],
+                        comparators=[ast.Constant(value="success")],
+                    ),
+                    body=then_ast if then_ast else [ast.Pass()],
+                    orelse=catch_ast if catch_ast else [ast.Pass()],
+                )
+            ],
+        )
+        body.append(if_stmt)
+
+        body.append(
+            ast.Return(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                    ),
+                    args=[ast.Name(id="parts", ctx=ast.Load())],
+                    keywords=[],
+                )
+            )
+        )
+
+        return ast.AsyncFunctionDef(
+            name=func_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=body,
+            decorator_list=[],
+            returns=None,
+        )
 
     def _has_spread_attribute(self, nodes: List[TemplateNode]) -> bool:
         """Check if any node in the tree has a SpreadAttribute."""
@@ -612,17 +980,43 @@ class TemplateCodegen:
                 known_globals,
                 line_offset=node.line,
                 col_offset=node.column,
+                cached=False,
             )
 
             for_body: List[ast.stmt] = []
+            else_body: List[ast.stmt] = []
+            has_else = False
 
             new_attrs = [a for a in node.special_attributes if a is not for_attr]
-            if node.tag == "template":
+
+            # Check if we should split children for for-else
+            if node.tag == "template" or (not node.tag and not node.text_content):
+                current_body = for_body
                 for child in node.children:
+                    # Check for $else attribute in child
+                    else_attr = next(
+                        (
+                            a
+                            for a in child.special_attributes
+                            if isinstance(a, ElseAttribute)
+                        ),
+                        None,
+                    )
+                    if else_attr:
+                        has_else = True
+                        current_body = else_body
+                        # If child is JUST the marker, skip it, otherwise process it without the else_attr
+                        if (
+                            child.tag is None
+                            and not child.text_content
+                            and len(child.special_attributes) == 1
+                        ):
+                            continue
+
                     self._add_node(
                         child,
-                        for_body,
-                        new_locals,
+                        current_body,
+                        new_locals if current_body is for_body else local_vars,
                         bound_var,
                         layout_id,
                         known_methods,
@@ -657,15 +1051,52 @@ class TemplateCodegen:
                 keywords=[],
             )
 
-            for_stmt = ast.AsyncFor(
-                target=loop_targets_node,
-                iter=wrapped_iterable,
-                body=for_body,
-                orelse=[],
-            )
-            # Tag with line number
-            self._set_line(for_stmt, node)
-            body.append(for_stmt)
+            if has_else:
+                # Flag to track if loop ran
+                loop_any_var = f"_loop_any_{node.line}_{node.column}".replace("-", "_")
+                body.append(
+                    ast.Assign(
+                        targets=[ast.Name(id=loop_any_var, ctx=ast.Store())],
+                        value=ast.Constant(value=False),
+                    )
+                )
+                # Inside loop, set flag to True
+                for_body.insert(
+                    0,
+                    ast.Assign(
+                        targets=[ast.Name(id=loop_any_var, ctx=ast.Store())],
+                        value=ast.Constant(value=True),
+                    ),
+                )
+
+                for_stmt = ast.AsyncFor(
+                    target=loop_targets_node,
+                    iter=wrapped_iterable,
+                    body=for_body if for_body else [ast.Pass()],
+                    orelse=[],
+                )
+                self._set_line(for_stmt, node)
+                body.append(for_stmt)
+
+                # If block for else body
+                else_if_stmt = ast.If(
+                    test=ast.UnaryOp(
+                        op=ast.Not(), operand=ast.Name(id=loop_any_var, ctx=ast.Load())
+                    ),
+                    body=else_body if else_body else [ast.Pass()],
+                    orelse=[],
+                )
+                body.append(else_if_stmt)
+            else:
+                for_stmt = ast.AsyncFor(
+                    target=loop_targets_node,
+                    iter=wrapped_iterable,
+                    body=for_body if for_body else [ast.Pass()],
+                    orelse=[],
+                )
+                # Tag with line number
+                self._set_line(for_stmt, node)
+                body.append(for_stmt)
             return
 
         # 2. Handle $if
@@ -673,37 +1104,495 @@ class TemplateCodegen:
             (a for a in node.special_attributes if isinstance(a, IfAttribute)), None
         )
         if if_attr:
-            cond_expr = self._transform_expr(
+            # We need to handle branches (elif, else)
+            # Strategy: Partition children into list of (condition_expr, body_nodes)
+            branches: List[Tuple[Optional[ast.expr], List[TemplateNode]]] = []
+            current_branch_nodes: List[TemplateNode] = []
+            branches.append(
+                (None, current_branch_nodes)
+            )  # First branch (the 'if' content)
+
+            for child in node.children:
+                elif_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ElifAttribute)
+                    ),
+                    None,
+                )
+                else_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ElseAttribute)
+                    ),
+                    None,
+                )
+
+                if elif_attr:
+                    current_branch_nodes = []
+                    cond = self._transform_expr(
+                        elif_attr.condition,
+                        local_vars,
+                        known_globals,
+                        line_offset=child.line,
+                        cached=False,
+                    )
+                    branches.append((cond, current_branch_nodes))
+                elif else_attr:
+                    current_branch_nodes = []
+                    branches.append(
+                        (ast.Constant(value=True), current_branch_nodes)
+                    )  # else is test=True in the orelse chain
+                else:
+                    current_branch_nodes.append(child)
+
+            # Build the if/elif/else tree from branches
+            # branches[0] is the 'if' body.
+            # branches[1:] are elifs/else.
+
+            # 1. Main IF body
+            main_cond = self._transform_expr(
                 if_attr.condition,
                 local_vars,
                 known_globals,
                 line_offset=node.line,
-                col_offset=node.column,
+                cached=False,
             )
+            main_body: List[ast.stmt] = []
+            for b_node in branches[0][1]:
+                self._add_node(
+                    b_node,
+                    main_body,
+                    local_vars,
+                    bound_var,
+                    layout_id,
+                    known_methods,
+                    known_globals,
+                    async_methods,
+                    component_map,
+                    scope_id,
+                    parts_var=parts_var,
+                    enable_regions=enable_regions,
+                )
 
-            if_body: List[ast.stmt] = []
-            new_attrs = [a for a in node.special_attributes if a is not if_attr]
-            new_node = dataclasses.replace(node, special_attributes=new_attrs)
-            self._add_node(
-                new_node,
-                if_body,
-                local_vars,
-                bound_var,
+            # 2. Build orelse chain from back to front
+            orelse: List[ast.stmt] = []
+            for i in range(len(branches) - 1, 0, -1):
+                raw_cond, body_nodes = branches[i]
+                assert raw_cond is not None
+                cond = raw_cond
+                branch_ast_body: List[ast.stmt] = []
+                for b_node in body_nodes:
+                    self._add_node(
+                        b_node,
+                        branch_ast_body,
+                        local_vars,
+                        bound_var,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        parts_var=parts_var,
+                        enable_regions=enable_regions,
+                    )
+
+                if isinstance(cond, ast.Constant) and cond.value is True:
+                    # pure else (always at end)
+                    orelse = branch_ast_body
+                else:
+                    # elif
+                    nested_if = ast.If(
+                        test=cond,
+                        body=branch_ast_body if branch_ast_body else [ast.Pass()],
+                        orelse=orelse,
+                    )
+                    orelse = [nested_if]
+
+            if_stmt = ast.If(
+                test=main_cond,
+                body=main_body if main_body else [ast.Pass()],
+                orelse=orelse,
+            )
+            self._set_line(if_stmt, node)
+            body.append(if_stmt)
+            return
+
+        # 2a. Handle $try
+        try_attr = next(
+            (a for a in node.special_attributes if isinstance(a, TryAttribute)), None
+        )
+        if try_attr:
+            # Partition children into try_block_nodes, handlers (except), try_else_nodes, try_finally_nodes
+            try_block_nodes: List[TemplateNode] = []
+            handlers: List[ast.ExceptHandler] = []
+            try_else_nodes: List[TemplateNode] = []
+            try_finally_nodes: List[TemplateNode] = []
+
+            current_try_section: List[TemplateNode] = try_block_nodes
+
+            for child in node.children:
+                exc_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ExceptAttribute)
+                    ),
+                    None,
+                )
+                fin_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, FinallyAttribute)
+                    ),
+                    None,
+                )
+                else_marker = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ElseAttribute)
+                    ),
+                    None,
+                )  # reuse ElseAttribute for try/else
+
+                if exc_attr:
+                    exc_block_body: List[TemplateNode] = []
+                    # Transform type and name if present
+                    type_node = None
+                    if exc_attr.exception_type:
+                        type_node = self._transform_expr(
+                            exc_attr.exception_type,
+                            local_vars,
+                            known_globals,
+                            line_offset=child.line,
+                            cached=False,
+                        )
+
+                    handler = ast.ExceptHandler(
+                        type=type_node,
+                        name=exc_attr.alias,
+                        body=cast(Any, exc_block_body),
+                    )
+                    handlers.append(handler)
+                    current_try_section = exc_block_body
+                elif else_marker:
+                    current_try_section = try_else_nodes
+                elif fin_attr:
+                    current_try_section = try_finally_nodes
+                else:
+                    current_try_section.append(child)
+
+            # Generate AST for bodies
+            try_ast_body: List[ast.stmt] = []
+            for b_node in try_block_nodes:
+                self._add_node(
+                    b_node,
+                    try_ast_body,
+                    local_vars,
+                    bound_var,
+                    layout_id,
+                    known_methods,
+                    known_globals,
+                    async_methods,
+                    component_map,
+                    scope_id,
+                    parts_var=parts_var,
+                )
+
+            for h in handlers:
+                real_nodes = cast(
+                    List[TemplateNode], h.body[:]
+                )  # Copy of TemplateNodes
+                h.body = []  # Reset to ast.stmt
+
+                # Add exception alias to local vars for children of this handler
+                handler_locals = local_vars.copy()
+                if h.name:
+                    handler_locals.add(h.name)
+
+                for b_node in real_nodes:
+                    self._add_node(
+                        b_node,
+                        h.body,
+                        handler_locals,
+                        bound_var,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        parts_var=parts_var,
+                    )
+                if not h.body:
+                    h.body = [ast.Pass()]
+
+            else_ast_body: List[ast.stmt] = []
+            for b_node in try_else_nodes:
+                self._add_node(
+                    b_node,
+                    else_ast_body,
+                    local_vars,
+                    bound_var,
+                    layout_id,
+                    known_methods,
+                    known_globals,
+                    async_methods,
+                    component_map,
+                    scope_id,
+                    parts_var=parts_var,
+                )
+
+            finally_ast_body: List[ast.stmt] = []
+            for b_node in try_finally_nodes:
+                self._add_node(
+                    b_node,
+                    finally_ast_body,
+                    local_vars,
+                    bound_var,
+                    layout_id,
+                    known_methods,
+                    known_globals,
+                    async_methods,
+                    component_map,
+                    scope_id,
+                    parts_var=parts_var,
+                )
+
+            try_stmt = ast.Try(
+                body=try_ast_body,
+                handlers=handlers,
+                orelse=else_ast_body,
+                finalbody=finally_ast_body,
+            )
+            self._set_line(try_stmt, node)
+            body.append(try_stmt)
+            return
+
+        # 2b. Handle $await
+        await_attr = next(
+            (a for a in node.special_attributes if isinstance(a, AwaitAttribute)), None
+        )
+        if await_attr:
+            # Handle await blocks: pending, then, catch
+            pending_body: List[TemplateNode] = []
+            then_body: List[TemplateNode] = []
+            catch_body: List[TemplateNode] = []
+
+            then_var = None
+            catch_var = None
+
+            current_section = pending_body
+            for child in node.children:
+                then_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ThenAttribute)
+                    ),
+                    None,
+                )
+                catch_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, CatchAttribute)
+                    ),
+                    None,
+                )
+
+                if then_attr:
+                    then_var = then_attr.variable
+                    current_section = then_body
+                elif catch_attr:
+                    catch_var = catch_attr.variable
+                    current_section = catch_body
+                else:
+                    current_section.append(child)
+
+            # Generate region ID and method name
+            region_id = f"await_{node.line}_{node.column}".replace("-", "_")
+            method_name = f"_render_await_{region_id}"
+            self.region_renderers[region_id] = method_name
+
+            # Generate the region renderer function
+            aux_func = self._generate_await_renderer(
+                node.children,
+                method_name,
+                region_id,
+                await_attr,
+                pending_body,
+                then_body,
+                then_var,
+                catch_body,
+                catch_var,
                 layout_id,
                 known_methods,
                 known_globals,
                 async_methods,
                 component_map,
                 scope_id,
-                parts_var=parts_var,
-                enable_regions=enable_regions,
+            )
+            self.auxiliary_functions.append(aux_func)
+
+            awaitable_expr = self._transform_expr(
+                await_attr.expression,
+                local_vars,
+                known_globals,
+                line_offset=node.line,
+                cached=False,
             )
 
-            if_stmt = ast.If(test=cond_expr, body=if_body, orelse=[])
+            # In main render:
+            # 1. parts.append('<div data-pw-region="...">')
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Constant(
+                                value=f'<div data-pw-region="{region_id}" style="display: contents;">'
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+            )
 
-            if_stmt = ast.If(test=cond_expr, body=if_body, orelse=[])
-            self._set_line(if_stmt, node)
-            body.append(if_stmt)
+            # 2. Start resolution task if not already started
+            # if region_id not in self._await_states:
+            #    _task = asyncio.create_task(self._resolve_await(region_id, expr))
+            #    self._background_tasks.add(_task)
+            #    _task.add_done_callback(self._background_tasks.discard)
+            start_task_stmt = ast.If(
+                test=ast.Compare(
+                    left=ast.Constant(value=region_id),
+                    ops=[ast.NotIn()],
+                    comparators=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_await_states",
+                            ctx=ast.Load(),
+                        )
+                    ],
+                ),
+                body=[
+                    ast.Assign(
+                        targets=[ast.Name(id="_await_task", ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="asyncio", ctx=ast.Load()),
+                                attr="create_task",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="_resolve_await",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[
+                                        ast.Constant(value=region_id),
+                                        awaitable_expr,
+                                    ],
+                                    keywords=[],
+                                )
+                            ],
+                            keywords=[],
+                        ),
+                    ),
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Attribute(
+                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                    attr="_background_tasks",
+                                    ctx=ast.Load(),
+                                ),
+                                attr="add",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Name(id="_await_task", ctx=ast.Load())],
+                            keywords=[],
+                        )
+                    ),
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="_await_task", ctx=ast.Load()),
+                                attr="add_done_callback",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Attribute(
+                                    value=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="_background_tasks",
+                                        ctx=ast.Load(),
+                                    ),
+                                    attr="discard",
+                                    ctx=ast.Load(),
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    ),
+                ],
+                orelse=[],
+            )
+            body.append(start_task_stmt)
+
+            # 3. parts.append(await self._render_await_...())
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Await(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr=method_name,
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[],
+                                    keywords=[],
+                                )
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+            )
+
+            # 4. parts.append('</div>')
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[ast.Constant(value="</div>")],
+                        keywords=[],
+                    )
+                )
+            )
             return
 
         # --- Handle <slot> ---
@@ -1161,7 +2050,7 @@ class TemplateCodegen:
 
         # 3. Render Node
         if node.tag is None:
-            # Text
+            # Text or Fragment
             if node.text_content:
                 parts = []
                 if node.is_raw:
@@ -1280,10 +2169,30 @@ class TemplateCodegen:
                 )
                 self._set_line(append_stmt, node)
                 body.append(append_stmt)
-            pass
+            elif node.children:
+                # Fragment support: render all children sequentially
+                for child in node.children:
+                    self._add_node(
+                        child,
+                        body,
+                        local_vars,
+                        bound_var,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        parts_var=parts_var,
+                        enable_regions=enable_regions,
+                    )
         else:
             # Element
-            if enable_regions and self._node_is_dynamic(node, known_globals):
+            if (
+                enable_regions
+                and not local_vars
+                and self._node_is_dynamic(node, known_globals)
+            ):
                 region_id = self._next_region_id()
                 method_name = f"_render_region_{region_id}"
                 self.region_renderers[region_id] = method_name
@@ -1353,6 +2262,7 @@ class TemplateCodegen:
                             known_globals,
                             line_offset=node.line,
                             col_offset=node.column,
+                            cached=False,
                         )
                     ],
                     keywords=[],
@@ -1950,6 +2860,7 @@ class TemplateCodegen:
                     known_globals,
                     line_offset=node.line,
                     col_offset=node.column,
+                    cached=False,
                 )
                 # if not cond: attrs['style'] = ...
                 body.append(

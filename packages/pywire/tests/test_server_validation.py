@@ -91,7 +91,7 @@ class TestServerValidation(unittest.TestCase):
         self.assertIsNone(self.validator.validate_field("opt", "", rules_opt))
         self.assertIsNone(self.validator.validate_field("opt", None, rules_opt))
 
-    async def test_validate_server_error(self) -> None:
+    def test_validate_server_error(self) -> None:
         """Test validate_form handles type conversion and returns strictly typed data."""
         schema = {
             "age": FieldRules(input_type="number", min_value="18"),
