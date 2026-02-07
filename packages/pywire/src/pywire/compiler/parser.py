@@ -23,7 +23,6 @@ from pywire.compiler.ast_nodes import (
     ModelAttribute,
     ParsedPyWire,
     ReactiveAttribute,
-    ShowAttribute,
     SpecialAttribute,
     SpreadAttribute,
     TemplateNode,
@@ -778,7 +777,10 @@ class PyWireParser:
                 node.tag = None
                 node.special_attributes.append(
                     InterpolationNode(
-                        expression=expr_val, is_raw=True, line=node.line, column=node.column
+                        expression=expr_val,
+                        is_raw=True,
+                        line=node.line,
+                        column=node.column,
                     )
                 )
 
