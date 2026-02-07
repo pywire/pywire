@@ -152,13 +152,8 @@ class PyWireParser:
                 r'(?<=[\s"\'])(\{\*\*.*?\})', r'__pywire_spread__="\1"', template_html
             )
 
-            # Preprocess Control Flow Blocks: <$tag> -> <pywire-tag>
-            # This must happen BEFORE shorthand processing so that <$if> becomes <pywire-if>
-            # which is recognized by the shorthand regex (<[a-zA-Z...]).
-            template_html = re.sub(r"<\$([a-zA-Z0-9_-]+)", r"<pywire-\1", template_html)
-            template_html = re.sub(
-                r"</\$([a-zA-Z0-9_-]+)>", r"</pywire-\1>", template_html
-            )
+            # Shorthand for <template> is <$ ... /> or similar? No, only {$tag} now.
+            # We don't support <$if> etc anymore.
 
             # NEW: Handle brace-based control flow {$tag ...} -> <pywire-tag expr="...">
             # NEW: Handle brace-based control flow {$tag ...} -> <pywire-tag expr="...">
@@ -166,22 +161,23 @@ class PyWireParser:
                 tag = match.group(1).lower()
                 expr = match.group(2) or ""
 
-                # Only process known control flow tags
-                control_flow_tags = {
+                # Only process known control flow tags for brace syntax
+                # (Note: $show is a special attribute/tag but not a block in brace syntax)
+                brace_control_flow_tags = {
                     "if",
                     "else",
                     "elif",
                     "for",
-                    "show",
                     "await",
                     "then",
                     "catch",
                     "try",
                     "except",
                     "finally",
+                    "html",
                 }
 
-                if tag not in control_flow_tags:
+                if tag not in brace_control_flow_tags:
                     # Return original match if not a control flow tag (e.g. {$count})
                     return match.group(0)
 
@@ -193,6 +189,7 @@ class PyWireParser:
                     "finally",
                     "then",
                     "catch",
+                    "html",
                 }
                 suffix = " />" if tag in self_closing_tags else ">"
 
@@ -591,7 +588,6 @@ class PyWireParser:
 
         control_flow_tags = (
             "pywire-if",
-            "pywire-show",
             "pywire-for",
             "pywire-elif",
             "pywire-else",
@@ -601,6 +597,7 @@ class PyWireParser:
             "pywire-await",
             "pywire-then",
             "pywire-catch",
+            "pywire-html",
         )
         if tag_lower in control_flow_tags:
             node.tag = None  # Act as <template> wrapper
@@ -659,51 +656,6 @@ class PyWireParser:
                                     )
                                 )
                                 del node.attributes[key]
-
-            elif tag_lower == "pywire-show":
-                # Similar logic for show
-                if not any(
-                    isinstance(a, ShowAttribute) for a in node.special_attributes
-                ):
-                    expr_val = node.attributes.pop("expr", None)
-                    if expr_val:
-                        node.special_attributes.append(
-                            ShowAttribute(
-                                name="$show",
-                                value="",
-                                condition=expr_val,
-                                line=0,
-                                column=0,
-                            )
-                        )
-                    else:
-                        found = False
-                        for attr in node.special_attributes:
-                            if isinstance(attr, ReactiveAttribute):
-                                node.special_attributes.append(
-                                    ShowAttribute(
-                                        name="$show",
-                                        value="",
-                                        condition=attr.expr,
-                                        line=0,
-                                        column=0,
-                                    )
-                                )
-                                node.special_attributes.remove(attr)
-                                found = True
-                                break
-                        if not found and node.attributes:
-                            key, val = list(node.attributes.items())[0]
-                            node.special_attributes.append(
-                                ShowAttribute(
-                                    name="$show",
-                                    value="",
-                                    condition=val,
-                                    line=0,
-                                    column=0,
-                                )
-                            )
-                            del node.attributes[key]
 
             elif tag_lower == "pywire-for":
                 # Must have ForAttribute
@@ -819,6 +771,14 @@ class PyWireParser:
                         variable=expr_val.strip() if expr_val else None,
                         line=0,
                         column=0,
+                    )
+                )
+            elif tag_lower == "pywire-html":
+                expr_val = node.attributes.pop("expr", "")
+                node.tag = None
+                node.special_attributes.append(
+                    InterpolationNode(
+                        expression=expr_val, is_raw=True, line=node.line, column=node.column
                     )
                 )
 

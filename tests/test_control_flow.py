@@ -7,9 +7,9 @@ class TestControlFlow(unittest.TestCase):
     def test_if_block(self):
         source = """
 ---html---
-<$if condition="True">
+{$if True}
     <div>Found</div>
-</$if>
+{/if}
 """
         parser = PyWireParser()
         ast = parser.parse(source)
@@ -26,64 +26,43 @@ class TestControlFlow(unittest.TestCase):
         real_children = [c for c in node.children if c.tag]
         self.assertEqual(len(real_children), 1) # div
 
-    def test_if_block_shorthand(self):
+    def test_html_block(self):
         source = """
 ---html---
-<$if {cond}>
-    <div>Found</div>
-</$if>
-"""
-        parser = PyWireParser()
-        ast = parser.parse(source)
-        node = ast.template[0]
-        if_attrs = [a for a in node.special_attributes if isinstance(a, IfAttribute)]
-        self.assertEqual(len(if_attrs), 1)
-        # Shorthand {cond} -> condition="cond"
-        self.assertEqual(if_attrs[0].condition, "cond")
-
-    def test_show_block(self):
-        source = """
----html---
-<$show condition="visible">
-  Content
-</$show>
+{$html "<b>Raw</b>"}
 """
         parser = PyWireParser()
         ast = parser.parse(source)
         node = ast.template[0]
         self.assertIsNone(node.tag)
-        show_attrs = [a for a in node.special_attributes if isinstance(a, ShowAttribute)]
-        self.assertEqual(len(show_attrs), 1)
-        self.assertEqual(show_attrs[0].condition, "visible")
+        from pywire.compiler.ast_nodes import InterpolationNode
+        interp_attrs = [a for a in node.special_attributes if isinstance(a, InterpolationNode)]
+        self.assertEqual(len(interp_attrs), 1)
+        self.assertTrue(interp_attrs[0].is_raw)
+        self.assertEqual(interp_attrs[0].expression, '"<b>Raw</b>"')
 
     def test_for_block_valid(self):
         source = """
 ---html---
-<$for $for="{item in items}">
+{$for item in items}
     <div>{item}</div>
-</$for>
+{/for}
 """
-        # Note: $for attribute is preserved. 
-        # My logic checks ForAttribute.
-        # parser._parse_attributes parses $for="..." -> ForAttribute.
-        
         parser = PyWireParser()
         ast = parser.parse(source)
         node = ast.template[0]
         self.assertIsNone(node.tag)
         for_attrs = [a for a in node.special_attributes if isinstance(a, ForAttribute)]
         self.assertEqual(len(for_attrs), 1)
-        # check ForAttribute fields
-        # "item in items" -> loop_vars="item", iterable="items" (if properly parsed)
         self.assertEqual(for_attrs[0].iterable, "items")
 
     def test_for_block_single_root_valid(self):
         source = """
 ---html---
-<$for $for="{i in x}">
+{$for i in x}
    <!-- comment -->
    <div>Single Root</div>
-</$for>
+{/for}
 """
         parser = PyWireParser()
         parser.parse(source) # Should pass
@@ -91,10 +70,10 @@ class TestControlFlow(unittest.TestCase):
     def test_for_block_invalid_multi_root(self):
         source = """
 ---html---
-<$for $for="{i in x}">
+{$for i in x}
    <div>Root 1</div>
    <div>Root 2</div>
-</$for>
+{/for}
 """
         parser = PyWireParser()
         with self.assertRaises(PyWireSyntaxError) as cm:
