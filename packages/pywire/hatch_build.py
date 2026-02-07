@@ -59,7 +59,23 @@ class CustomBuildHook(BuildHookInterface):
             client_dir = pkg_path.parent
             static_dir = client_dir.parent / "static"
             
-            if not shutil.which("pnpm"):
+            # Ensure static directory exists to prevent hatchling FileNotFoundError
+            static_dir.mkdir(parents=True, exist_ok=True)
+            
+            pnpm_executable = shutil.which("pnpm")
+            use_shell = os.name == "nt"
+            
+            if not pnpm_executable:
+                # If assets are missing and we don't have pnpm, we can't build
+                if not (static_dir / "pywire.core.min.js").exists():
+                    msg = (
+                        "pnpm not found. Building pywire from source (e.g. git install) "
+                        "requires pnpm to build client assets. Please install pnpm or "
+                        "use a pre-built package from PyPI."
+                    )
+                    log.error(msg)
+                    raise RuntimeError(msg)
+                
                 log.warning("pnpm not found, skipping client build. Assets may be stale.")
                 return
 
@@ -69,10 +85,10 @@ class CustomBuildHook(BuildHookInterface):
                 env = os.environ.copy()
                 env["CI"] = "true"
                 subprocess.run(
-                    ["pnpm", "install", "--config.confirmModulesPurge=false"],
+                    [pnpm_executable, "install", "--config.confirmModulesPurge=false"],
                     cwd=client_dir,
                     check=True,
-                    shell=False,
+                    shell=use_shell,
                     env=env
                 )
             else:
@@ -81,13 +97,16 @@ class CustomBuildHook(BuildHookInterface):
             # Check if we need to build
             if self._should_build(client_dir, static_dir) or version_changed:
                 log.info("Building client assets with pnpm...")
-                subprocess.run(["pnpm", "run", "build"], cwd=client_dir, check=True, shell=False)
+                subprocess.run([pnpm_executable, "run", "build"], cwd=client_dir, check=True, shell=use_shell)
                 log.info("Client build complete.")
             else:
                 log.info("Client assets up to date, skipping build.")
                 
         except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise
             log.error(f"Failed to sync client version: {e}")
+            raise RuntimeError(f"Client build failed: {e}") from e
 
     def _should_install(self, client_dir: Path) -> bool:
         """Check if node_modules is missing or package.json changed."""
