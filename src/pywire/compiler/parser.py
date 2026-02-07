@@ -8,16 +8,27 @@ from typing import Any, Dict, List, Tuple, Union
 from lxml import html  # type: ignore
 
 from pywire.compiler.ast_nodes import (
+    AwaitAttribute,
+    CatchAttribute,
+    ElifAttribute,
+    ElseAttribute,
     EventAttribute,
+    ExceptAttribute,
     FieldValidationRules,
+    FinallyAttribute,
+    ForAttribute,
     FormValidationSchema,
+    IfAttribute,
     InterpolationNode,
     ModelAttribute,
     ParsedPyWire,
     ReactiveAttribute,
+    ShowAttribute,
     SpecialAttribute,
     SpreadAttribute,
     TemplateNode,
+    ThenAttribute,
+    TryAttribute,
 )
 from pywire.compiler.attributes.base import AttributeParser
 from pywire.compiler.attributes.conditional import ConditionalAttributeParser
@@ -72,6 +83,7 @@ class PyWireParser:
 
     def parse(self, content: str, file_path: str = "") -> ParsedPyWire:
         """Parse PyWire content."""
+        self.file_path = file_path
         lines = content.split("\n")
         separator_index = self._find_separator_line(lines, file_path)
 
@@ -138,6 +150,99 @@ class PyWireParser:
             # and strictly follows {** pattern.
             template_html = re.sub(
                 r'(?<=[\s"\'])(\{\*\*.*?\})', r'__pywire_spread__="\1"', template_html
+            )
+
+            # Preprocess Control Flow Blocks: <$tag> -> <pywire-tag>
+            # This must happen BEFORE shorthand processing so that <$if> becomes <pywire-if>
+            # which is recognized by the shorthand regex (<[a-zA-Z...]).
+            template_html = re.sub(r"<\$([a-zA-Z0-9_-]+)", r"<pywire-\1", template_html)
+            template_html = re.sub(
+                r"</\$([a-zA-Z0-9_-]+)>", r"</pywire-\1>", template_html
+            )
+
+            # NEW: Handle brace-based control flow {$tag ...} -> <pywire-tag expr="...">
+            # NEW: Handle brace-based control flow {$tag ...} -> <pywire-tag expr="...">
+            def brace_tag_replacer(match: re.Match) -> str:
+                tag = match.group(1).lower()
+                expr = match.group(2) or ""
+
+                # Only process known control flow tags
+                control_flow_tags = {
+                    "if",
+                    "else",
+                    "elif",
+                    "for",
+                    "show",
+                    "await",
+                    "then",
+                    "catch",
+                    "try",
+                    "except",
+                    "finally",
+                }
+
+                if tag not in control_flow_tags:
+                    # Return original match if not a control flow tag (e.g. {$count})
+                    return match.group(0)
+
+                # Tags that are markers/branches and don't have closing tags in brace syntax
+                self_closing_tags = {
+                    "else",
+                    "elif",
+                    "except",
+                    "finally",
+                    "then",
+                    "catch",
+                }
+                suffix = " />" if tag in self_closing_tags else ">"
+
+                if expr:
+                    # Simple escape for quotes to allow lxml to parse the attribute
+                    safe_expr = expr.replace('"', "&quot;")
+                    return f'<pywire-{tag} expr="{safe_expr}"{suffix}'
+                return f"<pywire-{tag}{suffix}"
+
+            template_html = re.sub(
+                r"\{\$([a-zA-Z0-9_-]+)(?:\s+(.*?))?\}",
+                brace_tag_replacer,
+                template_html,
+            )
+            template_html = re.sub(
+                r"\{/([a-zA-Z0-9_-]+)\}", r"</pywire-\1>", template_html
+            )
+
+            # Preprocess shorthand bindings: {attr} -> __pw_sh_attr=""
+            # We must limit this to inside tags to avoid replacing content.
+            # Heuristic: Match <tag ...> blocks and replace inside them.
+            def tag_shorthand_wrapper(match: re.Match[str]) -> str:
+                tag_content = match.group(0)
+
+                # Replace {identifier} with __pw_sh_identifier=""
+                # Lookbehind for whitespace, Lookahead for whitespace/>/end
+                # Regex: (?<=\s)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?=\s|/|>)
+                processed_tag = re.sub(
+                    r"(?<=\s)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?=\s|/|>)",
+                    r'__pw_sh_\1=""',
+                    tag_content,
+                )
+
+                # Replace @attr= with __pw_on_attr= (lxml compatibility for Windows)
+                processed_tag = re.sub(
+                    r"@([a-zA-Z0-9_-]+)=", r"__pw_on_\1=", processed_tag
+                )
+                # Replace $attr= with __pw_dir_attr= (lxml compatibility for Windows)
+                processed_tag = re.sub(
+                    r"\$([a-zA-Z0-9_-]+)=", r"__pw_dir_\1=", processed_tag
+                )
+
+                return processed_tag
+
+            # Apply to all tags
+            template_html = re.sub(
+                r"(<[a-zA-Z0-9_-].*?>)",
+                tag_shorthand_wrapper,
+                template_html,
+                flags=re.DOTALL,
             )
 
             # lxml.html.fragments_fromstring handles multiple top-level elements
@@ -479,6 +584,244 @@ class PyWireParser:
             if text_nodes:
                 node.children.extend(text_nodes)
 
+        # Handle Control Flow Blocks (pywire-if, pywire-show, pywire-for, etc.)
+        # These are preprocessed from <$tag> or {$tag}
+        tag_str = element.tag if isinstance(element.tag, str) else ""
+        tag_lower = tag_str.lower()
+
+        control_flow_tags = (
+            "pywire-if",
+            "pywire-show",
+            "pywire-for",
+            "pywire-elif",
+            "pywire-else",
+            "pywire-try",
+            "pywire-except",
+            "pywire-finally",
+            "pywire-await",
+            "pywire-then",
+            "pywire-catch",
+        )
+        if tag_lower in control_flow_tags:
+            node.tag = None  # Act as <template> wrapper
+
+            # Extract condition/expression from attributes
+            # Priority:
+            # 1. Explicit special attribute ($if, $show, $for)
+            # 2. First reactive attribute (value is expression)
+            # 3. First regular attribute (value is string -> treated as expression?)
+
+            if tag_lower == "pywire-if":
+                # Check for existing IfAttribute
+                if not any(isinstance(a, IfAttribute) for a in node.special_attributes):
+                    # Check for 'expr' attribute from brace syntax
+                    expr_val = node.attributes.pop("expr", None)
+                    if expr_val:
+                        node.special_attributes.append(
+                            IfAttribute(
+                                name="$if",
+                                value="",
+                                condition=expr_val,
+                                line=0,
+                                column=0,
+                            )
+                        )
+                    else:
+                        # Find first reactive attribute to use as condition
+                        found = False
+                        for attr in node.special_attributes:
+                            if isinstance(attr, ReactiveAttribute):
+                                node.special_attributes.append(
+                                    IfAttribute(
+                                        name="$if",
+                                        value="",
+                                        condition=attr.expr,
+                                        line=0,
+                                        column=0,
+                                    )
+                                )
+                                node.special_attributes.remove(attr)
+                                found = True
+                                break
+
+                        if not found:
+                            # Check regular attributes (e.g. condition="exp")
+                            # Convert first regular attribute to IfAttribute
+                            if node.attributes:
+                                key, val = list(node.attributes.items())[0]
+                                node.special_attributes.append(
+                                    IfAttribute(
+                                        name="$if",
+                                        value="",
+                                        condition=val,
+                                        line=0,
+                                        column=0,
+                                    )
+                                )
+                                del node.attributes[key]
+
+            elif tag_lower == "pywire-show":
+                # Similar logic for show
+                if not any(
+                    isinstance(a, ShowAttribute) for a in node.special_attributes
+                ):
+                    expr_val = node.attributes.pop("expr", None)
+                    if expr_val:
+                        node.special_attributes.append(
+                            ShowAttribute(
+                                name="$show",
+                                value="",
+                                condition=expr_val,
+                                line=0,
+                                column=0,
+                            )
+                        )
+                    else:
+                        found = False
+                        for attr in node.special_attributes:
+                            if isinstance(attr, ReactiveAttribute):
+                                node.special_attributes.append(
+                                    ShowAttribute(
+                                        name="$show",
+                                        value="",
+                                        condition=attr.expr,
+                                        line=0,
+                                        column=0,
+                                    )
+                                )
+                                node.special_attributes.remove(attr)
+                                found = True
+                                break
+                        if not found and node.attributes:
+                            key, val = list(node.attributes.items())[0]
+                            node.special_attributes.append(
+                                ShowAttribute(
+                                    name="$show",
+                                    value="",
+                                    condition=val,
+                                    line=0,
+                                    column=0,
+                                )
+                            )
+                            del node.attributes[key]
+
+            elif tag_lower == "pywire-for":
+                # Must have ForAttribute
+                found_for = False
+                for attr in node.special_attributes:
+                    if isinstance(attr, ForAttribute):
+                        found_for = True
+                        break
+
+                if not found_for:
+                    # Check for 'expr' attribute from brace syntax
+                    expr_val = node.attributes.pop("expr", None)
+                    if expr_val:
+                        # Parse "item in items, key=item.id" or "idx, item in enumerate(items), key=idx"
+                        key_expr = None
+                        loop_expr = expr_val
+
+                        # Look for ", key=" to separate key expression
+                        if ", key=" in expr_val:
+                            loop_expr, key_part = expr_val.rsplit(", key=", 1)
+                            key_expr = key_part.strip()
+                        elif expr_val.count(",") == 1:
+                            # Legacy support for "item in items, some_key" (if it was ever supported)
+                            # or just handling a single comma that might be a key separator if it's not a tuple
+                            parts = expr_val.split(",", 1)
+                            if " in " in parts[0]:
+                                loop_expr = parts[0].strip()
+                                key_part = parts[1].strip()
+                                if key_part.startswith("key="):
+                                    key_expr = key_part[4:].strip()
+                                else:
+                                    # Not a key separator, maybe a trailing comma or something else
+                                    loop_expr = expr_val.strip().rstrip(",")
+
+                        # Parse loop_expr into vars and iterable
+                        loop_parts = loop_expr.split(" in ", 1)
+                        if len(loop_parts) == 2:
+                            loop_vars = loop_parts[0].strip()
+                            iterable = loop_parts[1].strip()
+                            node.special_attributes.append(
+                                ForAttribute(
+                                    name="$for",
+                                    value="",
+                                    is_template_tag=False,
+                                    loop_vars=loop_vars,
+                                    iterable=iterable,
+                                    key=key_expr,
+                                    line=0,
+                                    column=0,
+                                )
+                            )
+
+            elif tag_lower == "pywire-else":
+                node.special_attributes.append(
+                    ElseAttribute(name="$else", value="", line=0, column=0)
+                )
+            elif tag_lower == "pywire-elif":
+                expr_val = node.attributes.pop("expr", "")
+                node.special_attributes.append(
+                    ElifAttribute(
+                        name="$elif", value="", condition=expr_val, line=0, column=0
+                    )
+                )
+            elif tag_lower == "pywire-try":
+                node.special_attributes.append(
+                    TryAttribute(name="$try", value="", line=0, column=0)
+                )
+            elif tag_lower == "pywire-except":
+                expr_val = node.attributes.pop("expr", "")
+                # Parse "Exception as e"
+                exc_type = expr_val
+                alias = None
+                if " as " in expr_val:
+                    exc_type, alias = expr_val.split(" as ", 1)
+                node.special_attributes.append(
+                    ExceptAttribute(
+                        name="$except",
+                        value="",
+                        exception_type=exc_type.strip(),
+                        alias=alias.strip() if alias else None,
+                        line=0,
+                        column=0,
+                    )
+                )
+            elif tag_lower == "pywire-finally":
+                node.special_attributes.append(
+                    FinallyAttribute(name="$finally", value="", line=0, column=0)
+                )
+            elif tag_lower == "pywire-await":
+                expr_val = node.attributes.pop("expr", "")
+                node.special_attributes.append(
+                    AwaitAttribute(
+                        name="$await", value="", expression=expr_val, line=0, column=0
+                    )
+                )
+            elif tag_lower == "pywire-then":
+                expr_val = node.attributes.pop("expr", "")
+                node.special_attributes.append(
+                    ThenAttribute(
+                        name="$then",
+                        value="",
+                        variable=expr_val.strip() if expr_val else None,
+                        line=0,
+                        column=0,
+                    )
+                )
+            elif tag_lower == "pywire-catch":
+                expr_val = node.attributes.pop("expr", "")
+                node.special_attributes.append(
+                    CatchAttribute(
+                        name="$catch",
+                        value="",
+                        variable=expr_val.strip() if expr_val else None,
+                        line=0,
+                        column=0,
+                    )
+                )
+
         # Handle children
         for child in element:
             # Special logic: lxml comments are Elements with generic function tag
@@ -490,6 +833,45 @@ class PyWireParser:
 
             # 1. Map child element
             child_node = self._map_node(child)
+
+            # Enforce single root check for pywire-for (mapped to tag=None with ForAttribute)
+            # If child_node is a control flow block (tag=None) and has ForAttribute,
+            # we need to ensure it has exactly one child element (TemplateNode with tag!=None).
+            # But here we are appending child_node to current node.
+            # The structure of child_node for <pywire-for> will be:
+            # TemplateNode(tag=None, attributes=[], special_attributes=[ForAttribute], children=[...])
+            # We should validate children count inside _map_node for pywire-for.
+
+            # Enforce single root check for pywire-for if no $else is present
+            # We check if the current child being added is a second element for a for-loop
+            for_attr = next(
+                (a for a in node.special_attributes if isinstance(a, ForAttribute)),
+                None,
+            )
+            if for_attr and not node.tag:
+                # Keyed loops can have multiple roots (diffing supported)
+                if not for_attr.key:
+                    # Count non-text elements already in node.children
+                    real_children = [c for c in node.children if c.tag is not None]
+                    if real_children and child_node.tag is not None:
+                        # Check if any child (including the new one) has ElseAttribute
+                        has_else = any(
+                            isinstance(a, ElseAttribute)
+                            for c in node.children
+                            for a in c.special_attributes
+                        )
+                        has_else = has_else or any(
+                            isinstance(a, ElseAttribute)
+                            for a in child_node.special_attributes
+                        )
+
+                        if not has_else:
+                            raise PyWireSyntaxError(
+                                "Control flow block <$for> must have exactly one root element (unless using {$else} or key=...).",
+                                file_path=self.file_path,
+                                line=child_node.line,
+                            )
+
             node.children.append(child_node)
 
             # 2. Handle child's tail (text immediately after child, before next sibling)
@@ -649,6 +1031,19 @@ class PyWireParser:
                 name = "@" + name[len("__pw_on_") :]
             elif name.startswith("__pw_dir_"):
                 name = "$" + name[len("__pw_dir_") :]
+            elif name.startswith("__pw_sh_"):
+                # Shorthand binding: __pw_sh_attr -> {attr}
+                attr_name = name[len("__pw_sh_") :]
+                special.append(
+                    ReactiveAttribute(
+                        name=attr_name,
+                        value=f"{{{attr_name}}}",
+                        expr=attr_name,
+                        line=0,
+                        column=0,
+                    )
+                )
+                continue
 
             if value is None:
                 value = ""
@@ -663,6 +1058,9 @@ class PyWireParser:
                     break
 
             if not parsed:
+                # Removed direct check for {attr} here as lxml breaks on it.
+                # Handled via preprocessing __pw_sh_.
+
                 # Check for reactive value syntax: attr="{expr}"
                 val_str = str(value).strip()
                 if (

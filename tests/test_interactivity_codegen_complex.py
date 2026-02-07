@@ -26,11 +26,12 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         # Verify handler method generation
         # Since it's an async method in the python block, it should be awaited
         self.assertIn("async def _handler_0(self, arg0):", code)
-        self.assertIn("await self.delete_item(arg0, 'confirmed')", code)
+        self.assertIn("await self.delete_item(arg0.id, 'confirmed')", code)
 
         # Verify render template call
         # It should pass the arguments to the generator
         self.assertIn("data-arg-0", code)
+        self.assertIn("json.dumps(self.item)", code)
         self.assertNotIn("data-arg-1", code)  # 'confirmed' is a literal, not lifted
 
     def test_multiple_handlers_complex(self) -> None:
@@ -41,10 +42,9 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         module_ast = self.generator.generate(parsed)
         code = ast.unparse(module_ast)
 
-        # Verify JSON contains args placeholders (since they are lifted)
-        # AST codegen produces direct list assignment: _h['args'] = [self.id1]
-        self.assertIn("_h['args'] = [self.id1]", code)
-        self.assertIn("_h['args'] = [self.id2]", code)
+        # AST codegen produces direct list assignment: _h['args'] = [self.foo, self.id1]
+        self.assertIn("_h['args'] = [self.foo, self.id1]", code)
+        self.assertIn("_h['args'] = [self.bar, self.id2]", code)
         # Verify modifiers are collected (order is unstable because of set())
         modifiers_line = [
             line for line in code.split("\n") if "attrs['data-modifiers-click'] =" in line

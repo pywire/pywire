@@ -143,6 +143,81 @@ class ForAttribute(SpecialAttribute):
 
 
 @dataclass
+class ElseAttribute(SpecialAttribute):
+    """$else or {$else} marker."""
+
+    def __str__(self) -> str:
+        return "ElseAttribute()"
+
+
+@dataclass
+class ElifAttribute(SpecialAttribute):
+    """$elif={condition} or {$elif condition}."""
+
+    condition: str
+
+    def __str__(self) -> str:
+        return f"ElifAttribute(condition={self.condition})"
+
+
+@dataclass
+class TryAttribute(SpecialAttribute):
+    """{$try} marker."""
+
+    def __str__(self) -> str:
+        return "TryAttribute()"
+
+
+@dataclass
+class ExceptAttribute(SpecialAttribute):
+    """{$except Exception as e} marker."""
+
+    exception_type: Optional[str] = None
+    alias: Optional[str] = None
+
+    def __str__(self) -> str:
+        return f"ExceptAttribute(type={self.exception_type}, alias={self.alias})"
+
+
+@dataclass
+class FinallyAttribute(SpecialAttribute):
+    """{$finally} marker."""
+
+    def __str__(self) -> str:
+        return "FinallyAttribute()"
+
+
+@dataclass
+class AwaitAttribute(SpecialAttribute):
+    """{$await expression} marker."""
+
+    expression: str
+
+    def __str__(self) -> str:
+        return f"AwaitAttribute(expr={self.expression})"
+
+
+@dataclass
+class ThenAttribute(SpecialAttribute):
+    """{$then result} marker."""
+
+    variable: Optional[str] = None
+
+    def __str__(self) -> str:
+        return f"ThenAttribute(var={self.variable})"
+
+
+@dataclass
+class CatchAttribute(SpecialAttribute):
+    """{$catch error} marker."""
+
+    variable: Optional[str] = None
+
+    def __str__(self) -> str:
+        return f"CatchAttribute(var={self.variable})"
+
+
+@dataclass
 class FieldValidationRules:
     """Validation rules for a single form field."""
 

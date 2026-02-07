@@ -439,7 +439,8 @@ def test_operators():
     
     # Identity
     is_op = None is None
-    is_not_op = 10 is not None
+    temp_val = 10
+    is_not_op = temp_val is not None
     
     # Walrus operator (Python 3.8+) - with temp variable to avoid self. assignment
     temp_n = 0
