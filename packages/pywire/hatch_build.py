@@ -12,6 +12,12 @@ log = logging.getLogger(__name__)
 
 class CustomBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: Dict[str, Any]) -> None:
+        # Guarantee static dir exists absolutely first. 
+        # Hatchling will crash with FileNotFoundError if it doesn't exist 
+        # because of the force-include in pyproject.toml.
+        static_dir = Path(self.root) / "src" / "pywire" / "static"
+        static_dir.mkdir(parents=True, exist_ok=True)
+
         real_version = self.metadata.version
         
         # We only want to do this if we actually have a version
@@ -19,10 +25,6 @@ class CustomBuildHook(BuildHookInterface):
             return
 
         # Attempt to find the client package.json
-        # When building sdist, we might be in the source tree.
-        # When building wheel, we might be in a copy.
-        
-        # Try explicit relative path first
         pkg_path = Path(self.root) / "src" / "pywire" / "client" / "package.json"
         
         if not pkg_path.exists():
@@ -59,13 +61,22 @@ class CustomBuildHook(BuildHookInterface):
             client_dir = pkg_path.parent
             static_dir = client_dir.parent / "static"
             
-            # Ensure static directory exists to prevent hatchling FileNotFoundError
-            static_dir.mkdir(parents=True, exist_ok=True)
+            # Determine how to run pnpm
+            pnpm_bin = shutil.which("pnpm")
             
-            pnpm_executable = shutil.which("pnpm")
-            use_shell = os.name == "nt"
-            
-            if not pnpm_executable:
+            # On Windows, pnpm is often pnpm.cmd or pnpm.ps1
+            # Using shell=True and just "pnpm" is often more reliable if it's in PATH
+            if os.name == "nt":
+                pnpm_command = "pnpm"
+                use_shell = True
+                # Even if shutil.which didn't find it, the shell might
+                if not pnpm_bin:
+                    log.debug("pnpm not found by shutil.which, will try calling 'pnpm' via shell")
+            else:
+                pnpm_command = pnpm_bin
+                use_shell = False
+
+            if not pnpm_command:
                 # If assets are missing and we don't have pnpm, we can't build
                 if not (static_dir / "pywire.core.min.js").exists():
                     msg = (
@@ -81,11 +92,11 @@ class CustomBuildHook(BuildHookInterface):
 
             # Check if we need to install
             if self._should_install(client_dir):
-                log.info("Installing client dependencies...")
+                log.info(f"Installing client dependencies using {pnpm_command}...")
                 env = os.environ.copy()
                 env["CI"] = "true"
                 subprocess.run(
-                    [pnpm_executable, "install", "--config.confirmModulesPurge=false"],
+                    [pnpm_command, "install", "--config.confirmModulesPurge=false"],
                     cwd=client_dir,
                     check=True,
                     shell=use_shell,
@@ -96,8 +107,8 @@ class CustomBuildHook(BuildHookInterface):
 
             # Check if we need to build
             if self._should_build(client_dir, static_dir) or version_changed:
-                log.info("Building client assets with pnpm...")
-                subprocess.run([pnpm_executable, "run", "build"], cwd=client_dir, check=True, shell=use_shell)
+                log.info(f"Building client assets with {pnpm_command}...")
+                subprocess.run([pnpm_command, "run", "build"], cwd=client_dir, check=True, shell=use_shell)
                 log.info("Client build complete.")
             else:
                 log.info("Client assets up to date, skipping build.")
