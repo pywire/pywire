@@ -505,6 +505,63 @@ class Transpiler:
                 # Event handler
                 # @click={foo} -> def __handler():\n    foo
                 is_handler = True
+        else:
+            # Check for new v0.1.7 brace syntax {$tag ...} or {/tag}
+            # Only if it's single line for simplicity in detection,
+            # or we look at the start of the first line.
+            first_line_content = self.lines[start_line][start_col + 1 :].strip()
+            if first_line_content.startswith("$") or first_line_content.startswith("/"):
+                tag_match = re.match(
+                    r"([$/])([a-zA-Z0-9_-]+)(?:\s+(.*))?", first_line_content
+                )
+                if tag_match:
+                    prefix_char = tag_match.group(1)
+                    tag_name = tag_match.group(2).lower()
+
+                    if prefix_char == "$":
+                        known_control_flow = True
+                        if tag_name in ("if", "elif", "show"):
+                            prefix = "if ("
+                            suffix = "): pass"
+                        elif tag_name == "else":
+                            prefix = "else: "
+                            suffix = "pass"
+                        elif tag_name == "for":
+                            prefix = "for "
+                            suffix = ": pass"
+                        elif tag_name == "await":
+                            prefix = "_ = await "
+                            suffix = ""
+                        elif tag_name == "then":
+                            prefix = ""
+                            suffix = " = _"
+                        elif tag_name == "catch":
+                            prefix = ""
+                            suffix = " = _"
+                        elif tag_name == "try":
+                            prefix = "try: "
+                            suffix = "pass"
+                        elif tag_name == "except":
+                            prefix = "except "
+                            suffix = ": pass"
+                        elif tag_name == "finally":
+                            prefix = "finally: "
+                            suffix = "pass"
+                        elif tag_name == "html":
+                            prefix = "_ = "
+                            suffix = ""
+                        else:
+                            known_control_flow = False
+
+                        if known_control_flow:
+                            # We need to strip the "{$tag " part from the mapping
+                            # so that the remaining expression maps correctly.
+                            tag_trigger_len = len(tag_name) + 2  # {$ + tag
+                            # Adjust start_col for the actual expression
+                            start_col += tag_trigger_len
+                    elif prefix_char == "/":
+                        # Closing tag: {/if} -> ignore for python mapping
+                        return
 
         if is_handler:
             segments: List[Tuple[int, int, str]] = []

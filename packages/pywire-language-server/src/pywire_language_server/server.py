@@ -1354,6 +1354,38 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     line_text = doc.lines[position.line] if position.line < len(doc.lines) else ""
     in_tag = _is_inside_opening_tag(line_text, position.character)
 
+    # Suggest control flow tags if prefix is {$
+    before_cursor = line_text[: position.character]
+    if "{$" in before_cursor:
+        match = re.search(r"\{\$([\w]*)$", before_cursor)
+        if match:
+            tag_prefix = match.group(1).lower()
+            tags = [
+                "if",
+                "elif",
+                "else",
+                "for",
+                "await",
+                "then",
+                "catch",
+                "try",
+                "except",
+                "finally",
+            ]
+            items = []
+            for tag in tags:
+                if tag.startswith(tag_prefix):
+                    items.append(
+                        CompletionItem(
+                            label=tag,
+                            kind=CompletionItemKind.Keyword,
+                            detail=f"PyWire control flow tag: {{$ {tag} }}",
+                            insert_text=tag,
+                        )
+                    )
+            if items:
+                return CompletionList(is_incomplete=False, items=items)
+
     # Only suggest directives and event handlers when inside an opening tag
     if not in_tag:
         return CompletionList(is_incomplete=False, items=[])

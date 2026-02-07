@@ -133,3 +133,26 @@ count = wire(0)
     
     extracted = target_line[gen_col:gen_col+5]
     assert extracted == "count"
+
+def test_transpile_v017_brace_syntax():
+    source = """
+    {$if count > 0}
+        <p>{count}</p>
+    {$elif count < 0}
+        <p>Neg</p>
+    {$else}
+        <p>Zero</p>
+    {/if}
+    {$for item in items}
+        <p>{item}</p>
+    {/for}
+    """
+    transpiler = Transpiler(source)
+    code, _ = transpiler.transpile()
+    
+    # Check for keywords and expressions
+    # Note: elif currently maps to "if (" in my implementation for simplicitly of expression checking
+    assert "if (count > 0): pass" in code
+    assert "if (count < 0): pass" in code
+    assert "else: pass" in code
+    assert "for item in items: pass" in code
