@@ -1,5 +1,5 @@
 #!/bin/sh -e
-
+# Lint core, client, and docs
 export SOURCE_FILES="src/pywire"
 
 set -x
@@ -13,6 +13,18 @@ if [ -d "src/pywire/client" ]; then
         cd src/pywire/client
         if [ ! -x node_modules/.bin/eslint ]; then
             pnpm install
+        fi
+        pnpm format
+        pnpm lint:fix
+    )
+fi
+
+echo "-> Linting docs..."
+if [ -d "docs" ]; then
+    (
+        cd docs
+        if [ ! -x node_modules/.bin/prettier ]; then
+            pnpm install --prefer-frozen-lockfile
         fi
         pnpm format
         pnpm lint:fix

@@ -23,6 +23,19 @@ if [ -d "src/pywire/client" ]; then
     )
 fi
 
+echo "=== Checking PyWire Docs ==="
+if [ -d "docs" ]; then
+    (
+        cd docs
+        if [ ! -x node_modules/.bin/prettier ]; then
+            pnpm install --prefer-frozen-lockfile
+        fi
+        pnpm format:check
+        pnpm lint
+        pnpm typecheck
+    )
+fi
+
 echo "-> Testing (Multi-version)..."
 # Use uv run to execute nox from dev dependencies
 uv run nox
