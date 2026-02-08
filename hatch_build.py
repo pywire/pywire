@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
 from contextlib import suppress
 from pathlib import Path
@@ -55,8 +57,6 @@ class CustomBuildHook(BuildHookInterface):
                 
             # Now run the build
             # We need to run pnpm install and pnpm run build
-            import subprocess
-            import shutil
             
             client_dir = pkg_path.parent
             static_dir = client_dir.parent / "static"
@@ -97,7 +97,6 @@ class CustomBuildHook(BuildHookInterface):
                     # On Windows with shell=True, distinct arguments in a list are not
                     # automatically quoted/joined correctly by subprocess.run in all cases.
                     # It's safer to pass a full command string.
-                    import subprocess
                     cmd_str = subprocess.list2cmdline(args)
                     log.debug(f"Running command (shell=True): {cmd_str}")
                     subprocess.run(
