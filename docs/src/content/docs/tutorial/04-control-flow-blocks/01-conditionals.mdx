@@ -1,0 +1,80 @@
+---
+title: Conditionals
+tutorial: Basic PyWire
+section: Control Flow
+description: Learn how to conditionally render elements using {$if}.
+files:
+  - path: pages/index.wire
+    initial: |
+      is_visible = wire(False)
+
+      def toggle():
+          $is_visible = not $is_visible
+
+      ---html---
+      <div class="container">
+          <button @click={toggle}>
+              Toggle Secret Message
+          </button>
+
+          <!-- Wrap this div in an {$if} block -->
+          <div class="alert">
+              Secret message revealed!
+          </div>
+      </div>
+    solution: |
+      is_visible = wire(False)
+
+      def toggle():
+          $is_visible = not $is_visible
+
+      ---html---
+      <div class="container">
+          <button @click={toggle}>
+              Toggle Secret Message
+          </button>
+
+          {$if is_visible}
+              <div class="alert">
+                  Secret message revealed!
+              </div>
+          {/if}
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Wrap the alert in {$if is_visible}'
+    target: pages/index.wire
+    pattern: '{\$if is_visible}'
+  - type: browser_route_text
+    description: "Click toggle and see the message"
+    pattern: 'Secret message revealed!'
+pagesDir: pages
+---
+
+PyWire uses `{$if}` blocks to handle conditional rendering. Unlike CSS toggles (which hide elements but keep them in the DOM), `{$if}` blocks physically add or remove elements from the document structure based on the condition.
+
+### Your Task
+
+1.  The `is_visible` state toggles between `True` and `False` when the button is clicked.
+2.  Wrap the `.alert` div in an `{$if is_visible} ... {/if}` block so it is hidden by default.
+3.  Click the button to reveal it.
+
+#### Examples
+
+**Basic Visibility:**
+```pywire
+{$if is_visible}
+    <div class="alert">
+        Secret message revealed!
+    </div>
+{/if}
+```
+
+**With Else:**
+```pywire
+{$if is_logged_in}
+    <UserProfile />
+{$else}
+    <LoginButton />
+{/if}
+```
