@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 import time
 from textual.app import App, ComposeResult
@@ -393,10 +394,15 @@ class PyWireDevDashboard(App):
 
     async def run_server(self):
         """Runs the actual Uvicorn server as a subprocess."""
+        # Force UTF-8 encoding for the subprocess to avoid UnicodeEncodeError on Windows
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+
         self.server_process = await asyncio.create_subprocess_exec(
             *self.command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         async def read_stream(stream):

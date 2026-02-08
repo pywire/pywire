@@ -7,8 +7,10 @@ from typing import Any, Optional
 
 import rich.panel
 import rich_click as click
-
 from pywire import __version__
+from rich.console import Console
+
+console = Console()
 
 # Astro-like styling configuration (Cyan Theme)
 click.rich_click.USE_RICH_MARKUP = True
@@ -184,15 +186,17 @@ def dev(
     if not app:
         app = _discover_app_str()
         if no_tui:
-            click.echo(f"🔍 Auto-discovered app: {app}")
+            console.print(f"🔍 Auto-discovered app: [cyan]{app}[/]")
 
     # Verify import
     import_app(app)
 
     if no_tui:
-        click.echo(f"🚀 Starting pywire dev server on http://{host}:{port}")
+        console.print(
+            f"🚀 Starting pywire dev server on [link=http://{host}:{port}]http://{host}:{port}[/link]"
+        )
         if ssl_certfile:
-            click.echo("🔒 SSL enabled")
+            console.print("🔒 SSL enabled")
 
         asyncio.run(
             run_dev_server(
@@ -240,7 +244,7 @@ def build(
     if not app:
         app = _discover_app_str()
 
-    click.echo(f"🔨 Building {app}...")
+    console.print(f"🔨 Building [cyan]{app}[/]...")
 
     app_instance = import_app(app)
 
@@ -259,7 +263,7 @@ def build(
         out_dir=Path(out_dir),
     )
 
-    click.echo(
+    console.print(
         "✅ Build complete "
         f"(pages={summary.pages}, layouts={summary.layouts}, "
         f"components={summary.components}, out={summary.out_dir})"
@@ -291,9 +295,11 @@ def run(
     if workers is None:
         workers = (multiprocessing.cpu_count() * 2) + 1
 
-    click.echo(f"🚀 Starting production server for {app}")
-    click.echo(f"🌍 Listening on http://{host}:{port}")
-    click.echo(f"👷 Workers: {workers}")
+    console.print(f"🚀 Starting [bold]production[/] server for [cyan]{app}[/]")
+    console.print(
+        f"🌍 Listening on [link=http://{host}:{port}]http://{host}:{port}[/link]"
+    )
+    console.print(f"👷 Workers: {workers}")
 
     # Locate the app object to verify, but pass string to uvicorn
     import_app(app)
