@@ -3,6 +3,7 @@ import { getCollection, render } from 'astro:content'
 import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace'
 import '../../styles/custom.css'
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import type { TutorialStep } from '../../components/tutorial/types'
 
 // --- 1. Global Helper for Component Scope ---
 function cleanSlug(id: string) {
@@ -70,9 +71,6 @@ if (redirectTo) {
 const tutorialEntries = await getCollection('docs', ({ id }) => id.startsWith('tutorial/'))
 const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id))
 
-import type { TutorialStep } from '../../components/tutorial/types'
-
-// ... (other code)
 
 const allSteps: TutorialStep[] = sortedEntries.map((entry) => ({
   slug: cleanSlug(entry.id),
