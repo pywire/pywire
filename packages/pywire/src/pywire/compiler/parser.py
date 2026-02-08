@@ -231,6 +231,19 @@ class PyWireParser:
                     r"\$([a-zA-Z0-9_-]+)=", r"__pw_dir_\1=", processed_tag
                 )
 
+                # NEW: Handle boolean shorthands: $permanent -> data-pywire-permanent="true"
+                processed_tag = re.sub(
+                    r"(?<=\s)\$permanent(?=\s|/|>)",
+                    r'data-pywire-permanent="true"',
+                    processed_tag,
+                )
+                # NEW: Handle boolean shorthands: $reload -> data-pywire-reload="true"
+                processed_tag = re.sub(
+                    r"(?<=\s)\$reload(?=\s|/|>)",
+                    r'data-pywire-reload="true"',
+                    processed_tag,
+                )
+
                 return processed_tag
 
             # Apply to all tags

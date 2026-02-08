@@ -261,6 +261,17 @@ export class DOMUpdater {
               return true
             },
 
+            onBeforeElChildrenUpdated: (fromEl, _toEl) => {
+              // If element is marked as permanent, skip updating its children
+              if (fromEl instanceof HTMLElement && fromEl.hasAttribute('data-pywire-permanent')) {
+                if (this.debug) {
+                  console.log('[DOMUpdater] Permanent element detected, skipping children:', fromEl)
+                }
+                return false
+              }
+              return true
+            },
+
             onBeforeNodeDiscarded: () => true,
           })
         } catch (e) {
