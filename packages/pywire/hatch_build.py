@@ -61,6 +61,7 @@ class CustomBuildHook(BuildHookInterface):
             client_dir = pkg_path.parent
             static_dir = client_dir.parent / "static"
             
+
             # Determine how to run pnpm
             pnpm_bin = shutil.which("pnpm")
             
@@ -90,25 +91,45 @@ class CustomBuildHook(BuildHookInterface):
                 log.warning("pnpm not found, skipping client build. Assets may be stale.")
                 return
 
+            # Helper to run commands
+            def run_command(args, cwd, env=None):
+                if use_shell:
+                    # On Windows with shell=True, distinct arguments in a list are not
+                    # automatically quoted/joined correctly by subprocess.run in all cases.
+                    # It's safer to pass a full command string.
+                    import subprocess
+                    cmd_str = subprocess.list2cmdline(args)
+                    log.debug(f"Running command (shell=True): {cmd_str}")
+                    subprocess.run(
+                        cmd_str,
+                        cwd=cwd,
+                        check=True,
+                        shell=True,
+                        env=env
+                    )
+                else:
+                    log.debug(f"Running command: {args}")
+                    subprocess.run(
+                        args,
+                        cwd=cwd,
+                        check=True,
+                        shell=False,
+                        env=env
+                    )
+
             # Check if we need to install
             if self._should_install(client_dir):
                 log.info(f"Installing client dependencies using {pnpm_command}...")
                 env = os.environ.copy()
                 env["CI"] = "true"
-                subprocess.run(
-                    [pnpm_command, "install", "--config.confirmModulesPurge=false"],
-                    cwd=client_dir,
-                    check=True,
-                    shell=use_shell,
-                    env=env
-                )
+                run_command([pnpm_command, "install", "--config.confirmModulesPurge=false"], cwd=client_dir, env=env)
             else:
                 log.debug("Client dependencies up to date.")
 
             # Check if we need to build
             if self._should_build(client_dir, static_dir) or version_changed:
                 log.info(f"Building client assets with {pnpm_command}...")
-                subprocess.run([pnpm_command, "run", "build"], cwd=client_dir, check=True, shell=use_shell)
+                run_command([pnpm_command, "run", "build"], cwd=client_dir)
                 log.info("Client build complete.")
             else:
                 log.info("Client assets up to date, skipping build.")
