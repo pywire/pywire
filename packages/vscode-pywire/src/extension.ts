@@ -594,293 +594,293 @@ export function activate(context: ExtensionContext) {
       const middleware = useBundledPyright
         ? undefined
         : {
-          provideHover: async (
-            document: TextDocument,
-            position: Position,
-            token: CancellationToken,
-            next: ProvideHoverSignature
-          ) => {
-            // 1. Ask server for mapping
-            try {
-              if (!client) {
-                return await next(document, position, token)
-              }
-              const mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                uri: document.uri.toString(),
-                position: position,
-              })) as PositionMapping | null
-
-              if (mapping) {
-                // It maps to Python!
-                // 2. Determine shadow URI
-                const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                if (workspaceFolder) {
-                  const rootPath = workspaceFolder.uri.fsPath
-                  const relPath = path.relative(rootPath, document.uri.fsPath)
-                  const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                  const shadowUri = Uri.file(shadowPath)
-
-                  // Ensure file exists (it should have been updated on change)
-                  if (fs.existsSync(shadowPath)) {
-                    // 3. Delegate to Pylance
-                    const results = await commands.executeCommand<Hover[]>(
-                      'vscode.executeHoverProvider',
-                      shadowUri,
-                      new Position(mapping.line, mapping.character)
-                    )
-
-                    if (results && results.length > 0) {
-                      return results[0]
-                    }
-                  }
+            provideHover: async (
+              document: TextDocument,
+              position: Position,
+              token: CancellationToken,
+              next: ProvideHoverSignature
+            ) => {
+              // 1. Ask server for mapping
+              try {
+                if (!client) {
+                  return await next(document, position, token)
                 }
-              }
-            } catch (e) {
-              console.error('Hover middleware failed', e)
-            }
+                const mapping = (await client.sendRequest('pywire/mapToGenerated', {
+                  uri: document.uri.toString(),
+                  position: position,
+                })) as PositionMapping | null
 
-            // Fallback to default (Jedi)
-            return await next(document, position, token)
-          },
+                if (mapping) {
+                  // It maps to Python!
+                  // 2. Determine shadow URI
+                  const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
+                  if (workspaceFolder) {
+                    const rootPath = workspaceFolder.uri.fsPath
+                    const relPath = path.relative(rootPath, document.uri.fsPath)
+                    const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
+                    const shadowUri = Uri.file(shadowPath)
 
-          provideDefinition: async (
-            document: TextDocument,
-            position: Position,
-            token: CancellationToken,
-            next: ProvideDefinitionSignature
-          ) => {
-            try {
-              if (!client) {
-                return await next(document, position, token)
-              }
-              const mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                uri: document.uri.toString(),
-                position: position,
-              })) as PositionMapping | null
+                    // Ensure file exists (it should have been updated on change)
+                    if (fs.existsSync(shadowPath)) {
+                      // 3. Delegate to Pylance
+                      const results = await commands.executeCommand<Hover[]>(
+                        'vscode.executeHoverProvider',
+                        shadowUri,
+                        new Position(mapping.line, mapping.character)
+                      )
 
-              if (mapping) {
-                const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                if (workspaceFolder) {
-                  const rootPath = workspaceFolder.uri.fsPath
-                  const relPath = path.relative(rootPath, document.uri.fsPath)
-                  const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                  const shadowUri = Uri.file(shadowPath)
-
-                  if (fs.existsSync(shadowPath)) {
-                    const results = await commands.executeCommand<
-                      Location | LocationLink | (Location | LocationLink)[]
-                    >(
-                      'vscode.executeDefinitionProvider',
-                      shadowUri,
-                      new Position(mapping.line, mapping.character)
-                    )
-
-                    if (results) {
-                      if (Array.isArray(results)) {
-                        const mappedResults = await Promise.all(
-                          results.map((loc) => mapLocationBack(loc))
-                        )
-                        // Convert all to LocationLink for middleware signature
-                        return mappedResults.filter(Boolean).map((loc) => {
-                          if ('uri' in loc) {
-                            return {
-                              targetUri: loc.uri,
-                              targetRange: loc.range,
-                              targetSelectionRange: loc.range,
-                            } as LocationLink
-                          }
-                          return loc as LocationLink
-                        })
-                      } else {
-                        const mapped = await mapLocationBack(results)
-                        // Convert to LocationLink for middleware signature
-                        if ('uri' in mapped) {
-                          return [
-                            {
-                              targetUri: mapped.uri,
-                              targetRange: mapped.range,
-                              targetSelectionRange: mapped.range,
-                            } as LocationLink,
-                          ]
-                        }
-                        return [mapped as LocationLink]
+                      if (results && results.length > 0) {
+                        return results[0]
                       }
                     }
                   }
                 }
+              } catch (e) {
+                console.error('Hover middleware failed', e)
               }
-            } catch (e) {
-              console.error('Definition middleware failed', e)
-            }
-            return await next(document, position, token)
-          },
 
-          provideReferences: async (
-            document: TextDocument,
-            position: Position,
-            context: ReferenceContext,
-            token: CancellationToken,
-            next: ProvideReferencesSignature
-          ) => {
-            try {
-              if (!client) {
-                return await next(document, position, context, token)
-              }
-              const mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                uri: document.uri.toString(),
-                position: position,
-              })) as PositionMapping | null
+              // Fallback to default (Jedi)
+              return await next(document, position, token)
+            },
 
-              if (mapping) {
-                const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                if (workspaceFolder) {
-                  const rootPath = workspaceFolder.uri.fsPath
-                  const relPath = path.relative(rootPath, document.uri.fsPath)
-                  const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                  const shadowUri = Uri.file(shadowPath)
+            provideDefinition: async (
+              document: TextDocument,
+              position: Position,
+              token: CancellationToken,
+              next: ProvideDefinitionSignature
+            ) => {
+              try {
+                if (!client) {
+                  return await next(document, position, token)
+                }
+                const mapping = (await client.sendRequest('pywire/mapToGenerated', {
+                  uri: document.uri.toString(),
+                  position: position,
+                })) as PositionMapping | null
 
-                  if (fs.existsSync(shadowPath)) {
-                    const results = await commands.executeCommand<Location[]>(
-                      'vscode.executeReferenceProvider',
-                      shadowUri,
-                      new Position(mapping.line, mapping.character)
-                    )
+                if (mapping) {
+                  const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
+                  if (workspaceFolder) {
+                    const rootPath = workspaceFolder.uri.fsPath
+                    const relPath = path.relative(rootPath, document.uri.fsPath)
+                    const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
+                    const shadowUri = Uri.file(shadowPath)
 
-                    if (results && Array.isArray(results)) {
-                      const mappedResults = await Promise.all(
-                        results.map((loc) => mapLocationBack(loc))
+                    if (fs.existsSync(shadowPath)) {
+                      const results = await commands.executeCommand<
+                        Location | LocationLink | (Location | LocationLink)[]
+                      >(
+                        'vscode.executeDefinitionProvider',
+                        shadowUri,
+                        new Position(mapping.line, mapping.character)
                       )
-                      // Convert all to Location for middleware signature
-                      return mappedResults.filter(Boolean).map((loc) => {
-                        if ('uri' in loc) {
-                          return loc as Location
+
+                      if (results) {
+                        if (Array.isArray(results)) {
+                          const mappedResults = await Promise.all(
+                            results.map((loc) => mapLocationBack(loc))
+                          )
+                          // Convert all to LocationLink for middleware signature
+                          return mappedResults.filter(Boolean).map((loc) => {
+                            if ('uri' in loc) {
+                              return {
+                                targetUri: loc.uri,
+                                targetRange: loc.range,
+                                targetSelectionRange: loc.range,
+                              } as LocationLink
+                            }
+                            return loc as LocationLink
+                          })
+                        } else {
+                          const mapped = await mapLocationBack(results)
+                          // Convert to LocationLink for middleware signature
+                          if ('uri' in mapped) {
+                            return [
+                              {
+                                targetUri: mapped.uri,
+                                targetRange: mapped.range,
+                                targetSelectionRange: mapped.range,
+                              } as LocationLink,
+                            ]
+                          }
+                          return [mapped as LocationLink]
                         }
-                        // Convert LocationLink to Location
-                        return new Location(loc.targetUri, loc.targetRange)
-                      })
+                      }
                     }
                   }
                 }
+              } catch (e) {
+                console.error('Definition middleware failed', e)
               }
-            } catch (e) {
-              console.error('References middleware failed', e)
-            }
-            return await next(document, position, context, token)
-          },
+              return await next(document, position, token)
+            },
 
-          provideCompletionItem: async (
-            document: TextDocument,
-            position: Position,
-            context: CompletionContext,
-            token: CancellationToken,
-            next: ProvideCompletionItemsSignature
-          ) => {
-            try {
-              const lines = document.getText().split('\n')
-              const section = getSection(lines, position.line)
-              log(
-                `Completion request: section=${section} line=${position.line} char=${position.character} lineText="${lines[position.line]?.substring(0, 60)}"`
-              )
-              if (section === 'separator') {
-                return []
-              }
-
-              let mapping: PositionMapping | null = null
-              if (client) {
-                try {
-                  mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                    uri: document.uri.toString(),
-                    position: position,
-                  })) as PositionMapping | null
-                } catch (e) {
-                  console.error('Completion mapping failed', e)
-                  log(`Completion mapping failed: ${String(e)}`)
+            provideReferences: async (
+              document: TextDocument,
+              position: Position,
+              context: ReferenceContext,
+              token: CancellationToken,
+              next: ProvideReferencesSignature
+            ) => {
+              try {
+                if (!client) {
+                  return await next(document, position, context, token)
                 }
-              }
+                const mapping = (await client.sendRequest('pywire/mapToGenerated', {
+                  uri: document.uri.toString(),
+                  position: position,
+                })) as PositionMapping | null
 
-              const usePython = section === 'python' || Boolean(mapping)
-              log(`Completion routing: usePython=${usePython}`)
-              if (!usePython) {
+                if (mapping) {
+                  const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
+                  if (workspaceFolder) {
+                    const rootPath = workspaceFolder.uri.fsPath
+                    const relPath = path.relative(rootPath, document.uri.fsPath)
+                    const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
+                    const shadowUri = Uri.file(shadowPath)
+
+                    if (fs.existsSync(shadowPath)) {
+                      const results = await commands.executeCommand<Location[]>(
+                        'vscode.executeReferenceProvider',
+                        shadowUri,
+                        new Position(mapping.line, mapping.character)
+                      )
+
+                      if (results && Array.isArray(results)) {
+                        const mappedResults = await Promise.all(
+                          results.map((loc) => mapLocationBack(loc))
+                        )
+                        // Convert all to Location for middleware signature
+                        return mappedResults.filter(Boolean).map((loc) => {
+                          if ('uri' in loc) {
+                            return loc as Location
+                          }
+                          // Convert LocationLink to Location
+                          return new Location(loc.targetUri, loc.targetRange)
+                        })
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('References middleware failed', e)
+              }
+              return await next(document, position, context, token)
+            },
+
+            provideCompletionItem: async (
+              document: TextDocument,
+              position: Position,
+              context: CompletionContext,
+              token: CancellationToken,
+              next: ProvideCompletionItemsSignature
+            ) => {
+              try {
+                const lines = document.getText().split('\n')
+                const section = getSection(lines, position.line)
+                log(
+                  `Completion request: section=${section} line=${position.line} char=${position.character} lineText="${lines[position.line]?.substring(0, 60)}"`
+                )
+                if (section === 'separator') {
+                  return []
+                }
+
+                let mapping: PositionMapping | null = null
+                if (client) {
+                  try {
+                    mapping = (await client.sendRequest('pywire/mapToGenerated', {
+                      uri: document.uri.toString(),
+                      position: position,
+                    })) as PositionMapping | null
+                  } catch (e) {
+                    console.error('Completion mapping failed', e)
+                    log(`Completion mapping failed: ${String(e)}`)
+                  }
+                }
+
+                const usePython = section === 'python' || Boolean(mapping)
+                log(`Completion routing: usePython=${usePython}`)
+                if (!usePython) {
+                  if (!mapping) {
+                    log('Completion mapping: null')
+                  }
+                  return await next(document, position, context, token)
+                }
                 if (!mapping) {
                   log('Completion mapping: null')
+                  return []
                 }
-                return await next(document, position, context, token)
-              }
-              if (!mapping) {
-                log('Completion mapping: null')
-                return []
-              }
 
-              log(`Completion mapping: ${mapping.line}:${mapping.character}`)
-              await updateShadowFile(document.uri.toString(), document.getText())
+                log(`Completion mapping: ${mapping.line}:${mapping.character}`)
+                await updateShadowFile(document.uri.toString(), document.getText())
 
-              const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-              if (!workspaceFolder) {
-                return []
-              }
-
-              const rootPath = workspaceFolder.uri.fsPath
-              const relPath = path.relative(rootPath, document.uri.fsPath)
-              const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-              const shadowUri = Uri.file(shadowPath)
-
-              if (!fs.existsSync(shadowPath)) {
-                return []
-              }
-
-              const results = await commands.executeCommand<CompletionList | CompletionItem[]>(
-                'vscode.executeCompletionItemProvider',
-                shadowUri,
-                new Position(mapping.line, mapping.character),
-                context.triggerCharacter
-              )
-              if (!results) {
-                log('Completion results: empty')
-                return []
-              }
-
-              // Get prefix from wire file for filterText adjustment
-              const lineText = document.lineAt(position.line).text
-              const prefixMatch = lineText.slice(0, position.character).match(/[\w.$]*$/)
-              const wirePrefix = prefixMatch ? prefixMatch[0] : ''
-              log(`Completion prefix: "${wirePrefix}"`)
-
-              const stripEdits = (item: CompletionItem) => {
-                return {
-                  ...item,
-                  // Clear filterText to let VS Code use label directly
-                  filterText: undefined,
-                  sortText: item.sortText,
-                  textEdit: undefined,
-                  additionalTextEdits: undefined,
-                  range: undefined,
+                const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
+                if (!workspaceFolder) {
+                  return []
                 }
-              }
 
-              if (Array.isArray(results)) {
-                log(`Completion results: ${results.length} items (array)`)
-                return results.map(stripEdits)
-              }
-              if (results.items && Array.isArray(results.items)) {
-                log(`Completion results: ${results.items.length} items (list)`)
-                return {
-                  ...results,
-                  items: results.items.map(stripEdits),
+                const rootPath = workspaceFolder.uri.fsPath
+                const relPath = path.relative(rootPath, document.uri.fsPath)
+                const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
+                const shadowUri = Uri.file(shadowPath)
+
+                if (!fs.existsSync(shadowPath)) {
+                  return []
                 }
+
+                const results = await commands.executeCommand<CompletionList | CompletionItem[]>(
+                  'vscode.executeCompletionItemProvider',
+                  shadowUri,
+                  new Position(mapping.line, mapping.character),
+                  context.triggerCharacter
+                )
+                if (!results) {
+                  log('Completion results: empty')
+                  return []
+                }
+
+                // Get prefix from wire file for filterText adjustment
+                const lineText = document.lineAt(position.line).text
+                const prefixMatch = lineText.slice(0, position.character).match(/[\w.$]*$/)
+                const wirePrefix = prefixMatch ? prefixMatch[0] : ''
+                log(`Completion prefix: "${wirePrefix}"`)
+
+                const stripEdits = (item: CompletionItem) => {
+                  return {
+                    ...item,
+                    // Clear filterText to let VS Code use label directly
+                    filterText: undefined,
+                    sortText: item.sortText,
+                    textEdit: undefined,
+                    additionalTextEdits: undefined,
+                    range: undefined,
+                  }
+                }
+
+                if (Array.isArray(results)) {
+                  log(`Completion results: ${results.length} items (array)`)
+                  return results.map(stripEdits)
+                }
+                if (results.items && Array.isArray(results.items)) {
+                  log(`Completion results: ${results.items.length} items (list)`)
+                  return {
+                    ...results,
+                    items: results.items.map(stripEdits),
+                  }
+                }
+
+                log('Completion results: non-list result')
+                return results
+              } catch (e) {
+                console.error('Completion middleware failed', e)
+                log(`Completion middleware failed: ${String(e)}`)
               }
+              return []
+            },
 
-              log('Completion results: non-list result')
-              return results
-            } catch (e) {
-              console.error('Completion middleware failed', e)
-              log(`Completion middleware failed: ${String(e)}`)
-            }
-            return []
-          },
-
-          // Add handleDiagnostics to trigger shadow update?
-          // Or just listen to change events.
-        }
+            // Add handleDiagnostics to trigger shadow update?
+            // Or just listen to change events.
+          }
 
       // Client options - what to send to the server
       const clientOptions: LanguageClientOptions = {
