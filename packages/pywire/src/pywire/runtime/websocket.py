@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import sys
 import traceback
-from typing import Any, Dict, Set
+from typing import Any, Dict, Set, cast
 
 import msgpack
 from starlette.responses import Response
@@ -162,7 +162,9 @@ class WebSocketHandler:
 
                 # Advance to next raw frame
                 if current_tb:
-                    current_tb = current_tb.tb_next  # type: ignore # tb_next is Optional[TracebackType]
+                    current_tb = (
+                        current_tb.tb_next
+                    )  # tb_next is Optional[TracebackType]
 
                 trace.append(frame_data)
 
@@ -178,7 +180,7 @@ class WebSocketHandler:
 
     async def _send_update_payload(self, websocket: WebSocket, update: Any) -> None:
         if isinstance(update, Response):
-            html = bytes(update.body).decode("utf-8")
+            html = cast(bytes, update.body).decode("utf-8")
             await websocket.send_bytes(msgpack.packb({"type": "update", "html": html}))
             return
 
@@ -414,7 +416,12 @@ class WebSocketHandler:
 
             # Call handler
             try:
-                update = await page.handle_event(handler_name, event_data)
+                if handler_name:
+                    update = await page.handle_event(
+                        cast(str, handler_name), event_data
+                    )
+                else:
+                    update = await page.render_update(init=False)
             except Exception as e:
                 raise e
 
@@ -535,7 +542,7 @@ class WebSocketHandler:
 
                 # Render and send initial HTML
                 response = await page.render()
-                html = response.body.decode("utf-8")
+                html = cast(bytes, response.body).decode("utf-8")
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
                 )
@@ -576,7 +583,7 @@ class WebSocketHandler:
                         # Create a closure helper
                         class BoundErrorPage(ErrorPage):
                             def __init__(
-                                self, request: Request, *args: Any, **kwargs: Any
+                                self, request: Any, *args: Any, **kwargs: Any
                             ) -> None:
                                 super().__init__(
                                     request,
@@ -666,11 +673,11 @@ class WebSocketHandler:
                     if inspect.iscoroutinefunction(new_page.on_load):
                         await new_page.on_load()
                     else:
-                        new_page.on_load()
+                        cast(Any, new_page).on_load()
 
                 # Render and send HTML
                 response = await new_page.render()
-                html = response.body.decode("utf-8")
+                html = cast(bytes, response.body).decode("utf-8")
 
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
@@ -749,7 +756,7 @@ class WebSocketHandler:
 
                         # Render with new code but preserved state
                         response = await new_page.render()
-                        html = response.body.decode("utf-8")
+                        html = cast(bytes, response.body).decode("utf-8")
                         await connection.send_bytes(
                             msgpack.packb({"type": "update", "html": html})
                         )

@@ -17,7 +17,7 @@ files:
           <button @click={$count += 1}>
               Click Many Times
           </button>
-  
+
           <button>
               Click Only Once
           </button>
@@ -35,7 +35,7 @@ files:
           <button @click={$count += 1}>
               Click Many Times
           </button>
-  
+
           <button @click.once={$count += 1}>
               Click Only Once
           </button>
@@ -43,12 +43,12 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Use @click.once on the second button"
+    description: 'Use @click.once on the second button'
     target: pages/index.wire
-    pattern: "@click.once"
+    pattern: '@click.once'
   - type: browser_route_text
     description: "Click the 'Once' button and verify count is 1"
-    pattern: "Count: 1"
+    pattern: 'Count: 1'
 pagesDir: pages
 ---
 

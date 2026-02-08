@@ -44,12 +44,12 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Mutate nested property using $user.clicks += 1"
+    description: 'Mutate nested property using $user.clicks += 1'
     target: pages/index.wire
-    pattern: "$user.clicks +="
+    pattern: '$user.clicks +='
   - type: browser_route_text
-    description: "Register at least 3 clicks"
-    pattern: "Clicks: 3"
+    description: 'Register at least 3 clicks'
+    pattern: 'Clicks: 3'
 pagesDir: pages
 ---
 

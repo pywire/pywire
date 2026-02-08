@@ -29,13 +29,12 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
-    "mypy>=1.7.0",
+    "ty",
     "httpx>=0.23.0",
     "pytest-cov>=4.1.0",
     "coverage>=7.3.0",
     "msgpack-types",
-    "tox>=4.0.0",
-    "tox-uv>=1.0.0",
+    "nox",
     "build>=1.0.0",
 ]
 http3 = [
@@ -76,19 +75,25 @@ version-file = "src/pywire/_version.py"
 
 [tool.hatch.build.hooks.custom]
 
-[tool.mypy]
-python_version = "3.11"
-check_untyped_defs = true
-warn_unused_ignores = true
-no_implicit_optional = true
-show_error_codes = true
+[tool.ty.environment]
+python-version = "3.11"
 
-[[tool.mypy.overrides]]
-module = [
-    "aioquic.*",
-    "cryptography.*",
-    "hypercorn.*",
-    "msgpack",
-    "msgpack.*",
+[tool.ty.src]
+exclude = [
+    "docs/public/shim.py",
 ]
-ignore_missing_imports = true
+
+[tool.ty.analysis]
+allowed-unresolved-imports = [
+    "aioquic.**",
+    "cryptography.**",
+    "hypercorn.**",
+    "hatchling.**",
+    "lxml.**",
+    "js",
+    "pyodide.**",
+]
+
+[[tool.ty.overrides]]
+include = ["tests/**"]
+rules = { possibly-missing-attribute = "ignore", invalid-argument-type = "ignore", unresolved-attribute = "ignore", call-non-callable = "ignore", invalid-method-override = "ignore", redundant-cast = "ignore" }

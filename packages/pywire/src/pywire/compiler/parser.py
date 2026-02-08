@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
-from lxml import html  # type: ignore
+from lxml import html
 
 from pywire.compiler.ast_nodes import (
     AwaitAttribute,

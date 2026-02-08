@@ -17,14 +17,14 @@ files:
   - path: components/Badge.wire
     initial: |
       # 1. Define props 'text' and 'color' (default color to 'gray')
-      
+
       ---html---
       <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
         Text here
       </span>
     solution: |
       !props text, color="gray"
-      
+
       ---html---
       <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
         {text}
@@ -33,14 +33,14 @@ successCriteria:
   - type: file_contains
     description: "Define props using !props text, color='gray'"
     target: components/Badge.wire
-    pattern: "!props"
+    pattern: '!props'
   - type: file_contains
-    description: "Use {text} inside the span"
+    description: 'Use {text} inside the span'
     target: components/Badge.wire
-    pattern: "{text}"
+    pattern: '{text}'
   - type: browser_route_text
     description: "Verify 'Admin' badge is visible"
-    pattern: "Admin"
+    pattern: 'Admin'
 pagesDir: pages
 ---
 

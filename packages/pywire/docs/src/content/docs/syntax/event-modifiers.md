@@ -13,14 +13,12 @@ PyWire supports several event modifiers to simplify common tasks like preventing
 - `.outside`: Triggers when a click occurs outside the element.
 
 ```html
-<form @submit.prevent={handle_submit}>
-    <input @keydown.enter={add_item}>
-    <button>Submit</button>
+<form @submit.prevent="{handle_submit}">
+  <input @keydown.enter="{add_item}" />
+  <button>Submit</button>
 </form>
 
-<div class="modal" @click.outside={close_modal}>
-    Modal Content
-</div>
+<div class="modal" @click.outside="{close_modal}">Modal Content</div>
 ```
 
 ## Input Modifiers
@@ -29,8 +27,7 @@ PyWire supports several event modifiers to simplify common tasks like preventing
 - `.throttle.ms`: Ensures the event handler is called at most once every specified number of milliseconds.
 
 ```html
-<input type="text" 
-       @input.debounce.300={search_users($event.target.value)}>
+<input type="text" @input.debounce.300="{search_users($event.target.value)}" />
 ```
 
 ## Error Handling
@@ -38,7 +35,5 @@ PyWire supports several event modifiers to simplify common tasks like preventing
 The `.error` modifier allows you to catch validation errors or server-side exceptions for a specific event.
 
 ```html
-<form @submit={save_data} @submit.error={handle_error}>
-    ...
-</form>
+<form @submit="{save_data}" @submit.error="{handle_error}">...</form>
 ```

@@ -24,16 +24,16 @@ You can customize the application behavior by passing arguments to the construct
 app = PyWire(
     # Directory (relative to project root) containing your .wire pages (default: "pages")
     pages_dir="src/pages",
-    
+
     # Enable file-system based routing (default: True)
     path_based_routing=True,
-    
+
     # Enable PJAX (smooth page transitions) (default: True)
     enable_pjax=True,
-    
+
     # Enable debug mode (exposes source maps, etc.) (default: False)
     debug=True,
-    
+
     # Directory (relative to project root) containing your static assets (default: "/static")
     static_path="/assets"
 )
@@ -82,5 +82,5 @@ project/
 You can reference these in your templates:
 
 ```html
-<img src="/static/logo.png" alt="Logo">
+<img src="/static/logo.png" alt="Logo" />
 ```

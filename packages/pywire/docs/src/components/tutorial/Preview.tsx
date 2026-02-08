@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react'
 
 interface PreviewProps {
-  url: string;
-  onMessage?: (message: any) => void;
-  theme?: 'light' | 'dark';
+  url: string
+  onMessage?: (message: any) => void
+  theme?: 'light' | 'dark'
 }
 
 const INJECTED_SCRIPT = `
@@ -145,9 +145,9 @@ const INJECTED_SCRIPT = `
   // Log all script tags to ensure pywire is present
   if (DEBUG_PREVIEW) console.log('[PreviewScript] Script tags present:', Array.from(document.querySelectorAll('script')).map(s => s.src || 'inline'));
 })();
-`;
+`
 
-const DEBUG_PREVIEW = true; // Temporary enable for debugging
+const DEBUG_PREVIEW = true // Temporary enable for debugging
 
 const getStylesInner = (theme: 'light' | 'dark') => `
   :root {
@@ -172,7 +172,9 @@ const getStylesInner = (theme: 'light' | 'dark') => `
   }
 
   /* Override with explicit theme prop */
-  ${theme === 'dark' ? `
+  ${
+    theme === 'dark'
+      ? `
     :root {
       --bg: #171717;
       --fg: #e5e7eb;
@@ -180,7 +182,8 @@ const getStylesInner = (theme: 'light' | 'dark') => `
       --surface: #262626;
       --code-bg: #262626;
     }
-  ` : `
+  `
+      : `
     :root {
       --bg: #ffffff;
       --fg: #1f2937;
@@ -188,7 +191,8 @@ const getStylesInner = (theme: 'light' | 'dark') => `
       --surface: #f3f4f6;
       --code-bg: #f3f4f6;
     }
-  `}
+  `
+  }
 
   body {
     background-color: var(--bg);
@@ -281,66 +285,70 @@ const getStylesInner = (theme: 'light' | 'dark') => `
       padding-left: 2em;
       margin: 0 0 1em 0;
   }
-`;
+`
 
 export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark' }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      onMessage?.(event.data);
-    };
+      onMessage?.(event.data)
+    }
 
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [onMessage]);
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [onMessage])
 
   // Reactive Theme Switching
   useEffect(() => {
-    const iframe = iframeRef.current;
+    const iframe = iframeRef.current
     if (iframe && iframe.contentDocument) {
-      const body = iframe.contentDocument.body;
+      const body = iframe.contentDocument.body
       if (body) {
-        body.style.backgroundColor = theme === 'dark' ? '#171717' : '#ffffff';
-        body.style.color = theme === 'dark' ? '#e5e7eb' : '#1f2937';
+        body.style.backgroundColor = theme === 'dark' ? '#171717' : '#ffffff'
+        body.style.color = theme === 'dark' ? '#e5e7eb' : '#1f2937'
       }
     }
-  }, [theme]);
+  }, [theme])
 
   // Track if we've done the initial document setup
-  const isInitialized = useRef(false);
+  const isInitialized = useRef(false)
 
   // Reset when URL changes (navigation) to require fresh document setup
   useEffect(() => {
-    isInitialized.current = false;
-  }, [url]);
+    isInitialized.current = false
+  }, [url])
 
   // Helper to get processed HTML and styles
-  const getProcessedContent = useCallback((html: string) => {
-    const baseUrl = import.meta.env.BASE_URL.endsWith('/')
-      ? import.meta.env.BASE_URL
-      : `${import.meta.env.BASE_URL}/`;
-    const processedHtml = html.replace(/src="\/_pywire\//g, `src="${baseUrl}_pywire/`);
-    const isFullDocument = /<html/i.test(processedHtml) || /<!DOCTYPE/i.test(processedHtml);
+  const getProcessedContent = useCallback(
+    (html: string) => {
+      const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`
+      const processedHtml = html.replace(/src="\/_pywire\//g, `src="${baseUrl}_pywire/`)
+      const isFullDocument = /<html/i.test(processedHtml) || /<!DOCTYPE/i.test(processedHtml)
 
-    const styles = `
+      const styles = `
       <style id="pw-injected-styles">
         ${getStylesInner(theme)}
       </style>
-    `;
+    `
 
-    return { processedHtml, isFullDocument, styles };
-  }, [theme]);
+      return { processedHtml, isFullDocument, styles }
+    },
+    [theme],
+  )
 
   // initContent: Full document setup via doc.write (used for HTTP responses / code changes)
   // This creates a fresh document with new MockWebSocket connection
-  const initContent = useCallback((html: string) => {
-    if (DEBUG_PREVIEW) console.log('[Preview] initContent called (full doc.write)');
-    if (iframeRef.current && iframeRef.current.contentDocument) {
-      const doc = iframeRef.current.contentDocument;
-      const { processedHtml, isFullDocument, styles } = getProcessedContent(html);
+  const initContent = useCallback(
+    (html: string) => {
+      if (DEBUG_PREVIEW) console.log('[Preview] initContent called (full doc.write)')
+      if (iframeRef.current && iframeRef.current.contentDocument) {
+        const doc = iframeRef.current.contentDocument
+        const { processedHtml, isFullDocument, styles } = getProcessedContent(html)
 
-      const pushStateScript = `
+        const pushStateScript = `
         <script>
           try {
             if (window.location.pathname !== "${url}") {
@@ -348,26 +356,32 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
             }
           } catch (e) {}
         </script>
-      `;
+      `
 
-      let finalHtml = '';
+        let finalHtml = ''
 
-      if (isFullDocument) {
-        finalHtml = processedHtml;
-        if (finalHtml.includes('<head>')) {
-          finalHtml = finalHtml.replace('<head>', `<head>${styles}<script>${INJECTED_SCRIPT}</script>`);
-        } else if (finalHtml.includes('<html>')) {
-          finalHtml = finalHtml.replace('<html>', `<html><head>${styles}<script>${INJECTED_SCRIPT}</script></head>`);
+        if (isFullDocument) {
+          finalHtml = processedHtml
+          if (finalHtml.includes('<head>')) {
+            finalHtml = finalHtml.replace(
+              '<head>',
+              `<head>${styles}<script>${INJECTED_SCRIPT}</script>`,
+            )
+          } else if (finalHtml.includes('<html>')) {
+            finalHtml = finalHtml.replace(
+              '<html>',
+              `<html><head>${styles}<script>${INJECTED_SCRIPT}</script></head>`,
+            )
+          } else {
+            finalHtml = `${styles}<script>${INJECTED_SCRIPT}</script>${finalHtml}`
+          }
+          if (finalHtml.includes('</body>')) {
+            finalHtml = finalHtml.replace('</body>', `${pushStateScript}</body>`)
+          } else {
+            finalHtml += pushStateScript
+          }
         } else {
-          finalHtml = `${styles}<script>${INJECTED_SCRIPT}</script>${finalHtml}`;
-        }
-        if (finalHtml.includes('</body>')) {
-          finalHtml = finalHtml.replace('</body>', `${pushStateScript}</body>`);
-        } else {
-          finalHtml += pushStateScript;
-        }
-      } else {
-        finalHtml = `
+          finalHtml = `
           <!DOCTYPE html>
           <html>
             <head>
@@ -380,115 +394,123 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
               ${pushStateScript}
             </body>
           </html>
-        `;
-      }
+        `
+        }
 
-      doc.open();
-      doc.write(finalHtml);
-      doc.close();
-      isInitialized.current = true;
-    }
-  }, [url, theme, getProcessedContent]);
+        doc.open()
+        ;(doc as any).write(finalHtml)
+        doc.close()
+        isInitialized.current = true
+      }
+    },
+    [url, theme, getProcessedContent],
+  )
 
   // patchContent: Incremental update via innerHTML (used for WebSocket updates)
   // This preserves the existing MockWebSocket connection and page state
-  const patchContent = useCallback((html: string) => {
-    if (DEBUG_PREVIEW) console.log('[Preview] patchContent called (innerHTML only)');
-    if (iframeRef.current && iframeRef.current.contentDocument) {
-      const doc = iframeRef.current.contentDocument;
+  const patchContent = useCallback(
+    (html: string) => {
+      if (DEBUG_PREVIEW) console.log('[Preview] patchContent called (innerHTML only)')
+      if (iframeRef.current && iframeRef.current.contentDocument) {
+        const doc = iframeRef.current.contentDocument
 
-      // If not initialized yet, fall back to full init
-      if (!isInitialized.current || !doc.body) {
-        if (DEBUG_PREVIEW) console.log('[Preview] patchContent: not initialized, falling back to initContent');
-        initContent(html);
-        return;
-      }
+        // If not initialized yet, fall back to full init
+        if (!isInitialized.current || !doc.body) {
+          if (DEBUG_PREVIEW)
+            console.log('[Preview] patchContent: not initialized, falling back to initContent')
+          initContent(html)
+          return
+        }
 
-      const { processedHtml, isFullDocument } = getProcessedContent(html);
+        const { processedHtml, isFullDocument } = getProcessedContent(html)
 
-      // Extract body content from processedHtml
-      let bodyContent = processedHtml;
-      if (isFullDocument) {
-        const bodyMatch = processedHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        if (bodyMatch && bodyMatch[1]) {
-          bodyContent = bodyMatch[1];
+        // Extract body content from processedHtml
+        let bodyContent = processedHtml
+        if (isFullDocument) {
+          const bodyMatch = processedHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+          if (bodyMatch && bodyMatch[1]) {
+            bodyContent = bodyMatch[1]
+          }
+        }
+
+        // Update body innerHTML only
+        doc.body.innerHTML = bodyContent
+
+        // Update styles if theme changed
+        const existingStyles = doc.getElementById('pw-injected-styles')
+        if (existingStyles) {
+          existingStyles.innerHTML = getStylesInner(theme)
         }
       }
-
-      // Update body innerHTML only
-      doc.body.innerHTML = bodyContent;
-
-      // Update styles if theme changed
-      const existingStyles = doc.getElementById('pw-injected-styles');
-      if (existingStyles) {
-        existingStyles.innerHTML = getStylesInner(theme);
-      }
-    }
-  }, [theme, getProcessedContent, initContent]);
+    },
+    [theme, getProcessedContent, initContent],
+  )
 
   // Expose methods to parent
   useEffect(() => {
-    const targetWindow = window;
+    const targetWindow = window
 
-    (targetWindow as any).__PYWIRE_INIT_PREVIEW__ = initContent;
-    (targetWindow as any).__PYWIRE_PATCH_PREVIEW__ = patchContent;
+    ;(targetWindow as any).__PYWIRE_INIT_PREVIEW__ = initContent
+    ;(targetWindow as any).__PYWIRE_PATCH_PREVIEW__ = patchContent
     // Keep this for generic use, map to initContent
-    (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__ = initContent;
-
-    (targetWindow as any).__PYWIRE_PREVIEW_BACK__ = () => {
-      const iframe = iframeRef.current;
+    ;(targetWindow as any).__PYWIRE_UPDATE_PREVIEW__ = initContent
+    ;(targetWindow as any).__PYWIRE_PREVIEW_BACK__ = () => {
+      const iframe = iframeRef.current
       if (iframe && iframe.contentWindow) {
-        const isParentHistory = iframe.contentWindow.history === window.history;
+        const isParentHistory = iframe.contentWindow.history === window.history
         if (DEBUG_PREVIEW) {
-          console.log('[Preview] Executing iframe history.back()');
-          console.log('[Preview] Is iframe history same as parent?', isParentHistory);
-          console.log('[Preview] Iframe history length:', iframe.contentWindow.history.length);
+          console.log('[Preview] Executing iframe history.back()')
+          console.log('[Preview] Is iframe history same as parent?', isParentHistory)
+          console.log('[Preview] Iframe history length:', iframe.contentWindow.history.length)
         }
 
         if (!isParentHistory) {
-          iframe.contentWindow.history.back();
+          iframe.contentWindow.history.back()
         } else {
-          console.error('[Preview] CRITICAL: Iframe history is identical to parent history!');
+          console.error('[Preview] CRITICAL: Iframe history is identical to parent history!')
         }
       }
-    };
-
-    (targetWindow as any).__PYWIRE_PREVIEW_FORWARD__ = () => {
-      const iframe = iframeRef.current;
+    }
+    ;(targetWindow as any).__PYWIRE_PREVIEW_FORWARD__ = () => {
+      const iframe = iframeRef.current
       if (iframe && iframe.contentWindow) {
-        if (DEBUG_PREVIEW) console.log('[Preview] Executing iframe history.forward()');
-        iframe.contentWindow.history.forward();
+        if (DEBUG_PREVIEW) console.log('[Preview] Executing iframe history.forward()')
+        iframe.contentWindow.history.forward()
       }
-    };
-
-    (targetWindow as any).__PYWIRE_PREVIEW_RELOAD__ = () => {
-      if (DEBUG_PREVIEW) console.log('[Preview] Executing iframe reload (manual HTTP request)');
-      window.parent.postMessage({
-        type: 'HTTP_REQUEST',
-        payload: { method: 'GET', path: url || '/', headers: {} }
-      }, '*');
-    };
-
-    (targetWindow as any).__PYWIRE_SEND_TO_PREVIEW__ = (data: any) => {
-      const iframe = iframeRef.current;
+    }
+    ;(targetWindow as any).__PYWIRE_PREVIEW_RELOAD__ = () => {
+      if (DEBUG_PREVIEW) console.log('[Preview] Executing iframe reload (manual HTTP request)')
+      window.parent.postMessage(
+        {
+          type: 'HTTP_REQUEST',
+          payload: { method: 'GET', path: url || '/', headers: {} },
+        },
+        '*',
+      )
+    }
+    ;(targetWindow as any).__PYWIRE_SEND_TO_PREVIEW__ = (data: any) => {
+      const iframe = iframeRef.current
       if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage({
-          type: 'WS_MESSAGE',
-          message: data.message
-        }, '*');
+        iframe.contentWindow.postMessage(
+          {
+            type: 'WS_MESSAGE',
+            message: data.message,
+          },
+          '*',
+        )
       }
-    };
+    }
 
     return () => {
-      delete (targetWindow as any).__PYWIRE_INIT_PREVIEW__;
-      delete (targetWindow as any).__PYWIRE_PATCH_PREVIEW__;
-      delete (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__;
-      delete (targetWindow as any).__PYWIRE_PREVIEW_BACK__;
-      delete (targetWindow as any).__PYWIRE_PREVIEW_FORWARD__;
-      delete (targetWindow as any).__PYWIRE_PREVIEW_RELOAD__;
-      delete (targetWindow as any).__PYWIRE_SEND_TO_PREVIEW__;
-    };
-  }, [url, initContent, patchContent]);
+      delete (targetWindow as any).__PYWIRE_INIT_PREVIEW__
+      delete (targetWindow as any).__PYWIRE_PATCH_PREVIEW__
+      delete (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__
+      delete (targetWindow as any).__PYWIRE_PREVIEW_BACK__
+      delete (targetWindow as any).__PYWIRE_PREVIEW_FORWARD__
+      delete (targetWindow as any).__PYWIRE_PREVIEW_RELOAD__
+      delete (targetWindow as any).__PYWIRE_SEND_TO_PREVIEW__
+    }
+  }, [url, initContent, patchContent])
 
   return (
     <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
@@ -498,5 +520,5 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
         title="Preview"
       />
     </div>
-  );
-};
+  )
+}

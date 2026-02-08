@@ -27,7 +27,7 @@ user = wire(name="Alice", age=30, role="admin")
 You access the underlying value using the `.value` property.
 
 ```python
-print(count.value) 
+print(count.value)
 # Output: 0
 
 print(user.name)
@@ -70,13 +70,13 @@ def increment(self):
 
 State defined in a `.wire` file is **scoped to the component instance**.
 
-* If a user opens the page, a new instance of the component (and its state) is created.
-* The state persists for the lifetime of that user's connection.
-* If the user refreshes the page, the state resets (unless you implement external persistence like a database).
+- If a user opens the page, a new instance of the component (and its state) is created.
+- The state persists for the lifetime of that user's connection.
+- If the user refreshes the page, the state resets (unless you implement external persistence like a database).
 
 ### Shared State
 
 To share state between components or users, you should use standard Python patterns:
 
-* **Global Variables**: Define `wire()` objects in a separate `.py` module and import them. This creates global, singleton state shared by _all_ users (be careful!).
-* **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables during the `mount()` lifecycle hook.
+- **Global Variables**: Define `wire()` objects in a separate `.py` module and import them. This creates global, singleton state shared by _all_ users (be careful!).
+- **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables during the `mount()` lifecycle hook.

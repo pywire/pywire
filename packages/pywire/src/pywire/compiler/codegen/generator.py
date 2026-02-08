@@ -1625,14 +1625,14 @@ class CodeGenerator:
         if global_vars:
 
             class GlobalToSelf(ast.NodeTransformer):
-                def visit_Name(self, n: ast.Name) -> ast.AST:
-                    if n.id in global_vars:
+                def visit_Name(self, node: ast.Name) -> ast.AST:
+                    if node.id in global_vars:
                         return ast.Attribute(
                             value=ast.Name(id="self", ctx=ast.Load()),
-                            attr=n.id,
-                            ctx=n.ctx,
+                            attr=node.id,
+                            ctx=node.ctx,
                         )
-                    return n
+                    return node
 
             # Apply transformation
             transformer = GlobalToSelf()

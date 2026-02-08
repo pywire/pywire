@@ -10,12 +10,14 @@ PyWire provides first-class support for VS Code through our official extension.
 [Install to VS Code](vscode:extension/pywire.pywire) | [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=pywire.pywire)
 
 The PyWire extension provides:
+
 - Syntax highlighting for `.wire` files.
 - IntelliSense for the Python block.
 - Real-time error reporting.
 - Go to definition and hover support.
 
 To install:
+
 1. Open VS Code.
 2. Go to the Extensions view (`Ctrl+Shift+X`).
 3. Search for "PyWire".

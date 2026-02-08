@@ -5,7 +5,7 @@ export SOURCE_FILES="src/pywire"
 set -x
 
 uv run --with ruff ruff format --check --diff $SOURCE_FILES
-uv run --with mypy mypy $SOURCE_FILES
+uv run --with ty ty check $SOURCE_FILES
 uv run --with ruff ruff check $SOURCE_FILES
 
 echo "=== Checking PyWire Client (TS) ==="
@@ -24,5 +24,5 @@ if [ -d "src/pywire/client" ]; then
 fi
 
 echo "-> Testing (Multi-version)..."
-# Use uv run to execute tox from dev dependencies, ensuring availability for all cloners
-TOX_PARALLEL_NO_SPINNER=1 uv run tox -q -p auto
+# Use uv run to execute nox from dev dependencies
+uv run nox

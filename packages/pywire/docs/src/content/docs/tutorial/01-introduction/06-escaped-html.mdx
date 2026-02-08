@@ -27,12 +27,12 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Use {$html content} to render raw HTML"
+    description: 'Use {$html content} to render raw HTML'
     target: pages/index.wire
-    pattern: "{$html content}"
+    pattern: '{$html content}'
   - type: browser_element
-    description: "Verify that the content is rendered as HTML (strong tag exists)"
-    target: "strong"
+    description: 'Verify that the content is rendered as HTML (strong tag exists)'
+    target: 'strong'
 pagesDir: pages
 ---
 

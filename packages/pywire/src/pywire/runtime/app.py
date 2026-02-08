@@ -808,8 +808,9 @@ class PyWire:
 
                 # Path info
                 path_info = {}
-                if hasattr(page_class, "__routes__"):
-                    for name in page_class.__routes__.keys():
+                routes = getattr(page_class, "__routes__", {})
+                if routes:
+                    for name in routes.keys():
                         path_info[name] = name == variant_name
                 elif hasattr(page_class, "__route__"):
                     path_info["main"] = True
@@ -817,8 +818,10 @@ class PyWire:
                 from pywire.runtime.router import URLHelper
 
                 url_helper = None
-                if hasattr(page_class, "__routes__"):
-                    url_helper = URLHelper(page_class.__routes__)
+                url_helper = None
+                routes = getattr(page_class, "__routes__", None)
+                if routes:
+                    url_helper = URLHelper(cast(dict[str, str], routes))
 
                 try:
                     page = page_class(
@@ -851,8 +854,9 @@ class PyWire:
 
         # Build path info dict
         path_info = {}
-        if hasattr(page_class, "__routes__"):
-            for name in page_class.__routes__.keys():
+        routes = getattr(page_class, "__routes__", {})
+        if routes:
+            for name in routes.keys():
                 path_info[name] = name == variant_name
         elif hasattr(page_class, "__route__"):
             path_info["main"] = True
@@ -861,8 +865,9 @@ class PyWire:
         from pywire.runtime.router import URLHelper
 
         url_helper = None
-        if hasattr(page_class, "__routes__"):
-            url_helper = URLHelper(page_class.__routes__)
+        routes = getattr(page_class, "__routes__", None)
+        if routes:
+            url_helper = URLHelper(cast(dict[str, str], routes))
 
         # Instantiate page
         page = page_class(request, params, query, path=path_info, url=url_helper)
@@ -889,7 +894,7 @@ class PyWire:
 
         # Inject WebTransport certificate hash if available (Dev Mode)
         if isinstance(response, Response) and response.media_type == "text/html":
-            body = bytes(response.body).decode("utf-8")
+            body = cast(bytes, response.body).decode("utf-8")
             injections = []
 
             # WebTransport Hash

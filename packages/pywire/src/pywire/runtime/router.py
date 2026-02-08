@@ -200,12 +200,15 @@ class Router:
         self.routes.append(Route(pattern, page_class, name))
 
     def add_page(self, page_class: Type[BasePage]) -> None:
-        """Register all routes for a page class."""
-        if hasattr(page_class, "__routes__"):
-            for name, pattern in page_class.__routes__.items():
+        # Register all routes for a page class
+        routes = getattr(page_class, "__routes__", {})
+        if routes:
+            for name, pattern in routes.items():
                 self.add_route(pattern, page_class, name)
         elif hasattr(page_class, "__route__"):
-            self.add_route(page_class.__route__, page_class)
+            route = getattr(page_class, "__route__")
+            if isinstance(route, str):
+                self.add_route(route, page_class)
 
     def match(
         self, path: str

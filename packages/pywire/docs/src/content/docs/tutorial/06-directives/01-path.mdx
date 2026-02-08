@@ -1,5 +1,5 @@
 ---
-title: "!path"
+title: '!path'
 tutorial: Basic PyWire
 section: Directives
 description: Override the default routing of a file using the !path directive.
@@ -21,13 +21,13 @@ successCriteria:
   - type: file_contains
     description: "Add !path '/home' to the top of the file"
     target: pages/strange.wire
-    pattern: "!path \"/home\""
+    pattern: '!path "/home"'
   - type: browser_route_text
-    description: "Navigate to /home and see the content"
-    route: "/home"
-    pattern: "now at /home"
+    description: 'Navigate to /home and see the content'
+    route: '/home'
+    pattern: 'now at /home'
 pagesDir: pages
-initialRoute: "/home"
+initialRoute: '/home'
 ---
 
 By default, files in the `pages/` directory are served at a route matching their filename. You can override this using the `!path` directive.

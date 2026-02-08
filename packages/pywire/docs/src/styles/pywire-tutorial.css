@@ -6,10 +6,10 @@
 }
 
 /* Reset margins for header/layout elements to prevent Starlight's * + * padding */
-.pw-header *, 
-.pw-header-group *, 
-.pw-browser-url-bar *, 
-.pw-browser-controls *, 
+.pw-header *,
+.pw-header-group *,
+.pw-browser-url-bar *,
+.pw-browser-controls *,
 .pw-browser-nav *,
 .pw-filetree-header *,
 .pw-filetree-folder *,
@@ -53,7 +53,7 @@
   --pw-separator: #1f2937;
 }
 
-[data-theme="light"] {
+[data-theme='light'] {
   --pw-bg-main: #f8fafc;
   --pw-bg-panel: #ffffff;
   --pw-bg-header: #f1f5f9;
@@ -73,7 +73,10 @@
   background-color: var(--pw-bg-main);
   color: var(--pw-text-main);
   overflow: hidden;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 /* Headers */
@@ -205,8 +208,8 @@
 }
 
 .pw-instructions-container > .prose {
-    height: auto !important;
-    min-height: min-content !important;
+  height: auto !important;
+  min-height: min-content !important;
 }
 
 @media (max-width: 1024px) {
@@ -345,7 +348,8 @@
   transition: background-color 0.2s !important;
 }
 
-.pw-separator-h:hover, .pw-separator-h[data-panel-group-direction="horizontal"]:hover {
+.pw-separator-h:hover,
+.pw-separator-h[data-panel-group-direction='horizontal']:hover {
   background-color: var(--pw-accent) !important;
 }
 
@@ -455,8 +459,8 @@
   border-right: 2px solid var(--pw-accent);
 }
 
-[data-theme="light"] .pw-filetree-file.active {
-    background-color: rgba(8, 145, 178, 0.1);
+[data-theme='light'] .pw-filetree-file.active {
+  background-color: rgba(8, 145, 178, 0.1);
 }
 
 /* Spinner */
@@ -510,40 +514,40 @@
 .pw-instructions-container h2,
 .pw-instructions-container h3,
 .pw-instructions-container h4 {
-    display: flex !important;
-    align-items: center !important;
-    gap: 0.5rem !important;
-    flex-wrap: wrap;
-    position: relative;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  flex-wrap: wrap;
+  position: relative;
 }
 
 .pw-instructions-container .heading-anchor {
-    display: inline-flex !important;
-    order: -1; /* Place anchor before text */
-    text-decoration: none !important;
-    color: var(--pw-accent) !important;
-    opacity: 0.5;
-    transition: opacity 0.2s;
+  display: inline-flex !important;
+  order: -1; /* Place anchor before text */
+  text-decoration: none !important;
+  color: var(--pw-accent) !important;
+  opacity: 0.5;
+  transition: opacity 0.2s;
 }
 
 .pw-instructions-container h1:hover .heading-anchor,
 .pw-instructions-container h2:hover .heading-anchor,
 .pw-instructions-container h3:hover .heading-anchor {
-    opacity: 1;
+  opacity: 1;
 }
 
 .pw-instructions-container h1::after,
 .pw-instructions-container h2::after {
-    display: none !important; /* Remove Starlight's default underlines if they interfere with flex */
+  display: none !important; /* Remove Starlight's default underlines if they interfere with flex */
 }
 
 /* Re-add the horizontal line after H1/H2 if needed, but in a flex-safe way */
 .pw-instructions-container h1,
 .pw-instructions-container h2 {
-    border-bottom: 1px solid var(--sl-color-border);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-    width: 100%;
+  border-bottom: 1px solid var(--sl-color-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  width: 100%;
 }
 
 .pw-modal-content {
@@ -552,13 +556,21 @@
   border-radius: 8px;
   width: 90%;
   max-width: 500px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.5),
+    0 10px 10px -5px rgba(0, 0, 0, 0.4);
   animation: pw-modal-in 0.3s ease-out;
 }
 
 @keyframes pw-modal-in {
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .pw-modal-header {
@@ -656,9 +668,15 @@
 }
 
 @keyframes pw-pulse-success {
-  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
-  70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
 }
 
 .pw-success-banner {
@@ -678,23 +696,42 @@
 }
 
 @keyframes pw-slide-up {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @keyframes pw-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pw-spin-reverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
 }
 
 @keyframes pw-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .pw-success-banner span {
@@ -762,35 +799,35 @@
 }
 /* Heading Anchors Fix - Robust Phase 3.5 */
 .pw-instructions-container :is(h1, h2, h3, h4) {
-    display: flex !important;
-    align-items: center !important;
-    gap: 0.5rem !important;
-    flex-wrap: nowrap !important; /* Force single line unless text wraps */
-    position: relative;
-    width: 100%;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  flex-wrap: nowrap !important; /* Force single line unless text wraps */
+  position: relative;
+  width: 100%;
 }
 
 .pw-instructions-container .heading-anchor {
-    display: inline-flex !important;
-    order: -1; /* Place anchor before text */
-    text-decoration: none !important;
-    color: var(--pw-accent) !important;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-    flex-shrink: 0; /* Prevent anchor from squishing */
+  display: inline-flex !important;
+  order: -1; /* Place anchor before text */
+  text-decoration: none !important;
+  color: var(--pw-accent) !important;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  flex-shrink: 0; /* Prevent anchor from squishing */
 }
 
 .pw-instructions-container :is(h1, h2, h3, h4):hover .heading-anchor {
-    opacity: 1;
+  opacity: 1;
 }
 
 .pw-instructions-container :is(h1, h2)::after {
-    display: none !important; /* Remove Starlight's default underlines */
+  display: none !important; /* Remove Starlight's default underlines */
 }
 
 /* Re-add the horizontal line after H1/H2 */
 .pw-instructions-container :is(h1, h2) {
-    border-bottom: 1px solid var(--sl-color-border);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
+  border-bottom: 1px solid var(--sl-color-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
 }

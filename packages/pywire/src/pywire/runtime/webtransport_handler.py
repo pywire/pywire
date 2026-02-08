@@ -4,7 +4,7 @@ Handles 'webtransport' scope type from Hypercorn.
 """
 
 import json
-from typing import Any, Dict, Set
+from typing import Any, Dict, Set, cast
 
 from pywire.runtime.page import BasePage
 
@@ -120,7 +120,7 @@ class WebTransportHandler:
 
                     # If response is HTML, send update
                     if hasattr(response, "body"):
-                        html = bytes(response.body).decode("utf-8")
+                        html = cast(bytes, response.body).decode("utf-8")
                         response_data = {"type": "update", "html": html}
                         await self._send_response(send, stream_id, response_data)
 

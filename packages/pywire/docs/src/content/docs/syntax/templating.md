@@ -33,7 +33,7 @@ is_active = wire(True)
 theme_color = wire("blue")
 
 ---html---
-<div class={{'active': $is_active}}" 
+<div class={{'active': $is_active}}"
      style={f"color: {theme_color.value}"}>
     Dynamic content
 </div>
