@@ -55,8 +55,8 @@ def on_search(value):
     print(f"Searching for: {value}")
 
 ---html---
-<input type="text" 
-       placeholder="Search..." 
+<input type="text"
+       placeholder="Search..."
        @input={on_search($event.target.value)}>
 ```
 

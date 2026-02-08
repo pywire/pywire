@@ -225,7 +225,7 @@ class TestValidationExhaustive(unittest.TestCase):
 
         # We need to pass it to validate_with_model which expects Type[BaseModel]
         # but it just checks hasattr(model_class, 'model_validate')
-        instance, errors = validate_with_model({"x": 1}, LegacyModel)  # type: ignore
+        instance, errors = validate_with_model({"x": 1}, LegacyModel)
         self.assertEqual(instance, "LegacyInstance")
 
     def test_pydantic_unexpected_exception(self) -> None:
@@ -234,7 +234,7 @@ class TestValidationExhaustive(unittest.TestCase):
             def model_validate(cls, data: dict) -> None:
                 raise RuntimeError("Unexpected failure")
 
-        instance, errors = validate_with_model({"x": 1}, BreakingModel)  # type: ignore
+        instance, errors = validate_with_model({"x": 1}, BreakingModel)
         self.assertIn("__all__", errors)
         self.assertIn("Unexpected failure", errors["__all__"])
 

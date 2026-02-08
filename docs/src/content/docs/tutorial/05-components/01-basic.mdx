@@ -22,7 +22,7 @@ files:
       <button class="hover-effect">
         I am a component!
       </button>
-      
+
       <style scoped>
         .hover-effect:hover {
             opacity: 0.8;
@@ -30,12 +30,12 @@ files:
       </style>
 successCriteria:
   - type: browser_element
-    description: "The component button should be rendered"
-    target: "button"
+    description: 'The component button should be rendered'
+    target: 'button'
   - type: file_contains
-    description: "Add a hover effect (opacity opacity) via scoped style"
+    description: 'Add a hover effect (opacity opacity) via scoped style'
     target: components/MyButton.wire
-    pattern: "opacity: 0.8"
+    pattern: 'opacity: 0.8'
 pagesDir: pages
 ---
 

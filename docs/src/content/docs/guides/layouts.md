@@ -11,12 +11,12 @@ A layout is just an ordinary `.wire` file that uses the `<slot />` tag to indica
 
 ```html
 <nav>
-    <a href="/">Home</a>
-    <a href="/about">About</a>
+  <a href="/">Home</a>
+  <a href="/about">About</a>
 </nav>
 
 <main>
-    <slot />
+  <slot />
 </main>
 
 <footer>© 2026 PyWire</footer>

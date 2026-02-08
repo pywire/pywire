@@ -9,7 +9,7 @@ PyWire provides a powerful, schema-less approach to form validation that leverag
 
 When you use the `@submit` event on a `<form>`, PyWire automatically scans the form's input fields (`required`, `min`, `max`, `pattern`, `type`) and builds a validation schema on the server.
 
-You don't need to define a Pydantic model manually (though you can). The HTML *is* the schema.
+You don't need to define a Pydantic model manually (though you can). The HTML _is_ the schema.
 
 ```pywire
 
@@ -48,8 +48,8 @@ def handle_submit(data):
 3. **Execution**: When the form submits, PyWire intercepts the event.
 4. **Validation**: Before calling `handle_submit`, PyWire validates the incoming data against the extracted rules.
 5. **Routing**:
-    * **Valid**: Calls `handle_submit(data)`.
-    * **Invalid**: Intercepted before calling `handle_submit` and populates `errors` dict.
+   - **Valid**: Calls `handle_submit(data)`.
+   - **Invalid**: Intercepted before calling `handle_submit` and populates `errors` dict.
 
 ## Reactive Validation Attributes
 
@@ -57,5 +57,5 @@ You can bind validation attributes dynamically.
 
 ```html
 <!-- Field is required only if 'is_company' checkbox is checked -->
-<input name="company_name" required={is_company.value}>
+<input name="company_name" required="{is_company.value}" />
 ```

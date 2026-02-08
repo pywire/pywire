@@ -1,5 +1,5 @@
 ---
-title: "Loops ($for)"
+title: 'Loops ($for)'
 tutorial: Basic PyWire
 section: Framework attributes
 description: Use the $for attribute to render lists of elements.
@@ -39,12 +39,12 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Use $for={item in items} on the li tag"
+    description: 'Use $for={item in items} on the li tag'
     target: pages/index.wire
-    pattern: "$for={item in items}"
+    pattern: '$for={item in items}'
   - type: browser_route_text
-    description: "Verify Date is added to the list"
-    pattern: "Date"
+    description: 'Verify Date is added to the list'
+    pattern: 'Date'
 pagesDir: pages
 ---
 

@@ -44,9 +44,9 @@ Includes a robust CLI with a Terminal User Interface (TUI) for real-time logs, h
 
 A PyWire application consists of `.wire` files. These files are compiled into Python classes that handle:
 
-* **Rendering**: Generating the initial HTML.
-* **Hydration**: Establishing a WebSocket connection.
-* **Events**: Receiving events (clicks, inputs) from the browser.
-* **Updates**: Sending precise DOM patches back to the client.
+- **Rendering**: Generating the initial HTML.
+- **Hydration**: Establishing a WebSocket connection.
+- **Events**: Receiving events (clicks, inputs) from the browser.
+- **Updates**: Sending precise DOM patches back to the client.
 
 Ready to see it in action? Let's [build your first component](/docs/guides/your-first-component).

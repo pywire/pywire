@@ -8,7 +8,7 @@ import astroParser from 'astro-eslint-parser'
 export default [
   // Ignore patterns
   {
-    ignores: ['dist/**', 'node_modules/**', '.astro/**'],
+    ignores: ['dist/**', 'node_modules/**', '.astro/**', 'public/**'],
   },
 
   // Base configuration
@@ -17,6 +17,8 @@ export default [
       globals: {
         ...globals.node,
         ...globals.browser,
+        ...globals.serviceworker,
+        ...globals.worker,
       },
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -25,6 +27,19 @@ export default [
 
   // ESLint recommended rules
   js.configs.recommended,
+  {
+    rules: {
+      'no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
 
   // Astro files
   {
@@ -58,8 +73,14 @@ export default [
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' },
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
       ],
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ]

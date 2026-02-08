@@ -54,5 +54,5 @@ Your app will be available at `http://localhost:3000`.
 
 ## What's Next?
 
-* Check out the [Introduction](/docs/guides/introduction) to understand the core philosophy.
-* Build your first component in the [Walkthrough](/docs/guides/your-first-component).
+- Check out the [Introduction](/docs/guides/introduction) to understand the core philosophy.
+- Build your first component in the [Walkthrough](/docs/guides/your-first-component).

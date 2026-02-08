@@ -45,11 +45,11 @@ def get_app():
             # This must be done BEFORE initializing PyWire so initial load is covered.
             from pywire.compiler.parser import PyWireParser
             if not hasattr(PyWireParser, "_original_parse"):
-                PyWireParser._original_parse = PyWireParser.parse
+                PyWireParser._original_parse = PyWireParser.parse  # ty: ignore
                 def patched_parse(self, content, file_path=""):
                     escaped_content = escape_pywire_content(content)
                     return self._original_parse(escaped_content, file_path)
-                PyWireParser.parse = patched_parse
+                PyWireParser.parse = patched_parse  # ty: ignore
                 print("PyWireParser class monkey-patched for Pyodide")
 
             app_instance = PyWire(pages_dir=current_pages_dir, debug=True)
@@ -151,7 +151,7 @@ async def handle_js_message(event_data):
                     "id": req_id,
                     "message": msg
                 }
-                js_payload = to_js(response_payload, dict_converter=js.Object.fromEntries)
+                js_payload = to_js(response_payload, dict_converter=js.Object.fromEntries)  # ty: ignore
                 js.postMessage(js_payload)
 
             await run_asgi(scope, queue, send_to_js)
@@ -189,7 +189,7 @@ async def handle_js_message(event_data):
             
             def send_to_js(msg):
                 import js
-                print(f"DEBUG: Internal WS send for {req_id}: type={msg.get('type')}")
+                print(f"DEBUG: Internal WS send for {req_id}: type={msg.get('type')}")  # ty: ignore
                 
                 if msg.get("type") == "websocket.close":
                     if DEBUG_SHIM:
@@ -264,7 +264,7 @@ async def handle_js_message(event_data):
                     response_payload["decoded_payload"] = decoded_payload
 
                 try:
-                    js_payload = to_js(response_payload, dict_converter=js.Object.fromEntries)
+                    js_payload = to_js(response_payload, dict_converter=js.Object.fromEntries)  # ty: ignore
                     js.postMessage(js_payload)
                     if DEBUG_SHIM:
                         print(f"DEBUG: WS message posted to JS: {msg.get('type')}")
@@ -333,8 +333,8 @@ async def handle_js_message(event_data):
         traceback.print_exc()
 
 # Expose to JS
-import js
-js.handle_message = handle_js_message
+import js  # ty: ignore
+js.handle_message = handle_js_message  # ty: ignore
 
 def reload_page(path_str):
     import pathlib
@@ -360,7 +360,7 @@ def reload_page(path_str):
         traceback.print_exc()
         return False
 
-js.reload_page = reload_page
+js.reload_page = reload_page  # ty: ignore
 
 def restart_server(pages_dir="/app"):
     global app_instance, current_pages_dir
@@ -374,4 +374,4 @@ def restart_server(pages_dir="/app"):
     except Exception as e:
         print(f"DEBUG: Failed to invalidate loader cache: {e}")
 
-js.restart_server = restart_server
+js.restart_server = restart_server  # ty: ignore

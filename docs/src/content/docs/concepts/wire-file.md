@@ -26,6 +26,7 @@ name = wire("World")
 When you run your app, PyWire compiles these files into standard Python classes. This means you get full IDE support for the Python block, and the framework can optimize the rendering process.
 
 The HTML block supports:
+
 - **Interpolation**: `{variable.value}`
 - **Attributes**: `attr={value}` or `{attr}`
 - **Events**: `@click={handler}`

@@ -67,7 +67,7 @@ class TestJinjaInterpolation(unittest.TestCase):
 
     def test_compile_empty(self) -> None:
         self.assertEqual(self.parser.compile(""), "''")
-        self.assertEqual(self.parser.compile(None), "''")  # type: ignore[arg-type]
+        self.assertEqual(self.parser.compile(None), "''")
 
 
 if __name__ == "__main__":

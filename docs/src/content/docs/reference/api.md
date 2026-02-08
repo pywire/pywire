@@ -5,6 +5,7 @@ title: Core API Reference
 This reference documents the core Python API for PyWire. It covers the essential primitives for state management, application configuration, and runtime interaction.
 
 ## Core Primitives
+
 ---
 
 ### `wire`
@@ -19,13 +20,13 @@ class wire(initial_value: Any, **kwargs: Any)
 
 **Arguments:**
 
-*   **`initial_value`** (`Any`): The starting value. This can be a primitive (int, str, bool), a list, a dictionary, or an object.
+- **`initial_value`** (`Any`): The starting value. This can be a primitive (int, str, bool), a list, a dictionary, or an object.
 
-*   **`**kwargs`** (`Any`): If provided, the wire is initialized as a **Namespace** object (similar to a dictionary or `SimpleNamespace`), where keys become reactive attributes.
+- **`**kwargs`** (`Any`): If provided, the wire is initialized as a **Namespace** object (similar to a dictionary or `SimpleNamespace`), where keys become reactive attributes.
 
 **Properties:**
 
-*   **`.value`**: Accesses or modifies the underlying value. Writing to this property triggers reactivity.
+- **`.value`**: Accesses or modifies the underlying value. Writing to this property triggers reactivity.
 
 **Usage:**
 
@@ -46,6 +47,7 @@ user.age = 31       # Write attribute (Trigger)
 **Note:** Inside a `.wire` file's Python block, you can use the `$` prefix sugar (e.g., `$count`, `$user.age`) which compiles to `.value`.
 
 ## Application Class
+
 ---
 
 ### `PyWire`
@@ -66,15 +68,15 @@ class PyWire(
 
 **Parameters:**
 
-*   **`pages_dir`** (`str`): Path to the directory containing your `.wire` files relative to the application root. Defaults to `"pages"`.
+- **`pages_dir`** (`str`): Path to the directory containing your `.wire` files relative to the application root. Defaults to `"pages"`.
 
-*   **`path_based_routing`** (`bool`): If `True`, automatically generates routes based on the file structure in `pages_dir`. Defaults to `True`.
+- **`path_based_routing`** (`bool`): If `True`, automatically generates routes based on the file structure in `pages_dir`. Defaults to `True`.
 
-*   **`enable_pjax`** (`bool`): If `True`, intercepts internal link clicks to perform soft navigations (HTML replacement) instead of full page reloads. Defaults to `True`.
+- **`enable_pjax`** (`bool`): If `True`, intercepts internal link clicks to perform soft navigations (HTML replacement) instead of full page reloads. Defaults to `True`.
 
-*   **`debug`** (`bool`): Enables developer tools, including the TUI dashboard, source maps, and detailed error overlays. Defaults to `False`.
+- **`debug`** (`bool`): Enables developer tools, including the TUI dashboard, source maps, and detailed error overlays. Defaults to `False`.
 
-*   **`static_path`** (`str`): The URL prefix for serving static files. Defaults to `"/static"`.
+- **`static_path`** (`str`): The URL prefix for serving static files. Defaults to `"/static"`.
 
 **Example:**
 
@@ -85,6 +87,7 @@ app = PyWire(pages_dir="src/pages", debug=True)
 ```
 
 ## Lifecycle Hooks
+
 ---
 
 These functions are optional definitions you can place inside your component's script block.
@@ -108,6 +111,7 @@ def fetch_data(params):
 ```
 
 ## Runtime Helpers
+
 ---
 
 Utility functions available in the `pywire.runtime.helpers` module to interact with the client-side environment from the server.
@@ -122,7 +126,7 @@ def relocate(path: str) -> None
 
 **Arguments:**
 
-*   **`path`** (`str`): The destination URL (relative or absolute).
+- **`path`** (`str`): The destination URL (relative or absolute).
 
 **Example:**
 
@@ -135,6 +139,7 @@ def login_handler():
 ```
 
 ## Template Context Variables
+
 ---
 
 Special variables available strictly within the HTML template context.
@@ -145,24 +150,23 @@ Represents the client-side DOM event payload. Available **only** inside event ha
 
 **Properties:**
 
-*   **`.value`** (`Any`): The `value` property of the target element.
+- **`.value`** (`Any`): The `value` property of the target element.
+  - For `<input type="text">`, returns the string text.
 
-    *   For `<input type="text">`, returns the string text.
+  - For `<input type="checkbox">`, returns `True` or `False`.
 
-    *   For `<input type="checkbox">`, returns `True` or `False`.
+  - For `<select>`, returns the selected option's value.
 
-    *   For `<select>`, returns the selected option's value.
+- **`.key`** (`str`): The key value for keyboard events (e.g., `"Enter"`, `"Escape"`, `"a"`).
 
-*   **`.key`** (`str`): The key value for keyboard events (e.g., `"Enter"`, `"Escape"`, `"a"`).
-
-*   **`.target`** (`dict`): A dictionary containing serialized attributes of the DOM element that triggered the event (id, class, name, dataset, etc.).
+- **`.target`** (`dict`): A dictionary containing serialized attributes of the DOM element that triggered the event (id, class, name, dataset, etc.).
 
 **Example:**
 
 ```html
 <!-- Accessing input value -->
-<input @input={update_text($event.value)}>
+<input @input="{update_text($event.value)}" />
 
 <!-- Accessing specific key press -->
-<input @keydown={handle_key($event.key)}>
+<input @keydown="{handle_key($event.key)}" />
 ```

@@ -411,7 +411,7 @@ async def run_dev_server(
                 reload=False,
                 log_level="info",
                 use_colors=True,  # Force colors for TUI
-                **ssl_options,  # type: ignore
+                **ssl_options,
             )
             server = uvicorn.Server(uv_config)
 

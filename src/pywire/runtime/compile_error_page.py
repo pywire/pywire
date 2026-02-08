@@ -2,7 +2,7 @@ import html
 import linecache
 import os
 import traceback
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
@@ -189,7 +189,7 @@ class CompileErrorPage(BasePage):
         return HTMLResponse(content)
 
     async def handle_event(
-        self, handler_name: str, data: Dict[str, Any]
+        self, event_name: str, event_data: dict[str, Any]
     ) -> dict[str, Any]:
         """No-op for error page."""
         return await self.render_update(init=False)

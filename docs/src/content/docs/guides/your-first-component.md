@@ -30,22 +30,12 @@ def increment():
 You can use standard HTML attributes and even add conditional styling.
 
 ```html
-count = wire(0)
-
-def increment():
-    $count += 1
-
----html---
+count = wire(0) def increment(): $count += 1 ---html---
 <h1>Count: {count.value}</h1>
 
-<button @click={increment} 
-        $disabled={count.value >= 10}>
-    Increment (Max 10)
-</button>
+<button @click="{increment}" $disabled="{count.value">= 10}> Increment (Max 10)</button>
 
-<p $show={count.value > 5} style="color: red;">
-    High count alert!
-</p>
+<p $show="{count.value">5} style="color: red;"> High count alert!</p>
 ```
 
 In the next sections, we'll dive deeper into the `.wire` file format and how reactivity works.

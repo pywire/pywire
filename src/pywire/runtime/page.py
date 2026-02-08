@@ -95,7 +95,7 @@ class BasePage:
             self.context = kwargs.pop("_context").copy()
         else:
             self.context = {}
-        self.context: Dict[str, Any]  # type: ignore
+        self.context: Dict[str, Any]
 
         self.user: Any = None  # Set by middleware
 

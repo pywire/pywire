@@ -9,6 +9,11 @@ from rich.text import Text
 import shutil
 import subprocess
 from textual import events
+from typing import cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Use forward references for types defined in this file
+    pass
 
 
 class LogTable(DataTable):
@@ -19,10 +24,9 @@ class LogTable(DataTable):
                 meta = self.get_cell_at(coord)
                 if meta:
                     row_key = self.coordinate_to_cell_key(meta).row_key
-                    if row_key:
-                        if self.app.handle_log_mouse_down(
-                            row_key.value, shift=event.shift
-                        ):
+                    if row_key and row_key.value:
+                        app = cast("PyWireDevDashboard", self.app)
+                        if app.handle_log_mouse_down(row_key.value, shift=event.shift):
                             self.capture_mouse()
                             self._mouse_captured = True
             except Exception:
@@ -39,8 +43,9 @@ class LogTable(DataTable):
                 meta = self.get_cell_at(coord)
                 if meta:
                     row_key = self.coordinate_to_cell_key(meta).row_key
-                    if row_key:
-                        self.app.handle_log_mouse_move(row_key.value)
+                    if row_key and row_key.value:
+                        app = cast("PyWireDevDashboard", self.app)
+                        app.handle_log_mouse_move(row_key.value)
             except Exception:
                 pass
 

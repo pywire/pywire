@@ -907,7 +907,7 @@ class TemplateCodegen:
     def _set_line(self, node: ast.AST, template_node: TemplateNode) -> ast.AST:
         """Helper to set line number on AST node."""
         if template_node.line > 0 and hasattr(node, "lineno"):
-            node.lineno = template_node.line
+            setattr(node, "lineno", template_node.line)
             node.col_offset = template_node.column  # type: ignore
             node.end_lineno = template_node.line  # type: ignore # Single line approximation
             node.end_col_offset = template_node.column + 1  # type: ignore

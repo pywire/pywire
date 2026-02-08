@@ -1,15 +1,15 @@
 ---
-import { getCollection, render } from 'astro:content';
-import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace';
-import '../../styles/custom.css';
-import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getCollection, render } from 'astro:content'
+import { TutorialWorkspace } from '../../components/tutorial/TutorialWorkspace'
+import '../../styles/custom.css'
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
 
 // --- 1. Global Helper for Component Scope ---
 function cleanSlug(id: string) {
   return id
     .replace(/^tutorial\//, '')
     .replace(/\.[^/.]+$/, '')
-    .replace(/(^|\/)\d+-/g, '$1');
+    .replace(/(^|\/)\d+-/g, '$1')
 }
 
 export async function getStaticPaths() {
@@ -18,217 +18,243 @@ export async function getStaticPaths() {
     return id
       .replace(/^tutorial\//, '')
       .replace(/\.[^/.]+$/, '')
-      .replace(/(^|\/)\d+-/g, '$1');
+      .replace(/(^|\/)\d+-/g, '$1')
   }
 
   const tutorialEntries = await getCollection('docs', ({ id }) => {
-    return id.startsWith('tutorial/');
-  });
-  
-  const sorted = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
+    return id.startsWith('tutorial/')
+  })
+
+  const sorted = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id))
 
   // Use flatMap to potentially return TWO paths for every entry (Original + Clean)
   return sorted.flatMap((entry) => {
-    const clean = cleanSlug(entry.id);
-    const originalPath = entry.id
-        .replace(/^tutorial\//, '')
-        .replace(/\.[^/.]+$/, '');
+    const clean = cleanSlug(entry.id)
+    const originalPath = entry.id.replace(/^tutorial\//, '').replace(/\.[^/.]+$/, '')
 
     // A. Always return the clean path
-    const paths = [{
-      params: { slug: clean },
-      props: { slug: clean },
-    }];
+    const paths: any[] = [
+      {
+        params: { slug: clean },
+        props: { slug: clean },
+      },
+    ]
 
-    // B. If the original path has numbers (is different from clean), 
+    // B. If the original path has numbers (is different from clean),
     // create a redirect route for it.
     if (originalPath !== clean) {
       paths.push({
         params: { slug: originalPath },
         props: { slug: clean, redirectTo: clean },
-      });
+      })
     }
 
-    return paths;
-  });
+    return paths
+  })
 }
 
 // Destructure props. 'redirectTo' will only exist if matched via the numbered path.
-const { slug, redirectTo } = Astro.props;
+interface Props {
+  slug: string
+  redirectTo?: string
+}
+
+const { slug, redirectTo } = Astro.props as Props
 
 // --- 3. REDIRECT LOGIC ---
 if (redirectTo) {
-    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-    return Astro.redirect(`${base}/tutorial/${redirectTo}`);
+  return Astro.redirect(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/tutorial/${redirectTo}`)
 }
 
 // Fetch all tutorial steps for the SPA context
-const tutorialEntries = await getCollection('docs', ({ id }) => id.startsWith('tutorial/'));
-const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id));
+const tutorialEntries = await getCollection('docs', ({ id }) => id.startsWith('tutorial/'))
+const sortedEntries = tutorialEntries.sort((a, b) => a.id.localeCompare(b.id))
 
-const allSteps = sortedEntries.map(entry => ({
-    slug: cleanSlug(entry.id),
-    title: entry.data.title,
-    tutorial: entry.data.tutorial,
-    section: entry.data.section,
-    description: entry.data.description,
-    content: entry.body,
-    files: (entry.data.files || []).map(f => ({
-        path: f.path,
-        initialContent: f.initial,
-        solutionContent: f.solution,
-        editable: f.editable,
-        deletable: f.deletable
-    })),
-    behaviors: entry.data.behaviors,
-    successCriteria: entry.data.successCriteria,
-    hints: entry.data.hints,
-    initialRoute: entry.data.initialRoute,
-    pagesDir: entry.data.pagesDir
-}));
+import type { TutorialStep } from '../../components/tutorial/types'
+
+// ... (other code)
+
+const allSteps: TutorialStep[] = sortedEntries.map((entry) => ({
+  slug: cleanSlug(entry.id),
+  title: entry.data.title,
+  tutorial: entry.data.tutorial,
+  section: entry.data.section,
+  description: entry.data.description,
+  content: entry.body || '',
+  files: (entry.data.files || []).map((f) => ({
+    path: f.path,
+    initialContent: f.initial,
+    solutionContent: f.solution,
+    editable: f.editable,
+    deletable: f.deletable,
+  })),
+  behaviors: entry.data.behaviors,
+  successCriteria: entry.data.successCriteria,
+  hints: entry.data.hints,
+  initialRoute: entry.data.initialRoute,
+  pagesDir: entry.data.pagesDir,
+}))
 
 // Find current entry
-const currentEntry = sortedEntries.find(e => cleanSlug(e.id) === slug);
-const { Content } = currentEntry ? await render(currentEntry) : { Content: () => null };
+const currentEntry = sortedEntries.find((e) => cleanSlug(e.id) === slug)
+if (currentEntry) {
+  await render(currentEntry)
+}
 
 // Find current step index
-const currentIndex = allSteps.findIndex(s => s.slug === slug);
-const displayTitle = `Interactive Tutorial | ${String(currentIndex + 1).padStart(2, '0')}. ${allSteps[currentIndex]?.title || 'Loading'}`;
-
+const currentIndex = allSteps.findIndex((s) => s.slug === slug)
+const displayTitle = `Interactive Tutorial | ${String(currentIndex + 1).padStart(2, '0')}. ${allSteps[currentIndex]?.title || 'Loading'}`
 ---
 
-<StarlightPage 
-    frontmatter={{ 
-        title: displayTitle,
-        template: 'splash',
-        prev: false,
-        next: false
-    }}
-    hasSidebar={false}
+<StarlightPage
+  frontmatter={{
+    title: displayTitle,
+    template: 'splash',
+    prev: false,
+    next: false,
+  }}
+  hasSidebar={false}
 >
-    <style is:global>
-        /* 
+  <style is:global>
+    /* 
          * NUCLEAR RESET: Remove ALL Starlight layout constraints.
          * We manually define flex utilities because Tailwind may not be loaded.
          */
-         
-        /* 1. Define missing utilities */
-        .flex { display: flex !important; }
-        .flex-col { flex-direction: column !important; }
-        .flex-1 { flex: 1 1 0% !important; }
-        .h-full { height: 100% !important; }
-        .w-full { width: 100% !important; }
-        .overflow-hidden { overflow: hidden !important; }
 
-        /* 2. Global Reset */
-        html, body {
-            height: 100vh !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-        }
+    /* 1. Define missing utilities */
+    .flex {
+      display: flex !important;
+    }
+    .flex-col {
+      flex-direction: column !important;
+    }
+    .flex-1 {
+      flex: 1 1 0% !important;
+    }
+    .h-full {
+      height: 100% !important;
+    }
+    .w-full {
+      width: 100% !important;
+    }
+    .overflow-hidden {
+      overflow: hidden !important;
+    }
 
-        /* 3. Starlight Layout Hierarchy Reset */
-        .page {
-            height: 100vh !important;
-            display: flex !important;
-            flex-direction: column !important;
-        }
+    /* 2. Global Reset */
+    html,
+    body {
+      height: 100vh !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+    }
 
-        .main-frame {
-            flex: 1 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            padding: 0 !important;
-            padding-top: var(--sl-nav-height) !important;
-            height: calc(100vh - var(--sl-nav-height)) !important;
-        }
+    /* 3. Starlight Layout Hierarchy Reset */
+    .page {
+      height: 100vh !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
 
-        /* Unwrap nested layout divs so they don't trap height/width */
-        .lg\:sl-flex, .main-pane, .content-panel, .sl-container, .sl-markdown-content {
-            display: contents !important;
-        }
+    .main-frame {
+      flex: 1 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      padding: 0 !important;
+      padding-top: var(--sl-nav-height) !important;
+      height: calc(100vh - var(--sl-nav-height)) !important;
+    }
 
-        main {
-            flex: 1 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            overflow: hidden !important;
-        }
+    /* Unwrap nested layout divs so they don't trap height/width */
+    .lg\:sl-flex,
+    .main-pane,
+    .content-panel,
+    .sl-container,
+    .sl-markdown-content {
+      display: contents !important;
+    }
 
-        /* 4. Hide all UI noise */
-        footer,
-        [data-starlight-pagination],
-        h1,
-        .page-title,
-        .right-sidebar-container,
-        aside,
-        .sidebar {
-            display: none !important;
-        }
+    main {
+      flex: 1 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      overflow: hidden !important;
+    }
 
-        /* If :has is supported, hide the title container specifically */
-        .content-panel:has(h1) {
-            display: none !important;
-        }
+    /* 4. Hide all UI noise */
+    footer,
+    [data-starlight-pagination],
+    h1,
+    .page-title,
+    .right-sidebar-container,
+    aside,
+    .sidebar {
+      display: none !important;
+    }
 
-        /* 5. Force Tutorial Workspace to fill the viewport */
-        .not-content {
-            flex: 1 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            width: 100% !important;
-            height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-        }
+    /* If :has is supported, hide the title container specifically */
+    .content-panel:has(h1) {
+      display: none !important;
+    }
 
-        /* Ensure variables are defined */
-        :root {
-            --sl-nav-height: 4rem;
-            --sl-content-width: 100% !important;
-            --sl-sidebar-width: 0rem !important;
-        }
+    /* 5. Force Tutorial Workspace to fill the viewport */
+    .not-content {
+      flex: 1 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+    }
 
-        /* 6. Fix Header Grid/Alignment */
-        @media (min-width: 50rem) {
-            .header {
-                /* Use auto 1fr auto to match default docs layout */
-                grid-template-columns: auto 1fr auto !important;
-                column-gap: var(--sl-nav-gap);
-            }
-            .header > .title-wrapper {
-                /* Title only takes necessary space */
-                width: fit-content !important;
-                min-width: 0 !important;
-            }
-            .header > div:nth-child(2) {
-                /* Search container fills middle and centers content */
-                display: flex !important;
-                justify-content: center !important;
-                width: 100% !important;
-            }
-        }
-    </style>
+    /* Ensure variables are defined */
+    :root {
+      --sl-nav-height: 4rem;
+      --sl-content-width: 100% !important;
+      --sl-sidebar-width: 0rem !important;
+    }
 
-    <!-- 
+    /* 6. Fix Header Grid/Alignment */
+    @media (min-width: 50rem) {
+      .header {
+        /* Use auto 1fr auto to match default docs layout */
+        grid-template-columns: auto 1fr auto !important;
+        column-gap: var(--sl-nav-gap);
+      }
+      .header > .title-wrapper {
+        /* Title only takes necessary space */
+        width: fit-content !important;
+        min-width: 0 !important;
+      }
+      .header > div:nth-child(2) {
+        /* Search container fills middle and centers content */
+        display: flex !important;
+        justify-content: center !important;
+        width: 100% !important;
+      }
+    }
+  </style>
+
+  <!-- 
         NOTE: transition:persist keeps the React island across navigation, 
         but this means children (Content) won't update!
         For now, we'll NOT use persist and accept full re-initialization.
         A better solution would require fetching markdown client-side.
     -->
-    <div class="not-content h-[calc(100vh-var(--sl-nav-height))] w-full overflow-hidden">
-        <TutorialWorkspace
-            client:only="react"
-            transition:persist="tutorial-workspace"
-            initialSlug={slug}
-            allSteps={allSteps}
-        />
-    </div>
+  <div class="not-content h-[calc(100vh-var(--sl-nav-height))] w-full overflow-hidden">
+    <TutorialWorkspace
+      client:only="react"
+      transition:persist="tutorial-workspace"
+      initialSlug={slug}
+      allSteps={allSteps}
+    />
+  </div>
 </StarlightPage>

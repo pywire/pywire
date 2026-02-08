@@ -36,16 +36,16 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Initialize count = wire(0)"
+    description: 'Initialize count = wire(0)'
     target: pages/index.wire
-    pattern: "count = wire(0)"
+    pattern: 'count = wire(0)'
   - type: file_contains
-    description: "Mutate count using $count += 1"
+    description: 'Mutate count using $count += 1'
     target: pages/index.wire
-    pattern: "$count +="
+    pattern: '$count +='
   - type: browser_route_text
-    description: "Increment the count to 5"
-    pattern: "Count: 5"
+    description: 'Increment the count to 5'
+    pattern: 'Count: 5'
 pagesDir: pages
 ---
 

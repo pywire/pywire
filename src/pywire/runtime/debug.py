@@ -69,7 +69,10 @@ class DevErrorMiddleware:
         # Script URL logic for 500 pages (usually dev mode)
         script_url = "/_pywire/static/pywire.dev.min.js"
         if hasattr(self.app, "state") and hasattr(self.app.state, "pywire"):
-            script_url = self.app.state.pywire._get_client_script_url()
+            pywire_app = self.app.state.pywire
+            get_url = getattr(pywire_app, "_get_client_script_url", None)
+            if get_url:
+                script_url = get_url()
 
         # Context lines logic reused...
         # (Alternatively, could we reuse CompileErrorPage?
@@ -176,7 +179,10 @@ class DevErrorMiddleware:
 
         script_url = "/_pywire/static/pywire.dev.min.js"
         if hasattr(self.app, "state") and hasattr(self.app.state, "pywire"):
-            script_url = self.app.state.pywire._get_client_script_url()
+            pywire_app = self.app.state.pywire
+            get_url = getattr(pywire_app, "_get_client_script_url", None)
+            if get_url:
+                script_url = get_url()
 
         issue_title = urllib.parse.quote(f"Bug: {exc_type}: {exc_msg}")
         issue_body = urllib.parse.quote(

@@ -2,7 +2,7 @@
 title: Visibility ($show)
 tutorial: Basic PyWire
 section: Framework attributes
-description: "Use the $show attribute to toggle visibility with CSS (display: none)."
+description: 'Use the $show attribute to toggle visibility with CSS (display: none).'
 files:
   - path: pages/index.wire
     initial: |
@@ -37,12 +37,12 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Add $show={visible} to the div"
+    description: 'Add $show={visible} to the div'
     target: pages/index.wire
-    pattern: "$show={visible}"
+    pattern: '$show={visible}'
   - type: browser_route_text
-    description: "Toggle visibility"
-    pattern: "hiding in plain sight"
+    description: 'Toggle visibility'
+    pattern: 'hiding in plain sight'
 pagesDir: pages
 ---
 

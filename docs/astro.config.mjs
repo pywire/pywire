@@ -39,7 +39,7 @@ export default defineConfig({
           langs: [
             {
               ...JSON.parse(fs.readFileSync('./public/grammars/pywire.tmLanguage.json', 'utf-8')),
-              name: 'pywire'
+              name: 'pywire',
             },
           ],
         },

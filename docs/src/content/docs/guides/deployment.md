@@ -9,7 +9,7 @@ We are still actively working on optimizing the framework for deployment. We aim
 
 ## Preparing for Production
 
-1. **Build Artifacts**: Run `pywire build` to generate optimized artifacts. *Still WIP*
+1. **Build Artifacts**: Run `pywire build` to generate optimized artifacts. _Still WIP_
 2. **Environment Variables**: Configure your database connection strings, API keys, etc.
 3. **ASGI Server**: Use `pywire run` or a standard ASGI server like Uvicorn or Hypercorn.
 
