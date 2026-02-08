@@ -29,6 +29,7 @@ from lsprotocol.types import (
     Position,
     PublishDiagnosticsParams,
     Range,
+    ReferenceParams,
     SemanticTokens,
     SemanticTokensLegend,
     SemanticTokensParams,
@@ -1010,7 +1011,7 @@ Example:
 
 @server.feature("textDocument/references")
 async def references(
-    ls: LanguageServer, params: DefinitionParams
+    ls: LanguageServer, params: ReferenceParams
 ) -> Optional[List[Location]]:
     """Provide find references"""
     uri = params.text_document.uri

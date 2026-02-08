@@ -21,9 +21,9 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "coverage>=7.3.0",
-    "tox>=4.0.0",
-    "tox-uv>=1.0.0",
+    "nox",
     "ruff>=0.1.0",
+    "ty",
 ]
 
 [tool.pytest.ini_options]
