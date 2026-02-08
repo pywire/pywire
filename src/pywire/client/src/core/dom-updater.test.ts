@@ -75,4 +75,24 @@ describe('DOMUpdater', () => {
     // Should NOT have overwritten toEl.value with fromEl.value because they don't start with each other
     expect(toEl.value).toBe('server-new')
   })
+
+  it('should skip children update if data-pywire-permanent is present', () => {
+    const morphdomMock = vi.mocked(morphdom)
+    updater.update(
+      '<html><body><div id="perm" data-pywire-permanent="true"><span>New Content</span></div></body></html>'
+    )
+
+    const options = morphdomMock.mock.calls[0][2]
+    const onBeforeElChildrenUpdated = options?.onBeforeElChildrenUpdated
+
+    if (!onBeforeElChildrenUpdated) throw new Error('Hook not found')
+
+    const fromEl = document.createElement('div')
+    fromEl.setAttribute('data-pywire-permanent', 'true')
+    const toEl = document.createElement('div')
+
+    const result = onBeforeElChildrenUpdated(fromEl, toEl)
+
+    expect(result).toBe(false)
+  })
 })

@@ -163,6 +163,11 @@ export class PyWireApp {
         shouldIntercept = true
       }
 
+      // NO-SPA: Check for data-pywire-reload attribute
+      if (link.hasAttribute('data-pywire-reload')) {
+        shouldIntercept = false
+      }
+
       if (shouldIntercept) {
         e.preventDefault()
         this.navigateTo(link.pathname + link.search)
