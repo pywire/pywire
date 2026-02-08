@@ -1,0 +1,116 @@
+---
+title: Error Boundaries
+tutorial: Basic PyWire
+section: Control Flow
+description: Learn how to handle exceptions gracefully using {$try}.
+files:
+  - path: pages/index.wire
+    initial: |
+      import random
+
+      # A wire to trigger re-renders
+      attempt = wire(0)
+
+      def get_data():
+          # Dependency on $attempt ensures this re-runs on click
+          _ = $attempt
+          
+          # Simulate a 50% chance of failure
+          if random.random() < 0.5:
+              raise ValueError("Network Error: Connection timed out.")
+          return "Data loaded successfully!"
+
+      def retry():
+          $attempt += 1
+
+      ---html---
+      <div class="container">
+          <h3>Data Fetcher</h3>
+          
+          <!-- Currently, if this fails, the whole page breaks -->
+          <p class="status">
+              {get_data()}
+          </p>
+
+          <button @click={retry}>Retry Connection</button>
+      </div>
+    solution: |
+      import random
+
+      # A wire to trigger re-renders
+      attempt = wire(0)
+
+      def get_data():
+          # Dependency on $attempt ensures this re-runs on click
+          _ = $attempt
+          
+          # Simulate a 50% chance of failure
+          if random.random() < 0.5:
+              raise ValueError("Network Error: Connection timed out.")
+          return "Data loaded successfully!"
+
+      def retry():
+          $attempt += 1
+
+      ---html---
+      <div class="container">
+          <h3>Data Fetcher</h3>
+          
+          {$try}
+              <p class="status success">
+                  {get_data()}
+              </p>
+          {$except ValueError as e}
+              <p class="status error">
+                  {str(e)}
+              </p>
+          {/try}
+
+          <button @click={retry}>Retry Connection</button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Use {$try} to protect the function call'
+    target: pages/index.wire
+    pattern: '{\$try}'
+  - type: file_contains
+    description: 'Add an {$except} block'
+    target: pages/index.wire
+    pattern: '{\$except'
+pagesDir: pages
+---
+
+Errors happen—APIs fail, inputs are invalid, or calculations go wrong. In PyWire, if an exception is raised during rendering, it can prevent the entire component (or page) from displaying.
+
+The `{$try}` block creates a **safety zone**. If an error occurs inside it, PyWire catches the exception and renders the `{$except}` block instead.
+
+### Your Task
+
+1.  The `get_data()` function has a 50% chance of raising a `ValueError`.
+2.  Currently, if it fails, the preview might crash or show a generic error.
+3.  Wrap the `<p>` tag calling `get_data()` inside a `{$try} ... {/try}` block.
+4.  Add an `{$except ValueError as e}` block to display the error message nicely (you can use `str(e)` to get the message).
+
+#### Examples
+
+**Basic Error Handling:**
+
+```pywire
+{$try}
+    <p>Result: {risky_calculation()}</p>
+{$except ValueError}
+    <p>Calculation failed.</p>
+{/try}
+```
+
+**Accessing the Exception:**
+
+```pywire
+{$try}
+    {perform_critical_task()}
+{$except Exception as e}
+    <div class="error-banner">
+        System Error: {str(e)}
+    </div>
+{/try}
+```

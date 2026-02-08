@@ -67,7 +67,8 @@ export default defineConfig({
           items: [
             { label: 'Interpolation & Attributes', slug: 'syntax/templating' },
             { label: 'Control Flow ($if, $for)', slug: 'syntax/control-flow' },
-            { label: 'Event Modifiers', slug: 'syntax/event-modifiers' },
+            { label: 'Control Flow Blocks', slug: 'syntax/blocks' },
+            { label: 'Event Modifiers', slug: 'syntax/event-modifiers' }
           ],
         },
         {

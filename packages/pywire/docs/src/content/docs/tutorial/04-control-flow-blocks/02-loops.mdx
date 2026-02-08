@@ -1,0 +1,81 @@
+---
+title: Loops
+tutorial: Basic PyWire
+section: Control Flow
+description: Render lists of data using {$for}.
+files:
+  - path: pages/index.wire
+    initial: |
+      todos = wire([
+          {"id": 1, "text": "Learn Python"},
+          {"id": 2, "text": "Learn PyWire"},
+          {"id": 3, "text": "Build App"}
+      ])
+
+      ---html---
+      <div>
+          <h1>Todo List</h1>
+          <ul>
+              <!-- Add your loop here -->
+              
+          </ul>
+      </div>
+    solution: |
+      todos = wire([
+          {"id": 1, "text": "Learn Python"},
+          {"id": 2, "text": "Learn PyWire"},
+          {"id": 3, "text": "Build App"}
+      ])
+
+      ---html---
+      <div>
+          <h1>Todo List</h1>
+          <ul>
+              {$for item in todos, key=item['id']}
+                  <li>{item['text']}</li>
+              {/for}
+          </ul>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Use {$for} with a key argument'
+    target: pages/index.wire
+    pattern: '{\$for .* key=.*}'
+  - type: browser_route_text
+    description: "Verify 'Learn PyWire' is rendered"
+    pattern: 'Learn PyWire'
+pagesDir: pages
+---
+
+To render lists, use the `{$for}` block. It works just like a Python `for` loop.
+
+Crucially, you should provide a `key` argument (separated by a comma). This helps PyWire track items efficiently when the list order changes.
+
+### Your Task
+
+1.  Inside the `<ul>`, create a `{$for}` block to iterate over `todos`.
+2.  Use `item in todos` as the loop expression.
+3.  Use `key=item['id']` for the unique key.
+4.  Render the `item['text']` inside a `<li>`.
+
+#### Examples
+
+**Basic Loop:**
+```pywire
+<ul>
+    {$for user in users, key=user.id}
+        <li>{user.name}</li>
+    {/for}
+</ul>
+```
+
+**With Else (Empty State):**
+```pywire
+<ul>
+    {$for item in items, key=item.id}
+        <li>{item.name}</li>
+    {$else}
+        <li>No items found.</li>
+    {/for}
+</ul>
+```
