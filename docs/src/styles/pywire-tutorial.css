@@ -20,7 +20,7 @@
   margin-right: 0 !important;
 }
 
-/* Directly counteract Starlight's * + * { margin-top: 1rem } rule 
+/* Directly counteract Starlight's * + * { margin-top: 1rem } rule
    but EXEMPT markdown content which needs those margins! */
 .pw-tutorial *:not(.sl-markdown-content, .sl-markdown-content *) + * {
   margin-top: 0 !important;
@@ -624,6 +624,33 @@
 
 .pw-btn-primary:hover {
   filter: brightness(1.1);
+}
+
+.pw-btn-secondary {
+  background-color: var(--pw-border);
+  color: var(--pw-text-main);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-right: 8px;
+}
+
+.pw-btn-secondary:hover {
+  background-color: var(--pw-separator);
+}
+
+.pw-btn-danger {
+  background-color: #ef4444;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.pw-btn-danger:hover {
+  background-color: #dc2626;
 }
 
 /* Tree Actions */

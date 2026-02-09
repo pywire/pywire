@@ -83,6 +83,21 @@ export function useTutorialStorage(stepId: string, initialFiles: TutorialFile[])
     setFiles(reset)
   }, [initialFiles])
 
+  const resetAll = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith('pywire-tutorial-files-') || key === 'tutorial-current-slug')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key))
+    // Also reset current files state
+    const reset = Object.fromEntries(initialFiles.map((f) => [f.path, f.initialContent]))
+    setFiles(reset)
+  }, [initialFiles])
+
   const solveFiles = useCallback(() => {
     const solved = Object.fromEntries(
       initialFiles.map((f) => [
@@ -99,6 +114,7 @@ export function useTutorialStorage(stepId: string, initialFiles: TutorialFile[])
     addFile,
     deleteFile,
     resetFiles,
+    resetAll,
     solveFiles,
   }
 }

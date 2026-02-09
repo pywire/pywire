@@ -57,7 +57,9 @@ def on_search(value):
 ---html---
 <input type="text"
        placeholder="Search..."
-       @input={on_search($event.target.value)}>
+       @input={on_search(event.value)}>
 ```
+
+PyWire automatically provides the `event` context variable (alias `$event`) in inline handlers. Alternatively, if you bind the function directly (e.g., `@input={on_search}`), PyWire will inspect your function signature and automatically pass arguments named `value`, `event`, `id`, etc.
 
 We'll cover more advanced event features in the [Event Modifiers](/docs/syntax/event-modifiers) section.

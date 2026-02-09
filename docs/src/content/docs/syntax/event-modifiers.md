@@ -27,7 +27,7 @@ PyWire supports several event modifiers to simplify common tasks like preventing
 - `.throttle.ms`: Ensures the event handler is called at most once every specified number of milliseconds.
 
 ```html
-<input type="text" @input.debounce.300="{search_users($event.target.value)}" />
+<input type="text" @input.debounce.300ms={search_users(event.value)} />
 ```
 
 ## Error Handling

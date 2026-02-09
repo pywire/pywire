@@ -64,10 +64,8 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   const [currentUrl, setCurrentUrl] = useState(currentStep.initialRoute || '/')
 
   // Code state - using step-specific storage for MULTIPLE files
-  const { files, updateFile, addFile, deleteFile, resetFiles, solveFiles } = useTutorialStorage(
-    currentStep.slug,
-    currentStep.files,
-  )
+  const { files, updateFile, addFile, deleteFile, resetFiles, resetAll, solveFiles } =
+    useTutorialStorage(currentStep.slug, currentStep.files)
 
   const [activeFile, setActiveFile] = useState(currentStep.files[0]?.path || 'index.wire')
   const code = files[activeFile] || ''
@@ -86,6 +84,8 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     allowedItems?: string[]
   }>({ isOpen: false, message: '' })
 
+  const [resetConfirmModal, setResetConfirmModal] = useState(false)
+
   const [inputModal, setInputModal] = useState<{
     isOpen: boolean
     folderPath: string
@@ -94,6 +94,17 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   const [inputName, setInputName] = useState('')
 
   const [hierarchyOpen, setHierarchyOpen] = useState(false)
+
+  const handleResetClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        setResetConfirmModal(true)
+      } else {
+        resetFiles()
+      }
+    },
+    [resetFiles],
+  )
 
   // Handle History (Browser Back/Forward)
   // ... (lines 50-70 unchanged)
@@ -409,8 +420,8 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
           </button>
           <button
             className="pw-btn-icon-sm mr-2"
-            onClick={resetFiles}
-            title="Reset to initial code"
+            onClick={handleResetClick}
+            title="Reset to initial code (Cmd/Ctrl + Click to reset ALL progress)"
           >
             <RotateCcw size={18} />
           </button>
@@ -511,6 +522,34 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
         <div className="pw-modal-footer">
           <button className="pw-btn-primary" onClick={() => setModal({ ...modal, isOpen: false })}>
             OK
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={resetConfirmModal}
+        onClose={() => setResetConfirmModal(false)}
+        title="Reset All Progress?"
+      >
+        <div className="pw-modal-body">
+          <p>
+            This will reset your code changes for <strong>ALL</strong> tutorial steps. This action
+            cannot be undone.
+          </p>
+        </div>
+        <div className="pw-modal-footer">
+          <button className="pw-btn-secondary" onClick={() => setResetConfirmModal(false)}>
+            Cancel
+          </button>
+          <button
+            className="pw-btn-danger"
+            onClick={() => {
+              resetAll()
+              setResetConfirmModal(false)
+              window.location.reload()
+            }}
+          >
+            Reset All
           </button>
         </div>
       </Modal>
