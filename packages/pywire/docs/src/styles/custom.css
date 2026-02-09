@@ -1,3 +1,6 @@
+@tailwind components;
+@tailwind utilities;
+
 /* Apply to Starlight's Dark Mode */
 :root[data-theme='dark'] {
   --sl-color-accent-low: #003336; /* Deep cyan background for active items */
@@ -38,7 +41,7 @@ body {
   color: var(--sl-color-text-invert) !important;
 }
 
-/* Fix link color collision - use a slightly more muted color for inline links 
+/* Fix link color collision - use a slightly more muted color for inline links
    to distinguish them from primary actions while keeping brand feel */
 a:not(.sl-link-button) {
   color: var(--sl-color-text-accent);

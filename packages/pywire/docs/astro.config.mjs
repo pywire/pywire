@@ -26,6 +26,9 @@ export default defineConfig({
       title: 'pywire',
       customCss: ['./src/styles/custom.css'],
       plugins: [starlightLlmsTxt()],
+      editLink: {
+        baseUrl: 'https://github.com/pywire/pywire/edit/main/docs/'
+      },
       components: {
         Head: resolve(__dirname, './src/components/Head.astro'),
       },
@@ -52,6 +55,7 @@ export default defineConfig({
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Your First Component', slug: 'guides/your-first-component' },
             { label: 'Interactive Tutorial', link: 'tutorial/' },
+            { label: 'Changelog', link: '/changelog' },
           ],
         },
         {
@@ -68,7 +72,7 @@ export default defineConfig({
             { label: 'Interpolation & Attributes', slug: 'syntax/templating' },
             { label: 'Control Flow ($if, $for)', slug: 'syntax/control-flow' },
             { label: 'Control Flow Blocks', slug: 'syntax/blocks' },
-            { label: 'Event Modifiers', slug: 'syntax/event-modifiers' }
+            { label: 'Event Modifiers', slug: 'syntax/event-modifiers' },
           ],
         },
         {

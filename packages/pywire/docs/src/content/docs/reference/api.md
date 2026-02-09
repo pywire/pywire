@@ -144,29 +144,39 @@ def login_handler():
 
 Special variables available strictly within the HTML template context.
 
-### `$event`
+### `event`
 
 Represents the client-side DOM event payload. Available **only** inside event handler expressions (e.g., `@click={...}`).
+Also available as `$event` for compatibility with other frameworks.
 
 **Properties:**
 
-- **`.value`** (`Any`): The `value` property of the target element.
+- **`.id`** (`str`): The ID of the element that triggered the event.
+
+- **`.type`** (`str`): The type of the event (e.g., `"click"`, `"input"`).
+
+- **`.value`** (`Any`): The value of the element.
   - For `<input type="text">`, returns the string text.
-
-  - For `<input type="checkbox">`, returns `True` or `False`.
-
+  - For `<input type="checkbox">` or `<input type="radio">`, returns the checked state (boolean) via `event.checked`.
   - For `<select>`, returns the selected option's value.
+
+- **`.checked`** (`bool`): The checked state for checkbox/radio inputs.
 
 - **`.key`** (`str`): The key value for keyboard events (e.g., `"Enter"`, `"Escape"`, `"a"`).
 
-- **`.target`** (`dict`): A dictionary containing serialized attributes of the DOM element that triggered the event (id, class, name, dataset, etc.).
+- **`.keyCode`** (`int`): The integer key code for keyboard events.
+
+- **`.formData`** (`dict`): A dictionary of form fields for `@submit` events on forms.
 
 **Example:**
 
 ```html
 <!-- Accessing input value -->
-<input @input="{update_text($event.value)}" />
+<input @input="{update_text(event.value)}" />
 
 <!-- Accessing specific key press -->
-<input @keydown="{handle_key($event.key)}" />
+<input @keydown="{handle_key(event.key)}" />
+
+<!-- Debugging event data -->
+<button @click="{print(event.id, event.type)}">Debug</button>
 ```
