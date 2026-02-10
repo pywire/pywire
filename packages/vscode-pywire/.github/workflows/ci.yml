@@ -78,3 +78,12 @@ jobs:
         run: |
           pnpm run check-types
           pnpm run compile
+      - name: Build VSIX
+        env:
+          PYWIRE_SRC: _deps/pywire
+        run: pnpm run vsix
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-pywire-extension
+          path: "*.vsix"
