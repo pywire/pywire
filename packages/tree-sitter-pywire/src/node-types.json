@@ -2,86 +2,74 @@
   {
     "type": "attribute",
     "named": true,
-    "fields": {},
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "attribute_name",
+            "named": true
+          },
+          {
+            "type": "special_attribute_name",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "attribute_value",
+            "named": true
+          },
+          {
+            "type": "interpolation",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
-      "multiple": true,
-      "required": true,
+      "multiple": false,
+      "required": false,
       "types": [
         {
-          "type": "attribute_name",
+          "type": "attribute_shorthand",
           "named": true
         },
         {
-          "type": "attribute_value",
-          "named": true
-        },
-        {
-          "type": "special_attribute_name",
+          "type": "spread_shorthand",
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "attribute_shorthand",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "attribute_name",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
     "type": "attribute_value",
     "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "attribute_content",
-          "named": true
-        },
-        {
-          "type": "interpolation",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "directive",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "keyword_directive",
-          "named": true
-        },
-        {
-          "type": "python_code",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "interpolation",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "python_code",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "python_code",
-    "named": true,
     "fields": {}
   },
   {
-    "type": "python_section",
+    "type": "directives_section",
     "named": true,
     "fields": {},
     "children": {
@@ -89,7 +77,26 @@
       "required": true,
       "types": [
         {
-          "type": "python_code",
+          "type": "block_directive",
+          "named": true
+        },
+        {
+          "type": "directive",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "frontmatter",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "python_content",
           "named": true
         },
         {
@@ -100,19 +107,76 @@
     }
   },
   {
-    "type": "self_closing_tag",
+    "type": "hyphen",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "interpolation",
+    "named": true,
+    "fields": {
+      "expr": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "python_code",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "python_code",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "python_content",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "script_tag",
     "named": true,
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "attribute",
           "named": true
         },
         {
-          "type": "tag_name",
+          "type": "text",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "self_closing_tag",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "attribute",
           "named": true
         }
       ]
@@ -128,27 +192,46 @@
       "required": false,
       "types": [
         {
-          "type": "directive",
+          "type": "directives_section",
           "named": true
         },
         {
-          "type": "hyphen",
+          "type": "frontmatter",
           "named": true
         },
         {
-          "type": "interpolation",
+          "type": "template_section",
           "named": true
-        },
+        }
+      ]
+    }
+  },
+  {
+    "type": "spread_shorthand",
+    "named": true,
+    "fields": {
+      "expr": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "python_code",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "style_tag",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
         {
-          "type": "python_section",
-          "named": true
-        },
-        {
-          "type": "self_closing_tag",
-          "named": true
-        },
-        {
-          "type": "tag",
+          "type": "attribute",
           "named": true
         },
         {
@@ -161,13 +244,50 @@
   {
     "type": "tag",
     "named": true,
-    "fields": {},
+    "fields": {
+      "close_name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "attribute",
+          "named": true
+        },
+        {
+          "type": "bang",
+          "named": true
+        },
+        {
+          "type": "brace_block",
+          "named": true
+        },
+        {
+          "type": "doctype",
+          "named": true
+        },
+        {
+          "type": "end_brace_block",
           "named": true
         },
         {
@@ -179,7 +299,15 @@
           "named": true
         },
         {
+          "type": "script_tag",
+          "named": true
+        },
+        {
           "type": "self_closing_tag",
+          "named": true
+        },
+        {
+          "type": "style_tag",
           "named": true
         },
         {
@@ -187,20 +315,157 @@
           "named": true
         },
         {
-          "type": "tag_name",
+          "type": "text",
           "named": true
         },
         {
-          "type": "text",
+          "type": "void_tag",
           "named": true
         }
       ]
     }
   },
   {
-    "type": "tag_name",
+    "type": "template_section",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "bang",
+          "named": true
+        },
+        {
+          "type": "brace_block",
+          "named": true
+        },
+        {
+          "type": "doctype",
+          "named": true
+        },
+        {
+          "type": "end_brace_block",
+          "named": true
+        },
+        {
+          "type": "hyphen",
+          "named": true
+        },
+        {
+          "type": "interpolation",
+          "named": true
+        },
+        {
+          "type": "script_tag",
+          "named": true
+        },
+        {
+          "type": "self_closing_tag",
+          "named": true
+        },
+        {
+          "type": "style_tag",
+          "named": true
+        },
+        {
+          "type": "tag",
+          "named": true
+        },
+        {
+          "type": "text",
+          "named": true
+        },
+        {
+          "type": "void_tag",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "text",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "void_tag",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "area",
+            "named": false
+          },
+          {
+            "type": "base",
+            "named": false
+          },
+          {
+            "type": "br",
+            "named": false
+          },
+          {
+            "type": "col",
+            "named": false
+          },
+          {
+            "type": "embed",
+            "named": false
+          },
+          {
+            "type": "hr",
+            "named": false
+          },
+          {
+            "type": "img",
+            "named": false
+          },
+          {
+            "type": "input",
+            "named": false
+          },
+          {
+            "type": "link",
+            "named": false
+          },
+          {
+            "type": "meta",
+            "named": false
+          },
+          {
+            "type": "param",
+            "named": false
+          },
+          {
+            "type": "source",
+            "named": false
+          },
+          {
+            "type": "track",
+            "named": false
+          },
+          {
+            "type": "wbr",
+            "named": false
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "attribute",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "\"",
@@ -208,6 +473,18 @@
   },
   {
     "type": "'",
+    "named": false
+  },
+  {
+    "type": "**",
+    "named": false
+  },
+  {
+    "type": "-",
+    "named": false
+  },
+  {
+    "type": "--",
     "named": false
   },
   {
@@ -223,6 +500,22 @@
     "named": false
   },
   {
+    "type": "</script>",
+    "named": false
+  },
+  {
+    "type": "</style>",
+    "named": false
+  },
+  {
+    "type": "<script",
+    "named": false
+  },
+  {
+    "type": "<style",
+    "named": false
+  },
+  {
     "type": "=",
     "named": false
   },
@@ -231,12 +524,36 @@
     "named": false
   },
   {
-    "type": "attribute_content",
-    "named": true
+    "type": "area",
+    "named": false
   },
   {
     "type": "attribute_name",
     "named": true
+  },
+  {
+    "type": "bang",
+    "named": true
+  },
+  {
+    "type": "base",
+    "named": false
+  },
+  {
+    "type": "block_directive",
+    "named": true
+  },
+  {
+    "type": "br",
+    "named": false
+  },
+  {
+    "type": "brace_block",
+    "named": true
+  },
+  {
+    "type": "col",
+    "named": false
   },
   {
     "type": "comment",
@@ -244,24 +561,68 @@
     "extra": true
   },
   {
-    "type": "hyphen",
+    "type": "directive",
     "named": true
   },
   {
-    "type": "keyword_directive",
+    "type": "doctype",
     "named": true
+  },
+  {
+    "type": "embed",
+    "named": false
+  },
+  {
+    "type": "end_brace_block",
+    "named": true
+  },
+  {
+    "type": "hr",
+    "named": false
+  },
+  {
+    "type": "img",
+    "named": false
+  },
+  {
+    "type": "input",
+    "named": false
+  },
+  {
+    "type": "link",
+    "named": false
+  },
+  {
+    "type": "meta",
+    "named": false
+  },
+  {
+    "type": "param",
+    "named": false
   },
   {
     "type": "separator",
     "named": true
   },
   {
+    "type": "source",
+    "named": false
+  },
+  {
     "type": "special_attribute_name",
     "named": true
   },
   {
-    "type": "text",
+    "type": "tag_name",
     "named": true
+  },
+  {
+    "type": "track",
+    "named": false
+  },
+  {
+    "type": "wbr",
+    "named": false
   },
   {
     "type": "{",

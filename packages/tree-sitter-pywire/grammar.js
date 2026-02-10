@@ -3,148 +3,221 @@ module.exports = grammar({
 
     extras: $ => [
         $.comment,
-        /\s+/
+        /[ \t\r\n]/
+    ],
+
+    conflicts: $ => [
+        [$.tag, $.self_closing_tag],
+        [$._python_code]
     ],
 
     rules: {
-        source_file: $ => choice(
-            seq(
-                repeat(choice(
-                    $.directive,
-                    $.python_line,
-                    /\r?\n/
-                )),
-                $.separator,
-                repeat(choice(
-                    $._html_content,
-                    /\r?\n/
-                ))
-            ),
-            repeat(choice(
-                $.directive,
-                $._html_content,
-                /\r?\n/
-            ))
+        source_file: $ => seq(
+            optional($.directives_section),
+            optional($.frontmatter),
+            optional($.template_section)
         ),
 
-        // Directives: !path, !layout, etc.
-        directive: $ => prec(1, choice(
-            $._directive_single_line,
-            $._directive_multiline
+        directives_section: $ => repeat1(choice(
+            $.directive,
+            $.block_directive
         )),
 
-        _directive_single_line: $ => seq(
-            alias(token(seq('!', /[a-zA-Z_]\w*/)), $.keyword_directive),
-            optional($._directive_content),
+        directive: $ => token(prec(100, seq(
+            '!',
+            /[a-zA-Z_]\w*/,
+            /[^\n\r]*/,
             /\r?\n/
-        ),
+        ))),
 
-        _directive_content: $ => token(prec(-1, /.+/)),
-
-        _directive_multiline: $ => seq(
-            alias('!path', $.keyword_directive),
+        block_directive: $ => token(prec(101, seq(
+            '!',
+            /[a-zA-Z_]\w*/,
+            /[ \t]*/,
             '{',
-            repeat(alias($._directive_multiline_content, $.python_code)),
-            '}'
+            repeat(choice(
+                /[^{}]/,
+                /\r?\n/,
+                seq('{', repeat(choice(/[^{}]/, /\r?\n/)), '}')
+            )),
+            '}',
+            optional(/\n/) // Allow but don't require newline after block
+        ))),
+
+        frontmatter: $ => seq(
+            $.separator,
+            optional(alias($._python_content, $.python_content)),
+            $.separator
         ),
 
-        _directive_multiline_content: $ => /[^}]+/,
+        separator: $ => token(choice(/---[ \t]*\r?\n/, /---html---[ \t]*\r?\n/)),
 
-        // Python Header Lines (before separator)
-        python_line: $ => token(prec(1, /[^\n]+/)),
+        _python_content: $ => repeat1(choice(
+            /[^-\n\r]+/,
+            /\r?\n/,
+            seq('-', /[^-\n\r]*/),
+            seq('--', /[^-\n\r]*/)
+        )),
 
-        // HTML Content (Simplified for now)
+        template_section: $ => repeat1($._html_content),
+
+        _directive_brace_content: $ => repeat1(choice(
+            /[^{}\n\r]+/,
+            /\r?\n/,
+            seq('{', optional($._directive_brace_content), '}')
+        )),
+
         _html_content: $ => choice(
             $.tag,
             $.self_closing_tag,
+            $.void_tag,
+            $.script_tag,
+            $.style_tag,
             $.text,
+            prec(10, $.brace_block),
+            prec(5, $.end_brace_block),
+            prec(1, $.interpolation),
+            $.doctype,
             $.hyphen,
-            $.interpolation,
-            $.brace_block,
-            $.end_brace_block
+            $.bang
         ),
+
+        doctype: $ => /<!DOCTYPE[^>]*>/i,
 
         tag: $ => seq(
             '<',
-            alias($.tag_name, $.tag_name),
+            field('name', $.tag_name),
             repeat($.attribute),
             '>',
             repeat($._html_content),
             '</',
-            alias($.tag_name, $.tag_name),
+            field('close_name', $.tag_name),
             '>'
         ),
 
         self_closing_tag: $ => seq(
             '<',
-            alias($.tag_name, $.tag_name),
+            field('name', $.tag_name),
             repeat($.attribute),
             '/>'
         ),
 
-        tag_name: $ => /[a-zA-Z0-9_$-]+/,
+        void_tag: $ => seq(
+            '<',
+            field('name', choice(
+                'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+                'link', 'meta', 'param', 'source', 'track', 'wbr'
+            )),
+            repeat($.attribute),
+            choice('>', '/>')
+        ),
+
+        script_tag: $ => seq(
+            '<script',
+            repeat($.attribute),
+            '>',
+            optional(alias($._script_content, $.text)),
+            '</script>'
+        ),
+
+        style_tag: $ => seq(
+            '<style',
+            repeat($.attribute),
+            '>',
+            optional(alias($._style_content, $.text)),
+            '</style>'
+        ),
+
+        _script_content: $ => repeat1(choice(
+            /[^<]+/,
+            seq('<', /[^/]/)
+        )),
+
+        _style_content: $ => repeat1(choice(
+            /[^<]+/,
+            seq('<', /[^/]/)
+        )),
+
+        tag_name: $ => /[^ />{}"'=!\n\r]+/,
 
         attribute: $ => choice(
             seq(
-                $._attribute_name,
+                field('name', choice($.attribute_name, $.special_attribute_name)),
                 optional(seq(
                     '=',
-                    $.attribute_value
+                    field('value', choice(
+                        $.attribute_value,
+                        $.interpolation
+                    ))
                 ))
             ),
-            $.interpolation
+            $.attribute_shorthand,
+            $.spread_shorthand
         ),
 
-        _attribute_name: $ => choice(
-            alias(/\w+/, $.attribute_name),
-            alias(choice(/@[\w.]+/, /\$[a-zA-Z_]\w*/, /:\w+/), $.special_attribute_name)
+        attribute_shorthand: $ => seq(
+            '{',
+            field('name', $.attribute_name),
+            '}'
         ),
+
+        spread_shorthand: $ => seq(
+            '{',
+            '**',
+            field('expr', alias($._python_code, $.python_code)),
+            '}'
+        ),
+
+        attribute_name: $ => token(seq(
+            /[^ />{}"'=!\n\r]+/,
+        )),
+
+        special_attribute_name: $ => token(prec(10, seq(
+            choice(
+                '@',
+                // '$', // Removed: value accessor shorthand is gone
+                ':',
+                '**'
+            ),
+            /[a-zA-Z_][\w.\-]*/
+        ))),
 
         attribute_value: $ => choice(
-            seq('"', alias(/[^"]*/, $.attribute_content), '"'),
-            seq("'", alias(/[^']*/, $.attribute_content), "'"),
-            $.interpolation
+            seq('"', /[^"]*/, '"'),
+            seq("'", /[^']*/, "'"),
+            /[^ />{}"'=\n\r]+/
         ),
+
+        text: $ => prec(1, /[^<{}! \t\n\r\-][^<{}\n\r\-]*/),
 
         interpolation: $ => seq(
             '{',
-            alias($._interpolation_content, $.python_code),
+            field('expr', alias($._python_code, $.python_code)),
             '}'
         ),
 
-        _interpolation_content: $ => /[^}]+/,
-
-        brace_block: $ => seq(
-            '{',
-            '$',
-            alias(choice('if', 'elif', 'else', 'for', 'await', 'then', 'catch', 'try', 'except', 'finally', 'html'), $.keyword_control),
-            optional(alias($._python_code, $.python_code)),
+        brace_block: $ => token(seq(
+            '{$',
+            choice(
+                'if', 'for', 'try', 'await', 'elif', 'else', 'finally', 'except', 'then', 'catch', 'html'
+            ),
+            /[^}]*/,
             '}'
-        ),
-
-        end_brace_block: $ => seq(
-            '{',
-            '/',
-            alias(choice('if', 'for', 'await', 'try'), $.keyword_control),
-            '}'
-        ),
-
-        _python_code: $ => /[^}]+/,
-
-        // Separator must be on its own line (roughly)
-        separator: $ => token(seq(
-            /-{3,}/,
-            /\s*/,
-            /[Hh][Tt][Mm][Ll]/,
-            /\s*/,
-            /-{3,}/
         )),
 
-        // ...
+        end_brace_block: $ => token(seq(
+            '{/',
+            /[a-z]+/,
+            '}'
+        )),
 
-        text: $ => /[^<{}\-!]+|!/,
+        _python_code: $ => repeat1(choice(
+            /[^{}]+/,
+            seq('{', optional($._python_code), '}')
+        )),
+
+        comment: $ => /<!--[^-]*(-[^-]+)*-->/,
         hyphen: $ => '-',
-
-        comment: $ => token(seq('<!--', /[^-]+/, '-->'))
+        bang: $ => '!',
     }
 });

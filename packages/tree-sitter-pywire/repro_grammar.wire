@@ -1,0 +1,6 @@
+
+def typed(x: int) -> str:
+    return str(x)
+
+---html---
+<div></div>

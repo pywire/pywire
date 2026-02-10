@@ -1,34 +1,23 @@
-==================
-Basic Structure
-==================
+==============================
+Basic document
+==============================
 
-!layout basic
-
-class Page:
-    pass
-
+x = 1
 ---html---
+<h1>Hi</h1>
 
-<div id="app">
-    <h1>Hello</h1>
-</div>
+---
 
 (source_file
-  (directive
-    (keyword_directive))
-  (python_line)
-  (python_line)
-  (separator)
+  (text)
+  (hyphen)
+  (hyphen)
+  (hyphen)
+  (text)
+  (hyphen)
+  (hyphen)
+  (hyphen)
   (tag
     (tag_name)
-    (attribute
-      (attribute_name)
-      (attribute_value
-        (attribute_content)))
-    (text)
-    (tag
-      (tag_name)
-      (text)
-      (tag_name))
     (text)
     (tag_name)))

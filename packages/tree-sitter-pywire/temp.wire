@@ -1,11 +1,12 @@
+!path "/test"
+!layout "main"
 
-!layout basic
-
-
-class Page:
-    pass
+user = "Reece"
 
 ---html---
-<div id="app">
-    <h1>Hello</h1>
+<div class="container" @click={click_handler}>
+    <h1>Hello, {user}!</h1>
+    {$if count > 0}
+        <p>Count is {count}</p>
+    {/if}
 </div>

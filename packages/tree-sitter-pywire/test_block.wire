@@ -1,0 +1,2 @@
+---html---
+{$if count > 10}A{/if}

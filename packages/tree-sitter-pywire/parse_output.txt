@@ -1,0 +1,39 @@
+(source_file [0, 0] - [12, 0]
+  (python_line [0, 0] - [0, 13])
+  (python_line [0, 13] - [1, 14])
+  (python_line [1, 14] - [3, 14])
+  (separator [3, 14] - [5, 10])
+  (tag [6, 0] - [11, 6]
+    name: (tag_name [6, 1] - [6, 4])
+    attribute: (attribute [6, 5] - [6, 22]
+      name: (attribute_name [6, 5] - [6, 10])
+      value: (attribute_value [6, 11] - [6, 22]
+        (attribute_content [6, 12] - [6, 21])))
+    attribute: (attribute [6, 23] - [6, 45]
+      name: (special_attribute_name [6, 23] - [6, 29])
+      value: (attribute_value [6, 30] - [6, 45]
+        (interpolation [6, 30] - [6, 45]
+          expr: (python_code [6, 31] - [6, 44]))))
+    (text [6, 46] - [7, 4])
+    (tag [7, 4] - [7, 27]
+      name: (tag_name [7, 5] - [7, 7])
+      (text [7, 8] - [7, 15])
+      (interpolation [7, 15] - [7, 21]
+        expr: (python_code [7, 16] - [7, 20]))
+      (text [7, 21] - [7, 22])
+      close_name: (tag_name [7, 24] - [7, 26]))
+    (text [7, 27] - [8, 4])
+    (interpolation [8, 4] - [8, 19]
+      expr: (python_code [8, 5] - [8, 18]))
+    (text [8, 19] - [9, 8])
+    (tag [9, 8] - [9, 31]
+      name: (tag_name [9, 9] - [9, 10])
+      (text [9, 11] - [9, 20])
+      (interpolation [9, 20] - [9, 27]
+        expr: (python_code [9, 21] - [9, 26]))
+      close_name: (tag_name [9, 29] - [9, 30]))
+    (text [9, 31] - [10, 4])
+    (interpolation [10, 4] - [10, 9]
+      expr: (python_code [10, 5] - [10, 8]))
+    (text [10, 9] - [11, 0])
+    close_name: (tag_name [11, 2] - [11, 5])))
