@@ -4,6 +4,8 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.pyodide-*
+**/*.egg-info/*
 
 src/pywire/client/node_modules/
 src/pywire/client/dist/
