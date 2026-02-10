@@ -20,6 +20,7 @@ from pywire.core.signals import (
 from pywire.core.props import props
 from pywire.core.expose import expose
 from pywire.runtime.importer import install_import_hook
+
 install_import_hook()
 
 __all__ = [

@@ -295,7 +295,9 @@ class WebSocketHandler:
             page._on_update = broadcast_update
             page._on_update = broadcast_update
             if self.app.debug:
-                print(f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init")
+                print(
+                    f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init"
+                )
 
             # Render initial state to register dependencies
             # We don't send the HTML back because client already has it (static load)

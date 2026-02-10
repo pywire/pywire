@@ -629,7 +629,9 @@ class BasePage:
             }
         except Exception as e:
             if getattr(self.request.app.state, "debug", False):
-                print(f"DEBUG: [{self._instance_id}] Resolution error for {await_id}: {e}")
+                print(
+                    f"DEBUG: [{self._instance_id}] Resolution error for {await_id}: {e}"
+                )
             self._await_states[await_id] = {
                 "status": "error",
                 "result": None,
