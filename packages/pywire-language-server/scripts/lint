@@ -6,4 +6,4 @@ set -x
 
 uv run ruff format $SOURCE_FILES
 uv run ruff check --fix $SOURCE_FILES
-uv run ty $SOURCE_FILES
+uv run ty check $SOURCE_FILES
