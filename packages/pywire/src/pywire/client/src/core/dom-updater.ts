@@ -174,7 +174,7 @@ export class DOMUpdater {
     }
 
     if (!el) return // Restore focus
-      ; (el as HTMLElement).focus()
+    ;(el as HTMLElement).focus()
 
     // Restore selection/caret position
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {

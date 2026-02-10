@@ -32,7 +32,9 @@ class WebTransportHandler:
         try:
             message = await receive()
             if self.app.debug:
-                print(f"DEBUG: WebTransport received initial message: {message['type']}")
+                print(
+                    f"DEBUG: WebTransport received initial message: {message['type']}"
+                )
             if message["type"] != "webtransport.connect":
                 if self.app.debug:
                     print(f"DEBUG: Unexpected message type: {message['type']}")

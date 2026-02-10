@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: pywire
-Version: 0.1.9.dev7+g79cd148e8.d20260210
+Version: 0.1.9.dev8+g2a2ca94fc.d20260210
 Summary: HTML-over-the-wire Python web framework
 Author-email: Reece Holmdahl <reece@pywire.dev>
 Requires-Python: >=3.11

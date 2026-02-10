@@ -1,10 +1,13 @@
+Cargo.toml
 LICENSE
 MANIFEST.in
 README.md
+debug_tree.rs
 noxfile.py
 pyproject.toml
 setup.py
 uv.lock
+rust/lib.rs
 scripts/README.md
 scripts/build
 scripts/check
@@ -43,6 +46,7 @@ src/pywire/client/src/core/app.ts
 src/pywire/client/src/core/dom-updater.test.ts
 src/pywire/client/src/core/dom-updater.ts
 src/pywire/client/src/core/index.ts
+src/pywire/client/src/core/logger.ts
 src/pywire/client/src/core/transport-manager.test.ts
 src/pywire/client/src/core/transport-manager.ts
 src/pywire/client/src/core/transports/base.ts
