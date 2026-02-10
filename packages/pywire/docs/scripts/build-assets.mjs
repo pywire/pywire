@@ -92,8 +92,11 @@ async function main() {
       // And skip wasm-opt entirely because 3.1.58's wasm-opt fails on modern flags
       const env = {
         ...process.env,
-        RUSTFLAGS: (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory',
-        EMCC_SKIP_WASM_OPT: '1'
+        RUSTFLAGS: (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0',
+        CFLAGS: (process.env.CFLAGS || '') + ' -mno-bulk-memory',
+        CXXFLAGS: (process.env.CXXFLAGS || '') + ' -mno-bulk-memory',
+        EMCC_SKIP_WASM_OPT: '1',
+        EM_IGNORE_WASM_OPT: '1'
       }
       console.log('Building with RUSTFLAGS:', env.RUSTFLAGS)
       console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
