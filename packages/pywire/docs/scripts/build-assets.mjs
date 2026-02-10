@@ -87,7 +87,12 @@ async function main() {
       // Requires wheel < 0.40.0 for auditwheel-emscripten compatibility
       // Requires prerelease=allow for pyodide-lock 0.1.0a7 dependency
       const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
-      run(pyodideCmd, REPO_ROOT)
+
+      // Explicitly disable bulk-memory to satisfy Emscripten 3.1.58's wasm-opt
+      const env = { ...process.env, RUSTFLAGS: (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory' }
+      console.log('Building with RUSTFLAGS:', env.RUSTFLAGS)
+
+      execSync(pyodideCmd, { cwd: REPO_ROOT, stdio: 'inherit', env })
     } catch (e) {
       console.error('Failed to build WASM wheel:', e)
       process.exit(1)
