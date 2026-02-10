@@ -94,12 +94,14 @@ async function main() {
       const env = {
         ...process.env,
         CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: targetRustFlags,
-        CFLAGS: (process.env.CFLAGS || '') + ' -mno-bulk-memory',
-        CXXFLAGS: (process.env.CXXFLAGS || '') + ' -mno-bulk-memory',
+        EMCC_CFLAGS: (process.env.EMCC_CFLAGS || '') + ' -mno-bulk-memory',
+        EMCC_CXXFLAGS: (process.env.EMCC_CXXFLAGS || '') + ' -mno-bulk-memory',
         EMCC_SKIP_WASM_OPT: '1',
         EM_IGNORE_WASM_OPT: '1'
       }
       delete env.RUSTFLAGS // Ensure RUSTFLAGS doesn't override target-specific flags or leak to host
+      delete env.CFLAGS // Ensure CFLAGS doesn't leak to host
+      delete env.CXXFLAGS // Ensure CXXFLAGS doesn't leak to host
       console.log('Building with target RUSTFLAGS:', targetRustFlags)
       console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
 
