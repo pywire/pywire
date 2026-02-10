@@ -26,7 +26,16 @@ jobs:
       deployments: write
     name: Deploy Documentation
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pywire
+        uses: actions/checkout@v4
+        with:
+          path: pywire
+
+      - name: Checkout tree-sitter-pywire
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/tree-sitter-pywire
+          path: tree-sitter-pywire
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,12 +54,16 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        working-directory: docs
-        run: pnpm install
+        working-directory: pywire
+        run: |
+          cd docs
+          pnpm install
 
       - name: Build
-        working-directory: docs
-        run: pnpm run build
+        working-directory: pywire
+        run: |
+          cd docs
+          pnpm run build
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
@@ -58,7 +71,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: pywire-docs
-          directory: docs/dist
+          directory: pywire/docs/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ (github.event.inputs.environment == 'production' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/docs-')) && 'main' || 'nightly' }}
 
