@@ -90,15 +90,17 @@ async function main() {
 
       // Explicitly disable bulk-memory to satisfy Emscripten 3.1.58's wasm-opt
       // And skip wasm-opt entirely because 3.1.58's wasm-opt fails on modern flags
+      const targetRustFlags = (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0'
       const env = {
         ...process.env,
-        RUSTFLAGS: (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0',
+        CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: targetRustFlags,
         CFLAGS: (process.env.CFLAGS || '') + ' -mno-bulk-memory',
         CXXFLAGS: (process.env.CXXFLAGS || '') + ' -mno-bulk-memory',
         EMCC_SKIP_WASM_OPT: '1',
         EM_IGNORE_WASM_OPT: '1'
       }
-      console.log('Building with RUSTFLAGS:', env.RUSTFLAGS)
+      delete env.RUSTFLAGS // Ensure RUSTFLAGS doesn't override target-specific flags or leak to host
+      console.log('Building with target RUSTFLAGS:', targetRustFlags)
       console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
 
       execSync(pyodideCmd, { cwd: REPO_ROOT, stdio: 'inherit', env })
