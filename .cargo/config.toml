@@ -3,8 +3,3 @@ rustflags = [
     "-C", "target-feature=-bulk-memory",
     "-C", "link-arg=-sWASM_OPT=0",
 ]
-
-[env]
-EMCC_SKIP_WASM_OPT = "1"
-CFLAGS = "-mno-bulk-memory"
-CXXFLAGS = "-mno-bulk-memory"
