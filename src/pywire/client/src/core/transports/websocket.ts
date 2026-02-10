@@ -1,5 +1,6 @@
 import { BaseTransport, ServerMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
+import { logger } from '../logger'
 
 const DEBUG_CONNECTION = false
 
@@ -28,12 +29,12 @@ export class WebSocketTransport extends BaseTransport {
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        if (DEBUG_CONNECTION) console.log(`PyWire: Connecting WebSocket to ${this.url}`)
+        if (DEBUG_CONNECTION) logger.log(`PyWire: Connecting WebSocket to ${this.url}`)
         this.socket = new WebSocket(this.url)
         this.socket.binaryType = 'arraybuffer'
 
         this.socket.onopen = () => {
-          if (DEBUG_CONNECTION) console.log('PyWire: WebSocket connected')
+          if (DEBUG_CONNECTION) logger.log('PyWire: WebSocket connected')
           this.notifyStatus(true)
           this.reconnectAttempts = 0
           resolve()
@@ -44,12 +45,12 @@ export class WebSocketTransport extends BaseTransport {
             const msg = decode(event.data) as ServerMessage
             this.notifyHandlers(msg)
           } catch (e) {
-            console.error('PyWire: Error parsing WebSocket message', e)
+            logger.error('PyWire: Error parsing WebSocket message', e)
           }
         }
 
         this.socket.onclose = () => {
-          if (DEBUG_CONNECTION) console.log('PyWire: WebSocket disconnected')
+          if (DEBUG_CONNECTION) logger.log('PyWire: WebSocket disconnected')
           this.notifyStatus(false)
           if (this.shouldReconnect) {
             this.scheduleReconnect()
@@ -57,7 +58,7 @@ export class WebSocketTransport extends BaseTransport {
         }
 
         this.socket.onerror = (error) => {
-          console.error('PyWire: WebSocket error', error)
+          logger.error('PyWire: WebSocket error', error)
           if (!this.connected) {
             reject(new Error('WebSocket connection failed'))
           }
@@ -72,7 +73,7 @@ export class WebSocketTransport extends BaseTransport {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(encode(message))
     } else {
-      console.warn('PyWire: Cannot send message, WebSocket not open')
+      logger.warn('PyWire: Cannot send message, WebSocket not open')
     }
   }
 
@@ -88,7 +89,7 @@ export class WebSocketTransport extends BaseTransport {
   private scheduleReconnect(): void {
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay)
 
-    if (DEBUG_CONNECTION) console.log(`PyWire: Reconnecting in ${delay}ms...`)
+    if (DEBUG_CONNECTION) logger.log(`PyWire: Reconnecting in ${delay}ms...`)
 
     setTimeout(() => {
       this.reconnectAttempts++

@@ -23,6 +23,7 @@ export class TutorialEngine {
   private onResponse: (data: any) => void
   private onLog: (msg: string) => void
   private _isReady: boolean = false
+  private pendingRequests = new Map<string, (html: string) => void>()
 
   constructor(options: {
     onReady: () => void
@@ -96,12 +97,28 @@ export class TutorialEngine {
   }
 
   private handleWorkerMessage(event: MessageEvent) {
-    const { type, message } = event.data
+    const { type, message, id } = event.data
 
     if (type === 'READY') {
       this._isReady = true
       this.onReady()
-    } else if (type === 'http_response' || type === 'ws_message') {
+    } else if (type === 'http_response') {
+      // Check if this is a response to a specific fetch request
+      if (id && this.pendingRequests.has(id)) {
+        if (message.type === 'http.response.body') {
+          const body = message.body
+          const html = Array.isArray(body) ? new TextDecoder().decode(new Uint8Array(body)) : body
+          const resolve = this.pendingRequests.get(id)
+          if (resolve) {
+            resolve(html)
+            this.pendingRequests.delete(id)
+          }
+        }
+        // Don't forward intercepted requests to the main preview
+        return
+      }
+      this.onResponse(event.data)
+    } else if (type === 'ws_message') {
       this.onResponse(event.data)
     } else if (type === 'STDOUT' || type === 'STDERR') {
       this.onLog(message)
@@ -148,17 +165,25 @@ export class TutorialEngine {
     this.postToWorker({ type: 'RESET' })
   }
 
-  public httpRequest(method: string, path: string, body?: any) {
+  public httpRequest(method: string, path: string, body?: any, id?: string) {
     this.postToWorker({
       type: 'REQUEST',
       payload: {
         type: 'http_request',
-        id: Math.random().toString(36).substring(2, 11),
+        id: id || Math.random().toString(36).substring(2, 11),
         method,
         path,
         headers: { Accept: 'text/html' },
         body,
       },
+    })
+  }
+
+  public async fetchRouteContent(path: string): Promise<string> {
+    return new Promise((resolve) => {
+      const id = `fetch_${Math.random().toString(36).substring(2, 11)}`
+      this.pendingRequests.set(id, resolve)
+      this.httpRequest('GET', path, undefined, id)
     })
   }
 

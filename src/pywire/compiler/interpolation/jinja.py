@@ -235,21 +235,23 @@ class JinjaInterpolationParser(InterpolationParser):
                             # This is simplistic but works for common cases
                             modified_expr = re.sub(
                                 r"\b([a-zA-Z_]\w*)\b(?!\s*[(\[])",
-                                lambda m: f"self.{str(m.group(1))}"
-                                if m.group(1)
-                                not in (
-                                    "if",
-                                    "else",
-                                    "and",
-                                    "or",
-                                    "not",
-                                    "in",
-                                    "is",
-                                    "True",
-                                    "False",
-                                    "None",
-                                )
-                                else m.group(1),
+                                lambda m: (
+                                    f"self.{str(m.group(1))}"
+                                    if m.group(1)
+                                    not in (
+                                        "if",
+                                        "else",
+                                        "and",
+                                        "or",
+                                        "not",
+                                        "in",
+                                        "is",
+                                        "True",
+                                        "False",
+                                        "None",
+                                    )
+                                    else m.group(1)
+                                ),
                                 expr,
                             )
                             result.append(f"{{{modified_expr}}}")

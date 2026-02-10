@@ -6,13 +6,13 @@ description: Create reactive state with wire() and mutate it with the $ prefix.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       # 1. Create a reactive variable 'count' with initial value 0
 
       def increment():
-          # 2. Use $count to increment the value
-          pass
-
-      ---html---
+        # 2. Use $count to increment the value
+        pass
+      ---
       <div>
         <h1>Reactivity</h1>
         <p>Count: {count}</p>
@@ -21,12 +21,12 @@ files:
         </button>
       </div>
     solution: |
+      ---
       count = wire(0)
 
       def increment():
-          $count += 1
-
-      ---html---
+        $count += 1
+      ---
       <div>
         <h1>Reactivity</h1>
         <p>Count: {count}</p>
@@ -44,6 +44,7 @@ successCriteria:
     target: pages/index.wire
     pattern: '$count +='
   - type: browser_route_text
+    route: '/'
     description: 'Increment the count to 5'
     pattern: 'Count: 5'
 pagesDir: pages

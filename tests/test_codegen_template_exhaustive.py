@@ -115,5 +115,33 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         self.assert_code_in("attrs['data-arg-0'] = json.dumps(user.id)", lines)
 
 
+    def test_add_node_script_tag(self) -> None:
+        # <script src="foo">console.log(1)</script>
+        child = TemplateNode(tag=None, text_content="console.log(1)", is_raw=True, line=1, column=0)
+        node = TemplateNode(tag="script", attributes={"src": "foo"}, children=[child], line=1, column=0)
+
+        lines: list[ast.stmt] = []
+        self.codegen._add_node(node, lines, enable_regions=False)
+        
+        self.assert_code_in("parts.append('<script')", lines)
+        self.assert_code_in("parts.append(render_attrs(attrs, None))", lines)
+        self.assert_code_in("parts.append('>')", lines)
+        self.assert_code_in("parts.append('console.log(1)')", lines)
+        self.assert_code_in("parts.append('</script>')", lines)
+
+    def test_add_node_script_tag_brittle_content(self) -> None:
+        # <script>if (i < 10) {}</script>
+        child = TemplateNode(tag=None, text_content="if (i < 10) {}", is_raw=True, line=1, column=0)
+        node = TemplateNode(tag="script", children=[child], line=1, column=0)
+
+        lines: list[ast.stmt] = []
+        self.codegen._add_node(node, lines, enable_regions=False)
+        
+        self.assert_code_in("parts.append('<script')", lines)
+        self.assert_code_in("parts.append('>')", lines)
+        self.assert_code_in("parts.append('if (i < 10) {}')", lines)
+        self.assert_code_in("parts.append('</script>')", lines)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -41,29 +41,26 @@ class CodeGenerator:
         }
 
         self.template_codegen = TemplateCodegen()
+        self._collected_props = None
 
     def _generate_component_loading(
-        self, parsed: ParsedPyWire
-    ) -> Tuple[List[ast.stmt], Dict[str, str]]:
+        self, parsed: ParsedPyWire, component_map: Dict[str, str]
+    ) -> List[ast.stmt]:
         """
-        Generate code to load components and return Tag -> ClassName map.
-        Returns: (stmts, component_map)
+        Generate code to load components for !component directives.
+        Updates component_map for those directives.
         """
         stmts: List[ast.stmt] = []
-        component_map = {}
 
         for directive in parsed.directives:
             if isinstance(directive, ComponentDirective):
-                # Name = load_component("path", __file_path__)
-
-                # Check for "as Name" collision with imports or other components?
-                # Python handles it (overwrite), but maybe warn?
-
                 target_name = directive.component_name
                 path = directive.path
 
-                # component_map[target_name] = target_name (class is assigned to this var)
-                # Parse lowercases HTML tags, so we map lowercase name to actual class name
+                # Only generate if not already in map (prefer imports)
+                if target_name.lower() in component_map:
+                    continue
+
                 component_map[target_name.lower()] = target_name
 
                 stmts.append(
@@ -80,13 +77,18 @@ class CodeGenerator:
                     )
                 )
 
-        return stmts, component_map
+        return stmts
 
     def generate(self, parsed: ParsedPyWire) -> ast.Module:
         """Generate complete module AST."""
         self.file_path = parsed.file_path
         self._has_top_level_init = False
         self._collected_mount_hooks: List[str] = []
+        self._collected_derived_hooks: List[str] = []
+        self._collected_effect_hooks: List[str] = []
+        self._collected_exposed_methods: List[str] = []
+        self._wire_vars_from_decorators: Set[str] = set()
+        self._collected_props: Optional[PropsDirective] = None
         module_body = []
 
         # Imports
@@ -95,8 +97,12 @@ class CodeGenerator:
         # Add asyncio import for handle_event
         module_body.append(ast.Import(names=[ast.alias(name="asyncio", asname=None)]))
 
-        # Component loading (early, so they are available)
-        comp_stmts, component_map = self._generate_component_loading(parsed)
+        # Component mapping logic
+        # 1. From Imports (PascalCase convention)
+        component_map = self._generate_component_map_from_imports(parsed.python_ast)
+
+        # 2. From Legacy Directives
+        comp_stmts = self._generate_component_loading(parsed, component_map)
         module_body.extend(comp_stmts)
 
         # Layout logic
@@ -155,6 +161,10 @@ class CodeGenerator:
             parsed, all_globals, async_methods
         )
 
+        # Extract wire variables for auto-unwrapping
+        wire_vars = self._extract_wire_vars(parsed.python_ast)
+        wire_vars.update(self._wire_vars_from_decorators)
+
         # Page class
         page_class = self._generate_page_class(
             parsed,
@@ -165,6 +175,7 @@ class CodeGenerator:
             async_methods,
             component_map,
             allowed_handlers,
+            wire_vars,
         )
         module_body.append(page_class)
 
@@ -191,7 +202,30 @@ class CodeGenerator:
             ),
             ast.ImportFrom(
                 module="pywire.core.wire",
-                names=[ast.alias(name="wire", asname=None)],
+                names=[
+                    ast.alias(name="wire", asname=None),
+                    ast.alias(name="unwrap_wire", asname=None),
+                    ast.alias(name="set_render_context", asname=None),
+                    ast.alias(name="reset_render_context", asname=None),
+                ],
+                level=0,
+            ),
+            ast.ImportFrom(
+                module="pywire.core.signals",
+                names=[
+                    ast.alias(name="derived", asname=None),
+                    ast.alias(name="effect", asname=None),
+                ],
+                level=0,
+            ),
+            ast.ImportFrom(
+                module="pywire.core.props",
+                names=[ast.alias(name="props", asname=None)],
+                level=0,
+            ),
+            ast.ImportFrom(
+                module="pywire.core.expose",
+                names=[ast.alias(name="expose", asname=None)],
                 level=0,
             ),
             ast.ImportFrom(
@@ -223,53 +257,62 @@ class CodeGenerator:
             ast.ImportFrom(
                 module="pywire.runtime.helpers",
                 names=[
-                    ast.alias(name="unwrap_wire", asname=None),
-                    ast.alias(name="set_render_context", asname=None),
-                    ast.alias(name="reset_render_context", asname=None),
+                    ast.alias(name="render_attrs", asname=None),
                 ],
                 level=0,
             ),
         ]
         return imports
 
-    def _generate_component_imports(
-        self, parsed: ParsedPyWire
-    ) -> Tuple[List[ast.stmt], Dict[str, str]]:
-        """
-        Generate imports for components and return a map of TagName -> ClassName.
-        Returns: (import_stmts, component_map)
-        """
-        imports: List[ast.stmt] = []
-        component_map: Dict[str, str] = {}
+    def _extract_wire_vars(self, python_ast: Optional[ast.AST]) -> Set[str]:
+        """Extract variables that are assigned to wire() calls."""
+        wire_vars = set()
+        if not python_ast:
+            return wire_vars
 
-        from pywire.compiler.ast_nodes import ComponentDirective
+        class WireVisitor(ast.NodeVisitor):
+            def visit_Assign(self, node: ast.Assign) -> None:
+                # Check if value is wire(...)
+                is_wire = False
+                if isinstance(node.value, ast.Call):
+                    if isinstance(node.value.func, ast.Name) and node.value.func.id in (
+                        "wire",
+                        "derived",
+                    ):
+                        is_wire = True
 
-        for directive in parsed.directives:
-            if isinstance(directive, ComponentDirective):
-                # !component 'path' as Name
-                # We need to resolve 'path' to a python module path.
-                # Assuming 'path' is relative to project root or use loader helper?
-                # Actually, generated code will run in server context.
-                # Better to use our dynamic loader:
-                # Name = load_component('path', __file_path__)
+                if is_wire:
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            wire_vars.add(target.id)
 
-                # Import load_component if not already
-                # (handled in _generate_imports? No, let's assume we import a loader helper)
+                # Continue visiting to find nested assignments?
+                # Ideally top-level wires are what we care about most.
+                self.generic_visit(node)
 
-                # We'll generate:
-                # Name = load_component("path", __file_path__)
-                # But imports are usually at module level.
-                # If we use load_component, it's an assignment, not an import.
-                # That's fine, we can add it to module body.
+        WireVisitor().visit(python_ast)
+        return wire_vars
 
-                # However, cleaner if we can generate `from x import Y`.
-                # But we don't know the exact class name inside the file (it's generated).
-                # The dynamic loader `load_component` is robust.
+    def _generate_component_map_from_imports(
+        self, python_ast: Optional[ast.Module]
+    ) -> Dict[str, str]:
+        """Populate component_map from Python imports based on PascalCase convention."""
+        component_map = {}
+        if not python_ast:
+            return component_map
 
-                # Let's add `load_component` to imports
-                pass
+        for node in python_ast.body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    name = alias.asname or alias.name
+                    # PascalCase starts with uppercase
+                    if name and name[0].isupper():
+                        component_map[name.lower()] = name
+        return component_map
 
-        return imports, component_map
+    def _generate_component_imports(self, parsed: ParsedPyWire):
+        # Deprecated: use _generate_component_map_from_imports instead
+        pass
 
     def _extract_user_imports(self, python_ast: ast.Module) -> List[ast.stmt]:
         """Extract import statements from user Python code."""
@@ -284,7 +327,12 @@ class CodeGenerator:
         classes: List[ast.stmt] = []
         for node in python_ast.body:
             if isinstance(node, ast.ClassDef):
-                classes.append(node)
+                is_props = any(
+                    isinstance(dec, ast.Name) and dec.id == "props"
+                    for dec in node.decorator_list
+                )
+                if not is_props:
+                    classes.append(node)
         return classes
 
     def _extract_import_names(self, python_ast: Optional[ast.Module]) -> Set[str]:
@@ -294,9 +342,15 @@ class CodeGenerator:
         names.add("json")
         names.add("form_validator")
         names.add("FieldRules")
+        names.add("props")
+        names.add("derived")
+        names.add("effect")
+        names.add("expose")
 
         if python_ast:
             for node in python_ast.body:
+                # with open("/tmp/pywire_debug.txt", "a") as f:
+                #    f.write(f"DEBUG: EXTRACT IMPORT Node: {type(node)} {getattr(node, 'name', '')}\n")
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         names.add(alias.asname or alias.name)
@@ -392,6 +446,7 @@ class CodeGenerator:
         async_methods: Set[str],
         component_map: Dict[str, str],
         allowed_handlers: Optional[Set[str]] = None,
+        wire_vars: Set[str] = set(),
     ) -> ast.ClassDef:
         """Generate page class definition."""
         class_body: List[ast.stmt] = []
@@ -399,41 +454,18 @@ class CodeGenerator:
         # Add generated handlers
         class_body.extend(handlers)
 
-        # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
-        if allowed_handlers is None:
-            allowed_handlers = set()
-        # Include _handle_bind_* handlers that may be generated later
-        # These will be added dynamically, but we pre-allow the pattern
-        class_body.append(
-            ast.Assign(
-                targets=[ast.Name(id="__allowed_handlers__", ctx=ast.Store())],
-                value=ast.Set(
-                    elts=[ast.Constant(value=h) for h in sorted(allowed_handlers)]
-                )
-                if allowed_handlers
-                else ast.Call(
-                    func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[]
-                ),
-            )
-        )
-
-        # Generate directive assignments (e.g., __routes__)
+        # Generate directive metadata (e.g. __routes__ from !path)
         for directive in parsed.directives:
             handler = self.directive_handlers.get(type(directive))
             if handler:
                 class_body.extend(handler.generate(directive))
 
-        # Generate SPA navigation metadata
+        # Generate SPA metadata
         class_body.extend(self._generate_spa_metadata(parsed))
 
-        # Inject __no_spa__ flag if !no_spa was detected
-        if parsed.get_directive_by_type(NoSpaDirective):
-            class_body.append(
-                ast.Assign(
-                    targets=[ast.Name(id="__no_spa__", ctx=ast.Store())],
-                    value=ast.Constant(value=True),
-                )
-            )
+        # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
+        if allowed_handlers is None:
+            allowed_handlers = set()
 
         # Transform user Python code to class methods (Must run before __init__ to set flags)
         route_params = self._extract_route_params(parsed)
@@ -441,6 +473,22 @@ class CodeGenerator:
         user_code_stmts: List[ast.stmt] = []
         if parsed.python_ast:
             user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
+
+        # Track exposed methods
+        initial_exposed = ast.Assign(
+            targets=[ast.Name(id="__exposed_methods__", ctx=ast.Store())],
+            value=ast.Set(
+                elts=[
+                    ast.Constant(value=m)
+                    for m in sorted(self._collected_exposed_methods)
+                ]
+            )
+            if self._collected_exposed_methods
+            else ast.Call(
+                func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[]
+            ),
+        )
+        class_body.append(initial_exposed)
 
         # Generate __init__ method
         class_body.append(self._generate_init_method(parsed))
@@ -451,17 +499,21 @@ class CodeGenerator:
         # Generate form validation schemas and wrappers
         # MUST happen before render generation as it updates EventAttributes to point to wrappers
         form_validation_methods = self._generate_form_validation_methods(
-            parsed, all_globals
+            parsed, all_globals, known_imports
         )
         class_body.extend(form_validation_methods)
         # Generate _render_template method AND binding methods
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
-        all_globals = (
-            known_methods.union(known_vars).union(route_params).union(known_imports)
-        )
+        all_globals = known_methods.union(known_vars).union(route_params)
 
         render_func, binding_funcs = self._generate_render_template_method(
-            parsed, known_methods, all_globals, async_methods, component_map
+            parsed,
+            known_methods,
+            all_globals,
+            known_imports,
+            async_methods,
+            component_map,
+            wire_vars=wire_vars,
         )
         if render_func:
             class_body.append(render_func)
@@ -559,21 +611,38 @@ class CodeGenerator:
         async_methods = set()
 
         if python_ast:
+            # First pass: Collect method names (shallow)
             for node in python_ast.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     methods.add(node.name)
                     if isinstance(node, ast.AsyncFunctionDef):
                         async_methods.add(node.name)
-                elif isinstance(node, ast.Assign):
-                    for target in node.targets:
-                        for child in ast.walk(target):
-                            if isinstance(child, ast.Name) and isinstance(
-                                child.ctx, ast.Store
-                            ):
-                                variables.add(child.id)
-                elif isinstance(node, ast.AnnAssign):
-                    if isinstance(node.target, ast.Name):
-                        variables.add(node.target.id)
+
+            # Second pass: recursively collect assignments, stopping at function/class boundaries
+            class GlobalVarCollector(ast.NodeVisitor):
+                def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                    # Do not recurse into functions (new scope)
+                    pass
+
+                def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+                    # Do not recurse into functions (new scope)
+                    pass
+
+                def visit_ClassDef(self, node: ast.ClassDef) -> None:
+                    # Do not recurse into classes
+                    pass
+
+                def visit_Name(self, node: ast.Name) -> None:
+                    if isinstance(node.ctx, ast.Store):
+                        variables.add(node.id)
+
+                # We need to handle other assignment targets that might not be just Name
+                # But visit_Name handles the Name nodes inside them (e.g. Tuple unpacking) automatically
+                # because NodeVisitor recurses by default for generic nodes.
+
+            collector = GlobalVarCollector()
+            for node in python_ast.body:
+                collector.visit(node)
 
         # Add implicit params from filename if available
         if hasattr(self, "file_path") and self.file_path:
@@ -776,7 +845,10 @@ class CodeGenerator:
         return new_tree.body, extracted_args
 
     def _generate_form_validation_methods(
-        self, parsed: ParsedPyWire, known_globals: Set[str]
+        self,
+        parsed: ParsedPyWire,
+        known_globals: Set[str],
+        known_imports: Optional[Set[str]] = None,
     ) -> List[ast.stmt]:
         """Generate validation schema and wrapper methods for forms with @submit."""
         methods: List[ast.stmt] = []
@@ -802,7 +874,10 @@ class CodeGenerator:
 
                                 # Build dict literal for schema fields
                                 schema_methods = self._generate_form_schema_literal(
-                                    attr.validation_schema, schema_name, known_globals
+                                    attr.validation_schema,
+                                    schema_name,
+                                    known_globals,
+                                    known_imports,
                                 )
                                 methods.extend(schema_methods)
 
@@ -813,6 +888,7 @@ class CodeGenerator:
                                     schema_name,
                                     attr.validation_schema,
                                     known_globals,
+                                    known_imports,
                                 )
                                 methods.append(wrapper)
 
@@ -826,7 +902,11 @@ class CodeGenerator:
         return methods
 
     def _generate_form_schema_literal(
-        self, schema: FormValidationSchema, schema_name: str, known_globals: Set[str]
+        self,
+        schema: FormValidationSchema,
+        schema_name: str,
+        known_globals: Set[str],
+        known_imports: Optional[Set[str]] = None,
     ) -> List[ast.stmt]:
         """Generate validation schema as a class attribute."""
         field_items = []
@@ -839,7 +919,7 @@ class CodeGenerator:
                 )
             if rules.required_expr:
                 expr_ast = self.template_codegen._transform_expr(
-                    rules.required_expr, set(), known_globals
+                    rules.required_expr, set(), known_globals, known_imports
                 )
                 expr_str = ast.unparse(expr_ast)
                 keywords.append(
@@ -869,7 +949,7 @@ class CodeGenerator:
                 )
             if rules.min_expr:
                 expr_ast = self.template_codegen._transform_expr(
-                    rules.min_expr, set(), known_globals
+                    rules.min_expr, set(), known_globals, known_imports
                 )
                 expr_str = ast.unparse(expr_ast)
                 keywords.append(
@@ -883,7 +963,7 @@ class CodeGenerator:
                 )
             if rules.max_expr:
                 expr_ast = self.template_codegen._transform_expr(
-                    rules.max_expr, set(), known_globals
+                    rules.max_expr, set(), known_globals, known_imports
                 )
                 expr_str = ast.unparse(expr_ast)
                 keywords.append(
@@ -958,6 +1038,7 @@ class CodeGenerator:
         schema_name: str,
         schema: FormValidationSchema,
         known_globals: Set[str],
+        known_imports: Optional[Set[str]] = None,
     ) -> ast.AsyncFunctionDef:
         """Generate wrapper handler that validates then calls original handler."""
         wrapper_name = f"_form_submit_{form_id}"
@@ -1252,6 +1333,12 @@ class CodeGenerator:
                 value=ast.Constant(value=bool(spa_enabled)),
             )
         )
+        stmts.append(
+            ast.Assign(
+                targets=[ast.Name(id="__no_spa__", ctx=ast.Store())],
+                value=ast.Constant(value=bool(no_spa)),
+            )
+        )
 
         # __sibling_paths__ = ['/path1', '/path2', ...]
         if path_directive and not path_directive.is_simple_string:
@@ -1306,45 +1393,12 @@ class CodeGenerator:
         props_assigns: List[ast.stmt] = []
 
         # Handle Props directive
-        props_directive = parsed.get_directive_by_type(PropsDirective)
+        props_directive = self._collected_props or parsed.get_directive_by_type(
+            PropsDirective
+        )
         if props_directive:
             assert isinstance(props_directive, PropsDirective)
             # !props(name: type, arg=default)
-            # Add to init_args
-            for name, type_hint, default_val in props_directive.args:
-                # Annotation
-                annotation = (
-                    ast.parse(type_hint, mode="eval").body if type_hint else None
-                )
-
-                # Default
-                if default_val is not None:
-                    # Parse default value expr
-                    defaults.append(ast.parse(default_val, mode="eval").body)
-                else:
-                    # No default: must come before args with defaults?
-                    # Standard python rules: non-default args first.
-                    # But we are appending AFTER request/params etc which DON'T have defaults
-                    # (except path/url which do)
-                    # Wait, request, params, query don't have defaults in base method signature
-                    # we generated before:
-                    # args=[arg('self'), arg('request')...]
-                    # defaults=[None, None] (for path/url?)
-
-                    # Actually standard signature above was:
-                    # args: self, request, params, query, path, url
-                    # defaults: path=None, url=None
-
-                    # So if we add a non-default prop after 'url=None', it's invalid syntax.
-                    # "non-default argument follows default argument"
-
-                    # Strategy: Make ALL props keyword-only or ensure order?
-                    # Components are instantiated with kwargs mostly?
-                    # Or we just add them to the end and expect users to provide defaults if we
-                    # have defaults before?
-                    # Simpler: Make them keyword arguments (kwonlyargs).
-                    pass
-
             # Implementation: Use kwonlyargs for props to avoid mess with positional defaults
             kwonlyargs: List[ast.arg] = []
             kw_defaults: List[Optional[ast.expr]] = []
@@ -1500,6 +1554,10 @@ class CodeGenerator:
 
         # Collect hooks
         self._collected_mount_hooks = []
+        self._collected_derived_hooks = []
+        self._collected_effect_hooks = []
+        self._collected_exposed_methods = []
+        self._wire_vars_from_decorators = set()
         self._has_top_level_init = False
 
         top_level_statements: List[ast.stmt] = []
@@ -1512,20 +1570,43 @@ class CodeGenerator:
                 # Check for decorators
                 new_decorators = []
                 for dec in node.decorator_list:
-                    if isinstance(dec, ast.Name) and dec.id == "mount":
-                        self._collected_mount_hooks.append(node.name)
-                    elif isinstance(dec, ast.Name) and dec.id == "unmount":
-                        # Placeholder for future unmount
-                        pass
-                    else:
-                        new_decorators.append(dec)
+                    if isinstance(dec, ast.Name):
+                        if dec.id == "mount":
+                            self._collected_mount_hooks.append(node.name)
+                            continue
+                        if dec.id == "unmount":
+                            # Placeholder for future unmount
+                            continue
+                        if dec.id == "derived":
+                            self._collected_derived_hooks.append(node.name)
+                            self._wire_vars_from_decorators.add(node.name)
+                            continue
+                        if dec.id == "effect":
+                            self._collected_effect_hooks.append(node.name)
+                            continue
+                        if dec.id == "expose":
+                            self._collected_exposed_methods.append(node.name)
+                            continue
+                    new_decorators.append(dec)
 
                 node.decorator_list = new_decorators
 
                 # Functions become methods - transform them
                 transformed.append(self._transform_to_method(node, known_globals))
             elif isinstance(node, ast.ClassDef):
-                # Classes are moved to module level, skip here
+                # Check for @props
+                is_props = False
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Name) and dec.id == "props":
+                        is_props = True
+                        break
+
+                if is_props:
+                    self._collected_props = self._extract_props_from_class(node)
+                    continue
+
+                # Standard classes are moved to module level (handled by UserCodeTransformer in some versions,
+                # but currently we just skip them as they don't belong in the page class body).
                 continue
             else:
                 # ALL other statements (Assign, AnnAssign, AugAssign, Expr, If, For, While, Try, etc.)
@@ -1534,6 +1615,57 @@ class CodeGenerator:
                 # all runs in the same scope at instance creation time.
                 top_level_statements.append(node)
 
+        # Inject derived and effect assignments into top-level init
+        for name in self._collected_derived_hooks:
+            # self.name = derived(self.name)
+            top_level_statements.append(
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=name,
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Call(
+                        func=ast.Name(id="derived", ctx=ast.Load()),
+                        args=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
+                            )
+                        ],
+                        keywords=[],
+                    ),
+                )
+            )
+
+        for name in self._collected_effect_hooks:
+            # self._effect_name = effect(self.name)
+            top_level_statements.append(
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=f"_effect_{name}",
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Call(
+                        func=ast.Name(id="effect", ctx=ast.Load()),
+                        args=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
+                            )
+                        ],
+                        keywords=[],
+                    ),
+                )
+            )
+
         if top_level_statements:
             self._has_top_level_init = True
             transformed.append(
@@ -1541,6 +1673,28 @@ class CodeGenerator:
             )
 
         return transformed
+
+    def _extract_props_from_class(self, node: ast.ClassDef) -> PropsDirective:
+        """Extract props from a @props decorated class."""
+        args: List[Tuple[str, str, Optional[str]]] = []
+        for item in node.body:
+            if isinstance(item, ast.AnnAssign):
+                if isinstance(item.target, ast.Name):
+                    name = item.target.id
+                    type_hint = ast.unparse(item.annotation)
+                    default = ast.unparse(item.value) if item.value else None
+                    args.append((name, type_hint, default))
+            elif isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name):
+                        name = target.id
+                        type_hint = "Any"
+                        default = ast.unparse(item.value)
+                        args.append((name, type_hint, default))
+
+        return PropsDirective(
+            name="props", line=node.lineno, column=node.col_offset, args=args
+        )
 
     def _generate_top_level_init(
         self, statements: List[ast.stmt], known_globals: Set[str]
@@ -1691,8 +1845,10 @@ class CodeGenerator:
         parsed: ParsedPyWire,
         known_methods: Optional[Set[str]] = None,
         known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
         component_map: Optional[Dict[str, str]] = None,
+        wire_vars: Set[str] = set(),
     ) -> Tuple[
         Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]],
         List[ast.stmt],
@@ -1727,8 +1883,10 @@ class CodeGenerator:
                 parsed.template,
                 file_id=file_id,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 layout_id=layout_id,
                 component_map=component_map,
+                wire_vars=wire_vars,
             )
 
             file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
@@ -1967,7 +2125,8 @@ class CodeGenerator:
             # Using imported PropsDirective from earlier context or get it again
             # We are inside the method, 'parsed' is available.
             props_directive = cast(
-                Optional[PropsDirective], parsed.get_directive_by_type(PropsDirective)
+                Optional[PropsDirective],
+                self._collected_props or parsed.get_directive_by_type(PropsDirective),
             )
             if props_directive:
                 for name, _, _ in props_directive.args:
@@ -1989,10 +2148,12 @@ class CodeGenerator:
                 layout_id=layout_id or "",
                 known_methods=known_methods,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 async_methods=async_methods,
                 component_map=component_map,
                 scope_id=scope_id,
                 initial_locals=prop_names,
+                wire_vars=wire_vars,
             )
 
             # Prepend unpack statements to render_func body

@@ -1,0 +1,68 @@
+---
+title: '!path'
+tutorial: Basic PyWire
+section: Directives
+description: Create complex pages with deep-linking using !path dictionaries.
+files:
+  - path: pages/main.wire
+    initial: |
+      # Turn this !path directive into a dictionary
+      !path "/menu"
+
+      <div>
+        <h1>This is the main menu</h1>
+        <a href="/menu/settings">Go to Settings</a>
+        
+        <!-- Wrap settings in an `if` block targeting the settings path -->
+        <h2>Settings:</h2>
+        <ul>
+          <li>Preferences</li>
+          <li>Security</li>
+          <li>Notifications</li>
+        </ul>
+      </div>
+    solution: |
+      !path {
+        "menu": "/menu",
+        "settings": "/menu/settings"
+      }
+
+      <div>
+        <h1>This is the main menu</h1>
+        <a href="/menu/settings">Go to Settings</a>
+        
+        {$if path.settings}
+          <h2>Settings:</h2>
+          <ul>
+            <li>Preferences</li>
+            <li>Security</li>
+            <li>Notifications</li>
+          </ul>
+        {/if}
+      </div>
+successCriteria:
+  - type: file_contains
+    description: "Add !path '/home' to the top of the file"
+    target: pages/homepage.wire
+    pattern: '!path "/home"'
+  - type: file_contains
+    description: "Change the `<h1>` tag to contain the word 'secret'"
+    target: pages/homepage.wire
+    pattern: 'secret'
+  - type: browser_route_text
+    route: '/home'
+    description: 'Navigate to /home and see the content'
+    pattern: 'now at /home'
+pagesDir: pages
+initialRoute: '/home'
+---
+
+By default, files in the `pages/` directory are served at a route matching their filename. You can override this using the `!path` directive.
+
+### Your Task
+
+1.  At the very top of `pages/homepage.wire`, add `!path "/home"`.
+2.  Add 'secret' somewhere in the `<h1>` tag.
+3.  Notice that the preview (which is already pointed at `/home`) now shows the content of this file instead of a 404.
+
+Directives like `!path` allow you to decouple your file structure from your URL structure.

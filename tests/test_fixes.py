@@ -5,13 +5,18 @@ from starlette.testclient import TestClient
 
 
 def test_synchronous_loop(tmp_path: Path) -> None:
-    """Verify that synchronous lists work in $for loops."""
+    """---
+Verify that synchronous lists work in $for loops."""
 
     page_content = """
+---
 items = [1, 2, 3]
----html---
+---
+
 <ul>
-    <li $for={item in items}>{item}</li>
+    {$for item in items}
+    <li>{item}</li>
+    {/for}
 </ul>
 """
 

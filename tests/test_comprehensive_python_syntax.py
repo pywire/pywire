@@ -1,4 +1,4 @@
-"""
+"""---
 Test that comprehensive Python syntax is properly supported below the separator.
 
 This test ensures that the parser and code generator correctly handle all Python
@@ -17,7 +17,8 @@ from pywire.compiler.parser import PyWireParser
 @pytest.fixture
 def test_wire_file(tmp_path: Path) -> Path:
     """Create a comprehensive test .wire file with all Python syntax."""
-    wire_content = """# Comprehensive Python Syntax Test
+    wire_content = """---
+# Comprehensive Python Syntax Test
 # This file tests that all Python syntax is supported below the separator
 
 # ============================================================================
@@ -635,7 +636,8 @@ StringDict = Dict[str, str]
 
 # Test that everything is valid
 test_result = "All Python syntax elements defined successfully!"
----html---
+---
+
 <div>
     <h1>Python Syntax Comprehensive Test</h1>
     <p>Testing all Python syntax and structures below the separator</p>
@@ -648,7 +650,8 @@ test_result = "All Python syntax elements defined successfully!"
 
 
 def test_parse_comprehensive_python_syntax(test_wire_file: Path) -> None:
-    """Test that comprehensive Python syntax can be parsed."""
+    """---
+Test that comprehensive Python syntax can be parsed."""
     parser = PyWireParser()
     
     # Should parse without errors
@@ -746,7 +749,8 @@ def test_python_syntax_preservation() -> None:
     parser = PyWireParser()
     
     # Test content with various Python features
-    content = """# Decorators
+    content = """---
+# Decorators
 from functools import wraps
 
 def my_decorator(func):
@@ -799,7 +803,8 @@ class Manager:
             result = "one"
         case _:
             result = "other"
-    ---html---
+---
+
     <div>Test</div>
     """
     

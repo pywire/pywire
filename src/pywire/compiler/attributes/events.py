@@ -28,14 +28,20 @@ class EventAttributeParser(AttributeParser):
         event_type = parts[0]
         modifiers = [m for m in parts[1:] if m]
 
-        if not (attr_value.startswith("{") and attr_value.endswith("}")):
+        # Strip brackets or quotes
+        val = attr_value.strip()
+        if val.startswith("{") and val.endswith("}"):
+            handler_name = val[1:-1].strip()
+        elif (val.startswith('"') and val.endswith('"')) or (
+            val.startswith("'") and val.endswith("'")
+        ):
+            handler_name = val[1:-1].strip()
+        else:
             raise PyWireSyntaxError(
-                f"Event handler for '{attr_name}' must be wrapped in brackets: "
-                f"{attr_name}={{expr}}",
+                f"Event handler for '{attr_name}' must be wrapped in brackets or quotes: "
+                f'{attr_name}={{expr}} or {attr_name}="expr"',
                 line=line,
             )
-
-        handler_name = attr_value[1:-1].strip()  # Strip brackets and whitespace
 
         # Parse handler args if present (future: handler(arg1, arg2))
         handler_args: List[str] = []

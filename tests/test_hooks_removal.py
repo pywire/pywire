@@ -31,21 +31,23 @@ class TestHooksRemoval(unittest.TestCase):
             loop.close()
 
     def test_standard_hooks_ignored(self) -> None:
-        """Verify on_load/on_before_load are ignored unless called manually."""
+        """---
+Verify on_load/on_before_load are ignored unless called manually."""
         content = """
+---
 self.called_hooks = []
 
 def on_load(self):
     self.called_hooks.append('on_load')
-
+    
 def on_before_load(self):
     self.called_hooks.append('on_before_load')
 
 @mount
 def my_mount(self):
     self.called_hooks.append('mount')
+---
 
----html---
 <p>Test</p>
         """
         page_class = self.create_page_class(content)

@@ -10,14 +10,17 @@ export class SuccessValidator {
    * Validates a set of success criteria against the current state.
    * @returns Array of validation results corresponding to the criteria order
    */
-  static validate(
+  static async validate(
     files: Record<string, string>,
     criteria: SuccessCriteria[],
     browserHtml?: string,
-  ): ValidationResult[] {
+    fetchRoute?: (path: string) => Promise<string>,
+  ): Promise<ValidationResult[]> {
     if (!criteria || criteria.length === 0) return []
 
-    return criteria.map((criterion) => {
+    const results: ValidationResult[] = []
+
+    for (const criterion of criteria) {
       try {
         let passed = false
         switch (criterion.type) {
@@ -33,9 +36,22 @@ export class SuccessValidator {
           }
 
           case 'browser_route_text': {
-            // For now, simpler: check current browserHtml for pattern
-            // (Full implementation would need to fetch specific routes)
-            passed = browserHtml?.includes(criterion.pattern || '') ?? false
+            let htmlToCheck = browserHtml
+            if (criterion.route && fetchRoute) {
+              try {
+                htmlToCheck = await fetchRoute(criterion.route)
+              } catch (e) {
+                console.warn(`Failed to fetch route ${criterion.route}:`, e)
+                passed = false
+                break
+              }
+            }
+            if (criterion.pattern) {
+              const regex = new RegExp(criterion.pattern)
+              passed = regex.test(htmlToCheck || '')
+            } else {
+              passed = false
+            }
             break
           }
 
@@ -52,14 +68,15 @@ export class SuccessValidator {
             passed = false
         }
 
-        return {
+        results.push({
           passed,
           description: criterion.description,
-        }
+        })
       } catch (e) {
         console.warn('Validation error:', e)
-        return { passed: false, description: criterion.description }
+        results.push({ passed: false, description: criterion.description })
       }
-    })
+    }
+    return results
   }
 }

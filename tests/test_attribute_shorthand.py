@@ -5,9 +5,7 @@ from pywire.compiler.ast_nodes import ReactiveAttribute
 def test_attr_shorthand():
     parser = PyWireParser()
     # Note: we need at least one separator to make it valid page
-    source = """
----html---
-<div {disabled}></div>
+    source = """<div {disabled}></div>
 <input {checked} {validation_error}>
 """
     ast = parser.parse(source)

@@ -15,7 +15,7 @@ def test_router_typed_params() -> None:
     match = router.match("/test/123")
     assert match is not None
     cls, params, name = match
-    assert params["id"] == "123"  # Currently returning strings
+    assert params["id"] == 123  # Coerced to int
     assert name == "test"
 
     # Fail string

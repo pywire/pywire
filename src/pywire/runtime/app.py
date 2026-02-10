@@ -1,6 +1,7 @@
 """Main ASGI application."""
 
 import logging
+import os
 import re
 import traceback
 import inspect
@@ -26,6 +27,70 @@ logger = logging.getLogger(__name__)
 class PyWire:
     """Main ASGI application and configuration."""
 
+    def _get_caller_dir(self) -> Path:
+        """Find the directory of the code that instantiated PyWire."""
+        try:
+            # Find first frame outside of pywire internals
+            stack = inspect.stack()
+            for frame_info in stack:
+                filename = frame_info.filename
+                if not filename or filename == "<string>":
+                    continue
+
+                # Skip internal pywire frames
+                if "pywire/runtime" in filename or "pywire/compiler" in filename:
+                    continue
+
+                # Skip unit tests in pywire/tests to allow fallback to CWD
+                # but DON'T skip repro apps or other scripts that don't look like tests
+                base_name = Path(filename).name
+                is_test_file = base_name.startswith("test_") or base_name.endswith(
+                    "_test.py"
+                )
+                if "pywire/tests" in filename and is_test_file:
+                    continue
+
+                module = inspect.getmodule(frame_info.frame)
+                if module:
+                    name = getattr(module, "__name__", "")
+                    if name and (
+                        name.startswith("pywire.runtime")
+                        or name.startswith("pywire.compiler")
+                        or name == "pywire"
+                    ):
+                        continue
+
+                # Skip common test runners
+                if (
+                    "pytest" in filename
+                    or "unittest" in filename
+                    or "_pytest" in filename
+                    or "pluggy" in filename
+                ):
+                    continue
+
+                return Path(filename).parent.resolve()
+        except Exception:
+            pass
+        return Path.cwd().resolve()
+
+    def _get_project_root(self, start_dir: Path) -> Path:
+        """Find the project root by looking for markers like pyproject.toml or .venv."""
+        current = start_dir
+        while True:
+            if (
+                (current / "pyproject.toml").exists()
+                or (current / "uv.lock").exists()
+                or (current / ".venv").exists()
+                or (current / ".git").exists()
+            ):
+                return current
+            if current.parent == current:
+                break
+            current = current.parent
+        # Fallback to caller_dir if no markers found (e.g. single script)
+        return start_dir
+
     def __init__(
         self,
         pages_dir: Optional[str] = None,
@@ -36,92 +101,86 @@ class PyWire:
         static_dir: Optional[str] = None,
         static_path: str = "/static",
     ) -> None:
+        caller_dir = self._get_caller_dir()
+        project_root = self._get_project_root(caller_dir)
+
+        # NOTE: We do NOT use CWD or caller_dir for auto-discovery to avoid
+        # security risks (e.g. serving ~/static if running from home dir).
+        # We ONLY look relative to the detected project root.
+
         if pages_dir is None:
             # Auto-discovery
-            # 1. Try CWD first (standard behavior)
-            cwd = Path.cwd()
-            potential_paths = [cwd / "pages", cwd / "src" / "pages"]
+            # Priority: project_root/src/pages, then project_root/pages
+            potential_paths = [
+                project_root / "src" / "pages",
+                project_root / "pages",
+            ]
 
-            discovered = False
+            discovered_pages = None
             for path in potential_paths:
                 if path.exists() and path.is_dir():
-                    self.pages_dir = path
-                    discovered = True
+                    discovered_pages = path.resolve()
                     break
 
-            if not discovered:
-                # 2. Try relative to the module that instantiated PyWire
-                # This helps when running from a different CWD (e.g. root of workspace)
-                try:
-                    # Find first frame outside of pywire
-                    stack = inspect.stack()
-                    for frame_info in stack:
-                        module = inspect.getmodule(frame_info.frame)
-                        if (
-                            module
-                            and module.__name__
-                            and not module.__name__.startswith("pywire.")
-                            and module.__name__ != "pywire"
-                        ):
-                            caller_dir = Path(frame_info.filename).parent
-                            app_potential = [
-                                caller_dir / "pages",
-                                caller_dir / "src" / "pages",
-                                caller_dir.parent / "pages",
-                                caller_dir.parent / "src" / "pages",
-                            ]
-                            for path in app_potential:
-                                if path.exists() and path.is_dir():
-                                    self.pages_dir = path
-                                    discovered = True
-                                    break
-                            if discovered:
-                                break
-                except Exception:
-                    pass
-
-            if not discovered:
-                # Default to 'pages' and let it fail/warn later if missing
-                self.pages_dir = Path("pages")
+            if discovered_pages:
+                self.pages_dir = discovered_pages
+            else:
+                raise RuntimeError(
+                    f"Could not find 'pages/' or 'src/pages/' directory relative to "
+                    f"project root '{project_root}'. Please specify 'pages_dir' explicitly."
+                )
         else:
-            self.pages_dir = Path(pages_dir)
+            path = Path(pages_dir)
+            if not path.is_absolute():
+                # Explicit paths are relative to the caller (file definition)
+                self.pages_dir = (caller_dir / path).resolve()
+            else:
+                self.pages_dir = path.resolve()
 
-        self.pages_dir = self.pages_dir.resolve()
+        # User configured static directory
+        if static_dir is None:
+            # default static dir is adjacent to project root. Only serves if it exists.
+            potential_static = project_root / "static"
 
-        # User configured static directory (disabled by default)
-        self.static_dir = None
-        if static_dir:
+            if potential_static.exists() and potential_static.is_dir():
+                self.static_dir = potential_static.resolve()
+            else:
+                self.static_dir = None
+        else:
             path = Path(static_dir)
             if not path.is_absolute():
-                # Try relative to CWD
-                potential = Path.cwd() / path
-                if not potential.exists():
-                    # Try src/ fallback
-                    src_potential = Path.cwd() / "src" / path
-                    if src_potential.exists():
-                        potential = src_potential
-                    else:
-                        # Try relative to the discovered pages_dir's parent
-                        # (The project root for this app)
-                        proj_root = self.pages_dir.parent
-                        if proj_root.name == "src":
-                            proj_root = proj_root.parent
-
-                        potential = proj_root / path
-                        if not potential.exists():
-                            src_potential = proj_root / "src" / path
-                            if src_potential.exists():
-                                potential = src_potential
-
-                self.static_dir = potential.resolve()
+                # Explicit paths are relative to the caller (file definition)
+                self.static_dir = (caller_dir / path).resolve()
             else:
-                self.static_dir = path
+                self.static_dir = path.resolve()
 
         self.static_url_path = static_path
 
+        # Add project root and src directory to sys.path to allow imports in .wire files
+        import sys
+
+        project_root_str = str(project_root.resolve())
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+
+        src_dir = project_root / "src"
+        if src_dir.exists() and src_dir.is_dir():
+            src_dir_str = str(src_dir.resolve())
+            if src_dir_str not in sys.path:
+                sys.path.insert(0, src_dir_str)
+
         self.path_based_routing = path_based_routing
         self.enable_pjax = enable_pjax
-        self.debug = debug
+
+        # Support environment variable override for debug
+        env_debug = os.environ.get("PYWIRE_DEBUG", "").lower()
+        if env_debug in ("1", "true", "yes"):
+            self.debug = True
+        elif env_debug in ("0", "false", "no"):
+            self.debug = False
+        else:
+            self.debug = debug
+
         self.enable_webtransport = enable_webtransport
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
@@ -270,7 +329,8 @@ class PyWire:
 
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""
-        print(f"DEBUG: Handling upload request for {request.url}")
+        if self.debug:
+            print(f"DEBUG: Handling upload request for {request.url}")
         try:
             # Check for upload token
             token = request.headers.get("X-Upload-Token")
@@ -315,26 +375,31 @@ class PyWire:
 
     async def _handle_source(self, request: Request) -> Response:
         """Serve source code for debugging."""
-        print(f"DEBUG: _handle_source called, debug={self.debug}")
+        if self.debug:
+            print(f"DEBUG: _handle_source called, debug={self.debug}")
         if not self.debug:
-            print("DEBUG: _handle_source returning 404 because debug=False")
+            if self.debug:
+                print("DEBUG: _handle_source returning 404 because debug=False")
             return Response("Not Found", status_code=404)
 
         if not self._is_dev_mode:
-            print("DEBUG: _handle_source returning 404 because _is_dev_mode=False")
+            if self.debug:
+                print("DEBUG: _handle_source returning 404 because _is_dev_mode=False")
             return Response("Not Found", status_code=404)
 
         path_str = request.query_params.get("path")
-        print(f"DEBUG: _handle_source path={path_str}")
+        if self.debug:
+            print(f"DEBUG: _handle_source path={path_str}")
         if not path_str:
             return Response("Missing path", status_code=400)
 
         try:
             path = Path(path_str).resolve()
-            print(
-                f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, "
-                f"is_file={path.is_file()}"
-            )
+            if self.debug:
+                print(
+                    f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, "
+                    f"is_file={path.is_file()}"
+                )
             # Security check: Ensure we are only serving files from allowed directories?
             # For a dev tool, we might want to allow viewing any file in the
             # traceback which might include library files.
@@ -346,7 +411,8 @@ class PyWire:
             content = path.read_text(encoding="utf-8")
             return Response(content, media_type="text/plain")
         except Exception as e:
-            print(f"DEBUG: _handle_source exception: {e}")
+            if self.debug:
+                print(f"DEBUG: _handle_source exception: {e}")
             return Response(str(e), status_code=500)
 
     async def _handle_file(self, request: Request) -> Response:
@@ -384,7 +450,8 @@ class PyWire:
             # Return as JavaScript so browser DevTools can parse it
             return Response(content, media_type="text/plain")
         except Exception as e:
-            print(f"DEBUG: _handle_file exception: {e}")
+            if self.debug:
+                print(f"DEBUG: _handle_file exception: {e}")
             return Response(str(e), status_code=500)
 
     async def _handle_devtools_json(self, request: Request) -> JSONResponse:
@@ -468,13 +535,17 @@ class PyWire:
                 name = entry.name
                 new_segment = name
 
-                # Check for [param] syntax
-                param_match = re.match(r"^\[(.*?)\]$", name)
+                # Check for [param] or [param:type] syntax
+                param_match = re.match(r"^\[(.*?)(?::(.*?))?\]$", name)
                 if param_match:
                     param_name = param_match.group(1)
+                    type_name = param_match.group(2)
                     # Convert to routing syntax :{name} (or whatever Router supports)
-                    # Router supports :name or {name}
-                    new_segment = f"{{{param_name}}}"
+                    # Router supports :name:type or {name:type}
+                    if type_name:
+                        new_segment = f"{{{param_name}:{type_name}}}"
+                    else:
+                        new_segment = f"{{{param_name}}}"
 
                 new_prefix = (url_prefix + "/" + new_segment).replace("//", "/")
                 self._scan_directory(entry, current_layout, new_prefix)
@@ -498,11 +569,15 @@ class PyWire:
                 if name == "index":
                     route_segment = ""
                 else:
-                    # Check for [param] in filename
-                    param_match = re.match(r"^\[(.*?)\]$", name)
+                    # Check for [param] or [param:type] in filename
+                    param_match = re.match(r"^\[(.*?)(?::(.*?))?\]$", name)
                     if param_match:
                         param_name = param_match.group(1)
-                        route_segment = f"{{{param_name}}}"
+                        type_name = param_match.group(2)
+                        if type_name:
+                            route_segment = f"{{{param_name}:{type_name}}}"
+                        else:
+                            route_segment = f"{{{param_name}}}"
 
                 route_path = (url_prefix + "/" + route_segment).replace("//", "/")
 
@@ -638,10 +713,14 @@ class PyWire:
             if name == "index":
                 segment = ""
 
-            param_match = re.match(r"^\[(.*?)\]$", name)
+            param_match = re.match(r"^\[(.*?)(?::(.*?))?\]$", name)
             if param_match:
                 param_name = param_match.group(1)
-                segment = f"{{{param_name}}}"
+                type_name = param_match.group(2)
+                if type_name:
+                    segment = f"{{{param_name}:{type_name}}}"
+                else:
+                    segment = f"{{{param_name}}}"
 
             segments.append(segment)
 
@@ -927,7 +1006,8 @@ class PyWire:
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""
-        print(f"DEBUG: Scope type: {scope['type']}")
+        if self.debug:
+            print(f"DEBUG: Scope type: {scope['type']}")
         if scope["type"] == "webtransport":
             await self.web_transport_handler.handle(scope, receive, send)
             return

@@ -1,0 +1,14 @@
+[package]
+name = "pywire"
+version = "0.2.0" # This will be managed by maturin, but we can keep it in sync.
+edition = "2024"
+
+[lib]
+name = "_pywire_parser"
+crate-type = ["cdylib"]
+path = "rust/lib.rs"
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+tree-sitter = "0.24"
+tree-sitter-pywire = { path = "../tree-sitter-pywire" }

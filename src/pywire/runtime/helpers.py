@@ -1,10 +1,5 @@
 from typing import Any, AsyncIterator
 
-from pywire.core.wire import (
-    reset_render_context as _reset_render_context,
-    set_render_context as _set_render_context,
-)
-
 
 async def ensure_async_iterator(iterable: Any) -> AsyncIterator[Any]:
     """
@@ -24,25 +19,6 @@ async def ensure_async_iterator(iterable: Any) -> AsyncIterator[Any]:
         # We should probably let it raise, or wrapping non-iterable?
         for item in iterable:  # This will raise if not iterable
             yield item
-
-
-def set_render_context(page: Any, region_id: str) -> Any:
-    return _set_render_context(page, region_id)
-
-
-def reset_render_context(token: Any) -> None:
-    _reset_render_context(token)
-
-
-def unwrap_wire(value: Any) -> Any:
-    """Return the underlying value for single-value wires; passthrough otherwise."""
-    from pywire.core.wire import wire
-
-    if isinstance(value, wire):
-        if value.__dict__.get("_namespace"):
-            return value
-        return value.value
-    return value
 
 
 def render_attrs(

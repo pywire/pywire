@@ -6,26 +6,25 @@ description: Pass data to components using props.
 files:
   - path: pages/index.wire
     initial: |
-      ---html---
+      !component "../components/badge.wire" as Badge
+
       <div>
         <h1>Passing Props</h1>
         <div class="row">
-           <Badge text="Admin" color="red" />
-           <Badge text="User" color="green" />
+          <Badge text="Admin" color="red" />
+          <Badge text="User" color="green" />
         </div>
       </div>
-  - path: components/Badge.wire
+  - path: components/badge.wire
     initial: |
       # 1. Define props 'text' and 'color' (default color to 'gray')
 
-      ---html---
       <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
         Text here
       </span>
     solution: |
-      !props text, color="gray"
+      !props(text: str, color: str = "gray")
 
-      ---html---
       <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
         {text}
       </span>

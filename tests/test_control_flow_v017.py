@@ -22,9 +22,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.codegen = TemplateCodegen()
 
     def test_if_elif_else_syntax(self):
-        source = """
----html---
-{$if count > 10}
+        source = """{$if count > 10}
     <p>Large</p>
 {$elif count > 5}
     <p>Medium</p>
@@ -33,6 +31,7 @@ class TestControlFlowV017(unittest.TestCase):
 {/if}
 """
         ast_nodes = self.parser.parse(source)
+        print(f"DEBUG: TEMPLATE NODES: {[n.tag for n in ast_nodes.template]}")
         # Find the if node (ignore whitespace)
         if_node = next(n for n in ast_nodes.template if any(isinstance(a, IfAttribute) for a in n.special_attributes))
         self.assertIsNone(if_node.tag)
@@ -46,9 +45,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIn("ElseAttribute", markers)
 
     def test_for_multiple_roots(self):
-        source = """
----html---
-{$for item in items, key=item.id}
+        source = """{$for item in items, key=item.id}
     <h1>{item.name}</h1>
     <p>{item.desc}</p>
 {/for}
@@ -65,9 +62,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertEqual(for_attr.iterable, "items")
 
     def test_try_except_finally(self):
-        source = """
----html---
-{$try}
+        source = """{$try}
     {risky()}
 {$except ValueError as e}
     <p>Error: {e}</p>
@@ -86,9 +81,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIn("FinallyAttribute", markers)
 
     def test_await_then_catch(self):
-        source = """
----html---
-{$await fetch()}
+        source = """{$await fetch()}
     <p>Loading...</p>
 {$then res}
     <p>Result: {res}</p>
@@ -107,9 +100,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIn("CatchAttribute", markers)
 
     def test_nested_complex(self):
-        source = """
----html---
-<div>
+        source = """<div>
     {$for i in range(2), key=i}
         {$if i == 0}
             <span>Zero</span>
@@ -127,9 +118,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIsNone(for_node.tag)
 
     def test_if_elif_else_codegen(self):
-        source = """
----html---
-{$if cond}
+        source = """{$if cond}
     A
 {$else}
     B
@@ -148,9 +137,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIn("'.join(parts)", code)
 
     def test_for_multi_root_codegen(self):
-        source = """
----html---
-{$for i in items, key=i}
+        source = """{$for i in items, key=i}
     <h1>{i}</h1>
     <p>text</p>
 {/for}
@@ -167,9 +154,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIn("text", code) # p content
 
     def test_try_except_codegen(self):
-        source = """
----html---
-{$try}
+        source = """{$try}
     {risky()}
 {$except ValueError as e}
     Error
@@ -185,9 +170,7 @@ class TestControlFlowV017(unittest.TestCase):
         self.assertIn("Error", code)
 
     def test_await_then_codegen(self):
-        source = """
----html---
-{$await fetch()}
+        source = """{$await fetch()}
 {$then res}
     {res}
 {/await}
@@ -207,7 +190,7 @@ class TestControlFlowV017(unittest.TestCase):
         from pywire.compiler.ast_nodes import InterpolationNode, EventAttribute
         template = """
         <div>
-            <button @click={$count += 1}>{$count}</button>
+            <button @click={count.value += 1}>{count}</button>
             {$if count > 0}
                 <p>Positive</p>
             {/if}
@@ -219,14 +202,14 @@ class TestControlFlowV017(unittest.TestCase):
         div = next(n for n in parsed.template if n.tag == "div")
         button = next(n for n in div.children if n.tag == "button")
         
-        # The button child should contain an InterpolationNode for $count
+        # The button child should contain an InterpolationNode for count
         self.assertEqual(len(button.children), 1)
         self.assertIsInstance(button.children[0].special_attributes[0], InterpolationNode)
-        self.assertEqual(button.children[0].special_attributes[0].expression, "$count")
+        self.assertEqual(button.children[0].special_attributes[0].expression, "count")
         
         # The event handler should be an EventAttribute
         self.assertIsInstance(button.special_attributes[0], EventAttribute)
-        self.assertEqual(button.special_attributes[0].handler_name, "$count += 1")
+        self.assertEqual(button.special_attributes[0].handler_name, "count.value += 1")
         
         # The if block should be correctly parsed
         from pywire.compiler.ast_nodes import IfAttribute

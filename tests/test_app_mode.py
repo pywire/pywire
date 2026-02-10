@@ -2,9 +2,10 @@ from pywire.runtime.app import PyWire
 from starlette.testclient import TestClient
 
 
-def test_app_mode_gating_prod() -> None:
+def test_app_mode_gating_prod(tmp_path) -> None:
     # Production mode: debug=False, _is_dev_mode=False
-    app = PyWire(debug=False)
+    (tmp_path / "pages").mkdir()
+    app = PyWire(debug=False, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = False
     client = TestClient(app.app)
 
@@ -20,9 +21,10 @@ def test_app_mode_gating_prod() -> None:
     assert app._get_client_script_url() == "/_pywire/static/pywire.core.min.js"
 
 
-def test_app_mode_gating_debug_not_dev() -> None:
+def test_app_mode_gating_debug_not_dev(tmp_path) -> None:
     # Debug=True but NOT dev mode (e.g. 'pywire run --debug')
-    app = PyWire(debug=True)
+    (tmp_path / "pages").mkdir()
+    app = PyWire(debug=True, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = False
     client = TestClient(app.app)
 
@@ -38,9 +40,10 @@ def test_app_mode_gating_debug_not_dev() -> None:
     assert app._get_client_script_url() == "/_pywire/static/pywire.core.min.js"
 
 
-def test_app_mode_gating_dev() -> None:
+def test_app_mode_gating_dev(tmp_path) -> None:
     # Dev mode: debug=True, _is_dev_mode=True
-    app = PyWire(debug=True)
+    (tmp_path / "pages").mkdir()
+    app = PyWire(debug=True, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = True
     client = TestClient(app.app)
 
@@ -57,8 +60,9 @@ def test_app_mode_gating_dev() -> None:
     assert app._get_client_script_url() == "/_pywire/static/pywire.dev.min.js"
 
 
-def test_capabilities_endpoint() -> None:
-    app = PyWire()
+def test_capabilities_endpoint(tmp_path) -> None:
+    (tmp_path / "pages").mkdir()
+    app = PyWire(pages_dir=str(tmp_path / "pages"))
     client = TestClient(app.app)
     response = client.get("/_pywire/capabilities")
     assert response.status_code == 200

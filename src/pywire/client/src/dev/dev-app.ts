@@ -1,4 +1,6 @@
-import { PyWireApp, ServerMessage } from '../core'
+import { PyWireApp } from '../core/app'
+import { ServerMessage } from '../core/transports'
+import { logger } from '../core/logger'
 import { StatusOverlay } from './status-overlay'
 import { ErrorTraceHandler } from './error-trace'
 
@@ -40,7 +42,7 @@ export class PyWireDevApp extends PyWireApp {
    */
   navigateTo(path: string): void {
     if (!this.isConnected) {
-      console.warn('PyWire: Navigation blocked - Offline')
+      logger.warn('PyWire: Navigation blocked - Offline')
       if (this.overlay) {
         this.overlay.showNavigationBlocked()
       }
@@ -68,18 +70,18 @@ export class PyWireDevApp extends PyWireApp {
           const joined = msg.lines.join('\n')
           if (msg.level === 'error') {
             console.group(prefix + ' Error')
-            console.error(joined)
+            logger.error(joined)
             console.groupEnd()
           } else if (msg.level === 'warn') {
             console.groupCollapsed(prefix + ' Warning')
-            console.warn(joined)
+            logger.warn(joined)
             console.groupEnd()
           } else {
             if (msg.lines.length === 1) {
-              console.log(prefix, joined)
+              logger.log(prefix, joined)
             } else {
               console.groupCollapsed(prefix + ' Log')
-              console.log(joined)
+              logger.log(joined)
               console.groupEnd()
             }
           }

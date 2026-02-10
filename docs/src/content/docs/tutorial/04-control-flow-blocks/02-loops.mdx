@@ -6,35 +6,34 @@ description: Render lists of data using {$for}.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       todos = wire([
-          {"id": 1, "text": "Learn Python"},
-          {"id": 2, "text": "Learn PyWire"},
-          {"id": 3, "text": "Build App"}
+        {"id": 1, "text": "Learn Python"},
+        {"id": 2, "text": "Learn PyWire"},
+        {"id": 3, "text": "Build App"}
       ])
-
-      ---html---
+      ---
       <div>
-          <h1>Todo List</h1>
-          <ul>
-              <!-- Add your loop here -->
-              
-          </ul>
+        <h1>Todo List</h1>
+        <ul>
+          <!-- Add your loop here -->
+        </ul>
       </div>
     solution: |
+      ---
       todos = wire([
-          {"id": 1, "text": "Learn Python"},
-          {"id": 2, "text": "Learn PyWire"},
-          {"id": 3, "text": "Build App"}
+        {"id": 1, "text": "Learn Python"},
+        {"id": 2, "text": "Learn PyWire"},
+        {"id": 3, "text": "Build App"}
       ])
-
-      ---html---
+      ---
       <div>
-          <h1>Todo List</h1>
-          <ul>
-              {$for item in todos, key=item['id']}
-                  <li>{item['text']}</li>
-              {/for}
-          </ul>
+        <h1>Todo List</h1>
+        <ul>
+          {$for item in todos, key=item['id']}
+            <li>{item['text']}</li>
+          {/for}
+        </ul>
       </div>
 successCriteria:
   - type: file_contains
@@ -42,8 +41,9 @@ successCriteria:
     target: pages/index.wire
     pattern: '{\$for .* key=.*}'
   - type: browser_route_text
+    route: '/'
     description: "Verify 'Learn PyWire' is rendered"
-    pattern: 'Learn PyWire'
+    pattern: '<li>Learn PyWire</li>'
 pagesDir: pages
 ---
 
@@ -61,6 +61,7 @@ Crucially, you should provide a `key` argument (separated by a comma). This help
 #### Examples
 
 **Basic Loop:**
+
 ```pywire
 <ul>
     {$for user in users, key=user.id}
@@ -70,6 +71,7 @@ Crucially, you should provide a `key` argument (separated by a comma). This help
 ```
 
 **With Else (Empty State):**
+
 ```pywire
 <ul>
     {$for item in items, key=item.id}

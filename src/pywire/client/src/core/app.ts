@@ -3,6 +3,7 @@ import { version as clientVersion } from '../../package.json'
 import { DOMUpdater } from './dom-updater'
 import { ServerMessage, ClientMessage, EventData, RelocateMessage } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
+import { logger } from './logger'
 
 export interface PyWireConfig extends TransportConfig {
   /** Auto-initialize on DOMContentLoaded */
@@ -37,6 +38,7 @@ export class PyWireApp {
 
   constructor(config: Partial<PyWireConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
+    logger.setDebug(!!this.config.debug)
     this.transport = new TransportManager(this.config)
     this.updater = new DOMUpdater(this.config.debug)
     this.eventHandler = new UnifiedEventHandler(this)
@@ -61,7 +63,7 @@ export class PyWireApp {
     try {
       await this.transport.connect()
     } catch (e) {
-      console.error('PyWire: Failed to connect:', e)
+      logger.error('PyWire: Failed to connect:', e)
     }
 
     // Load SPA metadata and setup navigation
@@ -71,7 +73,7 @@ export class PyWireApp {
     // Setup event interception via UnifiedEventHandler
     this.eventHandler.init()
 
-    console.log(
+    logger.log(
       `PyWire: Initialized (transport: ${this.transport.getActiveTransport()}, spa_paths: ${this.siblingPaths.length}, pjax: ${this.pjaxEnabled})`
     )
   }
@@ -103,11 +105,13 @@ export class PyWireApp {
         this.pjaxEnabled = !!meta.enable_pjax
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
+          logger.setDebug(!!meta.debug)
+          this.updater.setDebug(!!meta.debug)
         }
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
       } catch (e) {
-        console.warn('PyWire: Failed to parse SPA metadata', e)
+        logger.warn('PyWire: Failed to parse SPA metadata', e)
       }
     }
   }
@@ -180,7 +184,7 @@ export class PyWireApp {
    */
   navigateTo(path: string): void {
     if (!this.isConnected) {
-      console.warn('PyWire: Navigation blocked - Offline')
+      logger.warn('PyWire: Navigation blocked - Offline')
       return
     }
 
@@ -228,17 +232,17 @@ export class PyWireApp {
         break
 
       case 'reload':
-        console.log('PyWire: Reloading...')
+        logger.log('PyWire: Reloading...')
         window.location.reload()
         break
 
       case 'error':
-        console.error('PyWire: Server error:', msg.error)
+        logger.error('PyWire: Server error:', msg.error)
         break
 
       case 'error_trace':
         // In core bundle, just log the error (no source loading)
-        console.error('PyWire: Error:', msg.error)
+        logger.error('PyWire: Error:', msg.error)
         break
 
       case 'console':
@@ -246,21 +250,21 @@ export class PyWireApp {
           const prefix = 'PyWire Server:'
           const joined = msg.lines.join('\n')
           if (msg.level === 'error') {
-            console.error(prefix, joined)
+            logger.error(prefix, joined)
           } else if (msg.level === 'warn') {
-            console.warn(prefix, joined)
+            logger.warn(prefix, joined)
           } else {
-            console.log(prefix, joined)
+            logger.log(prefix, joined)
           }
         }
         break
 
       case 'init':
-        console.log(`PyWire Client v${clientVersion} • Server v${msg.version}`)
+        logger.log(`PyWire Client v${clientVersion} • Server v${msg.version}`)
         break
 
       default:
-        console.warn('PyWire: Unknown message type', msg)
+        logger.warn('PyWire: Unknown message type', msg)
     }
   }
 

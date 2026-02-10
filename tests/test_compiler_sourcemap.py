@@ -12,10 +12,12 @@ class TestCompilerSourceMap:
         loader = PageLoader()
 
         # Line 1: raise ValueError("Boom")
-        # Line 2: ---html---
+        # Line 2: ---
         # Line 3: <h1>Test</h1>
-        source = """raise ValueError("Boom")
----html---
+        source = """---
+raise ValueError("Boom")
+---
+
 <h1>Test</h1>"""
 
         pywire_file = tmp_path / "script_error.wire"

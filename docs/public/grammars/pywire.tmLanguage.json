@@ -4,66 +4,21 @@
   "scopeName": "source.pywire",
   "patterns": [
     {
-      "include": "#python-header"
+      "include": "#directives"
     },
     {
-      "include": "#separator"
+      "include": "#frontmatter"
     },
     {
       "include": "#html-content"
     }
   ],
   "repository": {
-    "python-header": {
-      "begin": "\\A(?!\\s*<[!a-zA-Z/])",
-      "end": "^(?=\\s*---+\\s*html\\s*---+\\s*$)|^(?=[ \\t]*<[!a-zA-Z/])",
-      "contentName": "meta.embedded.block.python",
-      "patterns": [
-        {
-          "include": "#directives"
-        },
-        {
-          "include": "#wire-variable"
-        },
-        {
-          "include": "source.python"
-        }
-      ]
-    },
-    "separator": {
-      "match": "^\\s*(-{3,})\\s*[Hh][Tt][Mm][Ll]\\s*\\1\\s*$",
-      "name": "punctuation.separator.pywire keyword.control.pywire"
-    },
-    "html-content": {
-      "patterns": [
-        {
-          "include": "#directives"
-        },
-        {
-          "include": "#comments"
-        },
-        {
-          "include": "#control-flow"
-        },
-        {
-          "include": "#tags"
-        },
-        {
-          "include": "#interpolation"
-        },
-        {
-          "include": "#text"
-        }
-      ]
-    },
     "directives": {
       "patterns": [
         {
-          "match": "^\\s*(!\\w+)",
-          "name": "keyword.control.directive.pywire"
-        },
-        {
-          "begin": "(!path)\\s*(\\{)",
+          "comment": "Block directive: !name { ... }",
+          "begin": "^\\s*(![a-zA-Z_]\\w*)\\s*(\\{)",
           "beginCaptures": {
             "1": {
               "name": "keyword.control.directive.pywire"
@@ -81,29 +36,119 @@
           "contentName": "meta.embedded.block.python",
           "patterns": [
             {
-              "include": "#wire-variable"
-            },
-            {
               "include": "source.python"
             }
           ]
+        },
+        {
+          "comment": "Inline directive: !name ...",
+          "match": "^\\s*(![a-zA-Z_]\\w*)(.*)$",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.pywire"
+            },
+            "2": {
+              "name": "string.unquoted.directive-value.pywire"
+            }
+          }
+        }
+      ]
+    },
+    "frontmatter": {
+      "comment": "Python code fenced between --- separators",
+      "begin": "^(---(?:\\s*html\\s*---)?\\s*)$",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.separator.frontmatter.pywire"
+        }
+      },
+      "end": "^(---(?:\\s*html\\s*---)?\\s*)$",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.separator.frontmatter.pywire"
+        }
+      },
+      "contentName": "meta.embedded.block.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "html-content": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#control-flow"
+        },
+        {
+          "include": "#tags"
+        },
+        {
+          "include": "#interpolation"
         }
       ]
     },
     "comments": {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.html"
+    },
+    "control-flow": {
       "patterns": [
         {
-          "begin": "<!--",
-          "end": "-->",
-          "name": "comment.block.html"
+          "comment": "Opening control flow block: {$if ...}, {$for ...}, {$elif ...}, {$else}, etc.",
+          "name": "meta.control-flow.pywire",
+          "begin": "(\\{)(\\$)(if|elif|else|for|await|then|catch|try|except|finally|html)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.section.embedded.begin.pywire"
+            },
+            "2": {
+              "name": "keyword.control.pywire"
+            },
+            "3": {
+              "name": "keyword.control.pywire"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.embedded.end.pywire"
+            }
+          },
+          "contentName": "meta.embedded.inline.python",
+          "patterns": [
+            {
+              "include": "source.python"
+            }
+          ]
         },
         {
-          "match": "^\\s*#.*$",
-          "name": "comment.line.number-sign.python"
+          "comment": "Closing control flow block: {/if}, {/for}, {/await}, {/try}",
+          "name": "meta.control-flow.end.pywire",
+          "match": "(\\{)(/)(if|for|await|try)(\\})",
+          "captures": {
+            "1": {
+              "name": "punctuation.section.embedded.begin.pywire"
+            },
+            "2": {
+              "name": "keyword.control.pywire"
+            },
+            "3": {
+              "name": "keyword.control.pywire"
+            },
+            "4": {
+              "name": "punctuation.section.embedded.end.pywire"
+            }
+          }
         }
       ]
     },
     "interpolation": {
+      "comment": "Python expression interpolation: {expr}",
       "begin": "\\{",
       "beginCaptures": {
         "0": {
@@ -119,9 +164,6 @@
       "contentName": "meta.embedded.inline.python",
       "patterns": [
         {
-          "include": "#wire-variable"
-        },
-        {
           "include": "source.python"
         }
       ]
@@ -132,7 +174,13 @@
           "include": "#tags-void"
         },
         {
+          "include": "#tags-script-style"
+        },
+        {
           "include": "#tags-general"
+        },
+        {
+          "include": "#tags-end"
         }
       ]
     },
@@ -159,6 +207,98 @@
         }
       ]
     },
+    "tags-script-style": {
+      "patterns": [
+        {
+          "comment": "Script tag with raw content",
+          "begin": "(<)(script)(?=\\s|>)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            }
+          },
+          "end": "(</)(script)(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "begin": ">",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.definition.tag.end.html"
+                }
+              },
+              "end": "(?=</script>)",
+              "contentName": "meta.embedded.block.javascript",
+              "patterns": [
+                {
+                  "include": "source.js"
+                }
+              ]
+            },
+            {
+              "include": "#attributes"
+            }
+          ]
+        },
+        {
+          "comment": "Style tag with raw content",
+          "begin": "(<)(style)(?=\\s|>)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            }
+          },
+          "end": "(</)(style)(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "begin": ">",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.definition.tag.end.html"
+                }
+              },
+              "end": "(?=</style>)",
+              "contentName": "meta.embedded.block.css",
+              "patterns": [
+                {
+                  "include": "source.css"
+                }
+              ]
+            },
+            {
+              "include": "#attributes"
+            }
+          ]
+        }
+      ]
+    },
     "tags-general": {
       "begin": "(<)([^/\\s>/]*)",
       "beginCaptures": {
@@ -182,7 +322,7 @@
       ]
     },
     "tags-end": {
-      "match": "(</)([^/\\s>]*)(\\>)",
+      "match": "(</)(\\S+?)(>)",
       "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.html"
@@ -198,6 +338,12 @@
     "attributes": {
       "patterns": [
         {
+          "include": "#attribute-spread"
+        },
+        {
+          "include": "#attribute-shorthand"
+        },
+        {
           "include": "#attribute-event"
         },
         {
@@ -208,8 +354,48 @@
         }
       ]
     },
+    "attribute-spread": {
+      "comment": "Spread attribute: {**expr}",
+      "begin": "(\\{)(\\*\\*)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.section.embedded.begin.pywire"
+        },
+        "2": {
+          "name": "keyword.operator.spread.pywire"
+        }
+      },
+      "end": "(\\})",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.section.embedded.end.pywire"
+        }
+      },
+      "contentName": "meta.embedded.inline.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "attribute-shorthand": {
+      "comment": "Shorthand attribute: {name}",
+      "match": "(\\{)([a-zA-Z_]\\w*)(\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.section.embedded.begin.pywire"
+        },
+        "2": {
+          "name": "variable.other.readwrite.pywire"
+        },
+        "3": {
+          "name": "punctuation.section.embedded.end.pywire"
+        }
+      }
+    },
     "attribute-event": {
-      "begin": "(@[\\w\\.]+)(?=\\s*=?|/?>)",
+      "comment": "Event handler attribute: @click={...}",
+      "begin": "(@[\\w.\\-]+)(?=\\s*=?|/?>)",
       "beginCaptures": {
         "1": {
           "name": "entity.other.attribute-name.event.pywire support.function.event.pywire"
@@ -223,7 +409,8 @@
       ]
     },
     "attribute-directive": {
-      "begin": "(\\$[\\w\\.]+)(?=\\s*=?|/?>)",
+      "comment": "Directive attribute: $if={...}, $show={...}, $model={...}",
+      "begin": "(\\$[\\w.\\-]+)(?=\\s*=?|/?>)",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.directive.attribute.pywire"
@@ -237,7 +424,7 @@
       ]
     },
     "attribute-normal": {
-      "begin": "([^\\s\"'=<>`/]+)",
+      "begin": "([^\\s\"'=<>`/{]+)",
       "beginCaptures": {
         "1": {
           "name": "entity.other.attribute-name.html"
@@ -285,76 +472,6 @@
         {
           "match": "[^\\s\"'=<>`/]+",
           "name": "string.unquoted.html"
-        }
-      ]
-    },
-    "text": {
-      "patterns": [
-        {
-          "include": "#tags-end"
-        }
-      ]
-    },
-    "wire-variable": {
-      "match": "(\\$)([a-zA-Z_]\\w*)",
-      "captures": {
-        "1": {
-          "name": "punctuation.definition.variable.pywire keyword.operator.pywire"
-        },
-        "2": {
-          "name": "variable.other.readwrite.pywire"
-        }
-      }
-    },
-    "control-flow": {
-      "patterns": [
-        {
-          "name": "meta.control-flow.pywire",
-          "begin": "(\\{)(\\$)(if|elif|else|for|await|then|catch|try|except|finally|html)\\b",
-          "beginCaptures": {
-            "1": {
-              "name": "punctuation.section.embedded.begin.pywire"
-            },
-            "2": {
-              "name": "keyword.control.pywire"
-            },
-            "3": {
-              "name": "keyword.control.pywire"
-            }
-          },
-          "end": "(\\})",
-          "endCaptures": {
-            "1": {
-              "name": "punctuation.section.embedded.end.pywire"
-            }
-          },
-          "contentName": "meta.embedded.inline.python",
-          "patterns": [
-            {
-              "include": "#wire-variable"
-            },
-            {
-              "include": "source.python"
-            }
-          ]
-        },
-        {
-          "name": "meta.control-flow.end.pywire",
-          "match": "(\\{)(/)(if|for|await|try)(\\})",
-          "captures": {
-            "1": {
-              "name": "punctuation.section.embedded.begin.pywire"
-            },
-            "2": {
-              "name": "keyword.control.pywire"
-            },
-            "3": {
-              "name": "keyword.control.pywire"
-            },
-            "4": {
-              "name": "punctuation.section.embedded.end.pywire"
-            }
-          }
         }
       ]
     }

@@ -31,22 +31,29 @@ def test_static_asset_serving(tmp_path: Path) -> None:
 
 def test_smart_static_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify smart resolution of static_dir (root vs src fallback)."""
-    monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
+    # Mock caller dir to be our tmp_path
+    monkeypatch.setattr("pywire.runtime.app.PyWire._get_caller_dir", lambda self: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    
+    # New logic requires pages_dir to exist if not provided
+    (tmp_path / "pages").mkdir(exist_ok=True)
 
     # Setup 1: Exists in root
     static_root = tmp_path / "static_root"
     static_root.mkdir()
 
-    app1 = PyWire(static_dir="static_root")
+    app1 = PyWire(static_dir="static_root", pages_dir=str(tmp_path / "pages"))
     assert app1.static_dir == static_root.resolve()
 
-    # Setup 2: Exists in src/ (fallback)
+    # Setup 2: Exists in src/ (fallback logic removed for explicit paths, so we must be explicit)
+    # The new logic says explicit paths are relative to caller.
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     static_src = src_dir / "static_src"
     static_src.mkdir()
 
-    app2 = PyWire(static_dir="static_src")
+    # We must point to src/static_src explicitly relative to caller (tmp_path)
+    app2 = PyWire(static_dir="src/static_src", pages_dir=str(tmp_path / "pages"))
     assert app2.static_dir == static_src.resolve()
 
 
@@ -54,9 +61,11 @@ def test_static_dir_missing_warning(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify warning when static directory is missing."""
-    monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
+    monkeypatch.setattr("pywire.runtime.app.PyWire._get_caller_dir", lambda self: tmp_path)
+    # New logic requires pages_dir to exist if not provided
+    (tmp_path / "pages").mkdir(exist_ok=True)
     with caplog.at_level("WARNING"):
-        PyWire(static_dir="non_existent")
+        PyWire(static_dir="non_existent", pages_dir=str(tmp_path / "pages"))
     assert "Configured static directory" in caplog.text
     assert "non_existent" in caplog.text
 

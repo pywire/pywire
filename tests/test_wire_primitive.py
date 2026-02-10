@@ -8,13 +8,14 @@ from pywire.runtime.loader import PageLoader
 
 def test_wire_primitive_compilation():
     source = dedent("""
-    count = wire(0)
+        ---
+        count = wire(0)
+        ---
 
-    ---html---
-    <div>
-        Count: {$count}
-        <button @click={$count += 1}>Inc</button>
-    </div>
+        <div>
+            Count: {count}
+            <button @click={count += 1}>Inc</button>
+        </div>
     """)
     
     parser = PyWireParser()
@@ -27,18 +28,18 @@ def test_wire_primitive_compilation():
     print("\nGenerated Code:\n", code)
     
     # 1. Verify initialization
-    # It might be in __init__ or __top_level_init__
     assert "self.count = wire(0)" in code
     
     # 2. Verify Render Usage
-    # {$count} -> self.count.value
-    # Note: Interpolation might happen in _render_template
-    assert "self.count.value" in code
+    # {count} -> unwrap_wire(self.count)
+    assert "unwrap_wire(self.count)" in code
     
     # 3. Verify Handler Usage
-    # @click={$count += 1} -> self.count.value += 1
-    # This checks that preprocessor + argument lifter work together
-    assert "self.count.value += 1" in code
+    # @click={count += 1} -> self.count += 1
+    # NOTE: Since preprocessor is now no-op, it stays self.count += 1
+    # And and wire objects support += via __iadd__ if implemented, 
+    # but here it's likely transformed by the assignment lifter to self.count
+    assert "self.count += 1" in code
 
     # 4. Verify __top_level_init__ calls
     # Should be called in __init__, not just INIT_HOOKS
@@ -47,13 +48,14 @@ def test_wire_primitive_compilation():
 def test_wire_string_handling():
     """Ensure $ inside strings is NOT replaced."""
     source = dedent("""
-    text = wire("$100")
-    dummy = "$not_a_var"
+        ---
+        text = wire("$100")
+        dummy = "$not_a_var"
+        ---
 
-    ---html---
-    <div>
-        Text: {$text}
-    </div>
+        <div>
+            Text: {text}
+        </div>
     """)
     
     parser = PyWireParser()
@@ -72,16 +74,17 @@ def test_wire_string_handling():
     assert "dummy = '$not_a_var'" in code or 'dummy = "$not_a_var"' in code
     
     # Interpolation should work
-    assert "self.text.value" in code
+    assert "unwrap_wire(self.text)" in code
 
 
 def test_wire_auto_unwrap_in_template(tmp_path) -> None:
     source = dedent(
         """
+        ---
         count = wire(0)
         user = wire(name="Alice")
+        ---
 
-        ---html---
         <div>
             <p>Count: {count}</p>
             <p>User: {user}</p>
@@ -102,18 +105,19 @@ def test_wire_auto_unwrap_in_template(tmp_path) -> None:
     html = asyncio.run(page._render_template())
 
     assert "Count: 0" in html
-    assert "User: wire(" in html
+    assert "User: {'name': 'Alice'}" in html
 
 
 def test_wire_region_updates(tmp_path) -> None:
     source = dedent(
         """
+        ---
         count = wire(0)
 
         def increment():
-            $count += 1
+            self.count += 1
+        ---
 
-        ---html---
         <div>
             <p>Count: {count}</p>
             <button @click={increment}>Inc</button>
@@ -138,3 +142,4 @@ def test_wire_region_updates(tmp_path) -> None:
     assert update["regions"]
     assert "data-pw-region" in update["regions"][0]["html"]
     assert "Count: 1" in update["regions"][0]["html"]
+

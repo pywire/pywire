@@ -6,16 +6,13 @@ description: Wrap your pages in a common layout component using !layout.
 files:
   - path: pages/index.wire
     initial: |
-      ---html---
       <h1>Page Content</h1>
     solution: |
-      !layout components/Layout.wire
+      !layout "my_layout.wire"
 
-      ---html---
       <h1>Page Content</h1>
-  - path: components/Layout.wire
+  - path: pages/my_layout.wire
     initial: |
-      ---html---
       <div>
         <nav style="border-bottom: 1px solid #ccc; margin-bottom: 1rem; padding-bottom: 1rem;">
           <strong>My App Header</strong>
@@ -24,10 +21,11 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: 'Add !layout components/Layout.wire to index.wire'
+    description: 'Add `!layout "my_layout.wire"` to index.wire'
     target: pages/index.wire
     pattern: '!layout'
   - type: browser_route_text
+    route: '/'
     description: 'Verify header from layout is visible'
     pattern: 'My App Header'
 pagesDir: pages
@@ -37,7 +35,7 @@ The `!layout` directive allows you to specify a component that should wrap the c
 
 ### Your Task
 
-1.  In `pages/index.wire`, add `!layout components/Layout.wire` at the top.
+1.  In `pages/index.wire`, add `!layout "my_layout.wire"` at the top.
 2.  Observe how the page is now wrapped in the layout with a header.
 
 Layouts are a powerful way to share common UI elements like navigation bars and footers across multiple pages.

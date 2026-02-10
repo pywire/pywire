@@ -25,7 +25,11 @@ class TestParserCompiler(unittest.TestCase):
         self.assertEqual(root.children[0].tag, "span")
 
     def test_parse_with_python(self) -> None:
-        content = """name = 'World'\ndef hello(): pass\n---html---\n<h1>Title</h1>"""
+        content = """---
+name = 'World'
+def hello(): pass
+---
+<h1>Title</h1>"""
         parsed = self.parser.parse(content)
         self.assertEqual(parsed.template[0].tag, "h1")
         self.assertIn("name = 'World'", parsed.python_code)
@@ -76,24 +80,7 @@ class TestParserCompiler(unittest.TestCase):
         self.assertEqual(fields["email"].minlength, 5)
         self.assertEqual(fields["age"].min_value, "18")
 
-    def test_parse_component_directive(self) -> None:
-        content = "!component 'components/button' as Button"
-        parsed = self.parser.parse(content)
-        self.assertEqual(len(parsed.directives), 1)
-        d = parsed.directives[0]
-        assert isinstance(d, ComponentDirective)
-        self.assertEqual(d.path, "components/button")
-        self.assertEqual(d.component_name, "Button")
 
-    def test_parse_props_directive(self) -> None:
-        content = "!props(title: str, count: int = 0)"
-        parsed = self.parser.parse(content)
-        self.assertEqual(len(parsed.directives), 1)
-        d = parsed.directives[0]
-        assert isinstance(d, PropsDirective)
-        self.assertEqual(len(d.args), 2)
-        self.assertEqual(d.args[0], ("title", "str", None))
-        self.assertEqual(d.args[1], ("count", "int", "0"))
 
     def test_parse_provide_inject(self) -> None:
         # Provide

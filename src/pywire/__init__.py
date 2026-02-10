@@ -8,5 +8,28 @@ except ImportError:
     except PackageNotFoundError:
         __version__ = "unknown"
 
-from .runtime.app import PyWire as PyWire
-from .core.wire import wire as wire
+from pywire.runtime.app import PyWire
+from pywire.runtime.page import BasePage
+from pywire.core.wire import wire
+from pywire.core.signals import (
+    derived,
+    effect,
+    CircularDependencyError,
+    ReactivityError,
+)
+from pywire.core.props import props
+from pywire.core.expose import expose
+from pywire.runtime.importer import install_import_hook
+install_import_hook()
+
+__all__ = [
+    "PyWire",
+    "BasePage",
+    "wire",
+    "derived",
+    "effect",
+    "props",
+    "expose",
+    "CircularDependencyError",
+    "ReactivityError",
+]

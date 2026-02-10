@@ -2,6 +2,7 @@ import { Transport, ServerMessage } from './transports'
 import { WebTransportTransport } from './transports/webtransport'
 import { WebSocketTransport } from './transports/websocket'
 import { HTTPTransport } from './transports/http'
+import { logger } from './logger'
 
 export interface TransportConfig {
   /** Enable WebTransport (requires HTTPS and HTTP/3 server) */
@@ -46,7 +47,7 @@ export class TransportManager {
 
     for (const TransportClass of transports) {
       try {
-        console.log(`PyWire: Trying ${TransportClass.name}...`)
+        logger.log(`PyWire: Trying ${TransportClass.name}...`)
         this.transport = new TransportClass()
 
         // Forward message handlers
@@ -60,10 +61,10 @@ export class TransportManager {
         })
 
         await this.transport.connect()
-        console.log(`PyWire: Connected via ${this.transport.name}`)
+        logger.log(`PyWire: Connected via ${this.transport.name}`)
         return
       } catch (e) {
-        console.warn(`PyWire: ${TransportClass.name} failed, trying next...`, e)
+        logger.warn(`PyWire: ${TransportClass.name} failed, trying next...`, e)
         this.transport = null
       }
     }
@@ -105,7 +106,7 @@ export class TransportManager {
     if (this.transport) {
       this.transport.send(message)
     } else {
-      console.warn('PyWire: No active transport')
+      logger.warn('PyWire: No active transport')
     }
   }
 

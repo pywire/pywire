@@ -27,7 +27,7 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
       plugins: [starlightLlmsTxt()],
       editLink: {
-        baseUrl: 'https://github.com/pywire/pywire/edit/main/docs/'
+        baseUrl: 'https://github.com/pywire/pywire/edit/main/docs/',
       },
       components: {
         Head: resolve(__dirname, './src/components/Head.astro'),

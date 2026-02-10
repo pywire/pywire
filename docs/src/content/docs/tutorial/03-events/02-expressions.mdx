@@ -6,54 +6,55 @@ description: Use inline Python expressions or function names as event handlers.
 files:
   - path: pages/index.wire
     initial: |
-      count = wire(0)
+      ---
+      count = wire(2)
 
       def reset():
-          $count = 0
-
-      ---html---
+        $count = 0
+      ---
       <div>
-        <h1>Inline Expressions</h1>
-        <p>Count: {count}</p>
+      <h1>Inline Expressions</h1>
+      <p>Count: {count}</p>
+
+      <div class="row">
+        <button @click={$count += 1}>
+          +1 (Inline)
+        </button>
         
-        <div class="row">
-            <button @click={$count += 1}>
-                +1 (Inline)
-            </button>
-            
-            <button>
-                Reset (Function)
-            </button>
-        </div>
+        <button>
+          Reset (Function)
+        </button>
+      </div>
       </div>
     solution: |
-      count = wire(0)
+      ---
+      count = wire(2)
 
       def reset():
-          $count = 0
-
-      ---html---
+        $count = 0
+      ---
       <div>
-        <h1>Inline Expressions</h1>
-        <p>Count: {count}</p>
+      <h1>Inline Expressions</h1>
+      <p>Count: {count}</p>
+
+      <div class="row">
+        <button @click={$count += 1}>
+          +1 (Inline)
+        </button>
         
-        <div class="row">
-            <button @click={$count += 1}>
-                +1 (Inline)
-            </button>
-            
-            <button @click={reset()}>
-                Reset (Function)
-            </button>
-        </div>
+        <button @click={reset}>
+          Reset (Function)
+        </button>
+      </div>
       </div>
 successCriteria:
   - type: file_contains
-    description: 'Use @click={reset()} for the reset button'
+    description: 'Use @click={reset} for the reset button'
     target: pages/index.wire
-    pattern: '@click={reset()}'
+    pattern: '@click={reset}'
   - type: browser_route_text
-    description: 'Click +1 then Reset'
+    route: '/'
+    description: 'Click Reset'
     pattern: 'Count: 0'
 pagesDir: pages
 ---

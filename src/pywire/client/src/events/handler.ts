@@ -1,6 +1,7 @@
 import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
+import { logger } from '../core/logger'
 
 // Type alias for backward compatibility
 type Application = PyWireApp
@@ -36,7 +37,7 @@ export class UnifiedEventHandler {
 
   private debugLog(...args: unknown[]): void {
     if (UnifiedEventHandler.ENABLE_TRACE) {
-      console.log(...args)
+      logger.log(...args)
     }
   }
 
@@ -48,10 +49,10 @@ export class UnifiedEventHandler {
     this.supportedEvents.forEach((eventType) => {
       const options =
         eventType === 'mouseenter' ||
-        eventType === 'mouseleave' ||
-        eventType === 'focus' ||
-        eventType === 'blur' ||
-        eventType === 'scroll'
+          eventType === 'mouseleave' ||
+          eventType === 'focus' ||
+          eventType === 'blur' ||
+          eventType === 'scroll'
           ? { capture: true } // These don't bubble nicely or at all in some cases
           : undefined
 
@@ -91,7 +92,7 @@ export class UnifiedEventHandler {
           })
         }
       } catch (e) {
-        console.error('Error parsing event handlers:', e)
+        logger.error('Error parsing event handlers:', e)
       }
     } else {
       // Legacy single handler

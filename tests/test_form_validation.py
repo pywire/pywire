@@ -1,4 +1,5 @@
-"""Tests for form validation features."""
+"""---
+Tests for form validation features."""
 
 import ast
 import sys
@@ -135,8 +136,8 @@ class TestFormParsing(unittest.TestCase):
         content = """
 async def handle_form(data):
     pass
+---
 
----html---
 <form @submit={handle_form}>
     <input name="username" required minlength="3" maxlength="20">
     <input name="email" type="email" required>
@@ -195,7 +196,8 @@ async def handle_form(data):
 
 
 class TestFormCodegen(unittest.TestCase):
-    """Test form validation code generation."""
+    """---
+Test form validation code generation."""
 
     def test_form_generates_wrapper(self) -> None:
         """Test that forms with validation generate wrapper handlers."""
@@ -205,8 +207,8 @@ class TestFormCodegen(unittest.TestCase):
         content = """
 async def handle_form(data):
     pass
+---
 
----html---
 <form @submit={handle_form}>
     <input name="username" required minlength="3">
     <button type="submit">Submit</button>

@@ -6,35 +6,43 @@ description: 'Use the $show attribute to toggle visibility with CSS (display: no
 files:
   - path: pages/index.wire
     initial: |
+      ---
       visible = wire(True)
-
-      ---html---
+      ---
       <div>
         <h1>Visibility</h1>
         
         <button @click={$visible = not visible}>
-            Toggle Visibility
+          Toggle Visibility
         </button>
 
         <div>
-            I am hiding in plain sight!
+          I am hiding in plain sight!
         </div>
       </div>
-    solution: |
-      visible = wire(True)
 
-      ---html---
+      <style scoped>
+      /* TODO ADD STYLE TO FADE */
+      </style>
+    solution: |
+      ---
+      visible = wire(True)
+      ---
       <div>
         <h1>Visibility</h1>
         
         <button @click={$visible = not visible}>
-            Toggle Visibility
+          Toggle Visibility
         </button>
 
         <div $show={visible}>
-            I am hiding in plain sight!
+          I am hiding in plain sight!
         </div>
       </div>
+
+      <style scoped>
+      /* TODO ADD STYLE TO FADE */
+      </style>
 successCriteria:
   - type: file_contains
     description: 'Add $show={visible} to the div'

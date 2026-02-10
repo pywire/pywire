@@ -6,15 +6,17 @@ from starlette.testclient import TestClient
 
 
 @pytest.fixture
-def minimal_app_dev() -> PyWire:
-    app = PyWire(debug=True)
+def minimal_app_dev(tmp_path) -> PyWire:
+    (tmp_path / "pages").mkdir()
+    app = PyWire(debug=True, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = True
     return app
 
 
 @pytest.fixture
-def minimal_app_prod() -> PyWire:
-    app = PyWire(debug=False)
+def minimal_app_prod(tmp_path) -> PyWire:
+    (tmp_path / "pages").mkdir()
+    app = PyWire(debug=False, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = False
     return app
 

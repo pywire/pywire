@@ -26,6 +26,19 @@ if TYPE_CHECKING:
 from pywire.runtime.style_collector import StyleCollector
 
 
+class DotDict(dict):
+    """Dict that allows dot-access to keys. Returns None for missing keys."""
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self[name]
+        except KeyError:
+            return None
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self[name] = value
+
+
 class EventData(dict):
     """Dict that allows dot-access to keys for Alpine.js compatibility."""
 
@@ -39,7 +52,7 @@ class EventData(dict):
             camel = re.sub(r"(?!^)_([a-z])", lambda x: x.group(1).upper(), name)
             if camel in self:
                 return self[camel]
-            raise AttributeError(f"'EventData' object has no attribute '{name}'")
+            return None
 
     def __setattr__(self, name: str, value: Any) -> None:
         self[name] = value
@@ -75,9 +88,9 @@ class BasePage:
         **kwargs: Any,
     ) -> None:
         self.request = request
-        self.params = params or {}  # URL params from route
-        self.query = query or {}  # Query string params
-        self.path = path or {}
+        self.params = DotDict(params or {})  # URL params from route
+        self.query = DotDict(query or {})  # Query string params
+        self.path = DotDict(path or {})
         self.url = url
 
         # Style collector management
@@ -102,6 +115,15 @@ class BasePage:
         # Expose params as attributes for easy access in templates
         for k, v in self.params.items():
             setattr(self, k, v)
+
+        # Ensure path is exhaustive if __routes__ is present
+        routes = getattr(self.__class__, "__routes__", {})
+        if routes:
+            for name in routes:
+                if name not in self.path:
+                    self.path[name] = False
+        elif hasattr(self.__class__, "__route__") and "main" not in self.path:
+            self.path["main"] = self.path.get("main", False)
 
         # Framework-managed state
         self.errors: Dict[str, str] = {}
@@ -141,13 +163,18 @@ class BasePage:
         self._captured_deps: Set[Tuple[Any, str]] = set()
 
         self._instance_id = id(self)
-        print(f"DEBUG: [{self._instance_id}] BasePage initialized")
+        if getattr(self.request.app.state, "debug", False):
+            print(f"DEBUG: [{self._instance_id}] BasePage initialized")
 
         # Await block state: await_id -> {"status": "pending"|"success"|"error", "result": Any, "error": Any}
 
         # Await block state: await_id -> {"status": "pending"|"success"|"error", "result": Any, "error": Any}
         self._await_states: Dict[str, Dict[str, Any]] = {}
         self._background_tasks: Set["asyncio.Task[Any]"] = set()
+
+        # Component ref support (groundwork)
+        self._ref: Optional[Any] = None  # wire passed via ref={my_ref}
+        self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
 
     def register_slot(
         self, layout_id: str, slot_name: str, renderer: Callable[..., Any]
@@ -384,9 +411,10 @@ class BasePage:
         self._wire_subscribers[key].add(region_id)
         self._region_dependencies[region_id].add(key)
 
-        print(
-            f"DEBUG register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
-        )
+        if getattr(self.request.app.state, "debug", False):
+            print(
+                f"DEBUG register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
+            )
 
         if self._capturing_deps:
             self._captured_deps.add(key)
@@ -397,9 +425,10 @@ class BasePage:
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
 
-        print(
-            f"DEBUG invalidate_wire: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}"
-        )
+        if getattr(self.request.app.state, "debug", False):
+            print(
+                f"DEBUG invalidate_wire: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}"
+            )
 
         if regions:
             self._dirty_regions.update(regions)
@@ -490,13 +519,14 @@ class BasePage:
         return await self.render_update(init=False)
 
     async def render_update(self, init: bool = False) -> Dict[str, Any]:
-        # DEBUG: Trace region state
-        has_regions = hasattr(self, "__region_renderers__")
-        region_map = getattr(self, "__region_renderers__", {})
-        dirty: Set[str] = getattr(self, "_dirty_regions", set())
-        print(
-            f"DEBUG render_update: init={init}, has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}"
-        )
+        if getattr(self.request.app.state, "debug", False):
+            # DEBUG: Trace region state
+            has_regions = hasattr(self, "__region_renderers__")
+            region_map = getattr(self, "__region_renderers__", {})
+            dirty: Set[str] = getattr(self, "_dirty_regions", set())
+            print(
+                f"DEBUG render_update: init={init}, has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}"
+            )
 
         # Optimization: If we have region renderers (compiled page) and this is a partial update (init=False),
         # check if we really need to update anything.
@@ -506,7 +536,8 @@ class BasePage:
                 # print("DEBUG render_update: No dirty regions, returning empty regions list")
                 return {"type": "regions", "regions": []}
 
-            print(f"DEBUG render_update: dirty_regions={self._dirty_regions}")
+            if getattr(self.request.app.state, "debug", False):
+                print(f"DEBUG render_update: dirty_regions={self._dirty_regions}")
 
             # Check for Root invalidation (None in dirty set)
             # If the root scope is dirty, we must do a full render.
@@ -549,18 +580,20 @@ class BasePage:
 
         response = await self.render(init=init)
         html = bytes(response.body).decode("utf-8")
-        print(f"DEBUG render_update: returning FULL update (len={len(html)})")
-        if "Test" in html:
-            print("DEBUG render_update: HTML contains 'Test'")
-        else:
-            print("DEBUG render_update: HTML does NOT contain 'Test'")
+        if getattr(self.request.app.state, "debug", False):
+            print(f"DEBUG render_update: returning FULL update (len={len(html)})")
+            if "Test" in html:
+                print("DEBUG render_update: HTML contains 'Test'")
+            else:
+                print("DEBUG render_update: HTML does NOT contain 'Test'")
         return {"type": "full", "html": html}
 
     async def push_state(self) -> None:
         """Force a UI update with current state (useful for streaming progress)."""
-        print(
-            f"DEBUG: [{self._instance_id}] push_state called. Has _on_update: {bool(self._on_update)}"
-        )
+        if getattr(self.request.app.state, "debug", False):
+            print(
+                f"DEBUG: [{self._instance_id}] push_state called. Has _on_update: {bool(self._on_update)}"
+            )
         if self._on_update:
             if inspect.iscoroutinefunction(self._on_update):
                 await self._on_update()
@@ -571,7 +604,8 @@ class BasePage:
         """Background task to resolve an await block and trigger update."""
         import inspect
 
-        print(f"DEBUG: [{self._instance_id}] Starting resolution for {await_id}")
+        if getattr(self.request.app.state, "debug", False):
+            print(f"DEBUG: [{self._instance_id}] Starting resolution for {await_id}")
         self._await_states[await_id] = {
             "status": "pending",
             "result": None,
@@ -584,16 +618,18 @@ class BasePage:
             else:
                 result = awaitable
 
-            print(
-                f"DEBUG: [{self._instance_id}] Resolution success for {await_id}: {result}"
-            )
+            if getattr(self.request.app.state, "debug", False):
+                print(
+                    f"DEBUG: [{self._instance_id}] Resolution success for {await_id}: {result}"
+                )
             self._await_states[await_id] = {
                 "status": "success",
                 "result": result,
                 "error": None,
             }
         except Exception as e:
-            print(f"DEBUG: [{self._instance_id}] Resolution error for {await_id}: {e}")
+            if getattr(self.request.app.state, "debug", False):
+                print(f"DEBUG: [{self._instance_id}] Resolution error for {await_id}: {e}")
             self._await_states[await_id] = {
                 "status": "error",
                 "result": None,
@@ -602,13 +638,15 @@ class BasePage:
 
         # Mark region as dirty and push state
         self._dirty_regions.add(await_id)
-        print(
-            f"DEBUG: [{self._instance_id}] Marked {await_id} dirty. Calls push_state..."
-        )
+        if getattr(self.request.app.state, "debug", False):
+            print(
+                f"DEBUG: [{self._instance_id}] Marked {await_id} dirty. Calls push_state..."
+            )
         try:
             await self.push_state()
         except Exception as e:
-            print(f"DEBUG: [{self._instance_id}] push_state failed: {e}")
+            if getattr(self.request.app.state, "debug", False):
+                print(f"DEBUG: [{self._instance_id}] push_state failed: {e}")
             # push_state might fail if connection closed
             pass
 

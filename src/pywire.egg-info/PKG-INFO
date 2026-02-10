@@ -1,0 +1,72 @@
+Metadata-Version: 2.4
+Name: pywire
+Version: 0.1.9.dev7+g79cd148e8.d20260210
+Summary: HTML-over-the-wire Python web framework
+Author-email: Reece Holmdahl <reece@pywire.dev>
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: starlette>=0.35.0
+Requires-Dist: uvicorn[standard]>=0.27.0
+Requires-Dist: watchfiles>=0.21.0
+Requires-Dist: jinja2>=3.1.0
+Requires-Dist: msgpack>=1.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: textual>=7.4.0
+Requires-Dist: rich-click>=1.9.6
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: ty; extra == "dev"
+Requires-Dist: httpx>=0.23.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: coverage>=7.3.0; extra == "dev"
+Requires-Dist: msgpack-types; extra == "dev"
+Requires-Dist: nox; extra == "dev"
+Requires-Dist: build>=1.0.0; extra == "dev"
+Provides-Extra: http3
+Requires-Dist: aioquic>=0.9.0; extra == "http3"
+Requires-Dist: hypercorn>=0.14.0; extra == "http3"
+Dynamic: license-file
+
+# pywire Core
+
+The core framework for pywire.
+
+<!-- INSTALL_MESSAGE_TEMPLATE_START -->
+## 🚀 Quick Start
+
+If you already have [uv](https://docs.astral.sh/uv/) installed, you can get started instantly:
+
+```sh
+uvx create-pywire-app
+```
+
+If you don't have `uv` installed or aren't sure, use our installer script which handles the setup for you:
+
+### macOS / Linux
+```sh
+curl -fsSL pywire.dev/install | sh
+```
+
+### Windows (PowerShell)
+```powershell
+irm pywire.dev/install.ps1 | iex
+```
+<!-- INSTALL_MESSAGE_TEMPLATE_END -->
+
+<!-- SUPPORT_MESSAGE_TEMPLATE_START -->
+## ❤️ Support pywire
+
+If pywire is helping you build, consider supporting the project. Donations cover documentation hosting, CI/CD runners, and the caffeine required for development.
+
+[![GitHub Sponsor](https://img.shields.io/badge/Sponsor-pywire-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/pywire)
+[![Ko-Fi](https://img.shields.io/badge/Ko--fi-reecelikesramen-ff5e5b?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/reecelikesramen)
+
+### Why sponsor?
+* 🚀 Faster development of the core framework.
+* 📖 Better docs and community examples.
+* 🔧 Integration research.
+<!-- SUPPORT_MESSAGE_TEMPLATE_END -->

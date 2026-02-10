@@ -263,8 +263,28 @@ class WebSocketHandler:
             else:
                 query = {}
 
+            # Build path info
+            path_info = {}
+            if hasattr(page_class, "__routes__"):
+                for name in page_class.__routes__.keys():
+                    path_info[name] = name == variant_name
+            elif hasattr(page_class, "__route__"):
+                path_info["main"] = True
+
+            from pywire.runtime.router import URLHelper
+
+            url_helper = None
+            if hasattr(page_class, "__routes__") and page_class.__routes__:
+                url_helper = URLHelper(page_class.__routes__)
+
             # Instantiate page
-            page = page_class(request=request, params=params, query=query)
+            page = page_class(
+                request=request,
+                params=params,
+                query=query,
+                path=path_info,
+                url=url_helper,
+            )
             self.connection_pages[websocket] = page
 
             # Define update broadcaster for background tasks (like await blocks)
@@ -273,17 +293,23 @@ class WebSocketHandler:
                 await self._send_update_payload(websocket, update)
 
             page._on_update = broadcast_update
-            print(f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init")
+            page._on_update = broadcast_update
+            if self.app.debug:
+                print(f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init")
 
             # Render initial state to register dependencies
             # We don't send the HTML back because client already has it (static load)
-            print(
-                f"DEBUG: [{page._instance_id}] Calling page.render(init=True) in _handle_init"
-            )
+            # Render initial state to register dependencies
+            # We don't send the HTML back because client already has it (static load)
+            if self.app.debug:
+                print(
+                    f"DEBUG: [{page._instance_id}] Calling page.render(init=True) in _handle_init"
+                )
             await page.render(init=True)
-            print(
-                f"DEBUG: [{page._instance_id}] Done with page.render(init=True) in _handle_init"
-            )
+            if self.app.debug:
+                print(
+                    f"DEBUG: [{page._instance_id}] Done with page.render(init=True) in _handle_init"
+                )
 
             # Send ack
             await websocket.send_bytes(msgpack.packb({"type": "init_ack"}))
@@ -506,14 +532,17 @@ class WebSocketHandler:
 
                 # Build path info
                 path_info = {}
-                if hasattr(page_class, "__routes__"):
-                    for name in page_class.__routes__.keys():
+                routes = getattr(page_class, "__routes__", {})
+                if routes:
+                    for name in routes.keys():
                         path_info[name] = name == variant_name
+                elif hasattr(page_class, "__route__"):
+                    path_info["main"] = True
 
                 # Build URL helper
                 url_helper = None
-                if hasattr(page_class, "__routes__"):
-                    url_helper = URLHelper(page_class.__routes__)
+                if routes:
+                    url_helper = URLHelper(cast(dict[str, str], routes))
 
                 # Create page instance
                 page = page_class(

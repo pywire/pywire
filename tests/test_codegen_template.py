@@ -186,6 +186,24 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("self._style_collector.add('xyz123'", code)
         self.assertIn(".card[data-ph-xyz123]", code)
 
+    def test_import_prefixing_prevention(self) -> None:
+        # Test that names in known_imports are not prefixed with self.
+        node = TemplateNode(
+            tag=None, text_content="{{ json.dumps(obj) }}", line=1, column=0
+        )
+        known_imports = {"json"}
+        known_globals = {"obj"}
+
+        func_def, _ = self.codegen.generate_render_method(
+            [node], known_globals=known_globals, known_imports=known_imports
+        )
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+
+        # Should contain json.dumps(self.obj), NOT self.json.dumps(self.obj)
+        self.assertIn("json.dumps(self.obj)", code)
+        self.assertNotIn("self.json.dumps", code)
+
 
 if __name__ == "__main__":
     unittest.main()

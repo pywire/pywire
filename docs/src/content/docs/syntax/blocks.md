@@ -6,17 +6,19 @@ description: Rendering logic using {$if}, {$for}, {$await}, and {$try} blocks.
 PyWire provides a structured block syntax to handle dynamic rendering logic directly in your HTML. These blocks allow you to condition, loop, wait, and catch errors without writing complex Python logic inside your elements.
 
 ## Syntax Overview
+
 ---
 
 All blocks follow a consistent pattern using the brace-dollar sigil `{$...}`.
 
-*   **Opener:**`{$keyword expression}` (e.g., `{$if user.is_admin}`)
+- **Opener:**`{$keyword expression}` (e.g., `{$if user.is_admin}`)
 
-*   **Branches:**`{$keyword}` (e.g., `{$else}`)
+- **Branches:**`{$keyword}` (e.g., `{$else}`)
 
-*   **Closer:**`{/keyword}` (e.g., `{/if}`)
+- **Closer:**`{/keyword}` (e.g., `{/if}`)
 
 ## Conditionals (`{$if}`)
+
 ---
 
 The `{$if}` block renders content based on the truthiness of a Python expression. It supports `elif` and `else` branches.
@@ -54,6 +56,7 @@ The `{$if}` block renders content based on the truthiness of a Python expression
 ```
 
 ## Loops (`{$for}`)
+
 ---
 
 The `{$for}` block iterates over any Python iterable (list, tuple, dictionary, generator).
@@ -72,7 +75,7 @@ The `{$for}` block iterates over any Python iterable (list, tuple, dictionary, g
 
 Providing a `key` is **strongly recommended**. It allows PyWire to track identity across re-renders, ensuring that state (like focus or input text) is preserved when the list order changes.
 
-*   **Syntax:**`key=<expression>` (comma separated from the loop).
+- **Syntax:**`key=<expression>` (comma separated from the loop).
 
 ### Examples
 
@@ -102,6 +105,7 @@ Providing a `key` is **strongly recommended**. It allows PyWire to track identit
 ```
 
 ## Async Data (`{$await}`)
+
 ---
 
 The `{$await}` block handles Python **Awaitables** (coroutines, Tasks, Futures). It manages the three states of an async operation: **Pending**, **Resolved**, and **Rejected**.
@@ -148,6 +152,7 @@ The `{$await}` block handles Python **Awaitables** (coroutines, Tasks, Futures).
 ```
 
 ## Error Boundaries (`{$try}`)
+
 ---
 
 The `{$try}` block creates a safety zone. If an exception occurs while rendering the content inside (including inside child components), the `{$except}` block is rendered instead of crashing the page.

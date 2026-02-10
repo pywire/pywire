@@ -6,67 +6,67 @@ description: Learn how to handle exceptions gracefully using {$try}.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       import random
 
       # A wire to trigger re-renders
       attempt = wire(0)
 
       def get_data():
-          # Dependency on $attempt ensures this re-runs on click
-          _ = $attempt
-          
-          # Simulate a 50% chance of failure
-          if random.random() < 0.5:
-              raise ValueError("Network Error: Connection timed out.")
-          return "Data loaded successfully!"
+        # Dependency on $attempt ensures this re-runs on click
+        _ = $attempt
+        
+        # Simulate a 50% chance of failure
+        if random.random() < 0.5:
+          raise ValueError("Network Error: Connection timed out.")
+        return "Data loaded successfully!"
 
       def retry():
-          $attempt += 1
-
-      ---html---
+        $attempt += 1
+      ---
       <div class="container">
-          <h3>Data Fetcher</h3>
-          
-          <!-- Currently, if this fails, the whole page breaks -->
-          <p class="status">
-              {get_data()}
-          </p>
+        <h3>Data Fetcher</h3>
+        
+        <!-- Currently, if this fails, the whole page breaks -->
+        <p class="status">
+          {get_data()}
+        </p>
 
-          <button @click={retry}>Retry Connection</button>
+        <button @click={retry}>Retry Connection</button>
       </div>
     solution: |
+      ---
       import random
 
       # A wire to trigger re-renders
       attempt = wire(0)
 
       def get_data():
-          # Dependency on $attempt ensures this re-runs on click
-          _ = $attempt
-          
-          # Simulate a 50% chance of failure
-          if random.random() < 0.5:
-              raise ValueError("Network Error: Connection timed out.")
-          return "Data loaded successfully!"
+        # Dependency on $attempt ensures this re-runs on click
+        _ = $attempt
+        
+        # Simulate a 50% chance of failure
+        if random.random() < 0.5:
+          raise ValueError("Network Error: Connection timed out.")
+        return "Data loaded successfully!"
 
       def retry():
-          $attempt += 1
-
-      ---html---
+        $attempt += 1
+      ---
       <div class="container">
-          <h3>Data Fetcher</h3>
-          
-          {$try}
-              <p class="status success">
-                  {get_data()}
-              </p>
-          {$except ValueError as e}
-              <p class="status error">
-                  {str(e)}
-              </p>
-          {/try}
+        <h3>Data Fetcher</h3>
+        
+        {$try}
+          <p class="status success">
+            {get_data()}
+          </p>
+        {$except ValueError as e}
+          <p class="status error">
+            {str(e)}
+          </p>
+        {/try}
 
-          <button @click={retry}>Retry Connection</button>
+        <button @click={retry}>Retry Connection</button>
       </div>
 successCriteria:
   - type: file_contains
