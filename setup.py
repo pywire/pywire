@@ -77,6 +77,10 @@ class Sdist(_sdist):
         build_client()
         super().run()
 
+    def run(self):
+        build_client()
+        super().run()
+
 setup(
     rust_extensions=[
         RustExtension(
