@@ -19,39 +19,8 @@ jobs:
           path: pywire
           fetch-depth: 0
 
-      - name: Get latest tree-sitter-pywire tag
-        id: ts_tag
-        run: |
-          TAG=$(git ls-remote --tags --sort='v:refname' https://github.com/${{ github.repository_owner }}/tree-sitter-pywire.git 'v*' | tail -n1 | cut -f2 | sed 's|refs/tags/||')
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Checkout tree-sitter-pywire
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/tree-sitter-pywire
-          path: tree-sitter-pywire
-          ref: ${{ steps.ts_tag.outputs.tag }}
-          fetch-depth: 0
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: 'pywire/src/pywire/client/pnpm-lock.yaml'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
       - name: Build
-        run: uv build
+        run: uv build --sdist
         working-directory: pywire
 
       - name: Publish

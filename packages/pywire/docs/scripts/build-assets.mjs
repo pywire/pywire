@@ -88,21 +88,20 @@ async function main() {
       // Requires prerelease=allow for pyodide-lock 0.1.0a7 dependency
       const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
 
-      // Explicitly disable bulk-memory to satisfy Emscripten 3.1.58's wasm-opt
-      // And skip wasm-opt entirely because 3.1.58's wasm-opt fails on modern flags
-      const targetRustFlags = (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0'
+      // Use default target flags for the upgraded Emscripten 3.1.64
+      // We still use target-specific RUSTFLAGS to avoid poisoning host builds
       const env = {
         ...process.env,
-        CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: targetRustFlags,
-        EMCC_CFLAGS: (process.env.EMCC_CFLAGS || '') + ' -mno-bulk-memory',
-        EMCC_CXXFLAGS: (process.env.EMCC_CXXFLAGS || '') + ' -mno-bulk-memory',
+        CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: (process.env.RUSTFLAGS || ''),
+        // Protect host builds from potential WASM-specific environment leakage
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '',
         EMCC_SKIP_WASM_OPT: '1',
         EM_IGNORE_WASM_OPT: '1'
       }
-      delete env.RUSTFLAGS // Ensure RUSTFLAGS doesn't override target-specific flags or leak to host
-      delete env.CFLAGS // Ensure CFLAGS doesn't leak to host
-      delete env.CXXFLAGS // Ensure CXXFLAGS doesn't leak to host
-      console.log('Building with target RUSTFLAGS:', targetRustFlags)
+      delete env.RUSTFLAGS
+      delete env.CFLAGS
+      delete env.CXXFLAGS
+      console.log('Building with default target flags for Emscripten 3.1.64')
       console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
 
       execSync(pyodideCmd, { cwd: REPO_ROOT, stdio: 'inherit', env })
