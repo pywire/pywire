@@ -54,10 +54,10 @@ jobs:
         with:
           targets: wasm32-unknown-emscripten
 
-      - name: Setup Emscripten 3.1.58
+      - name: Setup Emscripten 3.1.64
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.58
+          version: 3.1.64
           actions-cache-folder: 'emsdk-cache'
 
       - name: Install uv
@@ -76,7 +76,6 @@ jobs:
         working-directory: pywire
         env:
           PYWIRE_WASM_BUILD: "1"
-          CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: "-C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0"
           EMCC_SKIP_WASM_OPT: "1"
         run: |
           cd docs
