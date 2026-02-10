@@ -475,7 +475,7 @@ def _get_section(lines: List[str], line_number: int) -> str:
         or line_text.startswith("#!")
     ):
         return "directive"
-    
+
     # If no fences, it's HTML unless it's a directive
     return "html"
 
@@ -612,7 +612,7 @@ def validate(ls: LanguageServer, uri: str):
         # Validate fences
         start_fence, end_fence = _find_fences(lines)
         if start_fence is not None and end_fence is None:
-             diagnostics.append(
+            diagnostics.append(
                 Diagnostic(
                     range=Range(
                         start=Position(line=start_fence, character=0),

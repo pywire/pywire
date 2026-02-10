@@ -35,8 +35,7 @@ class Transpiler:
             # content is (python_start + 1) to (python_end - 1)
             # but we use slice [start:end] so it's [python_start+1 : python_end]
             python_source_lines = [
-                (i, self.lines[i])
-                for i in range(python_start + 1, python_end)
+                (i, self.lines[i]) for i in range(python_start + 1, python_end)
             ]
             html_start = python_end + 1
         else:
@@ -268,7 +267,7 @@ class Transpiler:
 
             break
 
-        return i, None, None
+        return i, 0, 0
 
     def _emit_empty_line(self):
         self.generated_code.append("\n")
