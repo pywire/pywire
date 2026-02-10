@@ -59,7 +59,12 @@ case "$MODE" in
         DEPS="pygls pyright git+$PYWIRE_REPO@$PYWIRE_REF git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
         ;;
     ci)
-        DEPS="pygls pyright git+$PYWIRE_REPO@main git+$PYWIRE_LS_REPO@main"
+        if [ -n "$PYWIRE_SRC" ]; then
+             pywire_path="$(resolve_local_src "$PYWIRE_SRC")"
+             DEPS="pygls pyright $pywire_path"
+        else
+             DEPS="pygls pyright git+$PYWIRE_REPO@main git+$PYWIRE_LS_REPO@main"
+        fi
         ;;
     *)
         # Local development mode

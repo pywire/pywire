@@ -37,6 +37,37 @@ jobs:
         uses: pnpm/action-setup@v2
         with:
           version: 9
+      - name: Fix PyWire Build
+        run: |
+          # 1. Patch Cargo.toml to use absolute path for tree-sitter-pywire
+          # Because pip builds in a temp dir, relative path ../tree-sitter-pywire fails.
+          # We check out tree-sitter-pywire to _deps/tree-sitter-pywire
+          TREE_SITTER_DIR="$(pwd)/_deps/tree-sitter-pywire"
+          
+          # Cargo.toml is at _deps/pywire/Cargo.toml (root of pywire repo)
+          sed -i "s|path = \"../tree-sitter-pywire\"|path = \"$TREE_SITTER_DIR\"|" _deps/pywire/Cargo.toml
+          
+          # 2. Sync client version to avoid pnpm lockfile mismatch during build
+          # We manually update package.json version and lockfile so setup.py doesn't complain
+          cd _deps/pywire
+          # Install setuptools_scm to get the version
+          pip install setuptools_scm
+          VERSION=$(python -m setuptools_scm || echo "0.0.0.dev0")
+          echo "Detected version via setuptools_scm: $VERSION"
+          
+          # Normalized version for npm (e.g. 0.1.9.dev10 -> 0.1.9-dev10, trimming +git info)
+          NPM_VERSION=$(echo "$VERSION" | sed 's/\.dev/-dev/' | cut -d+ -f1)
+          
+          echo "Syncing client version to $NPM_VERSION"
+          cd src/pywire/client
+          
+          # Use jq to update package.json
+          jq --arg v "$NPM_VERSION" '.version = $v' package.json > package.json.tmp && mv package.json.tmp package.json
+          
+          # Run install to update lockfile
+          # This ensures pnpm-lock.yaml matches package.json
+          pnpm install --no-frozen-lockfile
+          
       - name: Install dependencies
         run: pnpm install
       - name: Bundle Python dependencies
