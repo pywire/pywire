@@ -6,7 +6,7 @@ set -x
 
 uv run --with ruff ruff format $SOURCE_FILES
 uv run --with ruff ruff check --fix $SOURCE_FILES
-uv run --with ty ty $SOURCE_FILES
+uv run --with ty ty check $SOURCE_FILES
 
 echo "-> Linting client..."
 if [ -d "src/pywire/client" ]; then

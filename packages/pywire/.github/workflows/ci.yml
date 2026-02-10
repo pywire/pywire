@@ -14,7 +14,17 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pywire
+        uses: actions/checkout@v4
+        with:
+          path: pywire
+
+      - name: Checkout tree-sitter-pywire
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/tree-sitter-pywire
+          path: tree-sitter-pywire
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -29,20 +39,32 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Build client bundle
+        working-directory: pywire
         run: |
           cd src/pywire/client
           pnpm install --frozen-lockfile
           pnpm build
       - name: Install dependencies
+        working-directory: pywire
         run: uv sync --all-extras
       - name: Run tests
+        working-directory: pywire
         run: uv run pytest
 
   build:
     name: "Build"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pywire
+        uses: actions/checkout@v4
+        with:
+          path: pywire
+      
+      - name: Checkout tree-sitter-pywire
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/tree-sitter-pywire
+          path: tree-sitter-pywire
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -61,28 +83,13 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        # This will install both client and doc dependencies if pnpm-workspace is set up,
-        # otherwise we might need to be specific. Assuming standard pnpm install works for the root/client.
-        # But scripts/build assumes we can run pnpm build in specific dirs.
-        # Let's check how scripts/build works again. 
-        # scripts/build does `cd docs && pnpm build` and `cd src/pywire/client && pnpm build`.
-        # So we probably just need pnpm available.
-        # But we probably need to install dependencies in those folders first?
-        # The script doesn't seem to have install steps.
-        # Let's assume we need to install dependencies.
-        # actually, looking at scripts/build again:
-        # cd docs && pnpm build
-        # cd src/pywire/client && pnpm build
-        # It assumes deps are installed.
-        # We should probably run scripts/install? No that's python.
-        # We should probably do pnpm install in the steps.
+        working-directory: pywire
         run: |
            # We need to install dependencies for docs and client before building
-           # Assuming these have package.json files
-           cd docs && pnpm install --frozen-lockfile
-           cd ../src/pywire/client && pnpm install --frozen-lockfile
-           cd $GITHUB_WORKSPACE
+           (cd docs && pnpm install --frozen-lockfile)
+           (cd src/pywire/client && pnpm install --frozen-lockfile)
            uv sync --all-extras
 
       - name: Run build script
+        working-directory: pywire
         run: ./scripts/build
