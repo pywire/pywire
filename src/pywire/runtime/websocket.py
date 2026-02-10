@@ -108,7 +108,10 @@ class WebSocketHandler:
         """Send a structured error trace to the client."""
         # Gate on debug mode + dev mode
         # If not in dev mode, send generic error message only
-        if not (self.app.debug and getattr(self.app, "_is_dev_mode", False)):
+        if not (
+            getattr(self.app, "debug", False)
+            and getattr(self.app, "_is_dev_mode", False)
+        ):
             await websocket.send_bytes(
                 msgpack.packb(
                     {
@@ -294,7 +297,7 @@ class WebSocketHandler:
 
             page._on_update = broadcast_update
             page._on_update = broadcast_update
-            if self.app.debug:
+            if getattr(self.app, "debug", False):
                 print(
                     f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init"
                 )
@@ -303,12 +306,13 @@ class WebSocketHandler:
             # We don't send the HTML back because client already has it (static load)
             # Render initial state to register dependencies
             # We don't send the HTML back because client already has it (static load)
-            if self.app.debug:
+            # We don't send the HTML back because client already has it (static load)
+            if getattr(self.app, "debug", False):
                 print(
                     f"DEBUG: [{page._instance_id}] Calling page.render(init=True) in _handle_init"
                 )
             await page.render(init=True)
-            if self.app.debug:
+            if getattr(self.app, "debug", False):
                 print(
                     f"DEBUG: [{page._instance_id}] Done with page.render(init=True) in _handle_init"
                 )

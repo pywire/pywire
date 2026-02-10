@@ -163,7 +163,8 @@ class BasePage:
         self._captured_deps: Set[Tuple[Any, str]] = set()
 
         self._instance_id = id(self)
-        if getattr(self.request.app.state, "debug", False):
+        self._instance_id = id(self)
+        if self._is_debug:
             print(f"DEBUG: [{self._instance_id}] BasePage initialized")
 
         # Await block state: await_id -> {"status": "pending"|"success"|"error", "result": Any, "error": Any}
@@ -175,6 +176,13 @@ class BasePage:
         # Component ref support (groundwork)
         self._ref: Optional[Any] = None  # wire passed via ref={my_ref}
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
+
+    @property
+    def _is_debug(self) -> bool:
+        try:
+            return getattr(self.request.app.state, "debug", False)
+        except Exception:
+            return False
 
     def register_slot(
         self, layout_id: str, slot_name: str, renderer: Callable[..., Any]
@@ -411,7 +419,7 @@ class BasePage:
         self._wire_subscribers[key].add(region_id)
         self._region_dependencies[region_id].add(key)
 
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             print(
                 f"DEBUG register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
             )
@@ -425,7 +433,7 @@ class BasePage:
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
 
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             print(
                 f"DEBUG invalidate_wire: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}"
             )
@@ -519,7 +527,7 @@ class BasePage:
         return await self.render_update(init=False)
 
     async def render_update(self, init: bool = False) -> Dict[str, Any]:
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             # DEBUG: Trace region state
             has_regions = hasattr(self, "__region_renderers__")
             region_map = getattr(self, "__region_renderers__", {})
@@ -536,7 +544,7 @@ class BasePage:
                 # print("DEBUG render_update: No dirty regions, returning empty regions list")
                 return {"type": "regions", "regions": []}
 
-            if getattr(self.request.app.state, "debug", False):
+            if self._is_debug:
                 print(f"DEBUG render_update: dirty_regions={self._dirty_regions}")
 
             # Check for Root invalidation (None in dirty set)
@@ -580,7 +588,7 @@ class BasePage:
 
         response = await self.render(init=init)
         html = bytes(response.body).decode("utf-8")
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             print(f"DEBUG render_update: returning FULL update (len={len(html)})")
             if "Test" in html:
                 print("DEBUG render_update: HTML contains 'Test'")
@@ -590,7 +598,7 @@ class BasePage:
 
     async def push_state(self) -> None:
         """Force a UI update with current state (useful for streaming progress)."""
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             print(
                 f"DEBUG: [{self._instance_id}] push_state called. Has _on_update: {bool(self._on_update)}"
             )
@@ -604,7 +612,7 @@ class BasePage:
         """Background task to resolve an await block and trigger update."""
         import inspect
 
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             print(f"DEBUG: [{self._instance_id}] Starting resolution for {await_id}")
         self._await_states[await_id] = {
             "status": "pending",
@@ -618,7 +626,7 @@ class BasePage:
             else:
                 result = awaitable
 
-            if getattr(self.request.app.state, "debug", False):
+            if self._is_debug:
                 print(
                     f"DEBUG: [{self._instance_id}] Resolution success for {await_id}: {result}"
                 )
@@ -628,7 +636,7 @@ class BasePage:
                 "error": None,
             }
         except Exception as e:
-            if getattr(self.request.app.state, "debug", False):
+            if self._is_debug:
                 print(
                     f"DEBUG: [{self._instance_id}] Resolution error for {await_id}: {e}"
                 )
@@ -640,14 +648,14 @@ class BasePage:
 
         # Mark region as dirty and push state
         self._dirty_regions.add(await_id)
-        if getattr(self.request.app.state, "debug", False):
+        if self._is_debug:
             print(
                 f"DEBUG: [{self._instance_id}] Marked {await_id} dirty. Calls push_state..."
             )
         try:
             await self.push_state()
         except Exception as e:
-            if getattr(self.request.app.state, "debug", False):
+            if self._is_debug:
                 print(f"DEBUG: [{self._instance_id}] push_state failed: {e}")
             # push_state might fail if connection closed
             pass
