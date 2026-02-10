@@ -79,7 +79,7 @@ class TestSlotRuntime(unittest.TestCase):
         self.assertEqual(content, "<div>Fallback</div>")
 
     def test_head_slot_runtime(self):
-         # Validates <pywire-head> -> register_head_slot -> rendering
+         # Validates <head> -> register_head_slot -> rendering
          # CodeGen generates: self.register_head_slot(layout_id, renderer)
          # Layout renders: self.render_slot("$head", ..., append=True)
          

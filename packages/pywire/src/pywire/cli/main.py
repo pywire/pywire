@@ -145,6 +145,30 @@ def panel_init(self, *args, **kwargs):
 rich.panel.Panel.__init__ = panel_init  # type: ignore[method-assign]
 
 
+def _find_available_port(host: str, port: int, max_attempts: int = 100) -> int:
+    """Find an available port starting from 'port'."""
+    import socket
+
+    # Try to determine if we should use IPv4 or IPv6
+    try:
+        addr_info = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        family = addr_info[0][0]
+    except Exception:
+        family = socket.AF_INET  # Fallback
+
+    for p in range(port, port + max_attempts):
+        with socket.socket(family, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, p))
+                return p
+            except OSError:
+                continue
+
+    raise click.UsageError(
+        f"Could not find an available port starting from {port} after {max_attempts} attempts."
+    )
+
+
 @click.group(
     help=f"""
 [bold white on cyan] pywire [/] [bold cyan]v{__version__}[/] Build faster python web apps.
@@ -190,6 +214,15 @@ def dev(
 
     # Verify import
     import_app(app)
+
+    # Find available port
+    original_port = port
+    port = _find_available_port(host, port)
+
+    if port != original_port and no_tui:
+        console.print(
+            f"⚠️  Port {original_port} is busy, using [bold cyan]{port}[/] instead."
+        )
 
     if no_tui:
         console.print(

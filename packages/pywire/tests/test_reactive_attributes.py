@@ -25,13 +25,16 @@ def mock_app() -> MagicMock:
 
 
 def test_variable_binding(loader: PageLoader, mock_app: MagicMock) -> None:
-    """Test attr={var} binding."""
+    """---
+Test attr={var} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
+---
 my_id = "dynamic-id"
 my_class = "btn"
----html---
+---
+
 <div id={my_id} class={my_class}></div>
 """
         (tmp_path / "page.wire").write_text(page_code)
@@ -52,13 +55,16 @@ my_class = "btn"
 
 
 def test_method_binding_paramless(loader: PageLoader, mock_app: MagicMock) -> None:
-    """Test attr="method" auto-call binding."""
+    """---
+Test attr="method" auto-call binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
+---
 def get_title():
     return "My Title"
----html---
+---
+
 <div title={get_title}></div>
 """
         (tmp_path / "page.wire").write_text(page_code)
@@ -78,12 +84,15 @@ def get_title():
 
 
 def test_expression_binding(loader: PageLoader, mock_app: MagicMock) -> None:
-    """Test attr={expr} binding."""
+    """---
+Test attr={expr} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
+---
 is_error = True
----html---
+---
+
 <div class={"error" if is_error else "success"}></div>
 """
         (tmp_path / "page.wire").write_text(page_code)
@@ -103,14 +112,17 @@ is_error = True
 
 
 def test_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
-    """Test boolean attribute behavior."""
+    """---
+Test boolean attribute behavior."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
+---
 is_checked = True
 is_disabled = False
 is_readonly = None
----html---
+---
+
 <input type="checkbox" checked={is_checked} disabled={is_disabled} readonly={is_readonly}>
 """
         (tmp_path / "page.wire").write_text(page_code)
@@ -135,13 +147,16 @@ is_readonly = None
 
 
 def test_async_binding(loader: PageLoader, mock_app: MagicMock) -> None:
-    """Test attr={await async_call()} binding."""
+    """---
+Test attr={await async_call()} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
+---
 async def get_data():
     return "async-data"
----html---
+---
+
 <div data-val={await get_data()}></div>
 """
         (tmp_path / "page.wire").write_text(page_code)
@@ -161,13 +176,16 @@ async def get_data():
 
 
 def test_aria_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
-    """Test ARIA boolean attributes (true/false strings)."""
+    """---
+Test ARIA boolean attributes (true/false strings)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
+---
 is_loading = True
 is_expanded = False
----html---
+---
+
 <div aria-busy={is_loading} aria-expanded={is_expanded}></div>
 """
         (tmp_path / "page.wire").write_text(page_code)

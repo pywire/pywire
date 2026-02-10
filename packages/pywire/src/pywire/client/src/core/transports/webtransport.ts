@@ -1,4 +1,5 @@
 import { BaseTransport, ServerMessage } from './base'
+import { logger } from '../logger'
 
 /**
  * WebTransport implementation using the browser's native WebTransport API.
@@ -46,7 +47,7 @@ export class WebTransportTransport extends BaseTransport {
             value: new Uint8Array(certHash).buffer,
           },
         ]
-        console.log('PyWire: Using explicit certificate hash for WebTransport')
+        logger.log('PyWire: Using explicit certificate hash for WebTransport')
       }
 
       this.transport = new WebTransport(this.url, options)
@@ -54,7 +55,7 @@ export class WebTransportTransport extends BaseTransport {
       // Wait for the connection to be ready
       await this.transport.ready
 
-      console.log('PyWire: WebTransport ready')
+      logger.log('PyWire: WebTransport ready')
       this.connected = true
 
       // Start reading incoming streams
@@ -81,7 +82,7 @@ export class WebTransportTransport extends BaseTransport {
       }
     } catch (e) {
       if (this.connected) {
-        console.error('PyWire: WebTransport read error', e)
+        logger.error('PyWire: WebTransport read error', e)
         this.handleDisconnect()
       }
     }
@@ -101,18 +102,18 @@ export class WebTransportTransport extends BaseTransport {
             const msg = JSON.parse(text) as ServerMessage
             this.notifyHandlers(msg)
           } catch (e) {
-            console.error('PyWire: Error parsing WebTransport message', e)
+            logger.error('PyWire: Error parsing WebTransport message', e)
           }
         }
       }
     } catch (e) {
-      console.error('PyWire: Stream read error', e)
+      logger.error('PyWire: Stream read error', e)
     }
   }
 
   async send(message: object): Promise<void> {
     if (!this.transport || !this.connected) {
-      console.warn('PyWire: Cannot send message, WebTransport not connected')
+      logger.warn('PyWire: Cannot send message, WebTransport not connected')
       return
     }
 
@@ -128,7 +129,7 @@ export class WebTransportTransport extends BaseTransport {
       // Read the response from this stream
       this.handleStream(stream)
     } catch (e) {
-      console.error('PyWire: WebTransport send error', e)
+      logger.error('PyWire: WebTransport send error', e)
     }
   }
 

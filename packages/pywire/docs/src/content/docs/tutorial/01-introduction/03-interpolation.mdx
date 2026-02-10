@@ -6,9 +6,9 @@ description: Use curly braces to embed Python expressions directly into your HTM
 files:
   - path: pages/index.wire
     initial: |
+      ---
       count = wire(0)
-
-      ---html---
+      ---
       <div>
         <h1>Interpolation</h1>
         <p>
@@ -19,9 +19,9 @@ files:
         </button>
       </div>
     solution: |
+      ---
       count = wire(0)
-
-      ---html---
+      ---
       <div>
         <h1>Interpolation</h1>
         <p>
@@ -37,8 +37,9 @@ successCriteria:
     target: pages/index.wire
     pattern: '{count}'
   - type: browser_route_text
-    description: 'Click the button to increment the count to 3'
+    route: '/'
     pattern: 'The count is: 3'
+    description: 'Click the button to increment the count to 3'
 pagesDir: pages
 ---
 

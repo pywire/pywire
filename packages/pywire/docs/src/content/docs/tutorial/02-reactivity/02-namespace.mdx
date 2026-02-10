@@ -6,16 +6,16 @@ description: Use wire() to manage complex state objects as namespaces.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       user = wire({
-          "name": "Anonymous",
-          "clicks": 0
+        "name": "Anonymous",
+        "clicks": 0
       })
 
       def track_click():
-          # Update user.clicks
-          pass
-
-      ---html---
+        # Update user.clicks
+        pass
+      ---
       <div>
         <h1>State Namespaces</h1>
         <p>User: {user.name}</p>
@@ -25,15 +25,15 @@ files:
         </button>
       </div>
     solution: |
+      ---
       user = wire({
-          "name": "Dev",
-          "clicks": 0
+        "name": "Dev",
+        "clicks": 0
       })
 
       def track_click():
-          $user.clicks += 1
-
-      ---html---
+        $user.clicks += 1
+      ---
       <div>
         <h1>State Namespaces</h1>
         <p>User: {user.name}</p>
@@ -48,6 +48,7 @@ successCriteria:
     target: pages/index.wire
     pattern: '$user.clicks +='
   - type: browser_route_text
+    route: '/'
     description: 'Register at least 3 clicks'
     pattern: 'Clicks: 3'
 pagesDir: pages

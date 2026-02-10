@@ -2,6 +2,7 @@
  * DOM Updater using morphdom for efficient DOM diffing.
  */
 import morphdom from 'morphdom'
+import { logger } from './logger'
 
 interface FocusState {
   /** CSS selector to find the element */
@@ -26,6 +27,10 @@ export class DOMUpdater {
   private debug: boolean
 
   constructor(debug: boolean = false) {
+    this.debug = debug
+  }
+
+  setDebug(debug: boolean): void {
     this.debug = debug
   }
 
@@ -169,7 +174,7 @@ export class DOMUpdater {
     }
 
     if (!el) return // Restore focus
-    ;(el as HTMLElement).focus()
+      ; (el as HTMLElement).focus()
 
     // Restore selection/caret position
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
@@ -190,14 +195,11 @@ export class DOMUpdater {
     }
   }
 
-  private applyUpdate(target: Element, newHtml: string): void {
+  private applyUpdate(target: Element, newContent: string | Element): void {
     // Set flag to suppress focus/blur events during update
     DOMUpdater.isUpdating = true
     if (this.debug) {
-      console.log('[DOMUpdater] Starting update, isUpdating =', DOMUpdater.isUpdating)
-      console.log('[DOMUpdater] Target:', target)
-      console.log('[DOMUpdater] New HTML length:', newHtml.length)
-      console.log('[DOMUpdater] New HTML preview:', newHtml.substring(0, 100))
+      logger.log('[DOMUpdater] Starting update on', target.tagName)
     }
 
     try {
@@ -206,8 +208,7 @@ export class DOMUpdater {
 
       if (morphdom) {
         try {
-          console.log('[DOMUpdater] Calling morphdom on', target.tagName)
-          morphdom(target, newHtml, {
+          morphdom(target, newContent, {
             // Custom key function for stable element matching
             getNodeKey: (node: Node) => this.getNodeKey(node),
 
@@ -242,7 +243,7 @@ export class DOMUpdater {
                 // Preserve by value (more robust than index)
                 if (
                   fromEl.value &&
-                  Array.from(toEl.options).some((o) => o.value === fromEl.value)
+                  Array.from(toEl.options).some((o: any) => o.value === fromEl.value)
                 ) {
                   toEl.value = fromEl.value
                 } else if (
@@ -265,29 +266,40 @@ export class DOMUpdater {
               // If element is marked as permanent, skip updating its children
               if (fromEl instanceof HTMLElement && fromEl.hasAttribute('data-pywire-permanent')) {
                 if (this.debug) {
-                  console.log('[DOMUpdater] Permanent element detected, skipping children:', fromEl)
+                  logger.log('[DOMUpdater] Permanent element detected, skipping children:', fromEl)
                 }
                 return false
               }
               return true
             },
 
-            onBeforeNodeDiscarded: () => true,
+            onBeforeNodeDiscarded: (node) => {
+              // Preserve structural/functional elements that might not be in the partial update
+              if (
+                node.nodeName === 'SCRIPT' ||
+                node.nodeName === 'STYLE' ||
+                node.nodeName === 'LINK' ||
+                (node instanceof Element && node.hasAttribute('data-pywire-permanent'))
+              ) {
+                return false
+              }
+              return true
+            },
           })
         } catch (e) {
-          console.error('Morphdom failed:', e)
-          if (target === document.documentElement) {
+          logger.error('Morphdom failed:', e)
+          if (target === document.documentElement && typeof newContent === 'string') {
             document.open()
-            document.write(newHtml)
+            document.write(newContent)
             document.close()
           }
         }
 
         // Restore focus after morphdom completes
         this.restoreFocusState(focusState)
-      } else if (target === document.documentElement) {
+      } else if (target === document.documentElement && typeof newContent === 'string') {
         document.open()
-        document.write(newHtml)
+        document.write(newContent)
         document.close()
       }
     } finally {
@@ -302,25 +314,36 @@ export class DOMUpdater {
    * Update the DOM with new HTML content.
    */
   update(newHtml: string): void {
-    // Stricter check: only treat as full document if it STARTS with <html or <!DOCTYPE
-    // This prevents accidental full doc updates if a fragment contains a nested <html>
-    // (though that shouldn't happen with valid HTML, it can with partial renders)
+    // Full document: starts with <!DOCTYPE or <html
     const hasHtmlRoot = /^\s*(<!DOCTYPE|<html)/i.test(newHtml)
 
-    // Fallback: Check if body exists. If so, and we don't have a definitive root tag at the start,
-    // we assume it's a fragment/body update.
-    if (!hasHtmlRoot && document.body) {
-      // Check if it has a body tag?
-      const hasBodyRoot = /<body[\s>]/i.test(newHtml)
-      if (hasBodyRoot) {
-        this.applyUpdate(document.body, newHtml)
-        return
-      }
-      const wrapped = `<body>${newHtml}</body>`
-      this.applyUpdate(document.body, wrapped)
+    if (hasHtmlRoot) {
+      this.applyUpdate(document.documentElement, newHtml)
       return
     }
-    this.applyUpdate(document.documentElement, newHtml)
+
+    // Fragment update: target body
+    // Ensure document.body exists (it can be destroyed by prior bad morphdom runs)
+    let body = document.body
+    if (!body) {
+      body = document.createElement('body')
+      document.documentElement.appendChild(body)
+    }
+
+    // Check if the fragment already has a <body> wrapper
+    const hasBodyRoot = /<body[\s>]/i.test(newHtml)
+    if (hasBodyRoot) {
+      this.applyUpdate(body, newHtml)
+      return
+    }
+
+    // Create a real BODY DOM element instead of wrapping in <body> string tags.
+    // String wrapping fails because morphdom's internal HTML parser (which uses
+    // a <div> container) strips <body> tags, causing a tag mismatch that replaces
+    // the BODY element with a DIV and destroys document.body.
+    const tempBody = document.createElement('body')
+    tempBody.innerHTML = newHtml
+    this.applyUpdate(body, tempBody)
   }
 
   /**
@@ -330,7 +353,7 @@ export class DOMUpdater {
     const target = document.querySelector(`[data-pw-region="${regionId}"]`)
     if (!target) {
       if (this.debug) {
-        console.warn('[DOMUpdater] Region not found:', regionId)
+        logger.warn('[DOMUpdater] Region not found:', regionId)
       }
       return
     }

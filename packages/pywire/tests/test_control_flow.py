@@ -5,9 +5,7 @@ from pywire.compiler.ast_nodes import IfAttribute, ShowAttribute, ForAttribute
 
 class TestControlFlow(unittest.TestCase):
     def test_if_block(self):
-        source = """
----html---
-{$if True}
+        source = """{$if True}
     <div>Found</div>
 {/if}
 """
@@ -27,9 +25,7 @@ class TestControlFlow(unittest.TestCase):
         self.assertEqual(len(real_children), 1) # div
 
     def test_html_block(self):
-        source = """
----html---
-{$html "<b>Raw</b>"}
+        source = """{$html "<b>Raw</b>"}
 """
         parser = PyWireParser()
         ast = parser.parse(source)
@@ -42,9 +38,7 @@ class TestControlFlow(unittest.TestCase):
         self.assertEqual(interp_attrs[0].expression, '"<b>Raw</b>"')
 
     def test_for_block_valid(self):
-        source = """
----html---
-{$for item in items}
+        source = """{$for item in items}
     <div>{item}</div>
 {/for}
 """
@@ -57,9 +51,7 @@ class TestControlFlow(unittest.TestCase):
         self.assertEqual(for_attrs[0].iterable, "items")
 
     def test_for_block_single_root_valid(self):
-        source = """
----html---
-{$for i in x}
+        source = """{$for i in x}
    <!-- comment -->
    <div>Single Root</div>
 {/for}
@@ -68,9 +60,7 @@ class TestControlFlow(unittest.TestCase):
         parser.parse(source) # Should pass
 
     def test_for_block_invalid_multi_root(self):
-        source = """
----html---
-{$for i in x}
+        source = """{$for i in x}
    <div>Root 1</div>
    <div>Root 2</div>
 {/for}
@@ -81,9 +71,7 @@ class TestControlFlow(unittest.TestCase):
         self.assertIn("must have exactly one root element", str(cm.exception))
 
     def test_for_else(self):
-        source = """
----html---
-<ul>
+        source = """<ul>
     {$for item in items}
         <li>{item}</li>
     {$else}
@@ -109,9 +97,7 @@ class TestControlFlow(unittest.TestCase):
         self.assertIn("If(test=UnaryOp(op=Not()", dump)
 
     def test_keyed_for_multi_root(self):
-        source = """
----html---
-<ul>
+        source = """<ul>
     {$for key, val in items.items(), key=key}
         <dt>{key}</dt>
         <dd>{val}</dd>

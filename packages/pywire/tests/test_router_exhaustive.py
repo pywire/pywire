@@ -39,7 +39,7 @@ class TestRouterExhaustive(unittest.TestCase):
     def test_route_match_params(self) -> None:
         r = Route("/user/:id:int/:action", MockPage, "user_action")
         params = r.match("/user/42/edit")
-        self.assertEqual(params, {"id": "42", "action": "edit"})
+        self.assertEqual(params, {"id": 42, "action": "edit"})
 
         self.assertIsNone(r.match("/user/abc/edit"))
 

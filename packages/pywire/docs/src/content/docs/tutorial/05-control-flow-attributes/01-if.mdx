@@ -6,33 +6,33 @@ description: Use the $if attribute to conditionally render elements.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       show = wire(False)
-
-      ---html---
+      ---
       <div>
         <h1>Conditional Logic</h1>
         
         <button @click={$show = not show}>
-            Toggle Message
+          Toggle Message
         </button>
 
         <div>
-            Hey! You found the hidden message.
+          Hey! You found the hidden message.
         </div>
       </div>
     solution: |
+      ---
       show = wire(False)
-
-      ---html---
+      ---
       <div>
         <h1>Conditional Logic</h1>
         
         <button @click={$show = not show}>
-            Toggle Message
+          Toggle Message
         </button>
 
         <div $if={show}>
-            Hey! You found the hidden message.
+          Hey! You found the hidden message.
         </div>
       </div>
 successCriteria:
@@ -41,6 +41,7 @@ successCriteria:
     target: pages/index.wire
     pattern: '$if={show}'
   - type: browser_route_text
+    route: '/'
     description: 'Click toggle to reveal the message'
     pattern: 'found the hidden message'
 pagesDir: pages

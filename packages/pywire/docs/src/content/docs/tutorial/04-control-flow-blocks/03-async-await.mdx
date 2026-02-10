@@ -6,37 +6,38 @@ description: Handle loading states with {$await}.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       import asyncio
 
       async def fetch_user_data():
-          # Simulate a network request
-          await asyncio.sleep(2)
-          return "Alice Smith"
-
-      ---html---
+        # Simulate a network request
+        await asyncio.sleep(2)
+        return "Alice Smith"
+      ---
       <div class="profile-card">
-          <h3>User Profile</h3>
-          
-          <!-- Add {$await} block here -->
-          
+        <h3>User Profile</h3>
+        
+        <!-- Add {$await} block here -->
+        
       </div>
     solution: |
+      ---
       import asyncio
 
       async def fetch_user_data():
-          # Simulate a network request
-          await asyncio.sleep(2)
-          return "Alice Smith"
+        # Simulate a network request
+        await asyncio.sleep(2)
+        return "Alice Smith"
 
-      ---html---
+      ---
       <div class="profile-card">
-          <h3>User Profile</h3>
-          
-          {$await fetch_user_data()}
-              <p>Loading user...</p>
-          {$then name}
-              <p>Welcome, {name}!</p>
-          {/await}
+        <h3>User Profile</h3>
+        
+        {$await fetch_user_data()}
+          <p>Loading user...</p>
+        {$then name}
+          <p>Welcome, {name}!</p>
+        {/await}
       </div>
 successCriteria:
   - type: file_contains
@@ -44,6 +45,7 @@ successCriteria:
     target: pages/index.wire
     pattern: '{\$await fetch_user_data\(\)}'
   - type: browser_route_text
+    route: '/'
     description: "Wait for 'Welcome, Alice Smith!' to appear"
     pattern: 'Welcome, Alice Smith!'
 pagesDir: pages
@@ -62,6 +64,7 @@ The block immediately renders the first section (Pending state), and automatical
 #### Examples
 
 **Fetching Data:**
+
 ```pywire
 {$await api.get_profile(user_id)}
     <Spinner />

@@ -332,18 +332,35 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   useEffect(() => {
     if (!currentStep.successCriteria) return
 
-    const results = SuccessValidator.validate(files, currentStep.successCriteria, lastRenderedHtml)
+    let isMounted = true
 
-    // Expose results for TasksChecklist later
-    setValidationResults(results)
+    const runValidation = async () => {
+      const results = await SuccessValidator.validate(
+        files,
+        currentStep.successCriteria!,
+        lastRenderedHtml,
+        (path) => engineRef.current?.fetchRouteContent(path) || Promise.resolve(''),
+      )
 
-    const allPassed = results.every((r) => r.passed)
+      if (!isMounted) return
 
-    if (allPassed && !isCompleted) {
-      setIsCompleted(true)
-      // Optionally play sound or show confetti here
-    } else if (!allPassed && isCompleted) {
-      setIsCompleted(false)
+      // Expose results for TasksChecklist later
+      setValidationResults(results)
+
+      const allPassed = results.every((r) => r.passed)
+
+      if (allPassed && !isCompleted) {
+        setIsCompleted(true)
+        // Optionally play sound or show confetti here
+      } else if (!allPassed && isCompleted) {
+        setIsCompleted(false)
+      }
+    }
+
+    runValidation()
+
+    return () => {
+      isMounted = false
     }
   }, [files, lastRenderedHtml, currentStep.successCriteria, isCompleted])
 

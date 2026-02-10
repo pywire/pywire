@@ -6,12 +6,12 @@ description: Listen for browser events using the @ prefix.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       count = wire(0)
 
       def increment():
-          $count += 1
-
-      ---html---
+        $count += 1
+      ---
       <div>
         <h1>Events</h1>
         <p>Count: {count}</p>
@@ -20,12 +20,12 @@ files:
         </button>
       </div>
     solution: |
+      ---
       count = wire(0)
 
       def increment():
-          $count += 1
-
-      ---html---
+        $count += 1
+      ---
       <div>
         <h1>Events</h1>
         <p>Count: {count}</p>
@@ -39,6 +39,7 @@ successCriteria:
     target: pages/index.wire
     pattern: '@click={increment}'
   - type: browser_route_text
+    route: '/'
     description: 'Increment count to 3'
     pattern: 'Count: 3'
 pagesDir: pages

@@ -6,39 +6,39 @@ description: Learn how to conditionally render elements using {$if}.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       is_visible = wire(False)
 
       def toggle():
-          $is_visible = not $is_visible
-
-      ---html---
+        $is_visible = not $is_visible
+      ---
       <div class="container">
-          <button @click={toggle}>
-              Toggle Secret Message
-          </button>
+        <button @click={toggle}>
+          Toggle Secret Message
+        </button>
 
-          <!-- Wrap this div in an {$if} block -->
-          <div class="alert">
-              Secret message revealed!
-          </div>
+        <!-- Wrap this div in an {$if} block -->
+        <div class="alert">
+          Secret message revealed!
+        </div>
       </div>
     solution: |
+      ---
       is_visible = wire(False)
 
       def toggle():
-          $is_visible = not $is_visible
-
-      ---html---
+        $is_visible = not $is_visible
+      ---
       <div class="container">
-          <button @click={toggle}>
-              Toggle Secret Message
-          </button>
+        <button @click={toggle}>
+          Toggle Secret Message
+        </button>
 
-          {$if is_visible}
-              <div class="alert">
-                  Secret message revealed!
-              </div>
-          {/if}
+        {$if is_visible}
+          <div class="alert">
+            Secret message revealed!
+          </div>
+        {/if}
       </div>
 successCriteria:
   - type: file_contains
@@ -46,7 +46,8 @@ successCriteria:
     target: pages/index.wire
     pattern: '{\$if is_visible}'
   - type: browser_route_text
-    description: "Click toggle and see the message"
+    route: '/'
+    description: 'Click toggle and see the message'
     pattern: 'Secret message revealed!'
 pagesDir: pages
 ---
@@ -62,6 +63,7 @@ PyWire uses `{$if}` blocks to handle conditional rendering. Unlike CSS toggles (
 #### Examples
 
 **Basic Visibility:**
+
 ```pywire
 {$if is_visible}
     <div class="alert">
@@ -71,6 +73,7 @@ PyWire uses `{$if}` blocks to handle conditional rendering. Unlike CSS toggles (
 ```
 
 **With Else:**
+
 ```pywire
 {$if is_logged_in}
     <UserProfile />

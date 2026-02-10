@@ -31,12 +31,14 @@ class TestLifecycleHooks(unittest.TestCase):
             loop.close()
 
     def test_top_level_init_execution(self) -> None:
-        """Verify top-level executable statements run on init=True."""
+        """---
+Verify top-level executable statements run on init=True."""
         content = """
+---
 print("Top Level Run")
 self.counter = 1
+---
 
----html---
 <p>Content</p>
         """
         page_class = self.create_page_class(content)
@@ -60,13 +62,15 @@ self.counter = 1
         self.assertEqual(page.counter, 99)
 
     def test_mount_hook(self) -> None:
-        """Verify @mount decorated method runs on init."""
+        """---
+Verify @mount decorated method runs on init."""
         content = """
+---
 @mount
 def initialize(self):
     self.mounted = True
+---
 
----html---
 <p>Hello</p>
         """
         page_class = self.create_page_class(content)
@@ -81,8 +85,10 @@ def initialize(self):
         self.assertTrue(page.mounted)
 
     def test_execution_order(self) -> None:
-        """Verify order: top-level -> @mount."""
+        """---
+Verify order: top-level -> @mount."""
         content = """
+---
 if not hasattr(self, 'log'):
     self.log = []
 self.log.append('top_level')
@@ -90,8 +96,8 @@ self.log.append('top_level')
 @mount
 def my_mount(self):
     self.log.append('mount')
+---
 
----html---
 <p>Test</p>
         """
         page_class = self.create_page_class(content)

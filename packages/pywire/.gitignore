@@ -12,3 +12,10 @@ src/pywire/static/
 .pywire/
 src/pywire/_version.py
 dist/
+
+# Rust
+target/
+src/pywire/*.so
+src/pywire/*.pyd
+Cargo.lock
+build/

@@ -6,35 +6,35 @@ description: Use the $for attribute to render lists of elements.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       items = wire(["Apple", "Banana", "Cherry"])
-
-      ---html---
+      ---
       <div>
         <h1>Loops</h1>
         
         <ul>
-            <li>Item goes here</li>
+          <li>Item goes here</li>
         </ul>
 
         <button @click={$items.append("Date")}>
-            Add Date
+          Add Date
         </button>
       </div>
     solution: |
+      ---
       items = wire(["Apple", "Banana", "Cherry"])
-
-      ---html---
+      ---
       <div>
         <h1>Loops</h1>
         
         <ul>
-            <li $for={item in items}>
-                {item}
-            </li>
+          <li $for={item in items}>
+            {item}
+          </li>
         </ul>
 
         <button @click={$items.append("Date")}>
-            Add Date
+          Add Date
         </button>
       </div>
 successCriteria:

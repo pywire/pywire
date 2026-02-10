@@ -69,6 +69,8 @@ class TemplateCodegen:
         component_map: Optional[Dict[str, str]] = None,
         scope_id: Optional[str] = None,
         initial_locals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
+        wire_vars: Set[str] = set(),
     ) -> Tuple[ast.AsyncFunctionDef, List[ast.AsyncFunctionDef]]:
         """
         Generate standard _render_template method.
@@ -86,11 +88,13 @@ class TemplateCodegen:
             layout_id=layout_id,
             known_methods=known_methods,
             known_globals=known_globals,
+            known_imports=known_imports,
             async_methods=async_methods,
             component_map=component_map,
             scope_id=scope_id,
             initial_locals=initial_locals,
             implicit_root_source=implicit_root_source,
+            wire_vars=wire_vars,
         )
         return main_func, self.auxiliary_functions
 
@@ -99,8 +103,10 @@ class TemplateCodegen:
         template_nodes: List[TemplateNode],
         file_id: str = "",
         known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
         layout_id: Optional[str] = None,
         component_map: Optional[Dict[str, str]] = None,
+        wire_vars: Set[str] = set(),
     ) -> Tuple[Dict[str, ast.AsyncFunctionDef], List[ast.AsyncFunctionDef]]:
         """
         Generate slot filler methods for child pages.
@@ -120,7 +126,7 @@ class TemplateCodegen:
                 slot_name = node.attributes["name"]
                 for child in node.children:
                     slots[slot_name].append(child)
-            elif node.tag == "pywire-head":
+            elif node.tag == "head":
                 for child in node.children:
                     slots["$head"].append(child)
             else:
@@ -144,8 +150,10 @@ class TemplateCodegen:
                 func_name,
                 is_async=True,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 layout_id=layout_id,
                 component_map=component_map,
+                wire_vars=wire_vars,
             )
 
         return slot_funcs, self.auxiliary_functions
@@ -171,6 +179,7 @@ class TemplateCodegen:
         layout_id: Optional[str] = None,
         known_methods: Optional[Set[str]] = None,
         known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
         component_map: Optional[Dict[str, str]] = None,
         scope_id: Optional[str] = None,
@@ -178,6 +187,7 @@ class TemplateCodegen:
         implicit_root_source: Optional[str] = None,
         enable_regions: bool = True,
         root_region_id: Optional[str] = None,
+        wire_vars: Set[str] = set(),
     ) -> ast.AsyncFunctionDef:
         """Generate a single function body as AST."""
 
@@ -190,6 +200,8 @@ class TemplateCodegen:
             known_methods = set()
         if known_globals is None:
             known_globals = set()
+        if known_imports is None:
+            known_imports = set()
         if async_methods is None:
             async_methods = set()
         if component_map is None:
@@ -225,7 +237,11 @@ class TemplateCodegen:
 
         root_element = self._get_root_element(nodes)
 
+        prev_node = None
         for node in nodes:
+            # Add whitespace if there is a gap between this node and the previous one
+            self._add_gap_whitespace(prev_node, node, body, parts_var="parts")
+
             # Pass implicit root source ONLY to the root element if it matches
             node_root_source = (
                 implicit_root_source
@@ -242,6 +258,7 @@ class TemplateCodegen:
                 layout_id=layout_id,
                 known_methods=known_methods,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 async_methods=async_methods,
                 component_map=component_map,
                 scope_id=scope_id,
@@ -249,7 +266,9 @@ class TemplateCodegen:
                 implicit_root_source=node_root_source,
                 enable_regions=enable_regions,
                 region_id=node_region_id,
+                wire_vars=wire_vars,
             )
+            prev_node = node
 
         # return "".join(parts)
         body.append(
@@ -289,9 +308,12 @@ class TemplateCodegen:
         expr_str: str,
         local_vars: Set[str],
         known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
         line_offset: int = 0,
         col_offset: int = 0,
         cached: bool = False,
+        wire_vars: Set[str] = set(),
+        no_unwrap: bool = False,
     ) -> ast.expr:
         """Transform expression string to AST with self. handling."""
         expr_str = expr_str.strip()
@@ -300,7 +322,13 @@ class TemplateCodegen:
             from pywire.compiler.preprocessor import preprocess_python_code
 
             expr_str = preprocess_python_code(expr_str)
-            tree = ast.parse(expr_str, mode="eval")
+            try:
+                tree = ast.parse(expr_str, mode="eval")
+            except SyntaxError:
+                print(
+                    f"DEBUG: FAILED TO PARSE EXPR: '{expr_str}' at line {line_offset}"
+                )
+                raise
             if line_offset > 0:
                 # ast.increment_lineno uses 1-based indexing for AST, but adds diff
                 # We want result to be line_offset.
@@ -340,11 +368,33 @@ class TemplateCodegen:
                 import builtins
 
                 # 1. If locally defined, keep as is
-                if node.id in local_vars:
+                if node.id in local_vars or node.id in ("json", "escape_html"):
+                    # print(f"DEBUG: KEEP LOCAL {node.id}")
                     return node
 
-                # 2. If explicitly known as global/instance var, transform to self.<name>
+                # 2. If explicitly known as import, keep as is
+                if known_imports is not None and node.id in known_imports:
+                    # print(f"DEBUG: KEEP IMPORT {node.id}")
+                    return node
+
+                # 3. If explicitly known as global/instance var, transform to self.<name>
                 if known_globals is not None and node.id in known_globals:
+                    # Check if it's a wire variable and unwrap it
+                    if node.id in wire_vars and not no_unwrap:
+                        # print(f"DEBUG: UNWRAP WIRE {node.id}")
+                        return ast.Call(
+                            func=ast.Name(id="unwrap_wire", ctx=ast.Load()),
+                            args=[
+                                ast.Attribute(
+                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                    attr=node.id,
+                                    ctx=node.ctx,
+                                )
+                            ],
+                            keywords=[],
+                        )
+
+                    # print(f"DEBUG: SELF GLOBAL {node.id}")
                     return ast.Attribute(
                         value=ast.Name(id="self", ctx=ast.Load()),
                         attr=node.id,
@@ -353,9 +403,13 @@ class TemplateCodegen:
 
                 # 3. If builtin, keep as is (unless matched by step 1/2)
                 if node.id in dir(builtins):
+                    # print(f"DEBUG: KEEP BUILTIN {node.id}")
                     return node
 
                 # 4. Otherwise, assume implicit instance attribute
+                # with open("/tmp/pywire_debug.txt", "a") as f:
+                #    f.write(f"DEBUG: OOPS IMPLICIT {node.id}\n")
+
                 return ast.Attribute(
                     value=ast.Name(id="self", ctx=ast.Load()),
                     attr=node.id,
@@ -445,10 +499,13 @@ class TemplateCodegen:
         local_vars: Set[str],
         known_methods: Optional[Set[str]] = None,
         known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
         line_offset: int = 0,
         col_offset: int = 0,
         cached: bool = True,
+        wire_vars: Set[str] = set(),
+        no_unwrap: bool = False,
     ) -> ast.expr:
         """Transform reactive expression to AST, handling async calls and self."""
         # For reactive expressions (attributes), we typically prefer caching
@@ -494,13 +551,25 @@ class TemplateCodegen:
                     has_async_usage = True
                     break
 
+        # Pre-process: If it's a simple method name, add parens to ensure it gets called
+        # This is needed because `_transform_expr` with cached=True wraps the result,
+        # preventing the post-transform auto-call logic from seeing the Attribute node.
+        stripped = expr_str.strip()
+        if known_methods and stripped in known_methods:
+            # Verify it's a valid identifier (sanity check)
+            if stripped.isidentifier():
+                expr_str = f"{stripped}()"
+
         base_expr = self._transform_expr(
             expr_str,
             local_vars,
             known_globals,
+            known_imports,
             line_offset,
             col_offset,
-            cached=False,
+            cached=cached and not has_async_usage,
+            wire_vars=wire_vars,
+            no_unwrap=no_unwrap,
         )
 
         # Auto-call if it matches self.method
@@ -544,6 +613,31 @@ class TemplateCodegen:
             mod = ast.Module(body=[ast.Expr(value=base_expr)], type_ignores=[])
             AsyncAwaiter().visit(mod)
             base_expr = cast(ast.Expr, mod.body[0]).value
+
+        # Check for Await nodes in the final expression (explicit or added by AsyncAwaiter)
+        class AwaitDetector(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self.found = False
+
+            def visit_Await(self, node: ast.Await) -> None:
+                self.found = True
+                # No need to visit children if we found one, but consistent to do so
+                self.generic_visit(node)
+
+            def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+                self.found = True
+                self.generic_visit(node)
+
+            def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+                self.found = True
+                self.generic_visit(node)
+
+        detector = AwaitDetector()
+        # Wrap in expression to visit (NodeVisitor needs node)
+        # base_expr is ast.expr
+        detector.visit(base_expr)
+        if detector.found:
+            has_async_usage = True
 
         # Cache the final expression (including auto-call if added)
         if cached and not has_async_usage:
@@ -615,6 +709,7 @@ class TemplateCodegen:
         layout_id: Optional[str],
         known_methods: Optional[Set[str]],
         known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
         async_methods: Optional[Set[str]],
         component_map: Optional[Dict[str, str]],
         scope_id: Optional[str],
@@ -627,6 +722,7 @@ class TemplateCodegen:
             layout_id=layout_id,
             known_methods=known_methods,
             known_globals=known_globals,
+            known_imports=known_imports,
             async_methods=async_methods,
             component_map=component_map,
             scope_id=scope_id,
@@ -694,9 +790,11 @@ class TemplateCodegen:
         layout_id: Optional[str],
         known_methods: Optional[Set[str]],
         known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
         async_methods: Optional[Set[str]],
         component_map: Optional[Dict[str, str]],
         scope_id: Optional[str],
+        wire_vars: Set[str] = set(),
     ) -> ast.AsyncFunctionDef:
         """Generate a renderer for an await block region."""
         body: List[ast.stmt] = []
@@ -758,10 +856,12 @@ class TemplateCodegen:
                 layout_id=layout_id,
                 known_methods=known_methods,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 async_methods=async_methods,
                 component_map=component_map,
                 scope_id=scope_id,
                 enable_regions=False,
+                wire_vars=wire_vars,
             )
 
         # 2. Then branch
@@ -788,10 +888,12 @@ class TemplateCodegen:
                 layout_id=layout_id,
                 known_methods=known_methods,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 async_methods=async_methods,
                 component_map=component_map,
                 scope_id=scope_id,
                 enable_regions=False,
+                wire_vars=wire_vars,
             )
 
         # 3. Catch branch
@@ -818,10 +920,12 @@ class TemplateCodegen:
                 layout_id=layout_id,
                 known_methods=known_methods,
                 known_globals=known_globals,
+                known_imports=known_imports,
                 async_methods=async_methods,
                 component_map=component_map,
                 scope_id=scope_id,
                 enable_regions=False,
+                wire_vars=wire_vars,
             )
 
         # if state["status"] == "pending": ...
@@ -922,6 +1026,7 @@ class TemplateCodegen:
         layout_id: Optional[str] = None,
         known_methods: Optional[Set[str]] = None,
         known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
         component_map: Optional[Dict[str, str]] = None,
         scope_id: Optional[str] = None,
@@ -929,6 +1034,7 @@ class TemplateCodegen:
         implicit_root_source: Optional[str] = None,
         enable_regions: bool = True,
         region_id: Optional[str] = None,
+        wire_vars: Set[str] = set(),
     ) -> None:
         if local_vars is None:
             local_vars = set()
@@ -978,9 +1084,11 @@ class TemplateCodegen:
                 for_attr.iterable,
                 local_vars,
                 known_globals,
+                known_imports,
                 line_offset=node.line,
                 col_offset=node.column,
                 cached=False,
+                wire_vars=wire_vars,
             )
 
             for_body: List[ast.stmt] = []
@@ -992,7 +1100,13 @@ class TemplateCodegen:
             # Check if we should split children for for-else
             if node.tag == "template" or (not node.tag and not node.text_content):
                 current_body = for_body
+                prev_child = None
                 for child in node.children:
+                    # Add whitespace if there is a gap between this child and the previous one
+                    self._add_gap_whitespace(
+                        prev_child, child, current_body, parts_var=parts_var
+                    )
+
                     # Check for $else attribute in child
                     else_attr = next(
                         (
@@ -1005,6 +1119,8 @@ class TemplateCodegen:
                     if else_attr:
                         has_else = True
                         current_body = else_body
+                        # Reset prev_child for the new body section
+                        prev_child = None
                         # If child is JUST the marker, skip it, otherwise process it without the else_attr
                         if (
                             child.tag is None
@@ -1021,12 +1137,15 @@ class TemplateCodegen:
                         layout_id,
                         known_methods,
                         known_globals,
+                        known_imports,
                         async_methods,
                         component_map,
                         scope_id,
                         parts_var=parts_var,
                         enable_regions=enable_regions,
+                        wire_vars=wire_vars,
                     )
+                    prev_child = child
             else:
                 new_node = dataclasses.replace(node, special_attributes=new_attrs)
                 self._add_node(
@@ -1037,11 +1156,13 @@ class TemplateCodegen:
                     layout_id,
                     known_methods,
                     known_globals,
+                    known_imports,
                     async_methods,
                     component_map,
                     scope_id,
                     parts_var=parts_var,
                     enable_regions=enable_regions,
+                    wire_vars=wire_vars,
                 )
 
             # Wrap iterable in ensure_async_iterator
@@ -1112,7 +1233,23 @@ class TemplateCodegen:
                 (None, current_branch_nodes)
             )  # First branch (the 'if' content)
 
+            prev_child = None
             for child in node.children:
+                # If there's a gap between prev_child and child, we should insert a text node into current_branch_nodes!
+                if prev_child and child.line == prev_child.line:
+                    end_line, end_col = self._get_node_end_pos(prev_child)
+                    if child.column > end_col:
+                        gap_size = child.column - end_col
+                        if gap_size > 0:
+                            current_branch_nodes.append(
+                                TemplateNode(
+                                    tag=None,
+                                    text_content=" " * gap_size,
+                                    line=child.line,
+                                    column=end_col,
+                                )
+                            )
+
                 elif_attr = next(
                     (
                         a
@@ -1132,21 +1269,41 @@ class TemplateCodegen:
 
                 if elif_attr:
                     current_branch_nodes = []
+                    # Reset gap tracking for new branch
+                    prev_child = None
                     cond = self._transform_expr(
                         elif_attr.condition,
                         local_vars,
                         known_globals,
+                        known_imports,
                         line_offset=child.line,
                         cached=False,
                     )
                     branches.append((cond, current_branch_nodes))
                 elif else_attr:
                     current_branch_nodes = []
+                    # Reset gap tracking for new branch
+                    prev_child = None
                     branches.append(
                         (ast.Constant(value=True), current_branch_nodes)
                     )  # else is test=True in the orelse chain
                 else:
+                    # If there's a gap between prev_child and child, we should insert a text node into current_branch_nodes!
+                    if prev_child and child.line == prev_child.line:
+                        end_line, end_col = self._get_node_end_pos(prev_child)
+                        if child.column > end_col:
+                            gap_size = child.column - end_col
+                            if gap_size > 0:
+                                current_branch_nodes.append(
+                                    TemplateNode(
+                                        tag=None,
+                                        text_content=" " * gap_size,
+                                        line=child.line,
+                                        column=end_col,
+                                    )
+                                )
                     current_branch_nodes.append(child)
+                    prev_child = child
 
             # Build the if/elif/else tree from branches
             # branches[0] is the 'if' body.
@@ -1157,6 +1314,7 @@ class TemplateCodegen:
                 if_attr.condition,
                 local_vars,
                 known_globals,
+                known_imports,
                 line_offset=node.line,
                 cached=False,
             )
@@ -1170,6 +1328,7 @@ class TemplateCodegen:
                     layout_id,
                     known_methods,
                     known_globals,
+                    known_imports,
                     async_methods,
                     component_map,
                     scope_id,
@@ -1193,6 +1352,7 @@ class TemplateCodegen:
                         layout_id,
                         known_methods,
                         known_globals,
+                        known_imports,
                         async_methods,
                         component_map,
                         scope_id,
@@ -1234,7 +1394,23 @@ class TemplateCodegen:
 
             current_try_section: List[TemplateNode] = try_block_nodes
 
+            prev_child = None
             for child in node.children:
+                # Add whitespace gap node if needed
+                if prev_child and child.line == prev_child.line:
+                    end_line, end_col = self._get_node_end_pos(prev_child)
+                    if child.column > end_col:
+                        gap_size = child.column - end_col
+                        if gap_size > 0:
+                            current_try_section.append(
+                                TemplateNode(
+                                    tag=None,
+                                    text_content=" " * gap_size,
+                                    line=child.line,
+                                    column=end_col,
+                                )
+                            )
+
                 exc_attr = next(
                     (
                         a
@@ -1269,6 +1445,7 @@ class TemplateCodegen:
                             exc_attr.exception_type,
                             local_vars,
                             known_globals,
+                            known_imports,
                             line_offset=child.line,
                             cached=False,
                         )
@@ -1280,12 +1457,16 @@ class TemplateCodegen:
                     )
                     handlers.append(handler)
                     current_try_section = exc_block_body
+                    prev_child = None  # Reset gap tracking for new section
                 elif else_marker:
                     current_try_section = try_else_nodes
+                    prev_child = None  # Reset gap tracking for new section
                 elif fin_attr:
                     current_try_section = try_finally_nodes
+                    prev_child = None  # Reset gap tracking for new section
                 else:
                     current_try_section.append(child)
+                    prev_child = child
 
             # Generate AST for bodies
             try_ast_body: List[ast.stmt] = []
@@ -1298,6 +1479,7 @@ class TemplateCodegen:
                     layout_id,
                     known_methods,
                     known_globals,
+                    known_imports,
                     async_methods,
                     component_map,
                     scope_id,
@@ -1324,10 +1506,12 @@ class TemplateCodegen:
                         layout_id,
                         known_methods,
                         known_globals,
+                        known_imports,
                         async_methods,
                         component_map,
                         scope_id,
                         parts_var=parts_var,
+                        wire_vars=wire_vars,
                     )
                 if not h.body:
                     h.body = [ast.Pass()]
@@ -1342,10 +1526,12 @@ class TemplateCodegen:
                     layout_id,
                     known_methods,
                     known_globals,
+                    known_imports,
                     async_methods,
                     component_map,
                     scope_id,
                     parts_var=parts_var,
+                    wire_vars=wire_vars,
                 )
 
             finally_ast_body: List[ast.stmt] = []
@@ -1358,10 +1544,12 @@ class TemplateCodegen:
                     layout_id,
                     known_methods,
                     known_globals,
+                    known_imports,
                     async_methods,
                     component_map,
                     scope_id,
                     parts_var=parts_var,
+                    wire_vars=wire_vars,
                 )
 
             try_stmt = ast.Try(
@@ -1387,8 +1575,24 @@ class TemplateCodegen:
             then_var = None
             catch_var = None
 
-            current_section = pending_body
+            current_await_section: List[TemplateNode] = pending_body
+            prev_child = None
             for child in node.children:
+                # Add whitespace gap node if needed
+                if prev_child and child.line == prev_child.line:
+                    end_line, end_col = self._get_node_end_pos(prev_child)
+                    if child.column > end_col:
+                        gap_size = child.column - end_col
+                        if gap_size > 0:
+                            current_await_section.append(
+                                TemplateNode(
+                                    tag=None,
+                                    text_content=" " * gap_size,
+                                    line=child.line,
+                                    column=end_col,
+                                )
+                            )
+
                 then_attr = next(
                     (
                         a
@@ -1407,13 +1611,16 @@ class TemplateCodegen:
                 )
 
                 if then_attr:
+                    current_await_section = then_body
                     then_var = then_attr.variable
-                    current_section = then_body
+                    prev_child = None  # Reset gap tracking for new section
                 elif catch_attr:
+                    current_await_section = catch_body
                     catch_var = catch_attr.variable
-                    current_section = catch_body
+                    prev_child = None  # Reset gap tracking for new section
                 else:
-                    current_section.append(child)
+                    current_await_section.append(child)
+                    prev_child = child
 
             # Generate region ID and method name
             region_id = f"await_{node.line}_{node.column}".replace("-", "_")
@@ -1434,9 +1641,11 @@ class TemplateCodegen:
                 layout_id,
                 known_methods,
                 known_globals,
+                known_imports,
                 async_methods,
                 component_map,
                 scope_id,
+                wire_vars=wire_vars,
             )
             self.auxiliary_functions.append(aux_func)
 
@@ -1444,8 +1653,10 @@ class TemplateCodegen:
                 await_attr.expression,
                 local_vars,
                 known_globals,
+                known_imports,
                 line_offset=node.line,
                 cached=False,
+                wire_vars=wire_vars,
             )
 
             # In main render:
@@ -1676,8 +1887,14 @@ class TemplateCodegen:
             body.append(append_stmt)
             return
 
-        if component_map and node.tag in component_map:
-            cls_name = component_map[node.tag]
+        if node.tag and (
+            (component_map and node.tag in component_map) or node.tag[0].isupper()
+        ):
+            cls_name = (
+                component_map[node.tag]
+                if component_map and node.tag in component_map
+                else node.tag
+            )
 
             # Prepare arguments (kwargs)
             # Prepare arguments (kwargs dict keys/values)
@@ -1720,7 +1937,28 @@ class TemplateCodegen:
             )
 
             # 2. Pass explicitly defined props (static)
+            ref_expr = None
             for k, v in node.attributes.items():
+                if k == "ref":
+                    # Extract ref expression
+                    if "{" in v and "}" in v:
+                        v_stripped = v.strip()
+                        if (
+                            v_stripped.startswith("{")
+                            and v_stripped.endswith("}")
+                            and v_stripped.count("{") == 1
+                        ):
+                            expr_code = v_stripped[1:-1]
+                            ref_expr = self._transform_expr(
+                                expr_code,
+                                local_vars,
+                                known_globals,
+                                line_offset=node.line,
+                                col_offset=node.column,
+                                no_unwrap=True,
+                            )
+                    continue
+
                 dict_keys.append(ast.Constant(value=k))
 
                 val_expr = None
@@ -1793,15 +2031,35 @@ class TemplateCodegen:
             # Process non-event special attributes (Reactive) and Events
             for attr in node.special_attributes:
                 if isinstance(attr, ReactiveAttribute):
+                    if attr.name == "ref":
+                        # Groundwork for component refs
+                        expr = self._transform_reactive_expr(
+                            attr.expr,
+                            local_vars,
+                            known_methods=known_methods,
+                            known_globals=known_globals,
+                            known_imports=known_imports,
+                            async_methods=async_methods,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                            cached=False,  # Don't cache ref expressions? Usually they are simple wires
+                            wire_vars=wire_vars,
+                            no_unwrap=True,
+                        )
+                        ref_expr = expr
+                        continue
+
                     dict_keys.append(ast.Constant(value=attr.name))
                     expr = self._transform_reactive_expr(
                         attr.expr,
                         local_vars,
-                        known_methods,
-                        known_globals,
-                        async_methods,
+                        known_methods=known_methods,
+                        known_globals=known_globals,
+                        known_imports=known_imports,
+                        async_methods=async_methods,
                         line_offset=node.line,
                         col_offset=node.column,
+                        wire_vars=wire_vars,
                     )
                     dict_values.append(expr)
 
@@ -1979,11 +2237,13 @@ class TemplateCodegen:
                         layout_id,
                         known_methods,
                         known_globals,
+                        known_imports,
                         async_methods,
                         component_map,
                         scope_id,
                         parts_var=slot_parts_var,
                         enable_regions=enable_regions,
+                        wire_vars=wire_vars,
                     )  # PASS slot_parts_var
 
                 # Join parts -> slot string
@@ -2019,13 +2279,39 @@ class TemplateCodegen:
                 )
 
             # Instantiate component
-            instantiation = ast.Call(
-                func=ast.Name(id=cls_name, ctx=ast.Load()), args=[], keywords=keywords
+            comp_var = f"_comp_{node.line}_{node.column}"
+            body.append(
+                ast.Assign(
+                    targets=[ast.Name(id=comp_var, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Name(id=cls_name, ctx=ast.Load()),
+                        args=[],
+                        keywords=keywords,
+                    ),
+                )
             )
+
+            if ref_expr:
+                # Groundwork for component refs
+                # comp._ref = ref_expr
+                body.append(
+                    ast.Assign(
+                        targets=[
+                            ast.Attribute(
+                                value=ast.Name(id=comp_var, ctx=ast.Load()),
+                                attr="_ref",
+                                ctx=ast.Store(),
+                            )
+                        ],
+                        value=ref_expr,
+                    )
+                )
 
             render_call = ast.Call(
                 func=ast.Attribute(
-                    value=instantiation, attr="_render_template", ctx=ast.Load()
+                    value=ast.Name(id=comp_var, ctx=ast.Load()),
+                    attr="_render_template",
+                    ctx=ast.Load(),
                 ),
                 args=[],
                 keywords=[],
@@ -2180,11 +2466,13 @@ class TemplateCodegen:
                         layout_id,
                         known_methods,
                         known_globals,
+                        known_imports,
                         async_methods,
                         component_map,
                         scope_id,
                         parts_var=parts_var,
                         enable_regions=enable_regions,
+                        wire_vars=wire_vars,
                     )
         else:
             # Element
@@ -2204,6 +2492,7 @@ class TemplateCodegen:
                         layout_id,
                         known_methods,
                         known_globals,
+                        known_imports,
                         async_methods,
                         component_map,
                         scope_id,
@@ -2657,9 +2946,10 @@ class TemplateCodegen:
                     val_expr = self._transform_reactive_expr(
                         attr.expr,
                         local_vars,
-                        known_methods,
-                        known_globals,
-                        async_methods,
+                        known_methods=known_methods,
+                        known_globals=known_globals,
+                        known_imports=known_imports,
+                        async_methods=async_methods,
                         line_offset=node.line,
                         col_offset=node.column,
                     )
@@ -2980,6 +3270,7 @@ class TemplateCodegen:
                     known_globals,
                     line_offset=node.line,
                     col_offset=node.column,
+                    wire_vars=wire_vars,
                 )
 
             # 2. Implicit root injection
@@ -3056,7 +3347,11 @@ class TemplateCodegen:
                 )
             )
 
+            prev_child = None
             for child in node.children:
+                # Add whitespace if there is a gap between this child and the previous one
+                self._add_gap_whitespace(prev_child, child, body, parts_var=parts_var)
+
                 self._add_node(
                     child,
                     body,
@@ -3065,13 +3360,16 @@ class TemplateCodegen:
                     layout_id,
                     known_methods,
                     known_globals,
+                    known_imports,
                     async_methods,
                     component_map,
                     scope_id,
                     parts_var=parts_var,
                     implicit_root_source=implicit_root_source,
                     enable_regions=enable_regions,
+                    wire_vars=wire_vars,
                 )
+                prev_child = child
 
             if node.tag.lower() not in self.VOID_ELEMENTS:
                 body.append(
@@ -3087,3 +3385,70 @@ class TemplateCodegen:
                         )
                     )
                 )
+
+    def _get_node_end_pos(self, node: TemplateNode) -> Tuple[int, int]:
+        """Estimate the end line/column of a node for gap detection."""
+        if node.tag is None and node.text_content:
+            # Text node
+            lines = node.text_content.splitlines()
+            if not lines:
+                return node.line, node.column
+            if len(lines) == 1:
+                return node.line, node.column + len(lines[0])
+            return node.line + len(lines) - 1, len(lines[-1])
+
+        # If it's a tag, we estimate the size of the opening tag.
+        # This helps detect gaps after <p> etc.
+        if node.tag:
+            # Estimation: <tag ...>
+            # We don't know the exact end of the opening tag easily,
+            # but we mostly care about gaps between siblings.
+            return node.line, node.column + len(node.tag) + 2
+
+        # Look for interpolation nodes
+        from pywire.compiler.ast_nodes import InterpolationNode
+
+        for attr in node.special_attributes:
+            if isinstance(attr, InterpolationNode):
+                return node.line, node.column + len(attr.expression) + 2
+            # Handle block markers {/if} etc. if they appear here
+            if (
+                node.tag is None
+                and not node.text_content
+                and getattr(attr, "keyword", "")
+            ):
+                kw = getattr(attr, "keyword", "")
+                return node.line, node.column + len(kw) + 3
+
+        return node.line, node.column
+
+    def _add_gap_whitespace(
+        self,
+        prev_node: Optional[TemplateNode],
+        curr_node: TemplateNode,
+        body: List[ast.stmt],
+        parts_var: str = "parts",
+    ) -> None:
+        """Add whitespace to parts if there is a gap between nodes on the same line."""
+        if not prev_node:
+            return
+
+        if curr_node.line == prev_node.line:
+            prev_end_line, prev_end_col = self._get_node_end_pos(prev_node)
+            if curr_node.line == prev_end_line and curr_node.column > prev_end_col:
+                gap_size = curr_node.column - prev_end_col
+                if gap_size > 0:
+                    whitespace = " " * gap_size
+                    body.append(
+                        ast.Expr(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                    attr="append",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[ast.Constant(value=whitespace)],
+                                keywords=[],
+                            )
+                        )
+                    )

@@ -6,38 +6,38 @@ description: Use modifiers to change event behavior, like @click.once.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       count = wire(0)
-
-      ---html---
+      ---
       <div>
         <h1>Modifiers</h1>
         <p>Count: {count}</p>
         
         <div class="stack">
           <button @click={$count += 1}>
-              Click Many Times
+            Click Many Times
           </button>
 
           <button>
-              Click Only Once
+            Click Only Once
           </button>
         </div>
       </div>
     solution: |
+      ---
       count = wire(0)
-
-      ---html---
+      ---
       <div>
         <h1>Modifiers</h1>
         <p>Count: {count}</p>
         
         <div class="stack">
           <button @click={$count += 1}>
-              Click Many Times
+            Click Many Times
           </button>
 
           <button @click.once={$count += 1}>
-              Click Only Once
+            Click Only Once
           </button>
         </div>
       </div>
@@ -47,6 +47,7 @@ successCriteria:
     target: pages/index.wire
     pattern: '@click.once'
   - type: browser_route_text
+    route: '/'
     description: "Click the 'Once' button and verify count is 1"
     pattern: 'Count: 1'
 pagesDir: pages

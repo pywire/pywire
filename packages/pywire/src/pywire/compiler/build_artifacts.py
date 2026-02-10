@@ -222,6 +222,22 @@ class ArtifactBuilder:
                 path = self._resolve_path(directive.path, base_path)
                 deps[str(path)] = "component"
 
+        # Scan Python imports for component dependencies
+        if parsed.python_ast:
+            for node in parsed.python_ast.body:
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    # Resolve 'from .Child import Child' or 'from Child import Child'
+                    dep_path = self._resolve_import_to_path(node, base_path)
+                    if dep_path:
+                        deps[str(dep_path)] = "component"
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        # Resolve 'import Button'
+                        dep_path = self._resolve_import_to_path_simple(
+                            alias.name, base_path
+                        )
+                        if dep_path:
+                            deps[str(dep_path)] = "component"
         return [(Path(path), kind) for path, kind in deps.items()]
 
     def _resolve_path(self, path_str: str, base_path: Path) -> Path:
@@ -229,6 +245,55 @@ class ArtifactBuilder:
         if not path.is_absolute():
             path = base_path.parent / path
         return path.resolve()
+
+    def _resolve_import_to_path(
+        self, node: ast.ImportFrom, base_path: Path
+    ) -> Optional[Path]:
+        """Resolve an ImportFrom node to a .wire file path if possible."""
+        if not node.module:
+            return None
+
+        # 1. Try relative to base_path (handles level > 0 and level == 0 in same dir)
+        target_dir = base_path.parent
+        if node.level > 1:
+            for _ in range(node.level - 1):
+                target_dir = target_dir.parent
+
+        # Check target_dir / module.wire (e.g. from .Child -> Child.wire)
+        # and also target_dir / module / module.wire (if it's a package? probably not common for .wire)
+        potential = target_dir / f"{node.module}.wire"
+        if potential.exists():
+            return potential.resolve()
+
+        # 2. Try relative to pages_dir
+        potential = self.pages_dir / f"{node.module.replace('.', '/')}.wire"
+        if potential.exists():
+            return potential.resolve()
+
+        # 3. Try in sibling 'components' directory if pages_dir has one
+        components_dir = self.pages_dir.parent / "components"
+        if components_dir.exists():
+            potential = components_dir / f"{node.module.replace('.', '/')}.wire"
+            if potential.exists():
+                return potential.resolve()
+
+        return None
+
+    def _resolve_import_to_path_simple(
+        self, name: str, base_path: Path
+    ) -> Optional[Path]:
+        """Resolve a simple 'import Name' to a .wire file path."""
+        # Check same dir
+        potential = base_path.parent / f"{name}.wire"
+        if potential.exists():
+            return potential.resolve()
+
+        # Check pages_dir
+        potential = self.pages_dir / f"{name.replace('.', '/')}.wire"
+        if potential.exists():
+            return potential.resolve()
+
+        return None
 
     def _artifact_path_for(self, file_path: Path) -> Path:
         if self._is_in_pages(file_path):

@@ -27,9 +27,7 @@ class TestSlotCodegen(unittest.TestCase):
         return node
 
     def test_named_slot_registration(self):
-        source = """
----html---
-<MyComponent>
+        source = """<MyComponent>
     <template slot="header">Header Content</template>
     <template slot="footer">Footer Content</template>
 </MyComponent>
@@ -60,9 +58,7 @@ class TestSlotCodegen(unittest.TestCase):
         self.assertIn("slots={", code)
 
     def test_explicit_slot_definition(self):
-        source = """
----html---
-<div>
+        source = """<div>
     <slot name="my-slot">Default Content</slot>
 </div>
 """
@@ -79,9 +75,7 @@ class TestSlotCodegen(unittest.TestCase):
         self.assertIn("'my-slot'", code)
 
     def test_default_slot_definition(self):
-        source = """
----html---
-<div>
+        source = """<div>
     <slot>Default</slot>
 </div>
 """

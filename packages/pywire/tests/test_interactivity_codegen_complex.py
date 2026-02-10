@@ -16,7 +16,7 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         template = "<button @click={delete_item(item.id, 'confirmed')}>Delete</button>"
         # Mock python code with the handler method
         python_code = "async def delete_item(id, status): pass"
-        content = f"{python_code}\n---html---\n{template}"
+        content = f"---\n{python_code}\n---\n{template}"
         parsed = self.parser.parse(content)
 
         # Generate code
@@ -37,14 +37,18 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
     def test_multiple_handlers_complex(self) -> None:
         """Verify behavior with multiple handlers having arguments and modifiers."""
         template = "<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>"
-        parsed = self.parser.parse(template)
+        # Add python code to define handlers
+        python_code = "async def foo(id): pass\nasync def bar(id): pass"
+        content = f"---\n{python_code}\n---\n{template}"
+        parsed = self.parser.parse(content)
 
         module_ast = self.generator.generate(parsed)
         code = ast.unparse(module_ast)
 
-        # AST codegen produces direct list assignment: _h['args'] = [self.foo, self.id1]
-        self.assertIn("_h['args'] = [self.foo, self.id1]", code)
-        self.assertIn("_h['args'] = [self.bar, self.id2]", code)
+        # AST codegen produces wrapper call: wrapper(self.id1)
+        # _h['args'] = [self.key]
+        self.assertIn("_h['args'] = [self.id1]", code)
+        self.assertIn("_h['args'] = [self.id2]", code)
         # Verify modifiers are collected (order is unstable because of set())
         modifiers_line = [
             line for line in code.split("\n") if "attrs['data-modifiers-click'] =" in line

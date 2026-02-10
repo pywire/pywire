@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61", "setuptools-rust", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "pywire"
@@ -17,7 +17,6 @@ dependencies = [
     "watchfiles>=0.21.0",
     "jinja2>=3.1.0",  # For initial template parsing
     "msgpack>=1.0.0",
-    "lxml>=4.9.0",
     "pydantic>=2.0.0",
     "textual>=7.4.0",
     "rich-click>=1.9.6",
@@ -45,35 +44,8 @@ http3 = [
 [project.scripts]
 pywire = "pywire.cli.main:cli"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pywire"]
-include = [
-    "src/pywire/static/**",
-    "src/pywire/templates/**",
-]
-exclude = [
-    "**/node_modules/",
-]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/pywire/static" = "pywire/static"
-
-[tool.hatch.build.targets.sdist]
-exclude = [
-    "**/node_modules",
-]
-
-[tool.hatch.build.targets.sdist.force-include]
-"src/pywire/static" = "src/pywire/static"
-
-[tool.hatch.version]
-source = "vcs"
-raw-options = { version_scheme = "post-release", git_describe_command = "git describe --dirty --tags --long --match v*", tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+.*)" }
-
-[tool.hatch.build.hooks.vcs]
-version-file = "src/pywire/_version.py"
-
-[tool.hatch.build.hooks.custom]
+[tool.setuptools_scm]
+write_to = "src/pywire/_version.py"
 
 [tool.ty.environment]
 python-version = "3.11"
@@ -85,6 +57,7 @@ exclude = [
 
 [tool.ty.analysis]
 allowed-unresolved-imports = [
+    "pywire._pywire_parser",
     "aioquic.**",
     "cryptography.**",
     "hypercorn.**",
@@ -93,6 +66,19 @@ allowed-unresolved-imports = [
     "js",
     "pyodide.**",
 ]
+
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.setuptools.package-data]
+pywire = ["py.typed", "static/**", "templates/**"]
 
 [[tool.ty.overrides]]
 include = ["tests/**"]

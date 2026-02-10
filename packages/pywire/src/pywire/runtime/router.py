@@ -15,6 +15,7 @@ class Route:
         self.pattern = pattern
         self.page_class = page_class
         self.name = name
+        self.param_types: Dict[str, str] = {}
 
         # Compile pattern to regex
         self.regex = self._compile_pattern(pattern)
@@ -23,18 +24,6 @@ class Route:
         """Convert '/projects/:id:int' to regex."""
         if pattern == "/":
             return re.compile(r"^/$")
-
-        # 1. Normalize :param syntax to {param} for internal processing if needed,
-        #    or just process directly. Let's process :param directly.
-        #    Supported format: :name or :name:type or {name} or {name:type}
-
-        # We need to handle both :param and {param} syntax
-        # Let's standardize on one before regex gen or handle both in regex replacement
-
-        # Replace placeholders with regex groups
-        # We look for two patterns:
-        # 1. :name(:type)?
-        # 2. \{name(:type)?\}
 
         # Helper to generate regex for a type
         def get_type_regex(type_name: str) -> str:
@@ -45,17 +34,6 @@ class Route:
             # Default to string
             return r"[^/]+"
 
-        # This logic is a bit complex for a single regex replace.
-        # Let's manually parse/split the string or use a strict regex.
-
-        # Let's use a tokenizing approach for robustness,
-        # or a series of regex replacements that don't conflict.
-
-        # Tokenizing approach for robustness
-        # 1. Split by '/'
-        # 2. Process segments
-        # 3. Join
-
         parts = pattern.split("/")
         regex_parts = []
 
@@ -64,7 +42,10 @@ class Route:
                 # Empty part (e.g. start of string)
                 continue
 
-            # Check for :param
+            # Check for :param or {param}
+            name = None
+            type_name = "str"
+
             if part.startswith(":"):
                 # :id or :id:int
                 content = part[1:]
@@ -72,21 +53,18 @@ class Route:
                     name, type_name = content.split(":", 1)
                 else:
                     name, type_name = content, "str"
-
-                regex = get_type_regex(type_name)
-                regex_parts.append(f"(?P<{name}>{regex})")
-
-            # Check for {param}
             elif part.startswith("{") and part.endswith("}"):
+                # {id} or {id:int}
                 content = part[1:-1]
                 if ":" in content:
                     name, type_name = content.split(":", 1)
                 else:
                     name, type_name = content, "str"
 
+            if name:
+                self.param_types[name] = type_name
                 regex = get_type_regex(type_name)
                 regex_parts.append(f"(?P<{name}>{regex})")
-
             else:
                 # Literal
                 regex_parts.append(re.escape(part))
@@ -94,31 +72,31 @@ class Route:
         regex_str = "^/" + "/".join(regex_parts) + "$"
         return re.compile(regex_str)
 
-    def match(self, path: str) -> Optional[dict[str, str]]:
+    def match(self, path: str) -> Optional[dict[str, Any]]:
         """Try to match path, return params if successful."""
         match = self.regex.match(path)
         if match:
             # We need to convert types!
             params = match.groupdict()
-            # Since we baked types into regex (e.g. \d+), we know they match format.
-            # But we should cast them to Python types.
 
-            # For this MVP, we might just return strings,
-            # BUT the user asked for ":id:int matches /test/2", which implies type checking
-            # Match only digits. The generated params dict currently contains strings.
-            # We should probably convert them if we have the type info available.
+            # Coerce values
+            coerced = {}
+            for name, val in params.items():
+                type_name = self.param_types.get(name, "str")
+                coerced[name] = self._coerce_value(val, type_name)
 
-            # Re-parsing pattern to get types is inefficient.
-            # Let's assume for now they want the matching behavior.
-            # BasePage expects params: Dict[str, str].
-            # If we change that, we break compatibility or need to update BasePage.
-            # User requirement: "params['id'] is guaranteed to be populated".
-            # Doesn't explicitly demand it be an int object, but ":int" suggests validation.
-            # Given dynamic nature, let's keep as strings in params for now to
-            # satisfy Dict[str, str] hint, or update hint in BasePage.
-
-            return params
+            return coerced
         return None
+
+    def _coerce_value(self, value: str, type_name: str) -> Any:
+        """Coerce string value to specific type."""
+        if type_name == "int":
+            try:
+                return int(value)
+            except ValueError:
+                return value
+        # Add more types as needed (bool, float, etc.)
+        return value
 
 
 class URLHelper:

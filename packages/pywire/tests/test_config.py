@@ -35,13 +35,15 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(app.enable_webtransport)
 
     def test_auto_discovery(self) -> None:
-        # We can't easily test auto-discovery of CWD without mocking Path.cwd
-        # causing side effects.
-        # But we can test that passing None triggers the logic.
+        # We need to mock _get_caller_dir to return a path in our temp dir
+        # so that _get_project_root starts searching from there.
         from unittest.mock import patch
 
-        with patch("pathlib.Path.cwd", return_value=self.tmp_path):
+        with patch("pywire.runtime.app.PyWire._get_caller_dir", return_value=self.tmp_path):
             (self.tmp_path / "src" / "pages").mkdir(parents=True)
+            # Create a project marker so it knows this is the root
+            (self.tmp_path / "pyproject.toml").touch()
+            
             app = PyWire(pages_dir=None)
             self.assertEqual(app.pages_dir, self.tmp_path / "src" / "pages")
 
@@ -49,8 +51,26 @@ class TestConfig(unittest.TestCase):
         # Test finding 'pages' in root
         from unittest.mock import patch
 
-        with patch("pathlib.Path.cwd", return_value=self.tmp_path):
+        with patch("pywire.runtime.app.PyWire._get_caller_dir", return_value=self.tmp_path):
             (self.tmp_path / "pages").mkdir()
+            # Create a project marker so it knows this is the root
+            (self.tmp_path / "pyproject.toml").touch()
+
+            app = PyWire(pages_dir=None)
+            self.assertEqual(app.pages_dir, self.tmp_path / "pages")
+            
+    def test_project_root_fallback(self) -> None:
+        # If no marker found, project root should be caller dir
+        from unittest.mock import patch
+        
+        # Ensure no markers exist in tmp_path or parents (within reason for test)
+        # We assume tmp_path is clean.
+        
+        with patch("pywire.runtime.app.PyWire._get_caller_dir", return_value=self.tmp_path):
+            # No pyproject.toml created
+            (self.tmp_path / "pages").mkdir()
+            
+            # Should find pages relative to caller_dir (which becomes project_root)
             app = PyWire(pages_dir=None)
             self.assertEqual(app.pages_dir, self.tmp_path / "pages")
 

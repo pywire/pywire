@@ -6,9 +6,9 @@ description: Render raw HTML strings safely using the $html directive.
 files:
   - path: pages/index.wire
     initial: |
+      ---
       content = "<strong>Bold</strong> <em>Italic</em>"
-
-      ---html---
+      ---
       <div>
         <h1>HTML Content</h1>
         <div>
@@ -16,9 +16,9 @@ files:
         </div>
       </div>
     solution: |
+      ---
       content = "<strong>Bold</strong> <em>Italic</em>"
-
-      ---html---
+      ---
       <div>
         <h1>HTML Content</h1>
         <div>

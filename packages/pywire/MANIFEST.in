@@ -1,0 +1,15 @@
+recursive-exclude tests *
+recursive-exclude docs *
+recursive-exclude examples *
+recursive-exclude scratch *
+recursive-exclude .github *
+recursive-exclude tree-sitter-pywire *
+exclude hatch_build.py
+exclude ty_output.txt
+exclude build_log.txt
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .env
+global-exclude .venv
+global-exclude node_modules

@@ -1,5 +1,6 @@
 import { BaseTransport, ServerMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
+import { logger } from '../logger'
 
 const DEBUG_CONNECTION = false
 
@@ -22,7 +23,7 @@ export class HTTPTransport extends BaseTransport {
 
   async connect(): Promise<void> {
     try {
-      if (DEBUG_CONNECTION) console.log(`PyWire: Connecting HTTP transport to ${this.baseUrl}`)
+      if (DEBUG_CONNECTION) logger.log(`PyWire: Connecting HTTP transport to ${this.baseUrl}`)
       // Initialize session with the server
       const response = await fetch(`${this.baseUrl}/session`, {
         method: 'POST',
@@ -45,13 +46,13 @@ export class HTTPTransport extends BaseTransport {
         this.notifyHandlers({ type: 'init', version: data.version })
       }
 
-      if (DEBUG_CONNECTION) console.log('PyWire: HTTP transport connected')
+      if (DEBUG_CONNECTION) logger.log('PyWire: HTTP transport connected')
       this.notifyStatus(true)
 
       // Start polling for updates
       this.startPolling()
     } catch (e) {
-      console.error('PyWire: HTTP transport connection failed', e)
+      logger.error('PyWire: HTTP transport connection failed', e)
       throw e
     }
   }
@@ -75,7 +76,7 @@ export class HTTPTransport extends BaseTransport {
         if (!response.ok) {
           if (response.status === 404) {
             // Session expired, try to reconnect
-            if (DEBUG_CONNECTION) console.warn('PyWire: HTTP session expired, reconnecting...')
+            if (DEBUG_CONNECTION) logger.warn('PyWire: HTTP session expired, reconnecting...')
             this.notifyStatus(false)
             await this.connect()
             return
@@ -94,7 +95,7 @@ export class HTTPTransport extends BaseTransport {
           // Polling was aborted intentionally
           break
         }
-        console.error('PyWire: HTTP poll error', e)
+        logger.error('PyWire: HTTP poll error', e)
         // Wait a bit before retrying
         await this.sleep(1000)
       }
@@ -103,7 +104,7 @@ export class HTTPTransport extends BaseTransport {
 
   async send(message: object): Promise<void> {
     if (!this.connected || !this.sessionId) {
-      console.warn('PyWire: Cannot send message, HTTP transport not connected')
+      logger.warn('PyWire: Cannot send message, HTTP transport not connected')
       return
     }
 
@@ -127,7 +128,7 @@ export class HTTPTransport extends BaseTransport {
       const result = decode(buffer) as ServerMessage
       this.notifyHandlers(result)
     } catch (e) {
-      console.error('PyWire: HTTP send error', e)
+      logger.error('PyWire: HTTP send error', e)
     }
   }
 

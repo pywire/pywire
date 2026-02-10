@@ -3,9 +3,7 @@ from pywire.compiler.parser import PyWireParser
 
 def test_permanent_reload_shorthand():
     parser = PyWireParser()
-    source = """
----html---
-<div $permanent>Permanent</div>
+    source = """<div $permanent>Permanent</div>
 <a href="/test" $reload>Reload</a>
 <div id="mixed" class="foo" $permanent data-other="bar">Mixed</div>
 """
@@ -34,13 +32,13 @@ def test_permanent_reload_shorthand():
 def test_permanent_no_space():
     parser = PyWireParser()
     # $permanent at end of tag
-    source = "---html---\n<div $permanent></div>"
+    source = "<div $permanent></div>"
     ast = parser.parse(source)
     div = [n for n in ast.template if n.tag == "div"][0]
     assert div.attributes["data-pywire-permanent"] == "true"
     
     # $permanent followed by />
-    source = "---html---\n<div $permanent/>"
+    source = "<div $permanent/>"
     ast = parser.parse(source)
     div = [n for n in ast.template if n.tag == "div"][0]
     assert div.attributes["data-pywire-permanent"] == "true"
