@@ -13,10 +13,11 @@ def test_transpile_simple_interpolation():
 
 def test_transpile_python_section():
     source = """
+---
 x = 1
 def foo():
     pass
----html---
+---
 <h1>Hi</h1>
 """
     transpiler = Transpiler(source)
@@ -63,15 +64,16 @@ def test_transpile_wrappers():
 def test_variable_rewrite_mapping():
     """Test that $count maps to count in generated code."""
     source = """
+---
 count = wire(0)
----html---
+---
 <p>{$count}</p>
 """
     transpiler = Transpiler(source)
     code, source_map = transpiler.transpile()
     
     # usage: {$count} -> $ is at col 4. count is at col 5.
-    usage_line = 3 
+    usage_line = 4 
     usage_col_start = 5 
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
@@ -88,14 +90,15 @@ count = wire(0)
 def test_explicit_property_mapping():
     """Test that {count.value} maps 'count' correctly."""
     source = """
+---
 count = wire(0)
----html---
+---
 <p>{count.value}</p>
 """
     transpiler = Transpiler(source)
     code, source_map = transpiler.transpile()
     
-    usage_line = 3
+    usage_line = 4
     usage_col_start = 4 # { is at 3, count at 4
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
@@ -111,8 +114,9 @@ count = wire(0)
 def test_event_handler_mapping():
     """Test @click={$count} mapping."""
     source = """
+---
 count = wire(0)
----html---
+---
 <button @click={$count += 1}>Inc</button>
 """
     transpiler = Transpiler(source)
@@ -121,7 +125,7 @@ count = wire(0)
     # Usage: {$count}
     # <button @click={$count...
     # $ is at 16. count at 17.
-    usage_line = 3
+    usage_line = 4
     usage_col_start = 17
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)

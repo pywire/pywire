@@ -333,12 +333,18 @@ def _uri_to_path(uri: str) -> Optional[str]:
     return None
 
 
-def _find_separator_index(lines: List[str]) -> Optional[int]:
-    separator_re = re.compile(r"^\s*(-{3,})\s*html\s*\1\s*$", re.IGNORECASE)
+def _find_fences(lines: List[str]) -> Tuple[Optional[int], Optional[int]]:
+    fence_re = re.compile(r"^\s*-{3,}\s*$")
+    start: Optional[int] = None
+    end: Optional[int] = None
     for i, line in enumerate(lines):
-        if separator_re.match(line.strip()):
-            return i
-    return None
+        if fence_re.match(line):
+            if start is None:
+                start = i
+            elif end is None:
+                end = i
+                break
+    return start, end
 
 
 def _scan_directives_end(lines: List[str], end_idx: int) -> int:
@@ -444,11 +450,24 @@ def _is_inside_opening_tag(line_text: str, character: int) -> bool:
 
 
 def _get_section(lines: List[str], line_number: int) -> str:
-    separator_idx = _find_separator_index(lines)
+    start_fence, end_fence = _find_fences(lines)
 
-    if separator_idx is not None and line_number == separator_idx:
-        return "separator"
+    if start_fence is not None and end_fence is not None:
+        if line_number == start_fence or line_number == end_fence:
+            return "separator"
+        if start_fence < line_number < end_fence:
+            return "python"
+        if line_number > end_fence:
+            return "html"
+        # Before start fence: could be directives or empty
+    elif start_fence is not None:
+        # Open fence but no close: unbalanced
+        if line_number == start_fence:
+            return "separator"
+        if line_number > start_fence:
+            return "python"
 
+    # Fallback / Directives
     line_text = lines[line_number].strip() if line_number < len(lines) else ""
     if (
         line_text.startswith("!")
@@ -456,10 +475,8 @@ def _get_section(lines: List[str], line_number: int) -> str:
         or line_text.startswith("#!")
     ):
         return "directive"
-
-    if separator_idx is not None and line_number < separator_idx:
-        return "python"
-
+    
+    # If no fences, it's HTML unless it's a directive
     return "html"
 
 
@@ -592,56 +609,22 @@ def validate(ls: LanguageServer, uri: str):
                     )
                 )
 
-        # ---html--- separator checks
-        separator_idx = _find_separator_index(lines)
-        if separator_idx is not None:
-            directive_end = _scan_directives_end(lines, separator_idx)
-            has_python = False
-            for i in range(directive_end, separator_idx):
-                if lines[i].strip():
-                    has_python = True
-                    break
-            if not has_python:
-                diagnostics.append(
-                    Diagnostic(
-                        range=Range(
-                            start=Position(line=separator_idx, character=0),
-                            end=Position(
-                                line=separator_idx,
-                                character=len(lines[separator_idx]),
-                            ),
+        # Validate fences
+        start_fence, end_fence = _find_fences(lines)
+        if start_fence is not None and end_fence is None:
+             diagnostics.append(
+                Diagnostic(
+                    range=Range(
+                        start=Position(line=start_fence, character=0),
+                        end=Position(
+                            line=start_fence,
+                            character=len(lines[start_fence]),
                         ),
-                        message="Separator not needed: no Python code before HTML",
-                        severity=DiagnosticSeverity.Warning,
-                    )
+                    ),
+                    message="Missing closing fence '---'",
+                    severity=DiagnosticSeverity.Error,
                 )
-        else:
-            directive_end = _scan_directives_end(lines, len(lines))
-            has_python = False
-            html_start: Optional[int] = None
-            for i in range(directive_end, len(lines)):
-                stripped = lines[i].strip()
-                if not stripped:
-                    continue
-                if stripped.startswith("!"):
-                    continue
-                if stripped.startswith("<"):
-                    html_start = i
-                    break
-                has_python = True
-            if has_python and html_start is not None:
-                diagnostics.append(
-                    Diagnostic(
-                        range=Range(
-                            start=Position(line=html_start, character=0),
-                            end=Position(
-                                line=html_start, character=len(lines[html_start])
-                            ),
-                        ),
-                        message="Missing ---html--- separator between Python and HTML",
-                        severity=DiagnosticSeverity.Error,
-                    )
-                )
+            )
 
         doc.diagnostics = diagnostics
         _publish_diagnostics(ls, uri)

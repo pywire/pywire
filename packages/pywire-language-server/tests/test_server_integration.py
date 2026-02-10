@@ -33,8 +33,9 @@ def test_did_open(mock_ls, clean_documents):
     uri = "file:///test.wire"
     text = """!path '/test'
 
+---
 count: int = 0
----html---
+---
 <div @click={count += 1}>
     {count}
 </div>
@@ -60,8 +61,9 @@ async def test_hover_python_variable(mock_ls, clean_documents):
     uri = "file:///test.wire"
     text = """!path '/test'
 
+---
 my_var = 10
----html---
+---
 <div></div>
 """
     # Open document first
@@ -72,8 +74,8 @@ my_var = 10
     ))
     
     # Hover over 'my_var' in Python section
-    # Line 2 (0-indexed), "my_var" is at start
-    pos = Position(line=2, character=1) 
+    # Line 3 (0-indexed), "my_var" is at start
+    pos = Position(line=3, character=1) 
     params = HoverParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=pos
@@ -89,8 +91,9 @@ my_var = 10
 async def test_hover_html_expression(mock_ls, clean_documents):
     uri = "file:///test.wire"
     text = """
+---
 count = 0
----html---
+---
 <div @click={count += 1}></div>
 """
     did_open(mock_ls, DidOpenTextDocumentParams(
@@ -100,11 +103,8 @@ count = 0
     ))
     
     # Hover over 'count' in @click
-    # Line 1, char 14 (inside {count ...})
-    # <div @click={count += 1}>
-    # 012345678901234
-    
-    pos = Position(line=3, character=13) # 'c' of count
+    # Line 4 (was 3)
+    pos = Position(line=4, character=13) # 'c' of count
     params = HoverParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=pos
@@ -149,8 +149,9 @@ async def test_definition(mock_ls, clean_documents):
     # but keep the test to ensure no crash.
     uri = "file:///test.wire"
     text = """
+---
 my_var = 10
----html---
+---
 <div>{my_var}</div>
 """
     did_open(mock_ls, DidOpenTextDocumentParams(
@@ -159,7 +160,7 @@ my_var = 10
         )
     ))
     
-    pos = Position(line=3, character=6) 
+    pos = Position(line=4, character=6) 
     params = DefinitionParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=pos
@@ -178,8 +179,9 @@ my_var = 10
 async def test_completions(mock_ls, clean_documents):
     uri = "file:///test.wire"
     text = """
+---
 imp
----html---
+---
 <div></div>
 """
     did_open(mock_ls, DidOpenTextDocumentParams(
@@ -189,7 +191,7 @@ imp
     ))
     
     # Complete 'imp' -> import
-    pos = Position(line=1, character=3)
+    pos = Position(line=2, character=3)
     params = CompletionParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=pos,
@@ -202,7 +204,7 @@ imp
     assert labels == []
 
     # In HTML section, fallback directive suggestions should be present.
-    html_pos = Position(line=3, character=1)
+    html_pos = Position(line=4, character=1)
     html_params = CompletionParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=html_pos,

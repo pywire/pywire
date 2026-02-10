@@ -14,18 +14,22 @@ def test_directive_ranges_multiline() -> None:
     start, end = doc.directive_ranges["path"]
     assert start == 0
     assert end == 3  # Line with closing brace
+    # Directives don't need fences if no python code
+
 
 
 def test_source_map_roundtrip() -> None:
-    text = """value = 1
----html---
+    text = """---
+value = 1
+---
 <p>{value}</p>
 """
     doc = PyWireDocument("file:///test.pywire", text)
-    gen_pos = doc.map_to_generated(0, 0)
+    # value is at line 1, char 0
+    gen_pos = doc.map_to_generated(1, 0)
     assert gen_pos is not None
     orig_pos = doc.map_to_original(*gen_pos)
-    assert orig_pos == (0, 0)
+    assert orig_pos == (1, 0)
 
 
 if __name__ == "__main__":

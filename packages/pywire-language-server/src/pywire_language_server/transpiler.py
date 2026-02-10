@@ -15,20 +15,34 @@ class Transpiler:
 
         self.current_line_idx = 0
         self.generated_line_idx = 0  # 0-indexed
-        self._separator_re = re.compile(r"^\s*(-{3,})\s*html\s*\1\s*$", re.IGNORECASE)
+        self._fence_re = re.compile(r"^\s*-{3,}\s*$", re.IGNORECASE)
 
     def transpile(self) -> Tuple[str, SourceMap]:
         """Convert .wire source to virtual .py source with source map."""
-        separator_idx = self._find_separator()
-        header_end = separator_idx if separator_idx is not None else len(self.lines)
+        python_start, python_end = self._find_python_fences()
 
-        directive_end, python_start, html_start = self._scan_directives(header_end)
+        # Directives are at the top, before any potential python block
+        # If python block exists, directives end before it.
+        # If no python block, directives end before HTML/end of file.
+        scan_limit = python_start if python_start is not None else len(self.lines)
+        directive_end, _, _ = self._scan_directives(scan_limit)
+
         python_source_lines: List[Tuple[int, str]] = []
-        if separator_idx is not None and python_start is not None:
+        html_start = 0
+
+        if python_start is not None and python_end is not None:
+            # Python is between fences
+            # content is (python_start + 1) to (python_end - 1)
+            # but we use slice [start:end] so it's [python_start+1 : python_end]
             python_source_lines = [
-                (python_start + i, line)
-                for i, line in enumerate(self.lines[python_start:header_end])
+                (i, self.lines[i])
+                for i in range(python_start + 1, python_end)
             ]
+            html_start = python_end + 1
+        else:
+            # No python block. HTML starts after directives.
+            html_start = directive_end
+
         import_lines, body_lines = self._split_import_block(python_source_lines)
 
         # Emit module docstring first to satisfy C0114
@@ -39,7 +53,8 @@ class Transpiler:
         self._emit_framework_stubs()
 
         # --- Phase 1: Python Section (Definitions) ---
-        if separator_idx is not None and python_start is not None:
+        # --- Phase 1: Python Section (Definitions) ---
+        if python_source_lines:
             # Process each line for syntax rewriting ($var -> var.value)
             for orig_line_idx, line in body_lines:
                 self._emit_python_line_with_rewrites(line, orig_line_idx)
@@ -49,8 +64,6 @@ class Transpiler:
             self.generated_line_idx += 2
 
         # --- Phase 2: HTML Section (Expressions) ---
-        if separator_idx is not None:
-            html_start = separator_idx + 1
         i = html_start
         while i < len(self.lines):
             line = self.lines[i]
@@ -216,55 +229,46 @@ class Transpiler:
 
         return "".join(rewritten_parts)
 
-    def _find_separator(self) -> Optional[int]:
+    def _find_python_fences(self) -> Tuple[Optional[int], Optional[int]]:
+        """Find start and end indices of the python block lines (the --- fences)."""
+        start_idx: Optional[int] = None
+        end_idx: Optional[int] = None
+
         for i, line in enumerate(self.lines):
-            if self._separator_re.match(line.strip()):
-                return i
-        return None
+            if self._fence_re.match(line):
+                if start_idx is None:
+                    start_idx = i
+                elif end_idx is None:
+                    end_idx = i
+                    break  # Found the pair
+
+        if start_idx is not None and end_idx is not None:
+            return start_idx, end_idx
+        return None, None
 
     def _scan_directives(self, end_idx: int) -> Tuple[int, Optional[int], int]:
+        # Returns (directive_end_idx, unused, unused)
+        # We keep signature but only first return matters now
         i = 0
-        pending_blank_start: Optional[int] = None
-
         while i < end_idx:
             stripped = self.lines[i].strip()
             if not stripped:
-                if pending_blank_start is None:
-                    pending_blank_start = i
                 i += 1
                 continue
 
             if stripped.startswith("!path"):
-                pending_blank_start = None
                 start = i
                 i = self._handle_path_directive(i)
                 self.directive_ranges["path"] = (start, i - 1)
                 continue
 
             if stripped.startswith("!layout") or stripped.startswith("!"):
-                pending_blank_start = None
                 i += 1
                 continue
 
             break
 
-        directive_end = i
-        if directive_end == end_idx:
-            python_start = None
-            html_start = (
-                pending_blank_start
-                if pending_blank_start is not None
-                else directive_end
-            )
-        else:
-            python_start = (
-                pending_blank_start
-                if pending_blank_start is not None
-                else directive_end
-            )
-            html_start = python_start
-
-        return directive_end, python_start, html_start
+        return i, None, None
 
     def _emit_empty_line(self):
         self.generated_code.append("\n")
