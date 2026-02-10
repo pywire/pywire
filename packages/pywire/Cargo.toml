@@ -9,6 +9,6 @@ crate-type = ["cdylib"]
 path = "rust/lib.rs"
 
 [dependencies]
-pyo3 = { version = "0.23", features = ["extension-module"] }
+pyo3 = { version = "0.26", features = ["extension-module"] }
 tree-sitter = "0.24"
 tree-sitter-pywire = { path = "../tree-sitter-pywire" }
