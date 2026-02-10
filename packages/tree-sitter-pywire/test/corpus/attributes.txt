@@ -4,20 +4,21 @@ Attribute Interpolation
 
 <div @click={count += 1} custom={val}></div>
 
+---
+
 (source_file
-  (tag
-    (tag_name)
-    (attribute
-      (special_attribute_name)
-      (attribute_value
+  (template_section
+    (tag
+      (tag_name)
+      (attribute
+        (special_attribute_name)
         (interpolation
-          (python_code))))
-    (attribute
-      (attribute_name)
-      (attribute_value
+          (python_code)))
+      (attribute
+        (attribute_name)
         (interpolation
-          (python_code))))
-    (tag_name)))
+          (python_code)))
+      (tag_name))))
 
 ==================
 Self Closing Tag
@@ -25,11 +26,11 @@ Self Closing Tag
 
 <input type="text" />
 
+---
+
 (source_file
-  (self_closing_tag
-    (tag_name)
-    (attribute
+  (template_section
+    (void_tag
+      (attribute
         (attribute_name)
-        (attribute_value
-            (attribute_content))))
-  )
+        (attribute_value)))))

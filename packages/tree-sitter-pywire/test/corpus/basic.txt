@@ -2,22 +2,20 @@
 Basic document
 ==============================
 
+---
 x = 1
----html---
+---
 <h1>Hi</h1>
 
 ---
 
 (source_file
-  (text)
-  (hyphen)
-  (hyphen)
-  (hyphen)
-  (text)
-  (hyphen)
-  (hyphen)
-  (hyphen)
-  (tag
-    (tag_name)
-    (text)
-    (tag_name)))
+  (frontmatter
+    (separator)
+    (python_content)
+    (separator))
+  (template_section
+    (tag
+      (tag_name)
+      (text)
+      (tag_name))))

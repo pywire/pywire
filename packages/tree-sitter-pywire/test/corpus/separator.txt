@@ -1,13 +1,20 @@
 ==================
 Separator
 ==================
----html---
+
+---
+x = 1
+---
 <div></div>
+
 ---
 
 (source_file
-  (header
+  (frontmatter
+    (separator)
+    (python_content)
     (separator))
-  (tag
-    (tag_name)
-    (tag_name)))
+  (template_section
+    (tag
+      (tag_name)
+      (tag_name))))
