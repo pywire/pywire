@@ -89,8 +89,14 @@ async function main() {
       const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
 
       // Explicitly disable bulk-memory to satisfy Emscripten 3.1.58's wasm-opt
-      const env = { ...process.env, RUSTFLAGS: (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory' }
+      // And skip wasm-opt entirely because 3.1.58's wasm-opt fails on modern flags
+      const env = {
+        ...process.env,
+        RUSTFLAGS: (process.env.RUSTFLAGS || '') + ' -C target-feature=-bulk-memory',
+        EMCC_SKIP_WASM_OPT: '1'
+      }
       console.log('Building with RUSTFLAGS:', env.RUSTFLAGS)
+      console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
 
       execSync(pyodideCmd, { cwd: REPO_ROOT, stdio: 'inherit', env })
     } catch (e) {
