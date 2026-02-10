@@ -11,7 +11,16 @@ jobs:
   build-wasm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pywire
+        uses: actions/checkout@v4
+        with:
+          path: pywire
+
+      - name: Checkout tree-sitter-pywire
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/tree-sitter-pywire
+          path: tree-sitter-pywire
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -37,14 +46,16 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: docs/pnpm-lock.yaml
+          cache-dependency-path: pywire/docs/pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: docs
+        working-directory: pywire/docs
         run: pnpm install --frozen-lockfile
 
       - name: Build WASM Wheel
-        working-directory: docs
+        working-directory: pywire/docs
+        env:
+          PYWIRE_WASM_BUILD: "1"
         run: |
           # build-assets.mjs uses esbuild, so deps must be installed
           node scripts/build-assets.mjs

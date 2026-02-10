@@ -76,18 +76,35 @@ async function main() {
     fs.mkdirSync(publicDistDir, { recursive: true })
   }
 
-  // Build directly to public/dist using uv build if available (most robust)
-  // Build directly to public/dist using pyodide build via uv
-  // We specify dependencies/versions explicitly to match the docs runtime (Pyodide 0.29.x -> Emscripten 3.1.58)
-  try {
-    // Requires python >= 3.12 for pyodide-build 0.29.3
-    // Requires wheel < 0.40.0 for auditwheel-emscripten compatibility
-    // Requires prerelease=allow for pyodide-lock 0.1.0a7 dependency
-    const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
-    run(pyodideCmd, REPO_ROOT)
-  } catch (e) {
-    console.error('Failed to build WASM wheel:', e)
-    process.exit(1)
+  // Build directly to public/dist
+  // If PYWIRE_WASM_BUILD is set, use pyodide build for WASM wheel (requires Emscripten enviroment)
+  // Otherwise, use standard uv build for native wheel (default)
+  if (process.env.PYWIRE_WASM_BUILD === '1') {
+    // Build directly to public/dist using pyodide build via uv
+    // We specify dependencies/versions explicitly to match the docs runtime (Pyodide 0.29.x -> Emscripten 3.1.58)
+    try {
+      // Requires python >= 3.12 for pyodide-build 0.29.3
+      // Requires wheel < 0.40.0 for auditwheel-emscripten compatibility
+      // Requires prerelease=allow for pyodide-lock 0.1.0a7 dependency
+      const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
+      run(pyodideCmd, REPO_ROOT)
+    } catch (e) {
+      console.error('Failed to build WASM wheel:', e)
+      process.exit(1)
+    }
+  } else {
+    // Standard native build (default)
+    try {
+      run(`uv build --wheel --out-dir ${publicDistDir}`, REPO_ROOT)
+    } catch (_e) {
+      console.warn('uv build failed, trying uv run python -m build')
+      try {
+        run(`uv run --all-extras python -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT)
+      } catch (_e2) {
+        console.warn('uv run failed, falling back to .venv/bin/python3')
+        run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT)
+      }
+    }
   }
 
   // Find the wheel
