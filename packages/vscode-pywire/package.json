@@ -12,7 +12,14 @@
   "categories": [
     "Programming Languages"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pywire/pywire"
+  },
   "main": "./out/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "extensionDependencies": [
     "ms-python.python"
   ],
@@ -64,10 +71,19 @@
           "type": "boolean",
           "default": false,
           "description": "If true, bypasses Pylance middleware and uses the bundled Pyright from the language server. Useful for testing fallback mode."
+        },
+        "pywire.disableUpdateNotifications": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disable periodic checks for PyWire updates."
         }
       }
     },
     "commands": [
+      {
+        "command": "pywire.update",
+        "title": "PyWire: Attempt Upgrade"
+      },
       {
         "command": "pywire.toggleComment",
         "title": "PyWire: Toggle Comment"

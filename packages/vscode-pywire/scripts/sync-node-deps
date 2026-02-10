@@ -15,14 +15,31 @@ get_latest_tag() {
     fi
 }
 
+# Determine build mode
 if [ "$PYWIRE_RELEASE" = "1" ]; then
-    echo "Release mode detected for Node dependencies. Fetching latest tag..."
-    REF=$(get_latest_tag)
-    echo "Using prettier-plugin-pywire@$REF"
+    MODE="publish"
+elif [ "$GITHUB_ACTIONS" = "true" ]; then
+    MODE="ci"
 else
-    REF="main"
-    echo "Dev/CI mode. Using prettier-plugin-pywire@main"
+    MODE="local"
 fi
+
+case "$MODE" in
+    publish)
+        echo "Release mode detected. Fetching latest tag..."
+        REF=$(get_latest_tag)
+        ;;
+    ci)
+        echo "CI mode. Using main."
+        REF="main"
+        ;;
+    *)
+        echo "Local mode. Using main."
+        REF="main"
+        ;;
+esac
+
+echo "Using prettier-plugin-pywire@$REF"
 
 # Check current version in package.json to avoid unnecessary pnpm add
 CURRENT=$(grep -o "prettier-plugin-pywire\": \"git+$REPO_URL#[^\"]*" package.json | sed "s|.*#||" || echo "")

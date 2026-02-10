@@ -16,7 +16,7 @@ importers:
         version: 3.8.1
       prettier-plugin-pywire:
         specifier: github:pywire/prettier-plugin-pywire#main
-        version: https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/41da0704ad3e1d26f5a2f3902b6b02d5214bd212(prettier@3.8.1)(typescript@5.9.3)
+        version: https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/da85edf7bff12ba04c7654916a7220ad124f9ac6(prettier@3.8.1)(typescript@5.9.3)
       vscode-languageclient:
         specifier: ^9.0.1
         version: 9.0.1
@@ -1187,8 +1187,8 @@ packages:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
 
-  prettier-plugin-pywire@https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/41da0704ad3e1d26f5a2f3902b6b02d5214bd212:
-    resolution: {tarball: https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/41da0704ad3e1d26f5a2f3902b6b02d5214bd212}
+  prettier-plugin-pywire@https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/da85edf7bff12ba04c7654916a7220ad124f9ac6:
+    resolution: {tarball: https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/da85edf7bff12ba04c7654916a7220ad124f9ac6}
     version: 0.1.0
     peerDependencies:
       prettier: ^3.0.0
@@ -2677,7 +2677,7 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
-  prettier-plugin-pywire@https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/41da0704ad3e1d26f5a2f3902b6b02d5214bd212(prettier@3.8.1)(typescript@5.9.3):
+  prettier-plugin-pywire@https://codeload.github.com/pywire/prettier-plugin-pywire/tar.gz/da85edf7bff12ba04c7654916a7220ad124f9ac6(prettier@3.8.1)(typescript@5.9.3):
     dependencies:
       '@iarna/toml': 2.2.5
       '@wasm-fmt/ruff_fmt': 0.9.7

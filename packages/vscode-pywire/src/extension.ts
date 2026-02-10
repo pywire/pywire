@@ -38,6 +38,7 @@ import {
   ProvideReferencesSignature,
   ProvideCompletionItemsSignature,
 } from 'vscode-languageclient/node'
+import { setupUpdateCheck, performUpdate } from './updateCheck'
 
 type PrettierModule = typeof import('prettier')
 type PrettierPlugin = import('prettier').Plugin
@@ -1137,6 +1138,13 @@ export function activate(context: ExtensionContext) {
   })
   context.subscriptions.push(restartCmd)
 
+  // Register Update command
+  context.subscriptions.push(
+    commands.registerCommand('pywire.update', async () => {
+      await performUpdate()
+    })
+  )
+
   // Register Open Docs commands
   context.subscriptions.push(
     commands.registerCommand('pywire.openDocs', () => {
@@ -1198,6 +1206,9 @@ export function activate(context: ExtensionContext) {
 
   // Start the client initially
   startLanguageClient()
+
+  // Setup periodic update checks
+  setupUpdateCheck(context)
 }
 
 export function deactivate(): Promise<void> | undefined {
