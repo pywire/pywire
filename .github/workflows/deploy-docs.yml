@@ -74,7 +74,7 @@ jobs:
         working-directory: pywire
         env:
           PYWIRE_WASM_BUILD: "1"
-          RUSTFLAGS: "-C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0"
+          CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: "-C target-feature=-bulk-memory -C link-arg=-sWASM_OPT=0"
           CFLAGS: "-mno-bulk-memory"
           CXXFLAGS: "-mno-bulk-memory"
           EMCC_SKIP_WASM_OPT: "1"
