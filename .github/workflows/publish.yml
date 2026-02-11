@@ -64,6 +64,9 @@ jobs:
           CIBW_SKIP: "cp37-* cp38-* cp39-* cp310-*"
           CIBW_ARCHS: "auto64"
           CIBW_BUILD_FRONTEND: "build"
+          # Linux builds run in a container, so we need to install Rust inside it.
+          CIBW_BEFORE_ALL_LINUX: "curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y"
+          CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
         with:
           package-dir: pywire
           output-dir: wheelhouse
