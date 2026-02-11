@@ -81,18 +81,17 @@ async function main() {
   // Otherwise, use standard uv build for native wheel (default)
   if (process.env.PYWIRE_WASM_BUILD === '1') {
     // Build directly to public/dist using pyodide build via uv
-    // We specify dependencies/versions explicitly to match the docs runtime (Pyodide 0.29.x -> Emscripten 3.1.58)
+    // We specify dependencies/versions explicitly to match the docs runtime (Pyodide 0.29.x -> Emscripten 4.0.9)
     try {
       // Requires python >= 3.12 for pyodide-build 0.29.3
       // Requires wheel < 0.40.0 for auditwheel-emscripten compatibility
       // Requires prerelease=allow for pyodide-lock 0.1.0a7 dependency
       const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
 
-      // Use default target flags for the upgraded Emscripten 3.1.64
-      // We still use target-specific RUSTFLAGS to avoid poisoning host builds
+      // Use default target flags for the upgraded Emscripten 4.0.9
+      // We still protect host builds from potential WASM-specific environment leakage
       const env = {
         ...process.env,
-        CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: (process.env.RUSTFLAGS || ''),
         // Protect host builds from potential WASM-specific environment leakage
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '',
         EMCC_SKIP_WASM_OPT: '1',
@@ -101,7 +100,7 @@ async function main() {
       delete env.RUSTFLAGS
       delete env.CFLAGS
       delete env.CXXFLAGS
-      console.log('Building with default target flags for Emscripten 3.1.64')
+      console.log('Building with default target flags for Emscripten 4.0.9')
       console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
 
       execSync(pyodideCmd, { cwd: REPO_ROOT, stdio: 'inherit', env })

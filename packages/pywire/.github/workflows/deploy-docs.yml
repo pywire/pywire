@@ -54,10 +54,10 @@ jobs:
         with:
           targets: wasm32-unknown-emscripten
 
-      - name: Setup Emscripten 3.1.64
+      - name: Setup Emscripten 4.0.9
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.64
+          version: 4.0.9
           actions-cache-folder: 'emsdk-cache'
 
       - name: Install uv
