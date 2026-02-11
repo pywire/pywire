@@ -2,7 +2,7 @@
   "name": "pywire",
   "displayName": "PyWire",
   "description": "Language support for PyWire files",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "publisher": "pywire",
   "icon": "images/icon.jpg",
