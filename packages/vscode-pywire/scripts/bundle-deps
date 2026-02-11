@@ -14,7 +14,6 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     PYTHON_BIN="python3"
 fi
 
-PYWIRE_REPO="https://github.com/pywire/pywire.git"
 PYWIRE_LS_REPO="https://github.com/pywire/pywire-language-server.git"
 
 resolve_local_src() {
@@ -54,19 +53,11 @@ echo "Bundling mode: $MODE"
 
 case "$MODE" in
     publish)
-        PYWIRE_REF="$(get_latest_tag "$PYWIRE_REPO")"
         PYWIRE_LS_REF="$(get_latest_tag "$PYWIRE_LS_REPO")"
-        DEPS="pygls pyright git+$PYWIRE_REPO@$PYWIRE_REF git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
+        DEPS="pygls pyright git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
         ;;
     ci)
         DEPS="pygls pyright"
-
-        if [ -n "$PYWIRE_SRC" ]; then
-             pywire_path="$(resolve_local_src "$PYWIRE_SRC")"
-             DEPS="$DEPS $pywire_path"
-        else
-             DEPS="$DEPS git+$PYWIRE_REPO@main"
-        fi
 
         if [ -n "$PYWIRE_LANGUAGE_SERVER_SRC" ]; then
              pywire_ls_path="$(resolve_local_src "$PYWIRE_LANGUAGE_SERVER_SRC")"
@@ -77,15 +68,9 @@ case "$MODE" in
         ;;
     *)
         # Local development mode
-        pywire_path="$(resolve_local_src "${PYWIRE_SRC:-../pywire}")" || pywire_path=""
         pywire_ls_path="$(resolve_local_src "${PYWIRE_LANGUAGE_SERVER_SRC:-../pywire-language-server}")" || pywire_ls_path=""
         
         DEPS="pygls pyright"
-        if [ -n "$pywire_path" ]; then
-            DEPS="$DEPS $pywire_path"
-        else
-            DEPS="$DEPS git+$PYWIRE_REPO@main"
-        fi
         
         if [ -n "$pywire_ls_path" ]; then
             DEPS="$DEPS $pywire_ls_path"
