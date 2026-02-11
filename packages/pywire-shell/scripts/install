@@ -1,0 +1,13 @@
+#!/bin/sh -e
+set -x
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PRJ_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+
+echo "--- Syncing Python Environment (pywire-shell) ---"
+cd "$PRJ_DIR"
+uv sync --all-extras
+
+echo "--- Building Rust Runtime (pywire_servo) ---"
+cd "$PRJ_DIR/rust/pywire_servo"
+cargo build

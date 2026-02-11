@@ -1,0 +1,29 @@
+#!/bin/bash
+set -e
+
+# Repository configuration
+SERVO_REPO="https://github.com/servo/servo"
+# Using main for now to ensure fetch works
+SERVO_REV="main" 
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$( dirname "$SCRIPT_DIR" )"
+UPSTREAM_DIR="$PROJECT_DIR/servo-upstream"
+
+echo "[setup-servo] Ensuring servo-upstream exists for resources..."
+
+if [ ! -d "$UPSTREAM_DIR" ]; then
+    echo "[setup-servo] Cloning servo (shallow)..."
+    git clone --depth 1 "$SERVO_REPO" "$UPSTREAM_DIR"
+    cd "$UPSTREAM_DIR"
+    git fetch --depth 1 origin "$SERVO_REV"
+    git checkout "$SERVO_REV"
+else
+    echo "[setup-servo] servo-upstream already exists. Updating to $SERVO_REV..."
+    cd "$UPSTREAM_DIR"
+    git fetch --depth 1 origin "$SERVO_REV"
+    git checkout "$SERVO_REV"
+fi
+
+echo "[setup-servo] Servo resources ready at $UPSTREAM_DIR/resources"
+echo "[setup-servo] IMPORTANT: Run 'export SERVO_RESOURCES_PATH=$UPSTREAM_DIR/resources' before running the shell."
