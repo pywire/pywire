@@ -5,13 +5,18 @@ on:
     tags:
       - "v*"
 
+permissions:
+  id-token: write
+  contents: write
+
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      id-token: write
-      contents: write
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
     steps:
       - name: Checkout pywire
         uses: actions/checkout@v4
@@ -24,7 +29,6 @@ jobs:
         working-directory: pywire/tree-sitter-pywire
         run: |
           git fetch --tags
-          # Get latest tag (v*) sorted by version
           LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
           echo "Checking out $LATEST_TAG"
           git checkout $LATEST_TAG
@@ -41,16 +45,94 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: 'pywire/src/pywire/client/pnpm-lock.yaml'
 
+      - name: Build client bundle
+        working-directory: pywire
+        run: |
+          cd src/pywire/client
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.22.0
+        env:
+          CIBW_SKIP: "cp37-* cp38-* cp39-* cp310-*"
+          CIBW_ARCHS: "auto64"
+          CIBW_BUILD_FRONTEND: "build"
+        with:
+          package-dir: pywire
+          output-dir: wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pywire
+        uses: actions/checkout@v4
+        with:
+          path: pywire
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Update tree-sitter-pywire submodule (Latest Tag)
+        working-directory: pywire/tree-sitter-pywire
+        run: |
+          git fetch --tags
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          echo "Checking out $LATEST_TAG"
+          git checkout $LATEST_TAG
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'pywire/src/pywire/client/pnpm-lock.yaml'
+
+      - name: Build client bundle
+        working-directory: pywire
+        run: |
+          cd src/pywire/client
+          pnpm install --frozen-lockfile
+          pnpm build
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
 
-      - name: Build
-        run: uv build
+      - name: Build sdist
+        run: uv build --sdist
         working-directory: pywire
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: pywire/dist/*.tar.gz
+
+  publish:
+    name: Publish
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: pywire/dist/
+          packages-dir: dist/

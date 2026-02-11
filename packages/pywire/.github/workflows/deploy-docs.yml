@@ -31,13 +31,16 @@ jobs:
         with:
           path: pywire
           fetch-depth: 0
+          submodules: recursive
 
-      - name: Checkout tree-sitter-pywire
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/tree-sitter-pywire
-          path: tree-sitter-pywire
-          fetch-depth: 0
+      - name: Update tree-sitter-pywire submodule (Latest Tag)
+        working-directory: pywire/tree-sitter-pywire
+        run: |
+          git fetch --tags
+          # Get latest tag (v*) sorted by version
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          echo "Checking out $LATEST_TAG"
+          git checkout $LATEST_TAG
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
