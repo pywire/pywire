@@ -92,6 +92,7 @@ async function main() {
       // We still protect host builds from potential WASM-specific environment leakage
       const env = {
         ...process.env,
+        PYODIDE_XBUILDENV_URL: 'https://github.com/pyodide/pyodide/releases/download/0.29.3/xbuildenv-0.29.3.tar.bz2',
         // Protect host builds from potential WASM-specific environment leakage
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '',
         EMCC_SKIP_WASM_OPT: '1',

@@ -18,20 +18,16 @@ jobs:
         with:
           path: pywire
           fetch-depth: 0
+          submodules: recursive
 
-      - name: Get latest tree-sitter-pywire tag
-        id: ts_tag
+      - name: Update tree-sitter-pywire submodule (Latest Tag)
+        working-directory: pywire/tree-sitter-pywire
         run: |
-          TAG=$(git ls-remote --tags --sort='v:refname' https://github.com/${{ github.repository_owner }}/tree-sitter-pywire.git 'v*' | tail -n1 | cut -f2 | sed 's|refs/tags/||')
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Checkout tree-sitter-pywire
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/tree-sitter-pywire
-          path: tree-sitter-pywire
-          ref: ${{ steps.ts_tag.outputs.tag }}
-          fetch-depth: 0
+          git fetch --tags
+          # Get latest tag (v*) sorted by version
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          echo "Checking out $LATEST_TAG"
+          git checkout $LATEST_TAG
 
       - name: Install pnpm
         uses: pnpm/action-setup@v2

@@ -1,0 +1,3 @@
+[submodule "tree-sitter-pywire"]
+	path = tree-sitter-pywire
+	url = https://github.com/pywire/tree-sitter-pywire.git
