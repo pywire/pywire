@@ -27,6 +27,7 @@ jobs:
 
       - name: Update tree-sitter-pywire submodule (Latest Tag)
         working-directory: pywire/tree-sitter-pywire
+        shell: bash
         run: |
           git fetch --tags
           LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
@@ -80,6 +81,7 @@ jobs:
 
       - name: Update tree-sitter-pywire submodule (Latest Tag)
         working-directory: pywire/tree-sitter-pywire
+        shell: bash
         run: |
           git fetch --tags
           LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
