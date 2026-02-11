@@ -233,7 +233,6 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
                 let kind = child.kind();
                 if kind == "attribute" {
                     let mut is_shorthand = false;
-                    let mut cursor2 = child.walk();
 
                     let mut cursor_logic = child.walk();
                     for attr_child in child.children(&mut cursor_logic) {
