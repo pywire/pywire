@@ -46,6 +46,11 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: 'pywire/src/pywire/client/pnpm-lock.yaml'
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Build client bundle
         working-directory: pywire
         run: |
