@@ -25,15 +25,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Update tree-sitter-pywire submodule (Latest Tag)
-        working-directory: pywire/tree-sitter-pywire
-        shell: bash
-        run: |
-          git fetch --tags
-          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-          echo "Checking out $LATEST_TAG"
-          git checkout $LATEST_TAG
-
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
@@ -86,15 +77,6 @@ jobs:
           path: pywire
           fetch-depth: 0
           submodules: recursive
-
-      - name: Update tree-sitter-pywire submodule (Latest Tag)
-        working-directory: pywire/tree-sitter-pywire
-        shell: bash
-        run: |
-          git fetch --tags
-          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-          echo "Checking out $LATEST_TAG"
-          git checkout $LATEST_TAG
 
       - name: Install pnpm
         uses: pnpm/action-setup@v2
