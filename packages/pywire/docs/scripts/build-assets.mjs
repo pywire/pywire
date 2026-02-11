@@ -83,10 +83,19 @@ async function main() {
     // Build directly to public/dist using pyodide build via uv
     // We specify dependencies/versions explicitly to match the docs runtime (Pyodide 0.29.x -> Emscripten 4.0.9)
     try {
+      // 1. Clean up any stale xbuildenv to ensure we use the targeted version
+      // pyodide-build defaults to .pyodide-xbuildenv in the current directory if it exists
+      const staleXbuildenv = path.join(REPO_ROOT, '.pyodide-xbuildenv')
+      if (fs.existsSync(staleXbuildenv)) {
+        console.log(`Removing stale xbuildenv at ${staleXbuildenv}`)
+        fs.rmSync(staleXbuildenv, { recursive: true, force: true })
+      }
+
       // Requires python >= 3.12 for pyodide-build 0.29.3
       // Requires wheel < 0.40.0 for auditwheel-emscripten compatibility
       // Requires prerelease=allow for pyodide-lock 0.1.0a7 dependency
-      const pyodideCmd = `uv run --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
+      // We use --no-project to prevent uv from trying to build/install the local project into the temporary tool environment
+      const pyodideCmd = `uv run --no-project --prerelease=allow --python 3.12 --with "pyodide-build==0.29.3" --with "wheel<0.40.0" --with pip pyodide build --outdir ${publicDistDir}`
 
       // Use default target flags for the upgraded Emscripten 4.0.9
       // We still protect host builds from potential WASM-specific environment leakage
@@ -101,6 +110,9 @@ async function main() {
       delete env.RUSTFLAGS
       delete env.CFLAGS
       delete env.CXXFLAGS
+      delete env.VIRTUAL_ENV
+      delete env.PYTHONPATH
+
       console.log('Building with default target flags for Emscripten 4.0.9')
       console.log('Skipping wasm-opt (EMCC_SKIP_WASM_OPT=1)')
 
