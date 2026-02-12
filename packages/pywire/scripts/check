@@ -38,4 +38,4 @@ fi
 
 echo "-> Testing (Multi-version)..."
 # Use uv run to execute nox from dev dependencies
-uv run nox
+uv run --extra dev nox

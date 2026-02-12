@@ -3,7 +3,7 @@
 set -ex
 
 # Run Python tests
-uv run pytest --cov=pywire $@
+uv run --extra dev pytest --cov=pywire $@
 
 # Run client tests
 cd src/pywire/client && pnpm test
