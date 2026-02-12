@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = 'pywire-pyodide-cache-v3'
+const CACHE_NAME = 'pywire-pyodide-cache-v4'
 const PYODIDE_VERSION = '0.29.3'
 const PYODIDE_BASE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
 

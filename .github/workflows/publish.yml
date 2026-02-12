@@ -21,9 +21,34 @@ jobs:
       - name: Checkout pywire
         uses: actions/checkout@v4
         with:
-          path: pywire
           fetch-depth: 0
           submodules: recursive
+
+      - name: Repair Git metadata for act
+        if: ${{ env.ACT }}
+        run: |
+          # If .git is a file, it's a submodule link (likely broken in act)
+          if [ -f .git ] && grep -q "gitdir:" .git; then
+            echo "Detected broken submodule Git metadata inside container. Repairing..."
+            rm .git
+            git init
+            git remote add origin https://github.com/pywire/pywire.git
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+          else
+            echo "Git metadata looks correct or already repaired."
+          fi
+
+          # Broken submodules will have a .git file pointing to a non-existent path on the host.
+          # We must remove these directories so git can re-clone them properly.
+          echo "Searching for broken submodule links..."
+          find . -mindepth 2 -name ".git" -type f -exec grep -q "gitdir:" {} \; -print | while read broken_git; do
+            submod_dir=$(dirname "$broken_git")
+            echo "Removing broken submodule directory: $submod_dir"
+            rm -rf "$submod_dir"
+          done
+
+          git submodule update --init --recursive
 
       - name: Get version
         id: version
@@ -40,22 +65,15 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: 'pywire/src/pywire/client/pnpm-lock.yaml'
+          cache-dependency-path: 'src/pywire/client/pnpm-lock.yaml'
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Build client bundle
-        working-directory: pywire
-        run: |
-          cd src/pywire/client
-          pnpm install --frozen-lockfile
-          pnpm build
-
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.22.0
+        uses: pypa/cibuildwheel@v3.3.1
         env:
           CIBW_SKIP: "cp37-* cp38-* cp39-* cp310-*"
           CIBW_ARCHS: "auto64"
@@ -65,10 +83,11 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: "curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH" SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.VERSION }}'
         with:
-          package-dir: pywire
+          package-dir: .
           output-dir: wheelhouse
 
       - uses: actions/upload-artifact@v4
+        if: ${{ !env.ACT }}
         with:
           name: cibw-wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
@@ -80,9 +99,34 @@ jobs:
       - name: Checkout pywire
         uses: actions/checkout@v4
         with:
-          path: pywire
           fetch-depth: 0
           submodules: recursive
+
+      - name: Repair Git metadata for act
+        if: ${{ env.ACT }}
+        run: |
+          # If .git is a file, it's a submodule link (likely broken in act)
+          if [ -f .git ] && grep -q "gitdir:" .git; then
+            echo "Detected broken submodule Git metadata inside container. Repairing..."
+            rm .git
+            git init
+            git remote add origin https://github.com/pywire/pywire.git
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+          else
+            echo "Git metadata looks correct or already repaired."
+          fi
+
+          # Broken submodules will have a .git file pointing to a non-existent path on the host.
+          # We must remove these directories so git can re-clone them properly.
+          echo "Searching for broken submodule links..."
+          find . -mindepth 2 -name ".git" -type f -exec grep -q "gitdir:" {} \; -print | while read broken_git; do
+            submod_dir=$(dirname "$broken_git")
+            echo "Removing broken submodule directory: $submod_dir"
+            rm -rf "$submod_dir"
+          done
+
+          git submodule update --init --recursive
 
       - name: Get version
         id: version
@@ -99,10 +143,14 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: 'pywire/src/pywire/client/pnpm-lock.yaml'
+          cache-dependency-path: 'src/pywire/client/pnpm-lock.yaml'
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
       - name: Build client bundle
-        working-directory: pywire
         run: |
           cd src/pywire/client
           pnpm install --frozen-lockfile
@@ -113,14 +161,14 @@ jobs:
 
       - name: Build sdist
         run: uv build --sdist
-        working-directory: pywire
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.VERSION }}
 
       - uses: actions/upload-artifact@v4
+        if: ${{ !env.ACT }}
         with:
           name: cibw-sdist
-          path: pywire/dist/*.tar.gz
+          path: dist/*.tar.gz
 
   publish:
     name: Publish
