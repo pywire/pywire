@@ -75,3 +75,9 @@ allowed-unresolved-imports = [
 [[tool.ty.overrides]]
 include = ["tests/**"]
 rules = { possibly-missing-attribute = "ignore", invalid-argument-type = "ignore", unresolved-attribute = "ignore", call-non-callable = "ignore", invalid-method-override = "ignore", redundant-cast = "ignore" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["emsdk", "docs", "src/pywire/client"]
+addopts = "--cov=pywire"
+asyncio_mode = "strict"

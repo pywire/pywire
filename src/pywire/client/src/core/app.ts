@@ -105,8 +105,6 @@ export class PyWireApp {
         this.pjaxEnabled = !!meta.enable_pjax
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
-          logger.setDebug(!!meta.debug)
-          this.updater.setDebug(!!meta.debug)
         }
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))

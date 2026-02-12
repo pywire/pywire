@@ -15,7 +15,7 @@ from typing import (
     Tuple,
     Union,
 )
-import asyncio
+import logging
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
 from pywire.runtime.style_collector import StyleCollector
+
+logger = logging.getLogger(__name__)
 
 
 class DotDict(dict):
@@ -163,9 +165,7 @@ class BasePage:
         self._captured_deps: Set[Tuple[Any, str]] = set()
 
         self._instance_id = id(self)
-        self._instance_id = id(self)
-        if self._is_debug:
-            print(f"DEBUG: [{self._instance_id}] BasePage initialized")
+        logger.debug(f"[{self._instance_id}] BasePage initialized")
 
         # Await block state: await_id -> {"status": "pending"|"success"|"error", "result": Any, "error": Any}
 
@@ -420,10 +420,9 @@ class BasePage:
         self._wire_subscribers[key].add(region_id)
         self._region_dependencies[region_id].add(key)
 
-        if self._is_debug:
-            print(
-                f"DEBUG register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
-            )
+        logger.debug(
+            f"register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
+        )
 
         if self._capturing_deps:
             self._captured_deps.add(key)
@@ -434,10 +433,9 @@ class BasePage:
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
 
-        if self._is_debug:
-            print(
-                f"DEBUG invalidate_wire: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}"
-            )
+        logger.debug(
+            f"invalidate_wire: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}"
+        )
 
         if regions:
             self._dirty_regions.update(regions)
@@ -528,14 +526,13 @@ class BasePage:
         return await self.render_update(init=False)
 
     async def render_update(self, init: bool = False) -> Dict[str, Any]:
-        if self._is_debug:
-            # DEBUG: Trace region state
-            has_regions = hasattr(self, "__region_renderers__")
-            region_map = getattr(self, "__region_renderers__", {})
-            dirty: Set[str] = getattr(self, "_dirty_regions", set())
-            print(
-                f"DEBUG render_update: init={init}, has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}"
-            )
+        # DEBUG: Trace region state
+        has_regions = hasattr(self, "__region_renderers__")
+        region_map = getattr(self, "__region_renderers__", {})
+        dirty = getattr(self, "_dirty_regions", set())
+        logger.debug(
+            f"render_update: init={init}, has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}"
+        )
 
         # Optimization: If we have region renderers (compiled page) and this is a partial update (init=False),
         # check if we really need to update anything.
@@ -545,8 +542,7 @@ class BasePage:
                 # print("DEBUG render_update: No dirty regions, returning empty regions list")
                 return {"type": "regions", "regions": []}
 
-            if self._is_debug:
-                print(f"DEBUG render_update: dirty_regions={self._dirty_regions}")
+            logger.debug(f"render_update: dirty_regions={self._dirty_regions}")
 
             # Check for Root invalidation (None in dirty set)
             # If the root scope is dirty, we must do a full render.
@@ -589,20 +585,14 @@ class BasePage:
 
         response = await self.render(init=init)
         html = bytes(response.body).decode("utf-8")
-        if self._is_debug:
-            print(f"DEBUG render_update: returning FULL update (len={len(html)})")
-            if "Test" in html:
-                print("DEBUG render_update: HTML contains 'Test'")
-            else:
-                print("DEBUG render_update: HTML does NOT contain 'Test'")
+        logger.debug(f"render_update: returning FULL update (len={len(html)})")
         return {"type": "full", "html": html}
 
     async def push_state(self) -> None:
         """Force a UI update with current state (useful for streaming progress)."""
-        if self._is_debug:
-            print(
-                f"DEBUG: [{self._instance_id}] push_state called. Has _on_update: {bool(self._on_update)}"
-            )
+        logger.debug(
+            f"[{self._instance_id}] push_state called. Has _on_update: {bool(self._on_update)}"
+        )
         if self._on_update:
             if inspect.iscoroutinefunction(self._on_update):
                 await self._on_update()
@@ -613,8 +603,7 @@ class BasePage:
         """Background task to resolve an await block and trigger update."""
         import inspect
 
-        if self._is_debug:
-            print(f"DEBUG: [{self._instance_id}] Starting resolution for {await_id}")
+        logger.debug(f"[{self._instance_id}] Starting resolution for {await_id}")
         self._await_states[await_id] = {
             "status": "pending",
             "result": None,
@@ -627,20 +616,18 @@ class BasePage:
             else:
                 result = awaitable
 
-            if self._is_debug:
-                print(
-                    f"DEBUG: [{self._instance_id}] Resolution success for {await_id}: {result}"
-                )
+            logger.debug(
+                f"[{self._instance_id}] Resolution success for {await_id}: {result}"
+            )
             self._await_states[await_id] = {
                 "status": "success",
                 "result": result,
                 "error": None,
             }
         except Exception as e:
-            if self._is_debug:
-                print(
-                    f"DEBUG: [{self._instance_id}] Resolution error for {await_id}: {e}"
-                )
+            logger.debug(
+                f"[{self._instance_id}] Resolution error for {await_id}: {e}"
+            )
             self._await_states[await_id] = {
                 "status": "error",
                 "result": None,
@@ -649,15 +636,13 @@ class BasePage:
 
         # Mark region as dirty and push state
         self._dirty_regions.add(await_id)
-        if self._is_debug:
-            print(
-                f"DEBUG: [{self._instance_id}] Marked {await_id} dirty. Calls push_state..."
-            )
+        logger.debug(
+            f"[{self._instance_id}] Marked {await_id} dirty. Calls push_state..."
+        )
         try:
             await self.push_state()
         except Exception as e:
-            if self._is_debug:
-                print(f"DEBUG: [{self._instance_id}] push_state failed: {e}")
+            logger.debug(f"[{self._instance_id}] push_state failed: {e}")
             # push_state might fail if connection closed
             pass
 

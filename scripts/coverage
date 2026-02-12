@@ -2,4 +2,4 @@
 
 set -x
 
-uv run coverage report --show-missing --skip-covered
+uv run --extra dev coverage report --show-missing --skip-covered
