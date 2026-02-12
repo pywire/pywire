@@ -29,12 +29,37 @@ jobs:
       - name: Checkout pywire
         uses: actions/checkout@v4
         with:
-          path: pywire
           fetch-depth: 0
           submodules: recursive
 
+      - name: Repair Git metadata for act
+        if: ${{ env.ACT }}
+        run: |
+          # If .git is a file, it's a submodule link (likely broken in act)
+          if [ -f .git ] && grep -q "gitdir:" .git; then
+            echo "Detected broken submodule Git metadata inside container. Repairing..."
+            rm .git
+            git init
+            git remote add origin https://github.com/pywire/pywire.git
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+          else
+            echo "Git metadata looks correct or already repaired."
+          fi
+
+          # Broken submodules will have a .git file pointing to a non-existent path on the host.
+          # We must remove these directories so git can re-clone them properly.
+          echo "Searching for broken submodule links..."
+          find . -mindepth 2 -name ".git" -type f -exec grep -q "gitdir:" {} \; -print | while read broken_git; do
+            submod_dir=$(dirname "$broken_git")
+            echo "Removing broken submodule directory: $submod_dir"
+            rm -rf "$submod_dir"
+          done
+
+          git submodule update --init --recursive
+
       - name: Update tree-sitter-pywire submodule (Latest Tag)
-        working-directory: pywire/tree-sitter-pywire
+        working-directory: tree-sitter-pywire
         run: |
           git fetch --tags
           # Get latest tag (v*) sorted by version
@@ -66,17 +91,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           enable-cache: true
 
       - name: Install dependencies
-        working-directory: pywire
         run: |
           cd docs
           pnpm install
 
       - name: Build
-        working-directory: pywire
         env:
           PYWIRE_WASM_BUILD: "1"
           EMCC_SKIP_WASM_OPT: "1"
@@ -90,7 +113,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: pywire-docs
-          directory: pywire/docs/dist
+          directory: docs/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ (github.event.inputs.environment == 'production' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/docs-')) && 'main' || 'nightly' }}
 

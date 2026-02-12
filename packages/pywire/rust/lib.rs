@@ -136,14 +136,19 @@ fn map_any_directive(source: &str, node: Node) -> ParsedDirective {
     let trimmed = text.trim();
 
     // name starts after '!' and ends at first non-word char
-    let name_end = trimmed[1..]
+    let name_part_full = if let Some(stripped) = trimmed.strip_prefix('!') {
+        stripped
+    } else {
+        trimmed
+    };
+
+    let name_end = name_part_full
         .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .map(|i| i + 1)
-        .unwrap_or(trimmed.len());
-    let name_part = &trimmed[1..name_end];
+        .unwrap_or(name_part_full.len());
+    let name_part = &name_part_full[..name_end];
 
     // content is everything after the name
-    let content_part = trimmed[name_end..].trim();
+    let content_part = name_part_full[name_end..].trim();
     let content = if content_part.is_empty() {
         None
     } else {
@@ -183,7 +188,7 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
                 tag = Some(get_node_text(source, name_node));
             } else if let Some(start_node) = node.child_by_field_name("start_tag") {
                 let text = get_node_text(source, start_node);
-                tag = Some(text[1..].to_string());
+                tag = text.strip_prefix('<').map(|s| s.to_string());
             } else if node.kind() == "script_tag" {
                 tag = Some("script".to_string());
             } else if node.kind() == "style_tag" {
@@ -219,8 +224,8 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
                             expression: None,
                             attributes: HashMap::new(),
                             children: Vec::new(),
-                            line: line,
-                            column: column,
+                            line,
+                            column,
                             is_raw: true,
                         };
                         children.push(Py::new(py, text_node)?);
@@ -304,9 +309,9 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
                 "html",
             ];
             for kw in keywords {
-                if inner.starts_with(kw) {
+                if let Some(stripped) = inner.strip_prefix(kw) {
                     block_keyword = Some(kw.to_string());
-                    let rest = inner[kw.len()..].trim();
+                    let rest = stripped.trim();
                     if !rest.is_empty() {
                         expression = Some(rest.to_string());
                     }

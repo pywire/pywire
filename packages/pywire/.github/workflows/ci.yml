@@ -17,12 +17,36 @@ jobs:
       - name: Checkout pywire
         uses: actions/checkout@v4
         with:
-          path: pywire
           fetch-depth: 0
           submodules: recursive
 
+      - name: Repair Git metadata for act
+        if: ${{ env.ACT }}
+        run: |
+          # If .git is a file, it's a submodule link (likely broken in act)
+          if [ -f .git ] && grep -q "gitdir:" .git; then
+            echo "Detected broken submodule Git metadata inside container. Repairing..."
+            rm .git
+            git init
+            git remote add origin https://github.com/pywire/pywire.git
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+          else
+            echo "Git metadata looks correct or already repaired."
+          fi
+
+          # Broken submodules will have a .git file pointing to a non-existent path on the host.
+          # We must remove these directories so git can re-clone them properly.
+          echo "Searching for broken submodule links..."
+          find . -mindepth 2 -name ".git" -type f -exec grep -q "gitdir:" {} \; -print | while read broken_git; do
+            submod_dir=$(dirname "$broken_git")
+            echo "Removing broken submodule directory: $submod_dir"
+            rm -rf "$submod_dir"
+          done
+
+          git submodule update --init --recursive
+
       - name: Update tree-sitter-pywire submodule (Latest Main)
-        working-directory: pywire
         run: |
           git submodule update --remote --merge tree-sitter-pywire
 
@@ -40,16 +64,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Build client bundle
-        working-directory: pywire
         run: |
           cd src/pywire/client
           pnpm install --frozen-lockfile
           pnpm build
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Install dependencies
-        working-directory: pywire
         run: uv sync --all-extras
       - name: Run tests
-        working-directory: pywire
         run: uv run pytest
 
   build:
@@ -59,12 +85,36 @@ jobs:
       - name: Checkout pywire
         uses: actions/checkout@v4
         with:
-          path: pywire
           fetch-depth: 0
           submodules: recursive
 
+      - name: Repair Git metadata for act
+        if: ${{ env.ACT }}
+        run: |
+          # If .git is a file, it's a submodule link (likely broken in act)
+          if [ -f .git ] && grep -q "gitdir:" .git; then
+            echo "Detected broken submodule Git metadata inside container. Repairing..."
+            rm .git
+            git init
+            git remote add origin https://github.com/pywire/pywire.git
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+          else
+            echo "Git metadata looks correct or already repaired."
+          fi
+
+          # Broken submodules will have a .git file pointing to a non-existent path on the host.
+          # We must remove these directories so git can re-clone them properly.
+          echo "Searching for broken submodule links..."
+          find . -mindepth 2 -name ".git" -type f -exec grep -q "gitdir:" {} \; -print | while read broken_git; do
+            submod_dir=$(dirname "$broken_git")
+            echo "Removing broken submodule directory: $submod_dir"
+            rm -rf "$submod_dir"
+          done
+
+          git submodule update --init --recursive
+
       - name: Update tree-sitter-pywire submodule (Latest Main)
-        working-directory: pywire
         run: |
           git submodule update --remote --merge tree-sitter-pywire
       
@@ -84,8 +134,12 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Install dependencies
-        working-directory: pywire
         run: |
            # We need to install dependencies for docs and client before building
            (cd docs && pnpm install --frozen-lockfile)
@@ -93,5 +147,4 @@ jobs:
            uv sync --all-extras
 
       - name: Run build script
-        working-directory: pywire
         run: ./scripts/build
