@@ -35,32 +35,15 @@ jobs:
       - name: Repair Git metadata for act
         if: ${{ env.ACT }}
         run: |
-          # If .git is a file, it's a submodule link (likely broken in act)
-          if [ -f .git ] && grep -q "gitdir:" .git; then
-            echo "Detected broken submodule Git metadata inside container. Repairing..."
-            rm .git
-            git init
-            git remote add origin https://github.com/pywire/pywire.git
-            git fetch --depth=1 origin main
-            git reset --hard origin/main
-          else
-            echo "Git metadata looks correct or already repaired."
-          fi
-
-          # Broken submodules will have a .git file pointing to a non-existent path on the host.
-          # We must remove these directories so git can re-clone them properly.
-          echo "Searching for broken submodule links..."
-          find . -mindepth 2 -name ".git" -type f -exec grep -q "gitdir:" {} \; -print | while read broken_git; do
-            submod_dir=$(dirname "$broken_git")
-            echo "Removing broken submodule directory: $submod_dir"
-            rm -rf "$submod_dir"
-          done
-
-          git submodule update --init --recursive
+          echo "Skipping destructive Git metadata repair to protect local workspace."
 
       - name: Update tree-sitter-pywire submodule (Latest Tag)
         working-directory: tree-sitter-pywire
         run: |
+          if [ "${{ env.ACT }}" = "true" ]; then
+            echo "Running in Act: Skipping submodule git update. Using local state."
+            exit 0
+          fi
           git fetch --tags
           # Get latest tag (v*) sorted by version
           LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
