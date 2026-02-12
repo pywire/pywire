@@ -38,6 +38,8 @@ class MockRequest:
 
 
 class MockPage(BasePage):
+    __no_spa__ = True
+
     async def _render_template(self) -> str:
         return "<div>HTTP Page</div>"
 

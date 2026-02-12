@@ -14,6 +14,8 @@ class MockRequest:
         self.app = MockApp()
 
 class PartialUpdatePage(BasePage):
+    __no_spa__ = True
+
     def __init__(self, **kwargs):
         super().__init__(MockRequest(), {}, {}, **kwargs)
         self.count = wire(0)
