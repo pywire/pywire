@@ -6,11 +6,11 @@ __pycache__/
 .ruff_cache/
 .pyodide-*
 **/*.egg-info/*
+.coverage
 
 src/pywire/client/node_modules/
 src/pywire/client/dist/
 src/pywire/static/
-.coverage
 .pywire/
 src/pywire/_version.py
 dist/
@@ -21,3 +21,4 @@ src/pywire/*.so
 src/pywire/*.pyd
 Cargo.lock
 build/
+emsdk/

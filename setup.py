@@ -48,7 +48,13 @@ def build_client():
     nm = client_dir / "node_modules"
     if not nm.exists() or pkg_path.stat().st_mtime > nm.stat().st_mtime:
         log.info("Installing client dependencies...")
-        subprocess.run([pnpm, "install", "--frozen-lockfile"], cwd=client_dir, check=True)
+        subprocess.run(
+            [pnpm, "install", "--frozen-lockfile"],
+            cwd=client_dir,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            env={**os.environ, "CI": "true"},
+        )
 
     # Build if assets missing or src newer
     core_bundle = static_dir / "pywire.core.min.js"
@@ -62,7 +68,13 @@ def build_client():
     
     if needs_build:
         log.info("Building client assets...")
-        subprocess.run([pnpm, "run", "build"], cwd=client_dir, check=True)
+        subprocess.run(
+            [pnpm, "run", "build"],
+            cwd=client_dir,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            env={**os.environ, "CI": "true"},
+        )
 
 class BuildPy(build_py):
     def run(self):

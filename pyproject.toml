@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=61", "setuptools-rust", "setuptools-scm>=8"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
 
 [project]
 name = "pywire"
+version = "0.1.10"
 authors = [
     { name="Reece Holmdahl", email="reece@pywire.dev" },
 ]
-dynamic = ["version"]
 description = "HTML-over-the-wire Python web framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ dependencies = [
     "starlette>=0.35.0",
     "uvicorn[standard]>=0.27.0",
     "watchfiles>=0.21.0",
-    "jinja2>=3.1.0",  # For initial template parsing
+    "jinja2>=3.1.0",
     "msgpack>=1.0.0",
     "pydantic>=2.0.0",
     "textual>=7.4.0",
@@ -44,16 +44,21 @@ http3 = [
 [project.scripts]
 pywire = "pywire.cli.main:cli"
 
-[tool.setuptools_scm]
-write_to = "src/pywire/_version.py"
+[tool.maturin]
+manifest-path = "Cargo.toml"
+python-source = "src"
+module-name = "pywire._pywire_parser"
+features = ["pyo3/extension-module"]
+include = [
+    { path = "src/pywire/static/**", format = "sdist" },
+    { path = "src/pywire/templates/**", format = "sdist" },
+]
 
 [tool.ty.environment]
 python-version = "3.11"
 
 [tool.ty.src]
-exclude = [
-    "docs/public/shim.py",
-]
+exclude = ["docs/public/shim.py"]
 
 [tool.ty.analysis]
 allowed-unresolved-imports = [
@@ -66,19 +71,6 @@ allowed-unresolved-imports = [
     "js",
     "pyodide.**",
 ]
-
-
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-include-package-data = true
-
-[tool.setuptools.packages.find]
-where = ["src"]
-exclude = ["tests*", "docs*", "examples*"]
-
-[tool.setuptools.package-data]
-pywire = ["py.typed", "static/**", "templates/**"]
 
 [[tool.ty.overrides]]
 include = ["tests/**"]

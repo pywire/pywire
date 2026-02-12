@@ -315,16 +315,17 @@ class BasePage:
             is_component = getattr(self, "__is_component__", False)
 
             # Check if SPA features are enabled via attribute or app state
-            spa_enabled = getattr(self, "__spa_enabled__", False)
             pjax_enabled = False
             debug_mode = False
             try:
-                pjax_enabled = self.request.app.state.enable_pjax
-                debug_mode = self.request.app.state.debug
+                pjax_enabled = bool(
+                    getattr(self.request.app.state, "enable_pjax", False)
+                )
+                debug_mode = bool(getattr(self.request.app.state, "debug", False))
             except (AttributeError, KeyError):
                 pass
 
-            if not no_spa and not is_component and (spa_enabled or pjax_enabled):
+            if not no_spa and not is_component:
                 meta = {
                     "sibling_paths": getattr(self, "__sibling_paths__", []),
                     "enable_pjax": pjax_enabled,

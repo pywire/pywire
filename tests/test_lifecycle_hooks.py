@@ -35,6 +35,7 @@ class TestLifecycleHooks(unittest.TestCase):
 Verify top-level executable statements run on init=True."""
         content = """
 ---
+__no_spa__ = True
 print("Top Level Run")
 self.counter = 1
 ---
@@ -66,6 +67,7 @@ self.counter = 1
 Verify @mount decorated method runs on init."""
         content = """
 ---
+__no_spa__ = True
 @mount
 def initialize(self):
     self.mounted = True
@@ -89,6 +91,7 @@ def initialize(self):
 Verify order: top-level -> @mount."""
         content = """
 ---
+__no_spa__ = True
 if not hasattr(self, 'log'):
     self.log = []
 self.log.append('top_level')

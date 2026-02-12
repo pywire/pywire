@@ -1,6 +1,6 @@
 [package]
 name = "pywire"
-version = "0.2.0" # This will be managed by maturin, but we can keep it in sync.
+version = "0.1.10"
 edition = "2024"
 
 [lib]

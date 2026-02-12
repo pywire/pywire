@@ -126,14 +126,6 @@ class WireBase:
     def __hash__(self) -> int:
         return id(self)
 
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, WireBase):
-            return self is other
-        # For non-wire types, we compare value (unless overridden)
-        if hasattr(self, "value"):
-            return self.value == other
-        return super().__eq__(other)
-
     def __str__(self):
         if hasattr(self, "value"):
             return str(self.value)
@@ -204,6 +196,23 @@ class WirePrimitive(WireBase, Generic[T]):
         if isinstance(other, WireBase):
             return self is other
         return self.value == other
+
+    def __ne__(self, other: Any) -> bool:
+        if isinstance(other, WireBase):
+            return self is not other
+        return self.value != other
+
+    def __lt__(self, other: Any) -> bool:
+        return self.value < other
+
+    def __le__(self, other: Any) -> bool:
+        return self.value <= other
+
+    def __gt__(self, other: Any) -> bool:
+        return self.value > other
+
+    def __ge__(self, other: Any) -> bool:
+        return self.value >= other
 
     def __iadd__(self, other):
         self.value += other
@@ -292,6 +301,34 @@ class WireList(WireBase, list):
         super().reverse()
         self._notify_write()
 
+    def __len__(self):
+        self._track_read()
+        return super().__len__()
+
+    def __bool__(self):
+        self._track_read()
+        return super().__len__() > 0
+
+    def __lt__(self, other):
+        self._track_read()
+        return super().__lt__(other)
+
+    def __le__(self, other):
+        self._track_read()
+        return super().__le__(other)
+
+    def __gt__(self, other):
+        self._track_read()
+        return super().__gt__(other)
+
+    def __ge__(self, other):
+        self._track_read()
+        return super().__ge__(other)
+
+    def __ne__(self, other):
+        self._track_read()
+        return super().__ne__(other)
+
     def __iadd__(self, other):
         self._check_frozen()
         super().__iadd__(other)
@@ -375,6 +412,18 @@ class WireDict(WireBase, dict):
             return res
         return self[key]
 
+    def __len__(self):
+        self._track_read()
+        return super().__len__()
+
+    def __bool__(self):
+        self._track_read()
+        return super().__len__() > 0
+
+    def __ne__(self, other):
+        self._track_read()
+        return super().__ne__(other)
+
     def peek(self):
         return dict(self)
 
@@ -448,6 +497,34 @@ class WireSet(WireBase, set):
         self._check_frozen()
         super().symmetric_difference_update(*args)
         self._notify_write()
+
+    def __len__(self):
+        self._track_read()
+        return super().__len__()
+
+    def __bool__(self):
+        self._track_read()
+        return super().__len__() > 0
+
+    def __lt__(self, other):
+        self._track_read()
+        return super().__lt__(other)
+
+    def __le__(self, other):
+        self._track_read()
+        return super().__le__(other)
+
+    def __gt__(self, other):
+        self._track_read()
+        return super().__gt__(other)
+
+    def __ge__(self, other):
+        self._track_read()
+        return super().__ge__(other)
+
+    def __ne__(self, other):
+        self._track_read()
+        return super().__ne__(other)
 
     def peek(self):
         return set(self)
