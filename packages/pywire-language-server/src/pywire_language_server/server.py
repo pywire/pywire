@@ -63,158 +63,81 @@ KNOWN_ATTRIBUTES = {"if", "show", "for", "key", "ref", "permanent", "reload"}
 KNOWN_DIRECTIVES = {"!layout", "!path", "!no_spa"}
 
 
-class ShadowFileManager:
+class VirtualFileManager:
     """
-    Manages generation of shadow .py files for Ty consumption.
-    This mimics the behavior of the VS Code extension but on the server side.
+    Manages virtual .py documents for Ty consumption.
+    Does not write anything to disk.
     """
 
     def __init__(self, root_uri: str):
         self.root_uri = root_uri
         self.root_path = self._uri_to_path(root_uri)
-        if self.root_path:
-            self.pywire_dir = os.path.join(self.root_path, ".pywire")
-        else:
-            self.pywire_dir = ""  # Disable if no root path
-        
         # Store source maps for active documents
         self.source_maps: Dict[str, SourceMap] = {}
 
     def _uri_to_path(self, uri: str) -> Optional[str]:
-        # Simple parsing, in real world might need urllib
         if uri.startswith("file://"):
             return uri[7:]
-        # If no file:// scheme, assume it is strict file path or invalid
-        # But LSP URIs should be file://
         return None
 
-    def ensure_init(self) -> bool:
-        """Ensure .pywire directory exists and is ignored."""
-        if not self.pywire_dir:
-            return False
-
-        if not os.path.exists(self.pywire_dir):
-            try:
-                os.makedirs(self.pywire_dir, exist_ok=True)
-                gitignore = os.path.join(self.pywire_dir, ".gitignore")
-                with open(gitignore, "w") as f:
-                    f.write("*\n")
-            except Exception as e:
-                logger.error(f"Failed to init shadow dir: {e}")
-                return False
-        return True
-
-    def update_shadow_file(self, doc_uri: str, content: str) -> Optional[str]:
-        """Write content to shadow file and return its path."""
-        if not self.pywire_dir:
-            return None
-
-        try:
-            doc_path = self._uri_to_path(doc_uri)
-            if not doc_path:
-                return None
-
-            if not self.root_path:
-                return None
-
-            # Simple containment check
-            if not doc_path.startswith(self.root_path):
-                # Outside workspace??
-                return None
-
-            rel_path = os.path.relpath(doc_path, self.root_path)
-
-            shadow_rel_path = rel_path + ".py"
-            shadow_path = os.path.join(self.pywire_dir, shadow_rel_path)
-
-            # Ensure parent dir
-            os.makedirs(os.path.dirname(shadow_path), exist_ok=True)
-
-            with open(shadow_path, "w") as f:
-                f.write(content)
-            
-            # Also write a .pyi stub for import resolution
-            # We strip .wire from the name if present to match standard imports
-            # e.g. path/to/form.wire -> path/to/form.pyi
-            if rel_path.endswith(".wire"):
-                stub_rel_path = rel_path[:-5] + ".pyi"
-            else:
-                stub_rel_path = rel_path + ".pyi"
-            
-            stub_path = os.path.join(self.pywire_dir, stub_rel_path)
-            # Find the document and get its transpiler to generate the stub
-            doc = documents.get(doc_uri)
-            if doc:
-                stub_content, stub_map = doc.transpiler.generate_stub(doc_path)
-                with open(stub_path, "w") as f:
-                    f.write(stub_content)
-                self.set_source_map(f"file://{stub_path}", stub_map)
-
-            return f"file://{shadow_path}"
-        except Exception as e:
-            logger.error(f"Failed to update shadow file for {doc_uri}: {e}")
-            return None
-
     def get_shadow_uri(self, doc_uri: str) -> Optional[str]:
+        """
+        Map a .wire URI to a virtual .py URI.
+        """
         doc_path = self._uri_to_path(doc_uri)
-        try:
-            if not doc_path or not self.root_path:
-                return None
-            rel_path = os.path.relpath(doc_path, self.root_path)
-            shadow_path = os.path.join(self.pywire_dir, rel_path + ".py")
-            return f"file://{shadow_path}"
-        except ValueError:
+        if not doc_path:
             return None
+        return f"file://{doc_path}.py"
 
-    def get_source_uri_from_shadow(self, shadow_uri: str) -> Optional[str]:
-        # Handle both file:// URIs and raw paths (Ty might send either)
-        if shadow_uri.startswith("file://"):
-            shadow_path = shadow_uri[7:]
-        else:
-            shadow_path = shadow_uri
-
-        if not self.root_path or not self.pywire_dir:
+    def get_stub_uri(self, doc_uri: str) -> Optional[str]:
+        """
+        Map a .wire URI to a virtual .pyi URI.
+        """
+        doc_path = self._uri_to_path(doc_uri)
+        if not doc_path:
             return None
+        if doc_path.endswith(".wire"):
+             return f"file://{doc_path[:-5]}.pyi"
+        return f"file://{doc_path}.pyi"
 
-        try:
-            rel_path = os.path.relpath(shadow_path, self.pywire_dir)
-            if rel_path.startswith(".."):
-                return None
-        except ValueError:
-            return None
-        
-        if rel_path.endswith(".py"):
-            # Shadow files are named like 'path/to/file.wire.py' or 'path/to/file.py'
-            # We need to strip the final '.py'
-            source_rel_path = rel_path[:-3]
-        elif rel_path.endswith(".pyi"):
-            # Stub files are named like 'path/to/file.pyi'
-            # This corresponds to 'path/to/file.wire'
-            source_rel_path = rel_path[:-4] + ".wire"
-        else:
-            return None
-        
-        source_path = os.path.join(self.root_path, source_rel_path)
-        
-        # If we stripped .py and it's not a .wire file, it might just be a regular .py file
-        # But shadow manager only manages .wire shadows usually.
-        # If the target doesn't exist, try adding .wire if we haven't already
-        if not os.path.exists(source_path) and not source_path.endswith(".wire"):
-            if os.path.exists(source_path + ".wire"):
-                source_path += ".wire"
-
-        return f"file://{source_path}"
-    
     def get_original_uri(self, shadow_uri: str) -> Optional[str]:
-        """Alias for get_source_uri_from_shadow."""
-        return self.get_source_uri_from_shadow(shadow_uri)
+        """Map back from virtual .py or .pyi URI to original .wire URI."""
+        # Handle both file:// and raw paths
+        uri = shadow_uri if shadow_uri.startswith("file://") else f"file://{shadow_uri}"
+        
+        # 1. Direct shadow matches (.wire.py)
+        if uri.endswith(".wire.py"):
+             return uri[:-3]
+        if uri.endswith(".wire.pyi"):
+             return uri[:-4]
+
+        # 2. Stub matches (foo.pyi -> foo.wire)
+        if uri.endswith(".pyi"):
+             path = self._uri_to_path(uri)
+             if path:
+                 # Check for foo.pyi -> foo.wire
+                 wire_path = path[:-4] + ".wire"
+                 if os.path.exists(wire_path):
+                     return f"file://{wire_path}"
+        
+        # 3. Fallback: Check if it's a known shadow file in our source_maps
+        # Ty might return lowercase or slightly different URIs
+        norm_uri = uri.lower()
+        if norm_uri in [k.lower() for k in self.source_maps.keys()]:
+             # If it's a known shadow, we can try to guess back
+             if uri.endswith(".py"):
+                  return uri[:-3]
+             if uri.endswith(".pyi"):
+                  return uri[:-4] + ".wire"
+                  
+        return None
 
     def set_source_map(self, shadow_uri: str, source_map: SourceMap):
-        """Store source map for a shadow file."""
+        """Store source map for a virtual file."""
         self.source_maps[shadow_uri] = source_map
 
     def get_source_map(self, shadow_uri: str) -> Optional[SourceMap]:
-        """Retrieve source map for a shadow file."""
+        """Retrieve source map for a virtual file."""
         if shadow_uri in self.source_maps:
             return self.source_maps[shadow_uri]
         
@@ -290,7 +213,7 @@ server = LanguageServer(
 
 
 # Global state for Ty client
-shadow_manager: Optional[ShadowFileManager] = None
+virtual_manager: Optional[VirtualFileManager] = None
 ty_client: Optional[TyClient] = None
 
 ty_diagnostics: dict[str, List[Diagnostic]] = {}
@@ -298,7 +221,7 @@ ty_diagnostics: dict[str, List[Diagnostic]] = {}
 
 @server.feature("initialize")
 async def initialize(ls: LanguageServer, params: Any):
-    global shadow_manager, ty_client
+    global virtual_manager, ty_client
     logger.info("PyWire Language Server initializing...")
     
     root_uri = params.root_uri or (
@@ -306,7 +229,7 @@ async def initialize(ls: LanguageServer, params: Any):
     )
 
     if root_uri:
-        shadow_manager = ShadowFileManager(root_uri)
+        virtual_manager = VirtualFileManager(root_uri)
         # Always use Ty
         init_opts = getattr(params, "initializationOptions", {}) or {}
         ty_path = init_opts.get("tyPath", None)
@@ -326,7 +249,7 @@ async def initialize(ls: LanguageServer, params: Any):
                 
                 # If usage of shadow file is internal to this server, we should
                 # map the URI back to the original .wire file
-                wire_uri = shadow_manager.get_original_uri(uri)
+                wire_uri = virtual_manager.get_original_uri(uri)
                 if wire_uri:
                     # Robust lookup: Find the actual key in documents that matches this URI
                     # because casing or path normalization might differ.
@@ -343,7 +266,7 @@ async def initialize(ls: LanguageServer, params: Any):
                     
                     # Map diagnostics back
                     mapped_diagnostics = []
-                    source_map = shadow_manager.get_source_map(uri)
+                    source_map = virtual_manager.get_source_map(uri)
                     if source_map:
                         for diag in diagnostics:
                             mapped = _map_diagnostic(diag, source_map)
@@ -358,6 +281,9 @@ async def initialize(ls: LanguageServer, params: Any):
             
             # Initialize Ty and wait for it
             await _init_ty(ls, params)
+
+            # Eager load all .wire files in the workspace
+            await _eager_load_workspace(ls)
         else:
             logger.error("Failed to start Ty. Python features will be disabled.")
 
@@ -413,6 +339,63 @@ async def _init_ty(ls: LanguageServer, params: Any):
         ty_client.send_notification("initialized", {})
     except Exception as e:
         logger.error(f"Failed to initialize Ty: {e}")
+
+
+async def _eager_load_workspace(ls: LanguageServer):
+    """Scan root_path for .wire files and open them in Ty."""
+    if not virtual_manager or not virtual_manager.root_path or not ty_client:
+        return
+
+    root = Path(virtual_manager.root_path)
+    logger.info(f"Eager loading workspace: {root}")
+    
+    # Simple recursive scan
+    for wire_file in root.rglob("*.wire"):
+        # Skip common ignored dirs
+        if any(part in wire_file.parts for part in [".venv", "node_modules", ".git", ".pywire", "__pycache__"]):
+            continue
+            
+        uri = wire_file.as_uri()
+        if uri in documents:
+            continue
+            
+        try:
+            content = wire_file.read_text(encoding="utf-8")
+            doc = PyWireDocument(uri, content)
+            documents[uri] = doc
+            
+            shadow_uri = virtual_manager.get_shadow_uri(uri)
+            if shadow_uri:
+                virtual_manager.set_source_map(shadow_uri, doc.source_map)
+                
+                # Notify Ty of the shadow file
+                shadow_doc_item = {
+                    "uri": shadow_uri,
+                    "languageId": "python",
+                    "version": 0,
+                    "text": doc.get_python_source(),
+                }
+                ty_client.send_notification(
+                    "textDocument/didOpen", {"textDocument": shadow_doc_item}
+                )
+
+                # Also notify Ty of the STUB file for import resolution
+                stub_uri = virtual_manager.get_stub_uri(uri)
+                if stub_uri:
+                    stub_content, stub_map = doc.transpiler.generate_stub(str(wire_file))
+                    virtual_manager.set_source_map(stub_uri, stub_map)
+                    
+                    stub_doc_item = {
+                        "uri": stub_uri,
+                        "languageId": "python",
+                        "version": 0,
+                        "text": stub_content,
+                    }
+                    ty_client.send_notification(
+                        "textDocument/didOpen", {"textDocument": stub_doc_item}
+                    )
+        except Exception as e:
+            logger.error(f"Failed to eager load {wire_file}: {e}")
 
 
 class PyWireDocument:
@@ -692,9 +675,9 @@ def _resolve_import_path(base_uri: str, module_path: str) -> Optional[str]:
         target = current_dir.joinpath(*parts)
     else:
         # Absolute import - try to find from root
-        # Check shadow manager root
-        if shadow_manager and shadow_manager.root_path:
-             target = Path(shadow_manager.root_path).joinpath(*module_path.split("."))
+        # Check virtual manager root
+        if virtual_manager and virtual_manager.root_path:
+             target = Path(virtual_manager.root_path).joinpath(*module_path.split("."))
         else:
              # Fallback: assume src/ or similar structure if we can find it
              # For now, just return None if not relative and no root path
@@ -1451,6 +1434,83 @@ def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Dia
         code=diag.get("code"),
     )
 
+def _map_location_to_original(loc: Dict[str, Any]) -> Location:
+    """Map a virtual location back to an original .wire location if applicable."""
+    if "targetUri" in loc:
+        # LocationLink
+        loc_uri = loc["targetUri"]
+        loc_range = loc["targetSelectionRange"]
+    else:
+        # Location
+        loc_uri = loc.get("uri")
+        loc_range = loc.get("range")
+    
+    if not loc_uri or not loc_range:
+         return Location(uri=loc.get("uri", ""), range=Range(start=Position(0,0), end=Position(0,0)))
+
+    # Check if it's a shadow file or stub file
+    orig_uri = virtual_manager.get_original_uri(loc_uri) if virtual_manager else None
+    target_map = None
+    if orig_uri:
+        target_map = virtual_manager.get_source_map(loc_uri)
+    
+    if target_map and orig_uri:
+        loc_uri = orig_uri
+        start = loc_range["start"]
+        end = loc_range.get("end", start)
+        
+        orig_start = target_map.to_original(start["line"], start["character"])
+        orig_end = target_map.to_original(end["line"], end["character"])
+        
+        # Create a copy of the range to modify
+        new_range = {
+            "start": {"line": 0, "character": 0},
+            "end": {"line": 0, "character": 0}
+        }
+        
+        if orig_start:
+            new_range["start"] = {"line": orig_start[0], "character": orig_start[1]}
+            if orig_end:
+                new_range["end"] = {"line": orig_end[0], "character": orig_end[1]}
+            else:
+                new_range["end"] = {"line": orig_start[0], "character": orig_start[1]}
+        
+        return Location(
+            uri=loc_uri,
+            range=Range(
+                start=Position(line=new_range["start"]["line"], character=new_range["start"]["character"]),
+                end=Position(line=new_range["end"]["line"], character=new_range["end"]["character"]),
+            )
+        )
+    else:
+        # Keep original (pure python or standard library)
+        return Location(
+            uri=loc_uri,
+            range=Range(
+                start=Position(line=loc_range["start"]["line"], character=loc_range["start"]["character"]),
+                end=Position(line=loc_range["end"]["line"], character=loc_range["end"]["character"]),
+            )
+        )
+
+def _map_edit_to_original(edit: Dict[str, Any], source_map: SourceMap) -> Optional[TextEdit]:
+    """Map a virtual text edit back to an original .wire edit."""
+    start = edit["range"]["start"]
+    end = edit["range"]["end"]
+    new_text = edit["newText"]
+    
+    orig_start = source_map.to_original(start["line"], start["character"])
+    orig_end = source_map.to_original(end["line"], end["character"])
+    
+    if orig_start and orig_end:
+        return TextEdit(
+            range=Range(
+                start=Position(orig_start[0], orig_start[1]),
+                end=Position(orig_end[0], orig_end[1])
+            ),
+            new_text=new_text
+        )
+    return None
+
 
 @server.feature("textDocument/didOpen")
 def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
@@ -1463,11 +1523,11 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
     doc = PyWireDocument(uri, params.text_document.text)
     documents[uri] = doc
 
-    # Sync with Shadow/Ty
-    if shadow_manager:
-        shadow_uri = shadow_manager.update_shadow_file(uri, doc.get_python_source())
+    # Sync with Ty
+    if virtual_manager:
+        shadow_uri = virtual_manager.get_shadow_uri(uri)
         if shadow_uri:
-            shadow_manager.set_source_map(shadow_uri, doc.source_map)
+            virtual_manager.set_source_map(shadow_uri, doc.source_map)
 
         if ty_client and shadow_uri:
             # We must open the SHADOW file in Ty
@@ -1483,8 +1543,25 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
                 ty_client.send_notification(
                     "textDocument/didOpen", {"textDocument": shadow_doc_item}
                 )
+
+                # Update/Open Stub too
+                stub_uri = virtual_manager.get_stub_uri(uri)
+                if stub_uri:
+                    doc_path = virtual_manager._uri_to_path(uri) or ""
+                    stub_content, stub_map = doc.transpiler.generate_stub(doc_path)
+                    virtual_manager.set_source_map(stub_uri, stub_map)
+                    
+                    stub_doc_item = {
+                        "uri": stub_uri,
+                        "languageId": "python",
+                        "version": params.text_document.version,
+                        "text": stub_content,
+                    }
+                    ty_client.send_notification(
+                        "textDocument/didOpen", {"textDocument": stub_doc_item}
+                    )
             except Exception as e:
-                logger.error(f"Failed to notify Ty didOpen: {e}")
+                logger.error(f"Failed to notify Ty didOpen/stub: {e}")
 
     # Initial diagnostics
     validate(ls, uri)
@@ -1507,13 +1584,11 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
         new_text = params.content_changes[-1].text
         doc.update(new_text)
 
-        # Sync with Shadow/Ty
-        if shadow_manager:
-            shadow_uri = shadow_manager.update_shadow_file(
-                uri, doc.get_python_source()
-            )
+        # Sync with Ty
+        if virtual_manager:
+            shadow_uri = virtual_manager.get_shadow_uri(uri)
             if shadow_uri:
-                shadow_manager.set_source_map(shadow_uri, doc.source_map)
+                virtual_manager.set_source_map(shadow_uri, doc.source_map)
 
 
             if ty_client and shadow_uri:
@@ -1528,8 +1603,26 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
                     ty_client.send_notification(
                         "textDocument/didChange", shadow_change_params
                     )
+
+                    # Update Stub too
+                    stub_uri = virtual_manager.get_stub_uri(uri)
+                    if stub_uri:
+                        doc_path = virtual_manager._uri_to_path(uri) or ""
+                        stub_content, stub_map = doc.transpiler.generate_stub(doc_path)
+                        virtual_manager.set_source_map(stub_uri, stub_map)
+                        
+                        stub_change_params = {
+                            "textDocument": {
+                                "uri": stub_uri,
+                                "version": params.text_document.version,
+                            },
+                            "contentChanges": [{"text": stub_content}],
+                        }
+                        ty_client.send_notification(
+                            "textDocument/didChange", stub_change_params
+                        )
                 except Exception as e:
-                    logger.error(f"Failed to notify Ty didChange: {e}")
+                    logger.error(f"Failed to notify Ty didChange/stub: {e}")
 
     validate(ls, uri)
 
@@ -1609,8 +1702,8 @@ Define routes for this page.
         gen_line, gen_col = gen_pos
 
         # 1. Try Ty Fallback
-        if ty_client and shadow_manager:
-            shadow_uri = shadow_manager.get_shadow_uri(uri)
+        if ty_client and virtual_manager:
+            shadow_uri = virtual_manager.get_shadow_uri(uri)
             if shadow_uri:
                 try:
                     # Construct params for Ty
@@ -1812,8 +1905,6 @@ Example:
             if len(parts) > 1:
                 base += f"\n\n**Modifiers:** {', '.join(parts[1:])}"
             return Hover(contents=MarkupContent(kind="markdown", value=base))
-        return Hover(contents=MarkupContent(kind="markdown", value=f"**{word}**\n\nEvent handler."))
-
     return None
 
 
@@ -1839,7 +1930,7 @@ async def references(
         gen_loc = source_map.to_generated(position.line, position.character)
         if gen_loc:
             gen_line, gen_col = gen_loc
-            shadow_uri = shadow_manager.get_shadow_uri(uri)
+            shadow_uri = virtual_manager.get_shadow_uri(uri)
              
             params = {
                 "textDocument": {"uri": shadow_uri},
@@ -1851,35 +1942,8 @@ async def references(
             if res:
                  locations = []
                  for loc in res:
-                     # Map back
-                     l_uri = loc.get("uri")
-                     l_range = loc.get("range")
-                     
-                     # If it refers to our shadow file, map it back
-                     if l_uri == shadow_uri:
-                         start = l_range.get("start")
-                         end = l_range.get("end")
-                         
-                         orig_start = source_map.to_original(start["line"], start["character"])
-                         orig_end = source_map.to_original(end["line"], end["character"])
-                         
-                         if orig_start and orig_end:
-                             locations.append(Location(
-                                 uri=uri,
-                                 range=Range(
-                                     start=Position(orig_start[0], orig_start[1]),
-                                     end=Position(orig_end[0], orig_end[1])
-                                 )
-                             ))
-                     else:
-                         # External reference, keep as is
-                         locations.append(Location(
-                             uri=l_uri,
-                             range=Range(
-                                 start=Position(l_range["start"]["line"], l_range["start"]["character"]),
-                                 end=Position(l_range["end"]["line"], l_range["end"]["character"])
-                             )
-                         ))
+                     # Use new consolidated mapping logic
+                     locations.append(_map_location_to_original(loc))
                  return locations
 
     return None
@@ -1902,8 +1966,8 @@ async def rename(ls: LanguageServer, params: RenameParams) -> Optional[Workspace
     if _is_inside_script_or_style(doc.lines, position):
         return None
 
-    if ty_client and shadow_manager:
-        shadow_uri = shadow_manager.get_shadow_uri(uri)
+    if ty_client and virtual_manager:
+        shadow_uri = virtual_manager.get_shadow_uri(uri)
         if shadow_uri:
             gen_pos = source_map.to_generated(position.line, position.character)
             if gen_pos:
@@ -1923,28 +1987,18 @@ async def rename(ls: LanguageServer, params: RenameParams) -> Optional[Workspace
                         original_changes = {}
                         
                         for gen_uri, edits in result["changes"].items():
-                            # If it's our shadow file, map back to .wire
-                            if gen_uri == shadow_uri:
+                            orig_uri = virtual_manager.get_original_uri(gen_uri)
+                            target_map = virtual_manager.get_source_map(gen_uri) if orig_uri else None
+                            
+                            if orig_uri and target_map:
                                 wire_edits = []
                                 for edit in edits:
-                                    start = edit["range"]["start"]
-                                    end = edit["range"]["end"]
-                                    new_text = edit["newText"]
-                                    
-                                    orig_start = source_map.to_original(start["line"], start["character"])
-                                    orig_end = source_map.to_original(end["line"], end["character"])
-                                    
-                                    if orig_start and orig_end:
-                                        wire_edits.append(TextEdit(
-                                            range=Range(
-                                                start=Position(orig_start[0], orig_start[1]),
-                                                end=Position(orig_end[0], orig_end[1])
-                                            ),
-                                            new_text=new_text
-                                        ))
+                                    mapped = _map_edit_to_original(edit, target_map)
+                                    if mapped:
+                                        wire_edits.append(mapped)
                                 
                                 if wire_edits:
-                                    original_changes[uri] = wire_edits
+                                    original_changes[orig_uri] = wire_edits
                             else:
                                 # External file updates (pure python files)
                                 original_changes[gen_uri] = [
@@ -2071,8 +2125,8 @@ async def definition(
 
     gen_line, gen_col = gen_pos
 
-    if ty_client and shadow_manager:
-        shadow_uri = shadow_manager.get_shadow_uri(uri)
+    if ty_client and virtual_manager:
+        shadow_uri = virtual_manager.get_shadow_uri(uri)
         if shadow_uri:
             try:
                 shadow_params = {
@@ -2092,59 +2146,7 @@ async def definition(
 
                     locations = []
                     for loc in result:
-                        # Handle LocationLink? Ty usually returns Location for basic definition
-                        if "targetUri" in loc:
-                            # It's a LocationLink
-                            loc_uri = loc["targetUri"]
-                            loc_range = loc["targetSelectionRange"]
-                        else:
-                            # It's a Location
-                            loc_uri = loc["uri"]
-                            loc_range = loc["range"]
-
-                        # Check if it's a shadow file or stub file
-                        orig_uri = shadow_manager.get_original_uri(loc_uri)
-                        if orig_uri:
-                            # Try to get source map for the target (shadow or stub)
-                            target_map = shadow_manager.get_source_map(loc_uri)
-                            
-                            # Map back to original .wire file
-                            loc_uri = orig_uri
-                            
-                            if target_map:
-                                start = loc_range["start"]
-                                orig_start = target_map.to_original(
-                                    start["line"], start["character"]
-                                )
-                                if orig_start:
-                                    loc_range["start"] = {"line": orig_start[0], "character": orig_start[1]}
-                                    loc_range["end"] = {"line": orig_start[0], "character": orig_start[1]}
-                                else:
-                                    # Fallback if specific mapping missing
-                                    loc_range["start"] = {"line": 0, "character": 0}
-                                    loc_range["end"] = {"line": 0, "character": 0}
-                            else:
-                                # Cross-file mapping to another .wire file but no map available
-                                # For now, land at the beginning of the file.
-                                # In the future, we could search for the class name in the target's script block.
-                                loc_range["start"] = {"line": 0, "character": 0}
-                                loc_range["end"] = {"line": 0, "character": 0}
-
-                        locations.append(
-                            Location(
-                                uri=loc_uri,
-                                range=Range(
-                                    start=Position(
-                                        line=loc_range["start"]["line"],
-                                        character=loc_range["start"]["character"],
-                                    ),
-                                    end=Position(
-                                        line=loc_range["end"]["line"],
-                                        character=loc_range["end"]["character"],
-                                    ),
-                                ),
-                            )
-                        )
+                        locations.append(_map_location_to_original(loc))
 
                     return locations
             except Exception as e:
@@ -2305,8 +2307,8 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
         if stripped.startswith("!layout"):
             # Fallback: if not in literal or literal not found, maybe show root files if just "!layout "
             items = []
-            if shadow_manager and shadow_manager.root_path:
-                root = Path(shadow_manager.root_path)
+            if virtual_manager and virtual_manager.root_path:
+                root = Path(virtual_manager.root_path)
                 doc_path = _uri_to_path(uri)
                 if doc_path:
                     base_dir = Path(doc_path).parent
@@ -2360,8 +2362,8 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     
     inside_expr = (last_open_block > last_close) or (last_open_attr > last_close)
     
-    if (section == "python" or inside_expr) and gen_pos and ty_client and shadow_manager:
-        shadow_uri = shadow_manager.get_shadow_uri(uri)
+    if (section == "python" or inside_expr) and gen_pos and ty_client and virtual_manager:
+        shadow_uri = virtual_manager.get_shadow_uri(uri)
         if shadow_uri:
             gen_line, gen_col = gen_pos
             try:

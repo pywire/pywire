@@ -27,18 +27,18 @@ def mock_ty_client():
 def clean_globals():
     server_module.documents.clear()
     original_ty = server_module.ty_client
-    original_shadow = server_module.shadow_manager
+    original_shadow = server_module.virtual_manager
     yield
     server_module.documents.clear()
     server_module.ty_client = original_ty
-    server_module.shadow_manager = original_shadow
+    server_module.virtual_manager = original_shadow
 
 @pytest.mark.asyncio
 async def test_completion_trigger_kind(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
-    server_module.shadow_manager = Mock()
-    server_module.shadow_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager = Mock()
+    server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
     
     # Mock document mapping
     uri = "file:///test.wire"
@@ -75,8 +75,8 @@ x = 1
 async def test_hover_formatting(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
-    server_module.shadow_manager = Mock()
-    server_module.shadow_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager = Mock()
+    server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
 
     uri = "file:///test.wire"
     text = """
@@ -116,8 +116,8 @@ x = 1
 async def test_hover_docstring_separation(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
-    server_module.shadow_manager = Mock()
-    server_module.shadow_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager = Mock()
+    server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
 
     # Test that we separate signature from docstring
     uri = "file:///test.wire"
@@ -253,8 +253,6 @@ async def test_shorthand_removal(mock_ls):
     # If the user thinks $attributes is incorrect, maybe they mean they don't want ANY hover for unknown ones?
     # But usually $ indicates a directive in PyWire now.
     #
-    # Let's verify what it returns now.
+    # So it will now return None
     
-    assert hover_res is not None
-    assert "Directive" in hover_res.contents.value
-    assert "Reactive Shorthand" not in hover_res.contents.value
+    assert hover_res is None
