@@ -27,7 +27,7 @@ mod tests {
             .set_language(&super::language())
             .expect("Error loading PyWire grammar");
 
-        let source = "!path \"/test\"\n---html---\n<div></div>";
+        let source = "!path \"/test\"\n---\n\n---\n<div></div>";
         let tree = parser.parse(source, None).unwrap();
         let root = tree.root_node();
 

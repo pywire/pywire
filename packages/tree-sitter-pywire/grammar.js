@@ -50,7 +50,7 @@ module.exports = grammar({
             $.separator
         ),
 
-        separator: $ => token(choice(/---[ \t]*\r?\n/, /---html---[ \t]*\r?\n/)),
+        separator: $ => token(/---[ \t]*\r?\n/),
 
         _python_content: $ => repeat1(choice(
             /[^-\n\r]+/,
@@ -196,20 +196,22 @@ module.exports = grammar({
             '}'
         ),
 
-        brace_block: $ => token(seq(
+        brace_block: $ => seq(
             '{$',
-            choice(
-                'if', 'for', 'try', 'await', 'elif', 'else', 'finally', 'except', 'then', 'catch', 'html'
-            ),
-            /[^}]*/,
+            field('keyword', $.block_keyword),
+            optional(field('expression', alias($._python_code, $.python_code))),
             '}'
-        )),
+        ),
 
-        end_brace_block: $ => token(seq(
+        end_brace_block: $ => seq(
             '{/',
-            /[a-z]+/,
+            field('name', alias(/[a-z]+/, $.block_keyword)),
             '}'
-        )),
+        ),
+
+        block_keyword: $ => choice(
+            'if', 'for', 'try', 'await', 'elif', 'else', 'finally', 'except', 'then', 'catch', 'html'
+        ),
 
         _python_code: $ => repeat1(choice(
             /[^{}]+/,

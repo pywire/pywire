@@ -1,21 +1,24 @@
 ==============================
-Basic document
+Structured brace block
 ==============================
 
----
-x = 1
----
-<h1>Hi</h1>
+{$if counter > 0}
+  <p>Count is positive</p>
+{/if}
 
 ---
 
 (source_file
-  (frontmatter
-    (separator)
-    (python_content)
-    (separator))
   (template_section
+    (brace_block
+      keyword: (block_keyword)
+      expression: (python_code))
     (tag
-      (tag_name)
+      name: (tag_name)
       (text)
-      (tag_name))))
+      close_name: (tag_name))
+    (end_brace_block
+      name: (block_keyword))))
+
+
+

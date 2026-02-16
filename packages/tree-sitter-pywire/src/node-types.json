@@ -69,6 +69,37 @@
     "fields": {}
   },
   {
+    "type": "block_keyword",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "brace_block",
+    "named": true,
+    "fields": {
+      "expression": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "python_code",
+            "named": true
+          }
+        ]
+      },
+      "keyword": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "block_keyword",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "directives_section",
     "named": true,
     "fields": {},
@@ -85,6 +116,22 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "end_brace_block",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "block_keyword",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -532,6 +579,10 @@
     "named": true
   },
   {
+    "type": "await",
+    "named": false
+  },
+  {
     "type": "bang",
     "named": true
   },
@@ -548,8 +599,8 @@
     "named": false
   },
   {
-    "type": "brace_block",
-    "named": true
+    "type": "catch",
+    "named": false
   },
   {
     "type": "col",
@@ -569,15 +620,39 @@
     "named": true
   },
   {
+    "type": "elif",
+    "named": false
+  },
+  {
+    "type": "else",
+    "named": false
+  },
+  {
     "type": "embed",
     "named": false
   },
   {
-    "type": "end_brace_block",
-    "named": true
+    "type": "except",
+    "named": false
+  },
+  {
+    "type": "finally",
+    "named": false
+  },
+  {
+    "type": "for",
+    "named": false
   },
   {
     "type": "hr",
+    "named": false
+  },
+  {
+    "type": "html",
+    "named": false
+  },
+  {
+    "type": "if",
     "named": false
   },
   {
@@ -617,7 +692,15 @@
     "named": true
   },
   {
+    "type": "then",
+    "named": false
+  },
+  {
     "type": "track",
+    "named": false
+  },
+  {
+    "type": "try",
     "named": false
   },
   {
@@ -626,6 +709,14 @@
   },
   {
     "type": "{",
+    "named": false
+  },
+  {
+    "type": "{$",
+    "named": false
+  },
+  {
+    "type": "{/",
     "named": false
   },
   {
