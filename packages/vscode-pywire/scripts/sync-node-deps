@@ -42,9 +42,13 @@ esac
 echo "Using prettier-plugin-pywire@$REF"
 
 # Check current version in package.json to avoid unnecessary pnpm add
+# Also check if it's a local link (e.g. "link:../...")
+IS_LINK=$(grep -q "prettier-plugin-pywire\": \"link:" package.json && echo "yes" || echo "no")
 CURRENT=$(grep -o "prettier-plugin-pywire\": \"git+$REPO_URL#[^\"]*" package.json | sed "s|.*#||" || echo "")
 
-if [ "$CURRENT" != "$REF" ]; then
+if [ "$IS_LINK" = "yes" ] && [ "$MODE" = "local" ]; then
+    echo "prettier-plugin-pywire is linked to a local directory. Skipping sync."
+elif [ "$CURRENT" != "$REF" ]; then
     echo "Updating prettier-plugin-pywire dependency to #$REF..."
     # We use pnpm add to update package.json and pnpm-lock.yaml
     pnpm add "git+$REPO_URL#$REF"

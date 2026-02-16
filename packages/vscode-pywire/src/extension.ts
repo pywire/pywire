@@ -28,6 +28,10 @@ import {
   ReferenceContext,
   CompletionContext,
   env,
+  WorkspaceEdit,
+  TextDocumentContentProvider,
+  SignatureHelp,
+  EventEmitter,
 } from 'vscode'
 import {
   LanguageClient,
@@ -42,6 +46,142 @@ import { setupUpdateCheck, performUpdate } from './updateCheck'
 
 type PrettierModule = typeof import('prettier')
 type PrettierPlugin = import('prettier').Plugin
+
+/**
+ * Handles embedded JS/CSS requests by forwarding them to a virtual document.
+ */
+class EmbeddedLanguageSupport {
+  constructor() { }
+
+  /**
+   * Check if position is inside a script or style tag.
+   * Returns 'javascript' | 'css' | null
+   */
+  getEmbeddedMode(document: TextDocument, position: Position): 'javascript' | 'css' | null {
+    const text = document.getText()
+    const offset = document.offsetAt(position)
+
+    const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/g
+    let match
+    while ((match = scriptRegex.exec(text)) !== null) {
+      if (offset >= match.index && offset <= match.index + match[0].length) {
+        const openTagEnd = match.index + match[0].indexOf('>') + 1
+        const closeTagStart = match.index + match[0].lastIndexOf('<')
+        if (offset >= openTagEnd && offset <= closeTagStart) {
+          return 'javascript'
+        }
+      }
+    }
+
+    const styleRegex = /<style\b[^>]*>([\s\S]*?)<\/style>/g
+    while ((match = styleRegex.exec(text)) !== null) {
+      if (offset >= match.index && offset <= match.index + match[0].length) {
+        const openTagEnd = match.index + match[0].indexOf('>') + 1
+        const closeTagStart = match.index + match[0].lastIndexOf('<')
+        if (offset >= openTagEnd && offset <= closeTagStart) {
+          return 'css'
+        }
+      }
+    }
+    return null
+  }
+
+  getVirtualContent(document: TextDocument, mode: 'javascript' | 'css'): string {
+    const text = document.getText()
+    let result = ''
+    let lastIndex = 0
+
+    const regex = mode === 'javascript'
+      ? /<script\b[^>]*>([\s\S]*?)<\/script>/g
+      : /<style\b[^>]*>([\s\S]*?)<\/style>/g
+
+    let match
+    while ((match = regex.exec(text)) !== null) {
+      const preTag = text.slice(lastIndex, match.index)
+      result += preTag.replace(/[^\n]/g, ' ')
+      const openTagLen = match[0].indexOf('>') + 1
+      const openTag = match[0].slice(0, openTagLen)
+      result += openTag.replace(/[^\n]/g, ' ')
+      const content = match[1]
+      result += content
+      const closeTagStart = match.index + openTagLen + content.length
+      const closeTag = text.slice(closeTagStart, match.index + match[0].length)
+      result += closeTag.replace(/[^\n]/g, ' ')
+      lastIndex = match.index + match[0].length
+    }
+    const remainder = text.slice(lastIndex)
+    result += remainder.replace(/[^\n]/g, ' ')
+    return result
+  }
+
+  async forwardRequest<T>(
+    document: TextDocument,
+    position: Position,
+    command: string,
+    args: any[],
+    log: (msg: string) => void
+  ): Promise<T | undefined> {
+    const mode = this.getEmbeddedMode(document, position)
+    if (!mode) return undefined
+
+    // Use a custom scheme to avoid "dirty" untitled files
+    const vUri = Uri.parse(`pywire-embedded://${document.uri.path}${mode === 'css' ? '.css' : '.js'}`)
+
+    try {
+      // workspace.openTextDocument with a custom scheme triggers the provider.
+      // But we need to make sure the provider knows WHAT content to provide.
+      // Since 'document' is the source, we can just compute it.
+      // BUT `provideTextDocumentContent` only takes a URI.
+      // We need to find the source doc from the URI.
+      // We can encode the source URI in the virtual URI query?
+      // Or just look up the document in the workspace based on path (since path matches).
+
+      // Trigger update if needed?
+      // Actually, openTextDocument will call provider.
+      const vDoc = await workspace.openTextDocument(vUri)
+
+      // We don't use WorkspaceEdit. We rely on the provider.
+      // BUT if the doc is already open, it might be stale.
+      // We need to force an update.
+      embeddedProviderInstance.update(vUri)
+
+      const result = await commands.executeCommand<T>(command, vUri, ...args)
+      return result
+    } catch (e) {
+      log(`Embedded ${command} failed for ${mode}: ${String(e)}`)
+      return undefined
+    }
+  }
+}
+
+// Global instance to be used by the forwarded request
+const embeddedSupport = new EmbeddedLanguageSupport()
+
+class EmbeddedContentProvider implements TextDocumentContentProvider {
+  private _onDidChange = new EventEmitter<Uri>()
+  get onDidChange() { return this._onDidChange.event }
+
+  update(uri: Uri) {
+    this._onDidChange.fire(uri)
+  }
+
+  provideTextDocumentContent(uri: Uri): string {
+    // Recover source document path...
+    // uri.path is /path/to/file.wire.js
+    // We want /path/to/file.wire
+    // But uri.path includes the leading slash? 
+    const originalPath = uri.path.replace(/\.(js|css)$/, '')
+    // Find doc
+    const doc = workspace.textDocuments.find(d => d.uri.path === originalPath)
+    if (doc) {
+      const ext = path.extname(uri.path)
+      const mode = ext === '.css' ? 'css' : 'javascript'
+      return embeddedSupport.getVirtualContent(doc, mode)
+    }
+    return ''
+  }
+}
+const embeddedProviderInstance = new EmbeddedContentProvider()
 
 let client: LanguageClient | null = null
 let prettierModule: PrettierModule | null = null
@@ -74,59 +214,69 @@ function loadPywirePlugin(): unknown {
   return pywirePluginModule
 }
 
-interface PositionMapping {
-  line: number
-  character: number
-}
-
-interface VirtualCodeResponse {
-  content?: string
-}
-
 /**
  * Determine which section a line is in based on the ---html--- separator.
  * Returns 'python' for lines before the separator, 'directive' for lines starting with ! or #!,
  * 'separator' for the separator line, 'html' for HTML content lines.
  */
-function isSeparatorLine(line: string): boolean {
-  return /^\\s*(-{3,})\\s*html\\s*\\1\\s*$/i.test(line)
+function isFenceLine(line: string): boolean {
+  return /^\s*-{3,}\s*$/.test(line)
 }
 
 function getSection(
   lines: string[],
   lineNumber: number
 ): 'python' | 'directive' | 'html' | 'separator' {
-  let separatorLine = -1
+  const fenceIndices: number[] = []
   for (let i = 0; i < lines.length; i++) {
-    if (isSeparatorLine(lines[i])) {
-      separatorLine = i
-      break
+    if (isFenceLine(lines[i])) {
+      fenceIndices.push(i)
     }
   }
 
-  if (lineNumber === separatorLine) {
+  if (fenceIndices.includes(lineNumber)) {
     return 'separator'
   }
 
   const lineText = lines[lineNumber]?.trim() || ''
-  // Check for directive or commented directive (must be before separator)
-  if (
-    (lineText.startsWith('!') || lineText.startsWith('# !') || lineText.startsWith('#!')) &&
-    (separatorLine === -1 || lineNumber < separatorLine)
-  ) {
-    return 'directive'
-  }
 
-  if (separatorLine !== -1) {
-    if (lineNumber < separatorLine) {
+  // Fenced Python: content between first two fences
+  if (fenceIndices.length >= 2) {
+    if (lineNumber > fenceIndices[0] && lineNumber < fenceIndices[1]) {
       return 'python'
-    } else {
+    }
+    if (lineNumber > fenceIndices[1]) {
       return 'html'
     }
   }
 
-  // No separator found - treat everything as python except directives at top
-  return 'python'
+  // Check for directive (must be before first fence or at top if no fences)
+  const firstFence = fenceIndices.length > 0 ? fenceIndices[0] : -1
+  if (
+    (lineText.startsWith('!') || lineText.startsWith('# !') || lineText.startsWith('#!')) &&
+    (firstFence === -1 || lineNumber < firstFence)
+  ) {
+    return 'directive'
+  }
+
+  // Treat everything else after last directive (or top) as HTML if no fences
+  // Or if it's before the first fence and not a directive, it might be HTML (for components without python)
+  if (firstFence === -1 || lineNumber < firstFence) {
+    // If it's before fences and not a directive, check if there are ANY directives above
+    // Actually, simple rule: if no fences, directives at top, rest is html.
+    let lastDirective = -1
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim()
+      if (t.startsWith('!') || t.startsWith('# !') || t.startsWith('#!')) {
+        lastDirective = i
+      } else if (t !== '' && lastDirective !== -1) {
+        break
+      }
+    }
+    return lineNumber > lastDirective ? 'html' : 'directive'
+  }
+
+  return 'html'
 }
 
 /**
@@ -176,76 +326,6 @@ function addComment(line: string, section: 'python' | 'directive' | 'html'): str
   }
 }
 
-/**
- * Map a location from a shadow .py file back to the original .wire file.
- */
-async function mapLocationBack(
-  location: Location | LocationLink
-): Promise<Location | LocationLink> {
-  if (!client) return location
-
-  let uri: Uri
-  let range: Range
-  const isLocation = 'uri' in location
-
-  // Handle Location or LocationLink
-  if (isLocation) {
-    // Location
-    uri = location.uri
-    range = location.range
-  } else {
-    // LocationLink
-    uri = location.targetUri
-    range = location.targetRange
-  }
-
-  const fsPath = uri.fsPath
-  if (fsPath.includes('.pywire')) {
-    const workspaceFolder = workspace.getWorkspaceFolder(uri)
-    if (workspaceFolder) {
-      const rootPath = workspaceFolder.uri.fsPath
-      // relPath: pages/counter.wire.py
-      const relPath = path.relative(path.join(rootPath, '.pywire'), fsPath)
-      const wireRelPath = relPath.slice(0, -3) // remove ".py"
-      const wirePath = path.join(rootPath, wireRelPath)
-      const wireUri = Uri.file(wirePath)
-
-      try {
-        const mapping = (await client.sendRequest('pywire/mapFromGenerated', {
-          uri: wireUri.toString(),
-          position: range.start,
-        })) as PositionMapping | null
-
-        if (mapping) {
-          const endMapping = (await client.sendRequest('pywire/mapFromGenerated', {
-            uri: wireUri.toString(),
-            position: range.end,
-          })) as PositionMapping | null
-
-          const startPos = new Position(mapping.line, mapping.character)
-          const endPos = endMapping ? new Position(endMapping.line, endMapping.character) : startPos
-          const wireRange = new Range(startPos, endPos)
-
-          if (isLocation) {
-            return new Location(wireUri, wireRange)
-          } else {
-            // Return modified LocationLink
-            return {
-              ...location,
-              targetUri: wireUri,
-              targetRange: wireRange,
-              targetSelectionRange: wireRange,
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to map location back', e)
-      }
-    }
-  }
-  return location
-}
-
 export function activate(context: ExtensionContext) {
   extensionDir = context.extensionPath
 
@@ -257,7 +337,6 @@ export function activate(context: ExtensionContext) {
   console.log('PyWire extension activating...')
   log('PyWire extension activating')
 
-  // Register context-aware toggle comment command
   const toggleCommentCmd = commands.registerTextEditorCommand(
     'pywire.toggleComment',
     (editor: TextEditor, edit: TextEditorEdit) => {
@@ -280,7 +359,7 @@ export function activate(context: ExtensionContext) {
           const trimmed = lineText.trim()
 
           // Skip empty lines and separator
-          if (trimmed === '' || isSeparatorLine(lineText)) {
+          if (trimmed === '' || isFenceLine(lineText)) {
             continue
           }
 
@@ -309,6 +388,135 @@ export function activate(context: ExtensionContext) {
     }
   )
   context.subscriptions.push(toggleCommentCmd)
+
+  // -- Embedded JS/CSS Support --
+  // const embeddedSupport = new EmbeddedLanguageSupport() // Moved global
+  context.subscriptions.push(
+    workspace.registerTextDocumentContentProvider('pywire-embedded', embeddedProviderInstance)
+  )
+
+  // Registration for completion and hover
+  context.subscriptions.push(
+    languages.registerCompletionItemProvider('pywire', {
+      async provideCompletionItems(doc, pos, token, context) {
+        const result = await embeddedSupport.forwardRequest<CompletionList>(doc, pos, 'vscode.executeCompletionItemProvider', [pos, context.triggerCharacter], log)
+        if (result) {
+          log(`Found completions: ${result.items.length} items`)
+          return result
+        }
+        return undefined
+      }
+    }, '.', '"', "'", '/', '<')
+  )
+
+  context.subscriptions.push(
+    languages.registerHoverProvider('pywire', {
+      async provideHover(doc, pos, token) {
+        const result = await embeddedSupport.forwardRequest<Hover[]>(doc, pos, 'vscode.executeHoverProvider', [pos], log)
+        if (result && result.length > 0) return result[0]
+        return undefined
+      }
+    })
+  )
+
+  context.subscriptions.push(
+    languages.registerDefinitionProvider('pywire', {
+      async provideDefinition(doc, pos, token) {
+        const result = await embeddedSupport.forwardRequest<Location | Location[] | LocationLink[]>(doc, pos, 'vscode.executeDefinitionProvider', [pos], log)
+        if (!result) return undefined
+
+        const remapUri = (u: Uri) => {
+          if (u.scheme === 'pywire-embedded' && (u.path.endsWith('.js') || u.path.endsWith('.css'))) {
+            if (u.path.startsWith(doc.uri.path)) {
+              return doc.uri
+            }
+          }
+          return u
+        }
+
+        if (Array.isArray(result)) {
+          // Check if it's Location[] or LocationLink[]
+          if (result.length > 0) {
+            const first = result[0]
+            if ('targetUri' in first) {
+              // LocationLink[]
+              return (result as LocationLink[]).map(l => ({ ...l, targetUri: remapUri(l.targetUri) }))
+            } else {
+              // Location[]
+              return (result as Location[]).map(l => new Location(remapUri(l.uri), l.range))
+            }
+          }
+          return []
+        } else {
+          // Single Location
+          return new Location(remapUri((result as Location).uri), (result as Location).range)
+        }
+      }
+    })
+  )
+
+  context.subscriptions.push(
+    languages.registerReferenceProvider('pywire', {
+      async provideReferences(doc, pos, context, token) {
+        const result = await embeddedSupport.forwardRequest<Location[]>(doc, pos, 'vscode.executeReferenceProvider', [pos, context], log)
+        if (result) {
+          return result.map(l => {
+            if (l.uri.scheme === 'pywire-embedded' && l.uri.path.startsWith(doc.uri.path)) {
+              return new Location(doc.uri, l.range)
+            }
+            return l
+          })
+        }
+        return result
+      }
+    })
+  )
+
+  context.subscriptions.push(
+    languages.registerRenameProvider('pywire', {
+      async provideRenameEdits(doc, pos, newName, token) {
+        const result = await embeddedSupport.forwardRequest<WorkspaceEdit>(doc, pos, 'vscode.executeDocumentRenameProvider', [pos, newName], log)
+        if (result) {
+          const newEdit = new WorkspaceEdit()
+          for (const [uri, edits] of result.entries()) {
+            // Remap edits from virtual URI to original document URI.
+            // We assume edits are local to the file.
+            // If the rename affects other files (e.g. imports), we'd need to check if those are also virtual files
+            // and map them back to their corresponding .wire files.
+            // For now, simpler logic: check if it matches OUR virtual uri.
+            const vUriPath = doc.uri.path + (uri.path.endsWith('.css') ? '.css' : '.js')
+            if (uri.path === vUriPath && (uri.scheme === 'untitled' || uri.scheme === 'pywire-embedded')) {
+              newEdit.set(doc.uri, edits)
+            } else {
+              // It's some other file? Keep it as is?
+              newEdit.set(uri, edits)
+            }
+          }
+          return newEdit
+        }
+        return result
+      }
+    })
+  )
+
+  context.subscriptions.push(
+    languages.registerSignatureHelpProvider('pywire', {
+      async provideSignatureHelp(doc, pos, token, context) {
+        const result = await embeddedSupport.forwardRequest<SignatureHelp>(doc, pos, 'vscode.executeSignatureHelpProvider', [pos, context.triggerCharacter], log)
+        return result
+      }
+    }, '(', ',')
+  )
+
+  context.subscriptions.push(
+    languages.registerDocumentHighlightProvider('pywire', {
+      async provideDocumentHighlights(doc, pos, token) {
+        const result = await embeddedSupport.forwardRequest<DocumentHighlight[]>(doc, pos, 'vscode.executeDocumentHighlights', [pos], log)
+        return result
+      }
+    })
+  )
+
 
   const formattingProvider = languages.registerDocumentFormattingEditProvider(
     { language: 'pywire' },
@@ -421,478 +629,15 @@ export function activate(context: ExtensionContext) {
         },
       }
 
-      // --- Shadow File Logic ---
-
-      // --- Settings & Git Automations ---
-      async function ensureHiddenAndIgnored(rootPath: string) {
-        // 1. Hide in VS Code
-        try {
-          const config = workspace.getConfiguration('files')
-          const excludes = config.get<{ [key: string]: boolean }>('exclude') || {}
-          if (!excludes['**/.pywire']) {
-            // Update workspace setting
-            await config.update('exclude', { ...excludes, '**/.pywire': true }, 2) // 2 = Workspace
-          }
-        } catch (e) {
-          console.error('Failed to update files.exclude', e)
-        }
-
-        // 2. Add to .gitignore (Self-contained)
-        try {
-          const pywireDir = path.join(rootPath, '.pywire')
-          if (!fs.existsSync(pywireDir)) {
-            fs.mkdirSync(pywireDir, { recursive: true })
-          }
-
-          const pywireGitIgnore = path.join(pywireDir, '.gitignore')
-          if (!fs.existsSync(pywireGitIgnore)) {
-            fs.writeFileSync(pywireGitIgnore, '*\n')
-          }
-        } catch (e) {
-          console.error('Failed to create .pywire/.gitignore', e)
-        }
-      }
-
-      const shadowUpdateTimers = new Map<string, ReturnType<typeof setTimeout>>()
-      const shadowUpdateTexts = new Map<string, string | undefined>()
-
-      const scheduleShadowUpdate = (uri: string, text?: string) => {
-        shadowUpdateTexts.set(uri, text)
-        const existing = shadowUpdateTimers.get(uri)
-        if (existing) {
-          clearTimeout(existing)
-        }
-        const timer = setTimeout(() => {
-          shadowUpdateTimers.delete(uri)
-          const latestText = shadowUpdateTexts.get(uri)
-          shadowUpdateTexts.delete(uri)
-          updateShadowFile(uri, latestText).catch((e) => {
-            console.error('Failed to update shadow file (debounced)', e)
-            log(`Failed to update shadow file (debounced): ${String(e)}`)
-          })
-        }, 200)
-        shadowUpdateTimers.set(uri, timer)
-      }
-
-      async function updateShadowFile(uri: string, text?: string) {
-        if (!client) return
-
-        // Setup directory logic
-        const workspaceFolder = workspace.getWorkspaceFolder(Uri.parse(uri))
-        if (!workspaceFolder) return
-
-        const rootPath = workspaceFolder.uri.fsPath
-
-        // Ensure hidden/ignored once per session/root?
-        // We can just call it safely.
-        await ensureHiddenAndIgnored(rootPath)
-
-        try {
-          const response = (await client.sendRequest('pywire/virtualCode', {
-            uri: uri,
-            text: text,
-          })) as VirtualCodeResponse | null
-          if (response && response.content) {
-            // Determine shadow path
-            // workspaceRoot/.pywire/relative_path.py
-            const workspaceFolder = workspace.getWorkspaceFolder(workspace.workspaceFolders![0].uri)
-            if (!workspaceFolder) return
-
-            const rootPath = workspaceFolder.uri.fsPath
-            const pywireDir = path.join(rootPath, '.pywire')
-
-            if (!fs.existsSync(pywireDir)) {
-              fs.mkdirSync(pywireDir, { recursive: true })
-            }
-
-            // Simple flattening or recreating structure?
-            // Let's flatten for now: filename.wire -> filename.wire.py
-            // But collisions? path_to_file.replace(/[\/\\]/g, '__') could work.
-            // But Pylance imports need structure.
-            // Ideally we mirror the structure.
-
-            // Get relative path
-            const relPath = path.relative(rootPath, Uri.parse(uri).fsPath)
-            const shadowRelPath = relPath + '.py'
-            const shadowPath = path.join(pywireDir, shadowRelPath)
-
-            const shadowDir = path.dirname(shadowPath)
-            if (!fs.existsSync(shadowDir)) {
-              fs.mkdirSync(shadowDir, { recursive: true })
-            }
-
-            fs.writeFileSync(shadowPath, response.content)
-            // Note: We only write to disk via fs.writeFileSync.
-            // Pylance will detect the file change automatically.
-            // We intentionally avoid opening/saving via VS Code API to prevent
-            // "file is newer" conflicts during rapid typing.
-          }
-        } catch (e) {
-          console.error('Failed to update shadow file', e)
-          log(`Failed to update shadow file: ${String(e)}`)
-        }
-      }
-
-      const getShadowUriForWire = (wireUri: Uri): Uri | null => {
-        const workspaceFolder = workspace.getWorkspaceFolder(wireUri)
-        if (!workspaceFolder) {
-          return null
-        }
-        const rootPath = workspaceFolder.uri.fsPath
-        const relPath = path.relative(rootPath, wireUri.fsPath)
-        const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-        return Uri.file(shadowPath)
-      }
-
-      const mapFromGenerated = async (
-        wireUri: Uri,
-        position: Position
-      ): Promise<Position | null> => {
-        if (!client) {
-          return null
-        }
-        try {
-          const mapped = (await client.sendRequest('pywire/mapFromGenerated', {
-            uri: wireUri.toString(),
-            position: position,
-          })) as PositionMapping | null
-          if (!mapped) {
-            return null
-          }
-          return new Position(mapped.line, mapped.character)
-        } catch (e) {
-          console.error('Failed to map position', e)
-          log(`Failed to map position: ${String(e)}`)
-          return null
-        }
-      }
-
-      const mapToGenerated = async (wireUri: Uri, position: Position): Promise<Position | null> => {
-        if (!client) {
-          return null
-        }
-        try {
-          const mapped = (await client.sendRequest('pywire/mapToGenerated', {
-            uri: wireUri.toString(),
-            position: position,
-          })) as PositionMapping | null
-          if (!mapped) {
-            return null
-          }
-          return new Position(mapped.line, mapped.character)
-        } catch (e) {
-          console.error('Failed to map position', e)
-          log(`Failed to map position: ${String(e)}`)
-          return null
-        }
-      }
-
-      // --- Middleware ---
-      const useBundledPyright = config.get<boolean>('useBundledPyright', false)
-      console.log(`Use Bundled Pyright: ${useBundledPyright}`)
-      log(`Use Bundled Pyright: ${useBundledPyright}`)
-
-      const middleware = useBundledPyright
-        ? undefined
-        : {
-            provideHover: async (
-              document: TextDocument,
-              position: Position,
-              token: CancellationToken,
-              next: ProvideHoverSignature
-            ) => {
-              // 1. Ask server for mapping
-              try {
-                if (!client) {
-                  return await next(document, position, token)
-                }
-                const mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                  uri: document.uri.toString(),
-                  position: position,
-                })) as PositionMapping | null
-
-                if (mapping) {
-                  // It maps to Python!
-                  // 2. Determine shadow URI
-                  const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                  if (workspaceFolder) {
-                    const rootPath = workspaceFolder.uri.fsPath
-                    const relPath = path.relative(rootPath, document.uri.fsPath)
-                    const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                    const shadowUri = Uri.file(shadowPath)
-
-                    // Ensure file exists (it should have been updated on change)
-                    if (fs.existsSync(shadowPath)) {
-                      // 3. Delegate to Pylance
-                      const results = await commands.executeCommand<Hover[]>(
-                        'vscode.executeHoverProvider',
-                        shadowUri,
-                        new Position(mapping.line, mapping.character)
-                      )
-
-                      if (results && results.length > 0) {
-                        return results[0]
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                console.error('Hover middleware failed', e)
-              }
-
-              // Fallback to default (Jedi)
-              return await next(document, position, token)
-            },
-
-            provideDefinition: async (
-              document: TextDocument,
-              position: Position,
-              token: CancellationToken,
-              next: ProvideDefinitionSignature
-            ) => {
-              try {
-                if (!client) {
-                  return await next(document, position, token)
-                }
-                const mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                  uri: document.uri.toString(),
-                  position: position,
-                })) as PositionMapping | null
-
-                if (mapping) {
-                  const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                  if (workspaceFolder) {
-                    const rootPath = workspaceFolder.uri.fsPath
-                    const relPath = path.relative(rootPath, document.uri.fsPath)
-                    const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                    const shadowUri = Uri.file(shadowPath)
-
-                    if (fs.existsSync(shadowPath)) {
-                      const results = await commands.executeCommand<
-                        Location | LocationLink | (Location | LocationLink)[]
-                      >(
-                        'vscode.executeDefinitionProvider',
-                        shadowUri,
-                        new Position(mapping.line, mapping.character)
-                      )
-
-                      if (results) {
-                        if (Array.isArray(results)) {
-                          const mappedResults = await Promise.all(
-                            results.map((loc) => mapLocationBack(loc))
-                          )
-                          // Convert all to LocationLink for middleware signature
-                          return mappedResults.filter(Boolean).map((loc) => {
-                            if ('uri' in loc) {
-                              return {
-                                targetUri: loc.uri,
-                                targetRange: loc.range,
-                                targetSelectionRange: loc.range,
-                              } as LocationLink
-                            }
-                            return loc as LocationLink
-                          })
-                        } else {
-                          const mapped = await mapLocationBack(results)
-                          // Convert to LocationLink for middleware signature
-                          if ('uri' in mapped) {
-                            return [
-                              {
-                                targetUri: mapped.uri,
-                                targetRange: mapped.range,
-                                targetSelectionRange: mapped.range,
-                              } as LocationLink,
-                            ]
-                          }
-                          return [mapped as LocationLink]
-                        }
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                console.error('Definition middleware failed', e)
-              }
-              return await next(document, position, token)
-            },
-
-            provideReferences: async (
-              document: TextDocument,
-              position: Position,
-              context: ReferenceContext,
-              token: CancellationToken,
-              next: ProvideReferencesSignature
-            ) => {
-              try {
-                if (!client) {
-                  return await next(document, position, context, token)
-                }
-                const mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                  uri: document.uri.toString(),
-                  position: position,
-                })) as PositionMapping | null
-
-                if (mapping) {
-                  const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                  if (workspaceFolder) {
-                    const rootPath = workspaceFolder.uri.fsPath
-                    const relPath = path.relative(rootPath, document.uri.fsPath)
-                    const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                    const shadowUri = Uri.file(shadowPath)
-
-                    if (fs.existsSync(shadowPath)) {
-                      const results = await commands.executeCommand<Location[]>(
-                        'vscode.executeReferenceProvider',
-                        shadowUri,
-                        new Position(mapping.line, mapping.character)
-                      )
-
-                      if (results && Array.isArray(results)) {
-                        const mappedResults = await Promise.all(
-                          results.map((loc) => mapLocationBack(loc))
-                        )
-                        // Convert all to Location for middleware signature
-                        return mappedResults.filter(Boolean).map((loc) => {
-                          if ('uri' in loc) {
-                            return loc as Location
-                          }
-                          // Convert LocationLink to Location
-                          return new Location(loc.targetUri, loc.targetRange)
-                        })
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                console.error('References middleware failed', e)
-              }
-              return await next(document, position, context, token)
-            },
-
-            provideCompletionItem: async (
-              document: TextDocument,
-              position: Position,
-              context: CompletionContext,
-              token: CancellationToken,
-              next: ProvideCompletionItemsSignature
-            ) => {
-              try {
-                const lines = document.getText().split('\n')
-                const section = getSection(lines, position.line)
-                log(
-                  `Completion request: section=${section} line=${position.line} char=${position.character} lineText="${lines[position.line]?.substring(0, 60)}"`
-                )
-                if (section === 'separator') {
-                  return []
-                }
-
-                let mapping: PositionMapping | null = null
-                if (client) {
-                  try {
-                    mapping = (await client.sendRequest('pywire/mapToGenerated', {
-                      uri: document.uri.toString(),
-                      position: position,
-                    })) as PositionMapping | null
-                  } catch (e) {
-                    console.error('Completion mapping failed', e)
-                    log(`Completion mapping failed: ${String(e)}`)
-                  }
-                }
-
-                const usePython = section === 'python' || Boolean(mapping)
-                log(`Completion routing: usePython=${usePython}`)
-                if (!usePython) {
-                  if (!mapping) {
-                    log('Completion mapping: null')
-                  }
-                  return await next(document, position, context, token)
-                }
-                if (!mapping) {
-                  log('Completion mapping: null')
-                  return []
-                }
-
-                log(`Completion mapping: ${mapping.line}:${mapping.character}`)
-                await updateShadowFile(document.uri.toString(), document.getText())
-
-                const workspaceFolder = workspace.getWorkspaceFolder(document.uri)
-                if (!workspaceFolder) {
-                  return []
-                }
-
-                const rootPath = workspaceFolder.uri.fsPath
-                const relPath = path.relative(rootPath, document.uri.fsPath)
-                const shadowPath = path.join(rootPath, '.pywire', relPath + '.py')
-                const shadowUri = Uri.file(shadowPath)
-
-                if (!fs.existsSync(shadowPath)) {
-                  return []
-                }
-
-                const results = await commands.executeCommand<CompletionList | CompletionItem[]>(
-                  'vscode.executeCompletionItemProvider',
-                  shadowUri,
-                  new Position(mapping.line, mapping.character),
-                  context.triggerCharacter
-                )
-                if (!results) {
-                  log('Completion results: empty')
-                  return []
-                }
-
-                // Get prefix from wire file for filterText adjustment
-                const lineText = document.lineAt(position.line).text
-                const prefixMatch = lineText.slice(0, position.character).match(/[\w.$]*$/)
-                const wirePrefix = prefixMatch ? prefixMatch[0] : ''
-                log(`Completion prefix: "${wirePrefix}"`)
-
-                const stripEdits = (item: CompletionItem) => {
-                  return {
-                    ...item,
-                    // Clear filterText to let VS Code use label directly
-                    filterText: undefined,
-                    sortText: item.sortText,
-                    textEdit: undefined,
-                    additionalTextEdits: undefined,
-                    range: undefined,
-                  }
-                }
-
-                if (Array.isArray(results)) {
-                  log(`Completion results: ${results.length} items (array)`)
-                  return results.map(stripEdits)
-                }
-                if (results.items && Array.isArray(results.items)) {
-                  log(`Completion results: ${results.items.length} items (list)`)
-                  return {
-                    ...results,
-                    items: results.items.map(stripEdits),
-                  }
-                }
-
-                log('Completion results: non-list result')
-                return results
-              } catch (e) {
-                console.error('Completion middleware failed', e)
-                log(`Completion middleware failed: ${String(e)}`)
-              }
-              return []
-            },
-
-            // Add handleDiagnostics to trigger shadow update?
-            // Or just listen to change events.
-          }
-
       // Client options - what to send to the server
       const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'pywire' }],
         synchronize: {
           fileEvents: workspace.createFileSystemWatcher('**/*.pywire'),
         },
-        middleware: middleware,
         initializationOptions: {
-          useBundledPyright: useBundledPyright,
-        },
+          tyPath: config.get<string>('tyPath'),
+        }
       }
 
       // Create the language client
@@ -906,204 +651,6 @@ export function activate(context: ExtensionContext) {
       await client.start()
       console.log('PyWire language server started')
       log('PyWire language server started')
-
-      const inlayHintsProvider = languages.registerInlayHintsProvider(
-        { language: 'pywire' },
-        {
-          async provideInlayHints(document, range, token) {
-            if (!client) {
-              return []
-            }
-            if (token.isCancellationRequested) {
-              return []
-            }
-            const shadowUri = getShadowUriForWire(document.uri)
-            if (!shadowUri) {
-              return []
-            }
-            if (!fs.existsSync(shadowUri.fsPath)) {
-              await updateShadowFile(document.uri.toString(), document.getText())
-            }
-            // Query the entire shadow file instead of trying to map the visible range
-            // Use a large range to cover the whole file
-            const fullRange = new Range(new Position(0, 0), new Position(100000, 0))
-            const hints = await commands.executeCommand<InlayHint[]>(
-              'vscode.executeInlayHintProvider',
-              shadowUri,
-              fullRange
-            )
-            if (!hints || !Array.isArray(hints)) {
-              return []
-            }
-            const mapped: InlayHint[] = []
-            for (const hint of hints) {
-              if (token.isCancellationRequested) {
-                return mapped
-              }
-              const mappedPos = await mapFromGenerated(document.uri, hint.position)
-              if (!mappedPos) {
-                continue
-              }
-              // Only include hints within the requested range
-              if (mappedPos.line < range.start.line || mappedPos.line > range.end.line) {
-                continue
-              }
-              const newHint = new InlayHint(mappedPos, hint.label, hint.kind)
-              newHint.paddingLeft = hint.paddingLeft
-              newHint.paddingRight = hint.paddingRight
-              newHint.tooltip = hint.tooltip
-              // Copy textEdits to enable double-click to insert
-              if (hint.textEdits && hint.textEdits.length > 0) {
-                const mappedEdits: TextEdit[] = []
-                for (const edit of hint.textEdits) {
-                  const editStart = await mapFromGenerated(document.uri, edit.range.start)
-                  const editEnd = await mapFromGenerated(document.uri, edit.range.end)
-                  if (editStart && editEnd) {
-                    mappedEdits.push(TextEdit.replace(new Range(editStart, editEnd), edit.newText))
-                  }
-                }
-                if (mappedEdits.length > 0) {
-                  newHint.textEdits = mappedEdits
-                }
-              }
-              mapped.push(newHint)
-            }
-            return mapped
-          },
-        }
-      )
-      clientSubscriptions.push(inlayHintsProvider)
-
-      const documentHighlightProvider = languages.registerDocumentHighlightProvider(
-        { language: 'pywire' },
-        {
-          async provideDocumentHighlights(document, position, token) {
-            if (!client) {
-              return []
-            }
-            if (token.isCancellationRequested) {
-              return []
-            }
-            const shadowUri = getShadowUriForWire(document.uri)
-            if (!shadowUri) {
-              return []
-            }
-            if (!fs.existsSync(shadowUri.fsPath)) {
-              await updateShadowFile(document.uri.toString(), document.getText())
-            }
-            const mappedPos = await mapToGenerated(document.uri, position)
-            if (!mappedPos) {
-              return []
-            }
-            const highlights = await commands.executeCommand<DocumentHighlight[]>(
-              'vscode.executeDocumentHighlights',
-              shadowUri,
-              new Position(mappedPos.line, mappedPos.character)
-            )
-            if (!highlights || !Array.isArray(highlights)) {
-              return []
-            }
-            const mapped: DocumentHighlight[] = []
-            for (const hl of highlights) {
-              if (token.isCancellationRequested) {
-                return mapped
-              }
-              const mappedStart = await mapFromGenerated(document.uri, hl.range.start)
-              if (!mappedStart) {
-                continue
-              }
-              const mappedEnd = (await mapFromGenerated(document.uri, hl.range.end)) ?? mappedStart
-              const mappedRange = new Range(mappedStart, mappedEnd)
-              mapped.push(new DocumentHighlight(mappedRange, hl.kind))
-            }
-            return mapped
-          },
-        }
-      )
-      clientSubscriptions.push(documentHighlightProvider)
-
-      if (!useBundledPyright) {
-        const pythonDiagnostics = languages.createDiagnosticCollection('pywire-python')
-        clientSubscriptions.push(pythonDiagnostics)
-
-        const mapShadowUriToWireUri = (shadowUri: Uri): Uri | null => {
-          const shadowPath = shadowUri.fsPath
-          const marker = `${path.sep}.pywire${path.sep}`
-          const markerIndex = shadowPath.indexOf(marker)
-          if (markerIndex < 0) {
-            return null
-          }
-          const rootPath = shadowPath.slice(0, markerIndex)
-          const relPath = shadowPath.slice(markerIndex + marker.length)
-          if (!relPath.endsWith('.py')) {
-            return null
-          }
-          const wirePath = path.join(rootPath, relPath.slice(0, -3))
-          return Uri.file(wirePath)
-        }
-
-        const diagnosticsListener = languages.onDidChangeDiagnostics(async (e) => {
-          if (e.uris.length === 0) {
-            return
-          }
-          const updates = new Map<string, Diagnostic[]>()
-          for (const uri of e.uris) {
-            const wireUri = mapShadowUriToWireUri(uri)
-            if (!wireUri) {
-              continue
-            }
-            const rawDiagnostics = languages.getDiagnostics(uri)
-            const mappedDiagnostics: Diagnostic[] = []
-            for (const diag of rawDiagnostics) {
-              const mappedStart = await mapFromGenerated(wireUri, diag.range.start)
-              if (!mappedStart) {
-                continue
-              }
-              const mappedEnd = (await mapFromGenerated(wireUri, diag.range.end)) ?? mappedStart
-              const mappedRange = new Range(mappedStart, mappedEnd)
-              const mappedDiagnostic = new Diagnostic(mappedRange, diag.message, diag.severity)
-              mappedDiagnostic.code = diag.code
-              mappedDiagnostic.source = diag.source
-              mappedDiagnostic.tags = diag.tags
-              mappedDiagnostic.relatedInformation = diag.relatedInformation
-              mappedDiagnostics.push(mappedDiagnostic)
-            }
-            updates.set(wireUri.toString(), mappedDiagnostics)
-          }
-          for (const [wireUri, diagnostics] of updates) {
-            pythonDiagnostics.set(Uri.parse(wireUri), diagnostics)
-          }
-        })
-        clientSubscriptions.push(diagnosticsListener)
-      }
-
-      // Listen for document changes to update shadow files
-      workspace.onDidChangeTextDocument(async (e) => {
-        if (e.document.languageId === 'pywire') {
-          scheduleShadowUpdate(e.document.uri.toString(), e.document.getText())
-        }
-      })
-
-      // Ensure a full sync on save (no debounce)
-      workspace.onDidSaveTextDocument(async (doc) => {
-        if (doc.languageId === 'pywire') {
-          await updateShadowFile(doc.uri.toString(), doc.getText())
-        }
-      })
-
-      // Also on initial open/startup for visible editors
-      window.visibleTextEditors.forEach((editor) => {
-        if (editor.document.languageId === 'pywire') {
-          updateShadowFile(editor.document.uri.toString(), editor.document.getText())
-        }
-      })
-
-      // On open
-      workspace.onDidOpenTextDocument(async (doc) => {
-        if (doc.languageId === 'pywire') {
-          await updateShadowFile(doc.uri.toString(), doc.getText())
-        }
-      })
 
       window.showInformationMessage('PyWire services are running')
     } catch (err) {
@@ -1187,6 +734,7 @@ export function activate(context: ExtensionContext) {
   )
 
   // Listen for terminal closure to reset context
+  // Listen for terminal closure to reset context
   context.subscriptions.push(
     window.onDidCloseTerminal((terminal) => {
       if (terminal.name === 'PyWire Dev') {
@@ -1194,15 +742,6 @@ export function activate(context: ExtensionContext) {
       }
     })
   )
-
-  // Listen for useBundledPyright configuration changes
-  const configListener = workspace.onDidChangeConfiguration(async (e) => {
-    if (e.affectsConfiguration('pywire.useBundledPyright')) {
-      log('useBundledPyright setting changed, restarting language server...')
-      await restartLanguageClient()
-    }
-  })
-  context.subscriptions.push(configListener)
 
   // Start the client initially
   startLanguageClient()

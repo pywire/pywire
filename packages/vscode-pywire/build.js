@@ -136,16 +136,28 @@ async function main() {
 
                 const modulesToCopy = ['prettier', 'prettier-plugin-pywire']
                 for (const moduleName of modulesToCopy) {
-                  const symlinkedPath = join(projectRoot, 'node_modules', moduleName)
-                  if (!existsSync(symlinkedPath)) {
-                    console.warn(`Module not found for bundling: ${moduleName}`)
+                  let sourceDir = join(projectRoot, 'node_modules', moduleName)
+
+                  // Special case for our workspace: if prettier-plugin-pywire is missing in node_modules
+                  // (e.g. installed from Git but not built), check if it exists as a sibling in the workspace.
+                  if (moduleName === 'prettier-plugin-pywire') {
+                    const localSibling = join(projectRoot, '..', 'prettier-plugin-pywire')
+                    // If local sibling exists and has a dist folder, prefer it
+                    if (existsSync(join(localSibling, 'dist', 'index.cjs'))) {
+                      console.log(`Using local sibling for ${moduleName}: ${localSibling}`)
+                      sourceDir = localSibling
+                    }
+                  }
+
+                  if (!existsSync(sourceDir)) {
+                    console.warn(`Module not found for bundling: ${moduleName} at ${sourceDir}`)
                     continue
                   }
                   // Follow symlinks (pnpm uses symlinks)
-                  const realSourceDir = realpathSync(symlinkedPath)
+                  const realSourceDir = realpathSync(sourceDir)
                   const targetDir = join(outNodeModulesDir, moduleName)
                   cpSync(realSourceDir, targetDir, { recursive: true, dereference: true })
-                  console.log(`Copied ${moduleName} to out/node_modules/`)
+                  console.log(`Copied ${moduleName} to out/node_modules/ from ${sourceDir}`)
                 }
 
                 // Copy ruff WASM file next to the plugin's CJS bundle

@@ -32,3 +32,5 @@ jobs:
         run: pnpm run compile
       - name: Publish to Marketplace
         run: pnpm exec vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
+      - name: Publish to Open VSX
+        run: npx ovsx publish --no-dependencies -p ${{ secrets.OVSX_PAT }}

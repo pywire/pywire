@@ -45,7 +45,9 @@
         "embeddedLanguages": {
           "meta.embedded.block.python": "python",
           "meta.embedded.inline.python": "python",
-          "text.html.basic": "html"
+          "text.html.basic": "html",
+          "meta.embedded.block.javascript": "javascript",
+          "meta.embedded.block.css": "css"
         }
       }
     ],
@@ -67,10 +69,9 @@
           "default": "off",
           "description": "Traces the communication between VS Code and the language server"
         },
-        "pywire.useBundledPyright": {
-          "type": "boolean",
-          "default": false,
-          "description": "If true, bypasses Pylance middleware and uses the bundled Pyright from the language server. Useful for testing fallback mode."
+        "pywire.tyPath": {
+          "type": "string",
+          "description": "Path to the Ty language server executable. If not set, 'ty' is expected to be in the PATH."
         },
         "pywire.disableUpdateNotifications": {
           "type": "boolean",
@@ -139,9 +140,6 @@
       "[pywire]": {
         "editor.defaultFormatter": "pywire.pywire",
         "editor.formatOnSave": true
-      },
-      "emmet.includeLanguages": {
-        "pywire": "html"
       }
     }
   },
@@ -180,7 +178,7 @@
   "dependencies": {
     "@wasm-fmt/ruff_fmt": "^0.9.0",
     "prettier": "^3.6.2",
-    "prettier-plugin-pywire": "github:pywire/prettier-plugin-pywire#main",
+    "prettier-plugin-pywire": "link:../prettier-plugin-pywire",
     "vscode-languageclient": "^9.0.1",
     "web-tree-sitter": "^0.26.3"
   }

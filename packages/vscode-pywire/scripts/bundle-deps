@@ -54,10 +54,10 @@ echo "Bundling mode: $MODE"
 case "$MODE" in
     publish)
         PYWIRE_LS_REF="$(get_latest_tag "$PYWIRE_LS_REPO")"
-        DEPS="pygls pyright git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
+        DEPS="pygls git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
         ;;
     ci)
-        DEPS="pygls pyright"
+        DEPS="pygls"
 
         if [ -n "$PYWIRE_LANGUAGE_SERVER_SRC" ]; then
              pywire_ls_path="$(resolve_local_src "$PYWIRE_LANGUAGE_SERVER_SRC")"
@@ -70,7 +70,7 @@ case "$MODE" in
         # Local development mode
         pywire_ls_path="$(resolve_local_src "${PYWIRE_LANGUAGE_SERVER_SRC:-../pywire-language-server}")" || pywire_ls_path=""
         
-        DEPS="pygls pyright"
+        DEPS="pygls"
         
         if [ -n "$pywire_ls_path" ]; then
             DEPS="$DEPS $pywire_ls_path"
