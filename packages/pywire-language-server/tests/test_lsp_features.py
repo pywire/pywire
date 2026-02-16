@@ -7,7 +7,8 @@ def test_directive_ranges_multiline() -> None:
     'main': '/',
     'test': '/a/:id'
 }
----html---
+---
+---
 """
     doc = PyWireDocument("file:///test.pywire", text)
     assert "path" in doc.directive_ranges

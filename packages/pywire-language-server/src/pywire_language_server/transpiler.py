@@ -1,5 +1,6 @@
 import ast
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from .sourcemap import SourceMap
 
@@ -12,6 +13,7 @@ class Transpiler:
         self.source_map = SourceMap(source, "")
         self.directive_ranges: Dict[str, Tuple[int, int]] = {}
         self.path_routes: Dict[str, str] = {}
+        self.in_script_tag = False
 
         self.current_line_idx = 0
         self.generated_line_idx = 0  # 0-indexed
@@ -88,6 +90,135 @@ class Transpiler:
         self.source_map.generated_source = full_code
         return full_code, self.source_map
 
+    def generate_stub(self, filename: str) -> Tuple[str, SourceMap]:
+        """Generate .pyi stub content for this document along with its source map."""
+        # Convert filename to PascalCase class name
+        # e.g. form.wire -> Form, my-component.wire -> MyComponent
+        stem = Path(filename).stem
+        if stem.endswith(".wire"):
+            stem = stem[:-5]
+        
+        parts = stem.replace("-", "_").split("_")
+        class_name = "".join(p.capitalize() for p in parts)
+
+        # Parse python block to find @expose
+        exposed_methods: List[str] = []
+        method_mappings: List[Tuple[str, int]] = [] # (name, orig_line)
+        
+        # Extract python source
+        python_start, python_end = self._find_python_fences()
+        if python_start is not None and python_end is not None:
+            python_code = "".join(self.lines[python_start + 1 : python_end])
+            try:
+                tree = ast.parse(python_code)
+                for node in tree.body:
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        is_exposed = any(
+                            (isinstance(d, ast.Name) and d.id == "expose") or
+                            (isinstance(d, ast.Attribute) and d.attr == "expose")
+                            for d in node.decorator_list
+                        )
+                        if is_exposed:
+                            # Reconstruct signature from AST arguments
+                            args = self._format_args(node.args)
+                            ret = " -> Any"
+                            if node.returns:
+                                ret_source = ast.get_source_segment(python_code, node.returns)
+                                if ret_source:
+                                    ret = f" -> {ret_source}"
+                            
+                            prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
+                            method_name = node.name
+                            exposed_methods.append(f"    {prefix}def {method_name}(self{args}){ret}: ...")
+                            
+                            # node.lineno is 1-based relative to python_code
+                            # self.lines[python_start] is the '---'
+                            # so line 1 of python_code is python_start + 1
+                            method_mappings.append((method_name, python_start + (node.lineno)))
+                            
+            except SyntaxError:
+                pass
+
+        stub_lines = [
+            '"""Generated PyWire stub."""',
+            'from typing import Any, Optional, List, Dict, Union, Callable',
+            'from pywire.runtime.page import BasePage',
+            'from pywire import wire, effect, derived, props, ref, expose',
+            'from pywire.core import WireComponent', # In case user uses it
+            '',
+            f'class {class_name}(BasePage):',
+            '    """Compiled PyWire page/component class."""',
+        ]
+        
+        header_len = len(stub_lines)
+        if exposed_methods:
+            stub_lines.extend(exposed_methods)
+        else:
+            stub_lines.append('    pass')
+        
+        stub_content = "\n".join(stub_lines) + "\n"
+        
+        # Build source map for the stub
+        sm = SourceMap(self.source, stub_content)
+        for i, (name, orig_line) in enumerate(method_mappings):
+            gen_line = header_len + i
+            line_text = stub_lines[gen_line]
+            
+            # Find column for 'def {name}'
+            try:
+                gen_col = line_text.find(f"def {name}")
+                if gen_col != -1:
+                    gen_col += 4 # Move to name
+                else:
+                    gen_col = 4
+            except:
+                gen_col = 4
+                
+            sm.add_mapping(gen_line, gen_col, orig_line, 0, len(name))
+            
+        return stub_content, sm
+
+    def _format_args(self, args: ast.arguments) -> str:
+        # Simple formatter for stub arguments
+        # Does not handle all edge cases (defaults, kwonly, etc) perfectly but enough for basic stubs
+        parts = []
+        
+        # Positional args
+        for arg in args.args:
+            parts.append(self._format_arg(arg))
+            
+        # Varargs
+        if args.vararg:
+            parts.append(f"*{self._format_arg(args.vararg)}")
+            
+        # Kwonly args
+        if args.kwonlyargs:
+            parts.append("*")
+            for arg in args.kwonlyargs:
+                parts.append(self._format_arg(arg))
+                
+        # Kwargs
+        if args.kwarg:
+            parts.append(f"**{self._format_arg(args.kwarg)}")
+            
+        if not parts:
+            return ""
+        return ", " + ", ".join(parts)
+
+    def _format_arg(self, arg: ast.arg) -> str:
+        if arg.annotation:
+            # We don't have easy access to source segment here without passing source code
+            # So valid reconstruction is hard. 
+            # Ideally we'd use ast.unparse(arg.annotation)
+            try:
+                import ast
+                if hasattr(ast, "unparse"):
+                    return f"{arg.arg}: {ast.unparse(arg.annotation)}"
+            except Exception:
+                pass
+            return f"{arg.arg}: Any"
+        return f"{arg.arg}: Any"
+
     def _split_import_block(
         self, python_lines: List[Tuple[int, str]]
     ) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
@@ -152,8 +283,12 @@ class Transpiler:
                 break
 
         if needs_wire_import:
-            self.generated_code.append("from pywire import wire\n")
+            self.generated_code.append("from pywire import wire, effect, derived, props, ref, expose\n")
             self.generated_line_idx += 1
+
+        # Always emit typing.Any (used by EventData stub)
+        self.generated_code.append("from typing import Any\n")
+        self.generated_line_idx += 1
 
     def _emit_python_line_with_rewrites(self, line: str, orig_line_idx: int):
         """Emit a python line, replacing $var with var.value and correcting the source map."""
@@ -409,10 +544,21 @@ class Transpiler:
         _append("    def __getitem__(self, key: str) -> str: ...\n")
         _append("    def __getattr__(self, name: str) -> str: ...\n\n")
 
+        # EventData imports (Real types for Go-to-Definition)
+        _append("from pywire.runtime.events import (\n")
+        _append("    EventData,\n")
+        _append("    UIEventData,\n")
+        _append("    MouseEventData,\n")
+        _append("    KeyboardEventData,\n")
+        _append("    InputEventData,\n")
+        _append("    FormEventData,\n")
+        _append(")\n\n")
+
         _append("path = _PathNamespace()\n")
         _append("url = _UrlNamespace()\n")
         _append("params = _ParamsNamespace()\n")
-        _append("query = _QueryNamespace()\n\n")
+        _append("query = _QueryNamespace()\n")
+        _append("def navigate(path: str) -> None: ...\n\n")
 
     def _process_html_section(self, start_idx: int, safe_limit: int) -> int:
         """Process one or more lines of HTML, extracting interpolations."""
@@ -452,7 +598,22 @@ class Transpiler:
                             # We are in HTML. " doesn't stop us from finding {
                             pass
 
-                    elif char == "{":
+                    elif not in_quote and not self.in_script_tag:
+                        # Check for script tag opening/closing
+                        # Simple heuristic: <script inside HTML context
+                        # We need to be careful not to trigger on strings, hence why we do it in this loop.
+                        # But scanning for <script> purely by char is annoying.
+                        # Let's check window around `char`? No.
+                        pass
+                        
+                    if char == "<":
+                        # Check if starting script
+                        if line[i:].startswith("<script"):
+                             self.in_script_tag = True
+                        elif line[i:].startswith("</script"):
+                             self.in_script_tag = False
+                    
+                    if char == "{" and not self.in_script_tag:
                         if balance == 0:
                             interpolation_start = (current_idx, i)
                         balance += 1
@@ -495,6 +656,7 @@ class Transpiler:
         prefix = ""
         suffix = ""
         is_handler = False
+        known_control_flow = False
 
         if match:
             attr_name = match.group(1)
@@ -514,8 +676,9 @@ class Transpiler:
             # or we look at the start of the first line.
             first_line_content = self.lines[start_line][start_col + 1 :].strip()
             if first_line_content.startswith("$") or first_line_content.startswith("/"):
+                # Updated regex to allow spaces between prefix chars and tag name
                 tag_match = re.match(
-                    r"([$/])([a-zA-Z0-9_-]+)(?:\s+(.*))?", first_line_content
+                    r"([$/])\s*([a-zA-Z0-9_-]+)(?:\s+(.*))?", first_line_content
                 )
                 if tag_match:
                     prefix_char = tag_match.group(1)
@@ -559,9 +722,15 @@ class Transpiler:
                         if known_control_flow:
                             # We need to strip the "{$tag " part from the mapping
                             # so that the remaining expression maps correctly.
-                            tag_trigger_len = len(tag_name) + 2  # {$ + tag
-                            # Adjust start_col for the actual expression
-                            start_col += tag_trigger_len
+                            
+                            # Use regex to find the end of the tag in the original line
+                            # We look at the original line segment to be safe
+                            # and check for {$ then optional spaces then tag then optional spaces
+                            original_segment = self.lines[start_line][start_col:]
+                            match_segment = re.match(r"\{\$\s*" + re.escape(tag_name) + r"\s*", original_segment)
+                            if match_segment:
+                                start_col += match_segment.end()
+                                
                     elif prefix_char == "/":
                         # Closing tag: {/if} -> ignore for python mapping
                         return
@@ -588,7 +757,20 @@ class Transpiler:
                     segments.append((l_idx, 0, self.lines[l_idx].rstrip("\r\n")))
                 segments.append((end_line, 0, self.lines[end_line][:end_col]))
 
-            self.generated_code.append("def __handler():\n")
+            # Determine specialized EventData type
+            event_cls = "EventData"
+            if attr_name.startswith("@"):
+                ev_type = attr_name[1:].lower()
+                if ev_type in ("click", "dblclick", "mousedown", "mouseup", "mousemove", "mouseenter", "mouseleave", "mouseover", "mouseout"):
+                    event_cls = "MouseEventData"
+                elif ev_type in ("keydown", "keyup", "keypress"):
+                    event_cls = "KeyboardEventData"
+                elif ev_type in ("input", "change"):
+                    event_cls = "InputEventData"
+                elif ev_type == "submit":
+                    event_cls = "FormEventData"
+
+            self.generated_code.append(f"def __handler(event: {event_cls} = None):\n")
             self.generated_line_idx += 1
 
             indent = "    "
@@ -621,15 +803,24 @@ class Transpiler:
         # Emit prefix
         # We don't append yet, we combine with content
         current_gen_col = len(prefix)
+        
+        # Calculate expression start column
+        # By default, it's start_col + 1 (skipping {)
+        expr_start_col = start_col + 1
+
+        if known_control_flow:
+            # We adjusted start_col in the previous block to point to start of expression
+            # So we use it as is.
+            expr_start_col = start_col
 
         # Emit Content with Rewrites
         if start_line == end_line:
             # Single line content
-            content = self.lines[start_line][start_col + 1 : end_col]
+            content = self.lines[start_line][expr_start_col : end_col]
             rewritten_content = self._emit_rewritten_segment(
                 content,
                 start_line,
-                start_col + 1,
+                expr_start_col,
                 self.generated_line_idx,
                 current_gen_col,
             )
@@ -643,9 +834,9 @@ class Transpiler:
             # If we align lines, we can emit newlines.
 
             # For multi-line, process per-line to keep line mapping sane.
-            l1 = self.lines[start_line][start_col + 1 :].rstrip("\r\n")
+            l1 = self.lines[start_line][expr_start_col :].rstrip("\r\n")
             rewritten_l1 = self._emit_rewritten_segment(
-                l1, start_line, start_col + 1, self.generated_line_idx, current_gen_col
+                l1, start_line, expr_start_col, self.generated_line_idx, current_gen_col
             )
 
             # Append prefix + l1 + \n

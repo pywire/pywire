@@ -9,6 +9,7 @@ from lsprotocol.types import (
     HoverParams,
     DefinitionParams,
     CompletionParams,
+    InsertTextFormat,
 )
 from pywire_language_server.server import (
     did_open,
@@ -16,6 +17,8 @@ from pywire_language_server.server import (
     definition,
     completions,
     documents,
+    validate,
+    PyWireDocument,
 )
 
 @pytest.fixture
@@ -139,7 +142,7 @@ async def test_static_hover(mock_ls, clean_documents):
     
     result = await hover(mock_ls, params)
     assert result is not None
-    assert "**@click**" in result.contents
+    assert "**@click**" in result.contents.value
 
 @pytest.mark.asyncio
 async def test_definition(mock_ls, clean_documents):
@@ -215,3 +218,242 @@ imp
     assert html_list is not None
     html_labels = [item.label for item in html_list.items]
     assert "$if" in html_labels
+
+
+@pytest.mark.asyncio
+async def test_hover_block_vs_attribute(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    text = """
+{$if condition}
+{/if}
+<div $if={condition}></div>
+"""
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text
+        )
+    ))
+
+    # Hover over '{$if' (line 1, char 2)
+    pos_block = Position(line=1, character=2)
+    res_block = await hover(mock_ls, HoverParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos_block
+    ))
+    assert res_block is not None
+    assert "**{$if}** Block" in res_block.contents.value
+
+    # Hover over '$if' attribute (line 3, char 6)
+    pos_attr = Position(line=3, character=6)
+    res_attr = await hover(mock_ls, HoverParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos_attr
+    ))
+    assert res_attr is not None
+    assert "**$if** Attribute" in res_attr.contents.value
+
+
+@pytest.mark.asyncio
+async def test_hover_unknown_dollar(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    text = """<div $unknown={x}></div>"""
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text
+        )
+    ))
+
+    pos = Position(line=0, character=6)
+    res = await hover(mock_ls, HoverParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos
+    ))
+    # Should be None (no more "Directive." fallback)
+    assert res is None
+
+
+@pytest.mark.asyncio
+async def test_validate_blocks(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    # 1. Unclosed block
+    text1 = "{$if x}"
+    doc1 = documents[uri] = PyWireDocument(uri, text1)
+    validate(mock_ls, uri)
+    diags1 = doc1.diagnostics
+    assert any("Unclosed block: '{$if}'" in d.message for d in diags1)
+
+    # 2. Unknown keyword
+    text2 = "{$elseif x}{/if}"
+    doc2 = documents[uri] = PyWireDocument(uri, text2)
+    validate(mock_ls, uri)
+    diags2 = doc2.diagnostics
+    assert any("Unknown block keyword: {$elseif}" in d.message for d in diags2)
+    
+    # Check range of unknown keyword (should include } )
+    diag = next(d for d in diags2 if "Unknown block keyword" in d.message)
+    assert diag.range.start.character == 0
+    assert diag.range.end.character == len("{$elseif x}")
+
+    # 3. Mismatched tag
+    text3 = "{$if x}{/for}"
+    doc3 = documents[uri] = PyWireDocument(uri, text3)
+    validate(mock_ls, uri)
+    diags3 = doc3.diagnostics
+    assert any("Mismatched closing tag: expected {/if}, got {/for}" in d.message for d in diags3)
+
+    # 4. Correct nesting
+    text4 = "{$if x}{$for y in z}{/for}{/if}"
+    doc4 = documents[uri] = PyWireDocument(uri, text4)
+    validate(mock_ls, uri)
+    assert len(doc4.diagnostics) == 0
+
+
+@pytest.mark.asyncio
+async def test_validate_attributes(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    text = "<div $unknown={x} $ref={y}></div>"
+    doc = documents[uri] = PyWireDocument(uri, text)
+    validate(mock_ls, uri)
+    diags = doc.diagnostics
+    assert any("Unknown framework attribute: $unknown" in d.message for d in diags)
+    # $ref is known, shouldn't have error
+    assert not any("$ref" in d.message for d in diags)
+
+
+@pytest.mark.asyncio
+async def test_completions_improved(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    text = "\n\n" # Two empty lines
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text
+        )
+    ))
+
+    # Empty line completion
+    pos = Position(line=1, character=0)
+    res = await completions(mock_ls, CompletionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos
+    ))
+    labels = [item.label for item in res.items]
+    assert "{$if}" in labels
+    assert "{$for}" in labels
+
+    # Inside tag with $ prefix
+    text2 = "<div $"
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text2
+        )
+    ))
+    pos2 = Position(line=0, character=6)
+    res2 = await completions(mock_ls, CompletionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos2
+    ))
+    labels2 = [item.label for item in res2.items]
+    assert "$ref" in labels2
+    assert "$if" in labels2
+    # Ensure it's a snippet
+    if_item = next(item for item in res2.items if item.label == "$if")
+    assert if_item.insert_text == "\\$if={${1:condition}}"
+    assert if_item.insert_text_format == InsertTextFormat.Snippet
+    
+    # Check $for snippet (now includes $key)
+    for_item = next(item for item in res2.items if item.label == "$for")
+    assert for_item.insert_text == "\\$for={${1:item} in ${2:items}} \\$key={${1:item}.${3:id}}"
+    
+    # Check TextEdit range for $if
+    # It should replace the range of '$' (line 0, char 5 to 6) with '$if={...}'
+    assert if_item.text_edit is not None
+    assert if_item.text_edit.new_text == "\\$if={${1:condition}}"
+    assert if_item.text_edit.range.start.character == 5
+    assert if_item.text_edit.range.end.character == 6
+
+@pytest.mark.asyncio
+async def test_completion_leakage_suppression(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    text = """
+---
+my_var = 1
+---
+<div $if={my_var} ></div>
+"""
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text
+        )
+    ))
+
+    # Cursor is at the space after attribute (line 4, after '}')
+    # <div $if={my_var} _>
+    pos = Position(line=4, character=18)
+    res = await completions(mock_ls, CompletionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos
+    ))
+    
+    labels = [item.label for item in res.items]
+    # 'my_var' should NOT be here (Ty suggestion leaked)
+    assert "my_var" not in labels
+    # Standard attributes should be here
+    assert "$for" in labels
+    
+    # Inside expression should still have Ty
+    pos_expr = Position(line=4, character=12) # inside {my_var}
+    res_expr = await completions(mock_ls, CompletionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos_expr
+    ))
+    # Note: Ty completions are mocked/delegated, in full integration they'd show up.
+    # We just need to check if we delegated (Ty returns something or results in empty list if mocked).
+    # Since our mock_ls for Ty isn't fully configured to return 'my_var', 
+    # we just trust the logic if it enters the branch.
+
+
+@pytest.mark.asyncio
+async def test_completion_precedence(mock_ls, clean_documents):
+    uri = "file:///test.wire"
+    text = """
+{$if condition}
+
+{/if}
+"""
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text
+        )
+    ))
+
+    # Inside {$if} block (line 2, char 0)
+    pos = Position(line=2, character=0)
+    res = await completions(mock_ls, CompletionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos
+    ))
+    
+    # Check if {$elif} and {$else} are present and sorted first
+    labels = [item.label for item in res.items]
+    assert "{$elif}" in labels
+    assert "{$else}" in labels
+    
+    # elif should have a 'priority' sort_text starting with '00' or 'aa'
+    elif_item = next(item for item in res.items if item.label == "{$elif}")
+    assert elif_item.sort_text.startswith("00")
+    
+    # Try typing '{$' inside and see if elif is prioritized 
+    text2 = text.replace("\n\n", "\n{$ \n")
+    did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text2
+        )
+    ))
+    pos2 = Position(line=2, character=2) # After {$
+    res2 = await completions(mock_ls, CompletionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos2
+    ))
+    # elif should be near the top
+    elif_item2 = next(item for item in res2.items if item.label == "elif")
+    assert elif_item2.sort_text.startswith("aa")

@@ -160,3 +160,46 @@ def test_transpile_v017_brace_syntax():
     assert "if (count < 0): pass" in code
     assert "else: pass" in code
     assert "for item in items: pass" in code
+
+def test_sourcemap_control_flow():
+    """Test sourcemaps for {$ blocks."""
+    cases = [
+        ("{$if loading}", "loading"),
+        ("{$  if loading}", "loading"),
+        ("{$for x in items}", "x in items"),
+        ("{$html page.title}", "page.title"),
+    ]
+
+    for source_line, expected_expr in cases:
+        t = Transpiler(source_line)
+        gen, sm = t.transpile()
+        
+        # Verify mapping for expected_expr start
+        # expected_expr start in source
+        orig_col = source_line.find(expected_expr)
+        
+        # find where expected_expr is in generated code
+        gen_idx = gen.find(expected_expr)
+        assert gen_idx != -1, f"Expression {expected_expr} not found in {gen}"
+        
+        # Calculate gen line/col
+        gen_lines = gen.splitlines(keepends=True)
+        current_idx = 0
+        g_line = 0
+        g_col = 0
+        for line in gen_lines:
+            if current_idx + len(line) > gen_idx:
+                g_col = gen_idx - current_idx
+                break
+            current_idx += len(line)
+            g_line += 1
+            
+        # Check mapping
+        found = False
+        for m in sm.mappings:
+            if m.generated_line == g_line and m.generated_col == g_col:
+                assert m.original_col == orig_col, f"Mapping mismatch for {expected_expr}: expected {orig_col}, got {m.original_col}"
+                found = True
+                break
+        
+        assert found, f"No mapping found for {expected_expr} at {g_line}:{g_col}"

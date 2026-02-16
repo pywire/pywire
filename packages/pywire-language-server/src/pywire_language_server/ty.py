@@ -10,9 +10,9 @@ from typing import Any, Callable, Dict, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-class PyrightClient:
+class TyClient:
     """
-    A simple JSON-RPC client to communicate with a pyright-langserver subprocess.
+    A simple JSON-RPC client to communicate with a ty subprocess.
     """
 
     def __init__(self):
@@ -30,41 +30,23 @@ class PyrightClient:
     ) -> None:
         self._diagnostics_callback = callback
 
-    def start(self) -> bool:
-        """Start the pyright-langserver process."""
+    def start(self, ty_path: Optional[str] = None) -> bool:
+        """Start the ty server process."""
         try:
-            cmd = self._build_pyright_command()
+            cmd = self._build_ty_command(ty_path)
             if not cmd:
-                logger.warning("pyright-langserver not found in PATH or venv.")
+                logger.warning("ty binary not found in PATH or provided path.")
                 return False
 
-            # Setup environment with bundled libs in PYTHONPATH
+            logger.info(f"Starting Ty: {cmd}")
+            # Ty runs as a standalone binary, no special env vars needed
             env = os.environ.copy()
-            import sys
-
-            # Check if we have bundled libs in sys.path (set by lsp_launcher.py)
-            bundled_libs = None
-            for path_entry in sys.path:
-                if "bundled" in path_entry and "libs" in path_entry:
-                    bundled_libs = path_entry
-                    break
-
-            if bundled_libs:
-                # Add bundled libs to PYTHONPATH so subprocess can find pyright module
-                existing_pythonpath = env.get("PYTHONPATH", "")
-                env["PYTHONPATH"] = bundled_libs + (
-                    os.pathsep + existing_pythonpath if existing_pythonpath else ""
-                )
-                logger.info(
-                    f"Setting PYTHONPATH to include bundled libs: {bundled_libs}"
-                )
-
-            logger.info(f"Starting Pyright: {cmd}")
+            
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,  # Capture stderr to avoid polluting our log?
+                stderr=subprocess.PIPE,
                 bufsize=0,
                 env=env,
             )
@@ -84,89 +66,29 @@ class PyrightClient:
             return True
 
         except FileNotFoundError:
-            logger.warning("pyright-langserver not found. Fallback mode disabled.")
+            logger.warning("ty binary not found.")
             return False
         except Exception as e:
-            logger.error(f"Failed to start pyright: {e}")
+            logger.error(f"Failed to start ty: {e}")
             return False
 
-    def _build_pyright_command(self) -> Optional[list]:
-        """Build command to start pyright-langserver."""
-        import sys
-
-        # First, try to use pyright module directly (works with bundled libs)
-        # This avoids shebang issues with scripts
-        if find_spec("pyright.langserver") is not None:
-            # Use current Python interpreter to run pyright module
-            return [sys.executable, "-m", "pyright.langserver", "--stdio"]
-
-        # Fallback: try to find pyright-langserver executable
-        executable = self._find_pyright_executable()
+    def _build_ty_command(self, ty_path: Optional[str] = None) -> Optional[list]:
+        """Build command to start ty server."""
+        executable = ty_path or self._find_ty_executable()
         if executable:
-            return [executable, "--stdio"]
-
+            return [executable, "server"]
         return None
 
-    def _find_pyright_executable(self) -> Optional[str]:
+    def _find_ty_executable(self) -> Optional[str]:
         import shutil
-        import sys
-
+        
         # 1. PATH
-        path_exe = shutil.which("pyright-langserver")
+        path_exe = shutil.which("ty")
         if path_exe:
             return path_exe
 
-        # 2. Virtual Env (sys.prefix) - typical venv structure
-        # Unix
-        venv_exe = os.path.join(sys.prefix, "bin", "pyright-langserver")
-        if os.path.exists(venv_exe):
-            return venv_exe
-
-        # Windows
-        venv_exe_win = os.path.join(sys.prefix, "Scripts", "pyright-langserver.exe")
-        if os.path.exists(venv_exe_win):
-            return venv_exe_win
-
-        # 3. Next to python executable (sometimes sys.prefix is different)
-        # Unix
-        py_dir = os.path.dirname(sys.executable)
-        same_dir_exe = os.path.join(py_dir, "pyright-langserver")
-        if os.path.exists(same_dir_exe):
-            return same_dir_exe
-
-        # Windows
-        same_dir_exe_win = os.path.join(
-            py_dir, "pyright-langserver.exe"
-        )  # unlikely but possible
-        if os.path.exists(same_dir_exe_win):
-            return same_dir_exe_win
-
-        # Scripts relative to executable
-        scripts_exe = os.path.join(py_dir, "Scripts", "pyright-langserver.exe")
-        if os.path.exists(scripts_exe):
-            return scripts_exe
-
-        # 4. Explicit Sibling Venv (Development Mode)
-        # src/pywire_language_server/pyright.py -> src/ ../ .venv
-        src_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )  # .../src
-        project_root = os.path.dirname(src_root)  # .../pywire-language-server
-
-        # Unix
-        sibling_venv_exe = os.path.join(
-            project_root, ".venv", "bin", "pyright-langserver"
-        )
-        if os.path.exists(sibling_venv_exe):
-            return sibling_venv_exe
-
-        # Windows
-        sibling_venv_exe_win = os.path.join(
-            project_root, ".venv", "Scripts", "pyright-langserver.exe"
-        )
-        if os.path.exists(sibling_venv_exe_win):
-            return sibling_venv_exe_win
-
+        # 2. Check for bundled binary? (Implement later if needed)
+        
         return None
 
     def stop(self):
@@ -197,7 +119,7 @@ class PyrightClient:
         def resolve_future(result, error=None):
             if not future.done():
                 if error:
-                    future.set_exception(Exception(f"Pyright Error: {error}"))
+                    future.set_exception(Exception(f"Ty Error: {error}"))
                 else:
                     future.set_result(result)
 
@@ -225,11 +147,11 @@ class PyrightClient:
         )
 
         try:
-            # logger.debug(f"Sending to Pyright: {content[:200]}...")
+            # logger.debug(f"Sending to Ty: {content[:200]}...")
             self.process.stdin.write(body_bytes)
             self.process.stdin.flush()
         except BrokenPipeError:
-            logger.error("Pyright process died")
+            logger.error("Ty process died")
             self.stop()
 
     def _read_loop(self):
@@ -242,11 +164,13 @@ class PyrightClient:
             # Basic HTTP-like parsing
             line = self.process.stdout.readline()
             if not line:
-                logger.info("Pyright stdout closed")
+                logger.info("Ty stdout closed")
                 break
 
             line_str = line.decode("utf-8", errors="ignore").strip()
-            logger.debug(f"[Pyright RAW] {line_str}")
+            line_str = line.decode("utf-8", errors="ignore").strip()
+            # LOG RAW HEADER for debugging
+            logger.info(f"[Ty RAW HEADER] {line_str}")
 
             if line_str.startswith("Content-Length:"):
                 try:
@@ -254,18 +178,33 @@ class PyrightClient:
                     # Skip empty line
                     self.process.stdout.readline()
 
-                    # Read body
-                    body = self.process.stdout.read(length)
-                    logger.debug(f"[Pyright BODY] {body.decode('utf-8')[:200]}...")
-                    self._handle_message(body)
+                    # Read body exactly
+                    body = self._read_exact(length)
+                    if body:
+                        self._handle_message(body)
                 except Exception as e:
-                    logger.error(f"Error parsing pyright message: {e}")
+                    logger.error(f"Error parsing ty message: {e}")
+
+    def _read_exact(self, length: int) -> Optional[bytes]:
+        """Read exactly n bytes from stdout."""
+        if not self.process or not self.process.stdout:
+            return None
+            
+        chunks = []
+        bytes_read = 0
+        while bytes_read < length:
+            chunk = self.process.stdout.read(min(length - bytes_read, 65536))
+            if not chunk:
+                return None  # EOF
+            chunks.append(chunk)
+            bytes_read += len(chunk)
+        return b"".join(chunks)
 
     def _read_stderr(self):
         if not self.process or not self.process.stderr:
             return
         for line in self.process.stderr:
-            logger.info(f"[Pyright STDERR] {line.decode('utf-8').strip()}")
+            logger.info(f"[Ty STDERR] {line.decode('utf-8').strip()}")
 
     def _handle_message(self, body: bytes):
         try:
@@ -286,7 +225,7 @@ class PyrightClient:
                         loop.call_soon_threadsafe(callback, msg.get("result"), None)
                 return
 
-            # Check if it's a Request from Pyright (has 'id' AND 'method')
+            # Check if it's a Request from Ty (has 'id' AND 'method')
             if "id" in msg and "method" in msg:
                 self._handle_incoming_request(msg)
                 return
@@ -297,6 +236,7 @@ class PyrightClient:
                     if self._diagnostics_callback:
                         params = msg.get("params") or {}
                         try:
+                            logger.info(f"[Ty Diagnostics Received] Params: {json.dumps(params)}")
                             self._diagnostics_callback(params)
                         except Exception as e:
                             logger.error(f"Diagnostics callback failed: {e}")
@@ -304,23 +244,21 @@ class PyrightClient:
                 if msg["method"] == "window/logMessage":
                     params = msg.get("params", {})
                     message = params.get("message", "")
-                    logger.info(f"[Pyright] {message}")
+                    logger.info(f"[Ty] {message}")
 
         except Exception as e:
             logger.error(f"Failed to handle message: {e}")
 
     def _handle_incoming_request(self, msg: Dict[str, Any]):
-        """Handle requests initiated by Pyright process."""
+        """Handle requests initiated by Ty process."""
         method = msg.get("method")
         req_id = msg.get("id")
         params = msg.get("params") or {}
 
-        logger.info(f"[Pyright Request] {method} id={req_id}")
+        logger.info(f"[Ty Request] {method} id={req_id}")
 
         if method == "workspace/configuration":
-            # Pyright is asking for configuration (e.g. python path)
-            # We return a list of nulls to say "use defaults"
-            # params['items'] is the list of config items requested
+            # Ty is asking for configuration
             items = params.get("items", [])
             result = [None] * len(items)
 
@@ -331,9 +269,7 @@ class PyrightClient:
             response = {"jsonrpc": "2.0", "id": req_id, "result": None}
             self._send(response)
         else:
-            # Unknown request, reply with error?
-            # Or just null to be safe
-            logger.warning(f"Unhandled Pyright request: {method}")
+            logger.warning(f"Unhandled Ty request: {method}")
             # Reply with MethodNotFound
             response = {
                 "jsonrpc": "2.0",
