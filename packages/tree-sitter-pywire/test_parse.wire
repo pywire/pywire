@@ -1,2 +1,3 @@
----html---
+---
+---
 <input checked={is_checked}>

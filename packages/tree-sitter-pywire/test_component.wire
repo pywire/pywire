@@ -1,4 +1,5 @@
----html---
+---
+---
 <MyComponent>
 <template slot="header">Header Content</template>
 </MyComponent>

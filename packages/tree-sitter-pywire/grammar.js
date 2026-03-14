@@ -130,12 +130,12 @@ module.exports = grammar({
 
         _script_content: $ => repeat1(choice(
             /[^<]+/,
-            seq('<', /[^/]/)
+            '<'
         )),
 
         _style_content: $ => repeat1(choice(
             /[^<]+/,
-            seq('<', /[^/]/)
+            '<'
         )),
 
         tag_name: $ => /[^ />{}"'=!\n\r]+/,

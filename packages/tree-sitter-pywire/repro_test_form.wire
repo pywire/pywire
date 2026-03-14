@@ -1,4 +1,0 @@
-    <form @submit={save}>
-        <input name="email" type="email" required minlength="5">
-        <input name="age" type="number" min="18">
-    </form>

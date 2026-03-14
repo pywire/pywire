@@ -1,7 +1,0 @@
-!layout "child.wire"
-
-<head>
-    <title>My Page</title>
-</head>
-
-<h1>Page Content</h1>

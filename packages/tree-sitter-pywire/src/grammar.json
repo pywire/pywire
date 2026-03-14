@@ -638,17 +638,8 @@
             "value": "[^<]+"
           },
           {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "<"
-              },
-              {
-                "type": "PATTERN",
-                "value": "[^/]"
-              }
-            ]
+            "type": "STRING",
+            "value": "<"
           }
         ]
       }
@@ -663,17 +654,8 @@
             "value": "[^<]+"
           },
           {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "<"
-              },
-              {
-                "type": "PATTERN",
-                "value": "[^/]"
-              }
-            ]
+            "type": "STRING",
+            "value": "<"
           }
         ]
       }
