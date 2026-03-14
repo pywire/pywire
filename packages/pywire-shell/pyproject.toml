@@ -1,13 +1,15 @@
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
 
 [project]
 name = "pywire-shell"
 version = "0.1.0"
 description = "Lightweight desktop apps with Python + HTML/CSS (Servo)"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pywire"
+]
 
 [project.optional-dependencies]
 dev = [
@@ -15,9 +17,8 @@ dev = [
     "ruff>=0.1.0",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
-namespaces = true
+[tool.maturin]
+manifest-path = "rust/pywire_servo/Cargo.toml"
+python-source = "src"
+# NOTE: User must ensure lib.rs has #[pyo3::pymodule] and name matches
+module-name = "pywire_shell._pywire_servo"

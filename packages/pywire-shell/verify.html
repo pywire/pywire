@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Interactivity Verification</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .box {
+            border: 2px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        input {
+            border: 1px solid #777;
+            padding: 5px;
+            margin: 5px 0;
+        }
+
+        #log {
+            background: #eee;
+            padding: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            height: 150px;
+            overflow-y: scroll;
+            border: 1px solid #aaa;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Interactivity Verification</h1>
+
+    <div class="box">
+        <h3>Text Selection Test</h3>
+        <p id="target">Select some of this text to verify that hit testing and offsets are working correctly. If
+            selection works, you should see a blue highlight when dragging over this sentence.</p>
+        <p>Another paragraph to test selection across multiple nodes.</p>
+    </div>
+
+    <div class="box">
+        <h3>Input & Focus Test</h3>
+        <input type="text" id="input1" placeholder="Type here..."><br>
+        <input type="text" id="input2" placeholder="Tab to here...">
+    </div>
+
+    <div id="log">Logs will appear here...</div>
+
+    <script>
+        const log = document.getElementById('log');
+        function appendLog(msg) {
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        document.addEventListener('mousedown', (e) => appendLog(`mousedown: ${e.target.tagName} at (${e.clientX}, ${e.clientY})`));
+        document.addEventListener('mouseup', (e) => appendLog(`mouseup: ${e.target.tagName}`));
+        document.addEventListener('contextmenu', (e) => {
+            appendLog(`contextmenu: ${e.target.tagName}`);
+            // e.preventDefault(); // Uncomment to test context menu suppression
+        });
+
+        document.querySelectorAll('input').forEach(input => {
+            input.addEventListener('focus', (e) => appendLog(`focus: ${e.target.id}`));
+            input.addEventListener('blur', (e) => appendLog(`blur: ${e.target.id}`));
+        });
+
+        // Report selection changes
+        document.addEventListener('selectionchange', () => {
+            const sel = window.getSelection();
+            if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                appendLog(`selectionchange: anchor=${sel.anchorNode.nodeName}:${sel.anchorOffset}, focus=${sel.focusNode.nodeName}:${sel.focusOffset}`);
+            }
+        });
+    </script>
+</body>
+
+</html>

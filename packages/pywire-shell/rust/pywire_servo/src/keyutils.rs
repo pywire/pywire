@@ -12,14 +12,18 @@ use winit::keyboard::{
 
 // Some shortcuts use Cmd on Mac and Control on other systems.
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 pub const CMD_OR_CONTROL: Modifiers = Modifiers::META;
 #[cfg(not(target_os = "macos"))]
+#[allow(dead_code)]
 pub const CMD_OR_CONTROL: Modifiers = Modifiers::CONTROL;
 
 // Some shortcuts use Cmd on Mac and Alt on other systems.
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 pub const CMD_OR_ALT: Modifiers = Modifiers::META;
 #[cfg(not(target_os = "macos"))]
+#[allow(dead_code)]
 pub const CMD_OR_ALT: Modifiers = Modifiers::ALT;
 
 trait FromWinitKeyEvent {
@@ -595,7 +599,7 @@ pub fn keyboard_event_from_winit(key_event: &KeyEvent, state: ModifiersState) ->
         Code::from_winit_key_event(key_event),
         Location::from_winit_key_event(key_event),
         keyboard_modifiers_from_winit_modifiers(state),
-        false,
+        key_event.repeat,
         false,
     )
 }
