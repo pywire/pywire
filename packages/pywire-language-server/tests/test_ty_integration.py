@@ -10,6 +10,8 @@ from lsprotocol.types import (
     TextDocumentItem,
     HoverParams,
     MarkupContent,
+    DefinitionParams,
+    ReferenceParams,
 )
 import pywire_language_server.server as server_module
 
@@ -256,3 +258,66 @@ async def test_shorthand_removal(mock_ls):
     # So it will now return None
     
     assert hover_res is None
+
+@pytest.mark.asyncio
+async def test_definition_reference_fallback(mock_ls, mock_ty_client):
+    # Setup global state
+    server_module.ty_client = mock_ty_client
+    server_module.virtual_manager = Mock()
+    server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
+
+    uri = "file:///test.wire"
+    text = """
+---
+my_var = 10
+---
+<input value={my_var}>
+"""
+    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
+        text_document=TextDocumentItem(
+            uri=uri, language_id="pywire", version=1, text=text
+        )
+    ))
+
+    # Fix the mock so reverse mapping works
+    doc = server_module.documents[uri]
+    server_module.virtual_manager.get_original_uri.return_value = uri
+    server_module.virtual_manager.get_source_map.return_value = doc.source_map
+
+    # Click exactly on '{' of value={my_var}
+    # This position is not mapped directly, so it should trigger the fallback
+    # Line 4 (0-indexed), character 13 is '{'
+    pos = Position(line=4, character=13)
+    
+    # 1. Test Definition Fallback
+    mock_ty_client.send_request.return_value = [{"uri": "file:///shadow.py", "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 6}}}]
+    
+    def_params = DefinitionParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos
+    )
+    result = await server_module.definition(mock_ls, def_params)
+    
+    # Verify send_request was called (meaning fallback found a mapped position)
+    call_args = mock_ty_client.send_request.call_args
+    assert call_args is not None
+    method, _ = call_args[0]
+    assert method == "textDocument/definition"
+    assert result is not None
+
+    # 2. Test References Fallback
+    mock_ty_client.send_request.reset_mock()
+    mock_ty_client.send_request.return_value = [{"uri": "file:///shadow.py", "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 6}}}]
+    
+    ref_params = ReferenceParams(
+        text_document=TextDocumentIdentifier(uri=uri),
+        position=pos,
+        context={"includeDeclaration": True}
+    )
+    result = await server_module.references(mock_ls, ref_params)
+    
+    call_args = mock_ty_client.send_request.call_args
+    assert call_args is not None
+    method, _ = call_args[0]
+    assert method == "textDocument/references"
+    assert result is not None

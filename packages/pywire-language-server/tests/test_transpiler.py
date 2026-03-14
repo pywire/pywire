@@ -76,6 +76,9 @@ count = wire(0)
     usage_line = 4 
     usage_col_start = 5 
     
+    print("CODE IS:", code)
+    print("MAPPINGS:", [(m.original_line, m.original_col, m.generated_line, m.generated_col, m.length) for m in source_map.mappings])
+    
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
     assert gen_loc is not None
     
@@ -203,3 +206,41 @@ def test_sourcemap_control_flow():
                 break
         
         assert found, f"No mapping found for {expected_expr} at {g_line}:{g_col}"
+
+def test_multiline_attribute_mapping():
+    """Test that attributes spanning multiple lines map correctly (Prettier format)."""
+    source = """<input
+  type="number"
+  value={current_age.value}
+  @input={update_current_age}
+/>"""
+    t = Transpiler(source)
+    code, sm = t.transpile()
+    
+    # Check value={current_age.value} (line 2, col 9)
+    # Note: current_age starts at col 9
+    m_val = sm.to_generated(2, 9)
+    assert m_val is not None, "Should map current_age on line 2"
+    
+    # Check @input={update_current_age} (line 3, col 10)
+    # Note: update_current_age starts at col 10
+    m_input = sm.to_generated(3, 10)
+    assert m_input is not None, "Should map update_current_age on line 3"
+    
+    # Reverse mapping check
+    # Find update_current_age in code
+    idx = code.find("update_current_age")
+    gen_lines = code.splitlines(keepends=True)
+    curr = 0
+    g_line, g_col = 0, 0
+    for line in gen_lines:
+        if curr + len(line) > idx:
+            g_col = idx - curr
+            break
+        curr += len(line)
+        g_line += 1
+    
+    orig = sm.to_original(g_line, g_col)
+    assert orig is not None
+    assert orig[0] == 3 # line 3
+    assert orig[1] == 10 # col 10

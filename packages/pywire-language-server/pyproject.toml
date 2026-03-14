@@ -24,6 +24,7 @@ dev = [
     "nox",
     "ruff>=0.1.0",
     "ty",
+    "pywire",
 ]
 
 [tool.pytest.ini_options]

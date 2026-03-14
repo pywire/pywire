@@ -29,6 +29,7 @@ from lsprotocol.types import (
     InsertTextFormat,
     Location,
     MarkupContent,
+    MessageType,
     Position,
     PublishDiagnosticsParams,
     Range,
@@ -37,6 +38,7 @@ from lsprotocol.types import (
     SemanticTokens,
     SemanticTokensLegend,
     SemanticTokensParams,
+    ShowMessageParams,
     TextDocumentSyncKind,
     TextEdit,
     WorkspaceEdit,
@@ -47,6 +49,11 @@ from . import __version__
 from .ty import TyClient
 from .transpiler import Transpiler
 from .sourcemap import SourceMap
+try:
+    import pywire
+    HAS_PYWIRE = True
+except ImportError:
+    HAS_PYWIRE = False
 
 # Valid block keywords: used in {$keyword ...} and {/keyword}
 KNOWN_BLOCKS = {"if", "elif", "else", "for", "await", "then", "catch", "try", "except", "finally"}
@@ -87,6 +94,8 @@ class VirtualFileManager:
         doc_path = self._uri_to_path(doc_uri)
         if not doc_path:
             return None
+        if doc_path.endswith(".wire"):
+            return f"file://{doc_path[:-5]}_wire.py"
         return f"file://{doc_path}.py"
 
     def get_stub_uri(self, doc_uri: str) -> Optional[str]:
@@ -97,7 +106,7 @@ class VirtualFileManager:
         if not doc_path:
             return None
         if doc_path.endswith(".wire"):
-             return f"file://{doc_path[:-5]}.pyi"
+             return f"file://{doc_path[:-5]}_wire.pyi"
         return f"file://{doc_path}.pyi"
 
     def get_original_uri(self, shadow_uri: str) -> Optional[str]:
@@ -105,11 +114,11 @@ class VirtualFileManager:
         # Handle both file:// and raw paths
         uri = shadow_uri if shadow_uri.startswith("file://") else f"file://{shadow_uri}"
         
-        # 1. Direct shadow matches (.wire.py)
-        if uri.endswith(".wire.py"):
-             return uri[:-3]
-        if uri.endswith(".wire.pyi"):
-             return uri[:-4]
+        # 1. Direct shadow matches (_wire.py)
+        if uri.endswith("_wire.py"):
+             return uri[:-8] + ".wire"
+        if uri.endswith("_wire.pyi"):
+             return uri[:-9] + ".wire"
 
         # 2. Stub matches (foo.pyi -> foo.wire)
         if uri.endswith(".pyi"):
@@ -126,6 +135,7 @@ class VirtualFileManager:
         if norm_uri in [k.lower() for k in self.source_maps.keys()]:
              # If it's a known shadow, we can try to guess back
              if uri.endswith(".py"):
+                  # For our new pattern, if it got here and ends with .py but wasn't _wire.py
                   return uri[:-3]
              if uri.endswith(".pyi"):
                   return uri[:-4] + ".wire"
@@ -223,6 +233,13 @@ ty_diagnostics: dict[str, List[Diagnostic]] = {}
 async def initialize(ls: LanguageServer, params: Any):
     global virtual_manager, ty_client
     logger.info("PyWire Language Server initializing...")
+    
+    if not HAS_PYWIRE:
+        ls.window_show_message(ShowMessageParams(
+            message="PyWire Language Server: 'pywire' package not found in current environment. Please install it for full functionality.",
+            type=MessageType.Error
+        ))
+        logger.error("pywire package not found. Tree-sitter parsing will be unavailable.")
     
     root_uri = params.root_uri or (
         params.workspace_folders[0].uri if params.workspace_folders else None
@@ -1434,6 +1451,34 @@ def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Dia
         code=diag.get("code"),
     )
 
+def _fuzzy_to_original(
+    source_map: Any, line: int, col: int
+) -> Optional[Tuple[int, int]]:
+    mapped = source_map.to_original(line, col)
+    if mapped:
+        return mapped
+
+    best: Optional[Tuple[int, int]] = None
+    best_distance = 10**9
+    for mapping in source_map.mappings:
+        if mapping.generated_line != line:
+            continue
+        if col < mapping.generated_col:
+            distance = mapping.generated_col - col
+            candidate_col = mapping.original_col
+        elif col > mapping.generated_col + mapping.length:
+            distance = col - (mapping.generated_col + mapping.length)
+            candidate_col = mapping.original_col + mapping.length
+        else:
+            distance = 0
+            candidate_col = mapping.original_col + (col - mapping.generated_col)
+        if distance < best_distance:
+            best_distance = distance
+            best = (mapping.original_line, candidate_col)
+            if distance == 0:
+                break
+    return best
+
 def _map_location_to_original(loc: Dict[str, Any]) -> Location:
     """Map a virtual location back to an original .wire location if applicable."""
     if "targetUri" in loc:
@@ -1459,8 +1504,8 @@ def _map_location_to_original(loc: Dict[str, Any]) -> Location:
         start = loc_range["start"]
         end = loc_range.get("end", start)
         
-        orig_start = target_map.to_original(start["line"], start["character"])
-        orig_end = target_map.to_original(end["line"], end["character"])
+        orig_start = _fuzzy_to_original(target_map, start["line"], start["character"])
+        orig_end = _fuzzy_to_original(target_map, end["line"], end["character"])
         
         # Create a copy of the range to modify
         new_range = {
@@ -1712,7 +1757,6 @@ Define routes for this page.
                         "textDocument": {"uri": shadow_uri},
                         "position": {"line": gen_line, "character": gen_col},
                     }
-
                     result = await ty_client.send_request(
                         "textDocument/hover", shadow_params
                     )
@@ -1928,6 +1972,10 @@ async def references(
 
     if ty_client:
         gen_loc = source_map.to_generated(position.line, position.character)
+        if not gen_loc:
+            gen_loc = source_map.nearest_generated_on_line(
+                position.line, position.character
+            )
         if gen_loc:
             gen_line, gen_col = gen_loc
             shadow_uri = virtual_manager.get_shadow_uri(uri)
@@ -2120,6 +2168,10 @@ async def definition(
 
     # Map to virtual python
     gen_pos = doc.map_to_generated(position.line, position.character)
+    if not gen_pos:
+        gen_pos = doc.source_map.nearest_generated_on_line(
+            position.line, position.character
+        )
     if not gen_pos:
         return None
 

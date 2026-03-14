@@ -52,27 +52,11 @@ class PropsB:
     doc = MockDocument(uri, CONTENT)
     documents[uri] = doc
     
-    # Mock ls.text_document_publish_diagnostics
     ls_instance.text_document_publish_diagnostics = MagicMock()
-    
-    print("Running validate...")
     validate(ls_instance, uri)
     
-    # Check if diagnostics were published
     published = ls_instance.text_document_publish_diagnostics.call_args
-    if published:
-        params = published[0][0]
-        print(f"Published diagnostics: {len(params.diagnostics)}")
-        for d in params.diagnostics:
-            print(f" - {d.message} at line {d.range.start.line}")
-            
-        has_error = any("Multiple @props" in d.message for d in params.diagnostics)
-        if has_error:
-            print("SUCCESS: Multiple @props diagnostic found")
-        else:
-            print("FAIL: Multiple @props diagnostic NOT found")
-    else:
-        print("FAIL: No diagnostics published at all")
-
-if __name__ == "__main__":
-    test_props_diagnostic()
+    assert published, "Expected diagnostics to be published"
+    params = published[0][0]
+    has_error = any("Multiple @props" in d.message for d in params.diagnostics)
+    assert has_error, f"Expected 'Multiple @props' diagnostic, got {[d.message for d in params.diagnostics]}"
