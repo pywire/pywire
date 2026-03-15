@@ -71,7 +71,7 @@ class Transpiler:
         if parsed.directives:
             for d in parsed.directives:
                 if isinstance(d, PathDirective):
-                    start_line = d.line - 1
+                    start_line = max(0, d.line - 1)
                     end_line = start_line
                     if not d.is_simple_string:
                         for i in range(start_line, len(self.lines)):
@@ -88,7 +88,10 @@ class Transpiler:
                     self.generated_code.append(f"__path = {routes_repr}\n")
                     self.generated_line_idx += 1
                 elif isinstance(d, LayoutDirective):
-                    self.directive_ranges["layout"] = (d.line - 1, d.line - 1)
+                    self.directive_ranges["layout"] = (
+                        max(0, d.line - 1),
+                        max(0, d.line - 1),
+                    )
         else:
             # Fallback for directives if parser missed them
             self._scan_directives_legacy()
@@ -182,7 +185,7 @@ class Transpiler:
                     # skip control blocks like {$if ...}
                     continue
 
-                line = node.line - 1
+                line = max(0, node.line - 1)
                 col = node.column
                 prefix = "_ = "
                 self.generated_code.append(prefix)
@@ -194,7 +197,7 @@ class Transpiler:
                 self.generated_line_idx += 1
 
     def _emit_interpolation_from_node(self, node: InterpolationNode):
-        line = node.line - 1
+        line = max(0, node.line - 1)
         col = node.column
         expr = node.expression
         prefix = "_ = "
@@ -281,7 +284,7 @@ class Transpiler:
         return start_line, start_col, start_col + 1
 
     def _emit_control_flow(self, attr):
-        line = attr.line - 1
+        line = max(0, attr.line - 1)
         col = attr.column
         prefix = ""
         expr = ""
@@ -340,7 +343,7 @@ class Transpiler:
         self.generated_line_idx += 1
 
     def _emit_event_handler(self, attr: EventAttribute):
-        line = attr.line - 1
+        line = max(0, attr.line - 1)
         col = attr.column
         # ... event_cls logic ...
         event_cls = "EventData"
@@ -387,7 +390,7 @@ class Transpiler:
         self.generated_line_idx += 1
 
     def _emit_reactive_attr(self, attr: ReactiveAttribute):
-        line = attr.line - 1
+        line = max(0, attr.line - 1)
         col = attr.column
         prefix = "_ = "
         self.generated_code.append(prefix)
@@ -404,7 +407,7 @@ class Transpiler:
         self.generated_line_idx += 1
 
     def _emit_spread_attr(self, attr: SpreadAttribute):
-        line = attr.line - 1
+        line = max(0, attr.line - 1)
         col = attr.column
         prefix = "_ = **"
         self.generated_code.append(prefix)

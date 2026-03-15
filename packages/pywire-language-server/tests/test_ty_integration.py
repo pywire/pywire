@@ -315,11 +315,15 @@ my_var = 10
         text_document=TextDocumentIdentifier(uri=uri),
         position=pos
     )
+    
+    # Force mock return value for this test
+    server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    
     result = await server_module.definition(mock_ls, def_params)
     
     # Verify send_request was called (meaning fallback found a mapped position)
     call_args = mock_ty_client.send_request.call_args
-    assert call_args is not None
+    assert call_args is not None, f"Ty send_request was not called. doc.source_map.mappings: {[(m.original_line, m.original_col, m.length) for m in doc.source_map.mappings]}"
     method, _ = call_args[0]
     assert method == "textDocument/definition"
     assert result is not None
