@@ -1,13 +1,10 @@
 """PyWire Language Server"""
 
 import ast
-import asyncio
 import cattrs
-import json
 import logging
 import os
 import re
-import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,6 +26,7 @@ from lsprotocol.types import (
     InsertTextFormat,
     Location,
     MarkupContent,
+    MarkupKind,
     MessageType,
     Position,
     PublishDiagnosticsParams,
@@ -49,14 +47,27 @@ from . import __version__
 from .ty import TyClient
 from .transpiler import Transpiler
 from .sourcemap import SourceMap
+
 try:
-    import pywire
+    import pywire  # noqa: F401
+
     HAS_PYWIRE = True
 except ImportError:
     HAS_PYWIRE = False
 
 # Valid block keywords: used in {$keyword ...} and {/keyword}
-KNOWN_BLOCKS = {"if", "elif", "else", "for", "await", "then", "catch", "try", "except", "finally"}
+KNOWN_BLOCKS = {
+    "if",
+    "elif",
+    "else",
+    "for",
+    "await",
+    "then",
+    "catch",
+    "try",
+    "except",
+    "finally",
+}
 # Block keywords that start a block (require a closing {/tag})
 BLOCK_OPENERS = {"if", "for", "await", "try"}
 # Block keywords that are continuations (must appear inside an opener)
@@ -106,40 +117,40 @@ class VirtualFileManager:
         if not doc_path:
             return None
         if doc_path.endswith(".wire"):
-             return f"file://{doc_path[:-5]}_wire.pyi"
+            return f"file://{doc_path[:-5]}_wire.pyi"
         return f"file://{doc_path}.pyi"
 
     def get_original_uri(self, shadow_uri: str) -> Optional[str]:
         """Map back from virtual .py or .pyi URI to original .wire URI."""
         # Handle both file:// and raw paths
         uri = shadow_uri if shadow_uri.startswith("file://") else f"file://{shadow_uri}"
-        
+
         # 1. Direct shadow matches (_wire.py)
         if uri.endswith("_wire.py"):
-             return uri[:-8] + ".wire"
+            return uri[:-8] + ".wire"
         if uri.endswith("_wire.pyi"):
-             return uri[:-9] + ".wire"
+            return uri[:-9] + ".wire"
 
         # 2. Stub matches (foo.pyi -> foo.wire)
         if uri.endswith(".pyi"):
-             path = self._uri_to_path(uri)
-             if path:
-                 # Check for foo.pyi -> foo.wire
-                 wire_path = path[:-4] + ".wire"
-                 if os.path.exists(wire_path):
-                     return f"file://{wire_path}"
-        
+            path = self._uri_to_path(uri)
+            if path:
+                # Check for foo.pyi -> foo.wire
+                wire_path = path[:-4] + ".wire"
+                if os.path.exists(wire_path):
+                    return f"file://{wire_path}"
+
         # 3. Fallback: Check if it's a known shadow file in our source_maps
         # Ty might return lowercase or slightly different URIs
         norm_uri = uri.lower()
         if norm_uri in [k.lower() for k in self.source_maps.keys()]:
-             # If it's a known shadow, we can try to guess back
-             if uri.endswith(".py"):
-                  # For our new pattern, if it got here and ends with .py but wasn't _wire.py
-                  return uri[:-3]
-             if uri.endswith(".pyi"):
-                  return uri[:-4] + ".wire"
-                  
+            # If it's a known shadow, we can try to guess back
+            if uri.endswith(".py"):
+                # For our new pattern, if it got here and ends with .py but wasn't _wire.py
+                return uri[:-3]
+            if uri.endswith(".pyi"):
+                return uri[:-4] + ".wire"
+
         return None
 
     def set_source_map(self, shadow_uri: str, source_map: SourceMap):
@@ -150,7 +161,7 @@ class VirtualFileManager:
         """Retrieve source map for a virtual file."""
         if shadow_uri in self.source_maps:
             return self.source_maps[shadow_uri]
-        
+
         # Robust lookup for casing mismatch
         norm_shadow = shadow_uri.lower()
         for key, sm in self.source_maps.items():
@@ -233,14 +244,18 @@ ty_diagnostics: dict[str, List[Diagnostic]] = {}
 async def initialize(ls: LanguageServer, params: Any):
     global virtual_manager, ty_client
     logger.info("PyWire Language Server initializing...")
-    
+
     if not HAS_PYWIRE:
-        ls.window_show_message(ShowMessageParams(
-            message="PyWire Language Server: 'pywire' package not found in current environment. Please install it for full functionality.",
-            type=MessageType.Error
-        ))
-        logger.error("pywire package not found. Tree-sitter parsing will be unavailable.")
-    
+        ls.window_show_message(
+            ShowMessageParams(
+                message="PyWire Language Server: 'pywire' package not found in current environment. Please install it for full functionality.",
+                type=MessageType.Error,
+            )
+        )
+        logger.error(
+            "pywire package not found. Tree-sitter parsing will be unavailable."
+        )
+
     root_uri = params.root_uri or (
         params.workspace_folders[0].uri if params.workspace_folders else None
     )
@@ -250,20 +265,23 @@ async def initialize(ls: LanguageServer, params: Any):
         # Always use Ty
         init_opts = getattr(params, "initializationOptions", {}) or {}
         ty_path = init_opts.get("tyPath", None)
-        
+
         client = TyClient()
         if client.start(ty_path=ty_path):
             ty_client = client
-            
+
             # Hook up diagnostics
             def handle_diagnostics(params):
                 uri = params.get("uri")
                 diagnostics = params.get("diagnostics", [])
-                logger.info(f"[Server] Received diagnostics for {uri}: {len(diagnostics)} items")
+                logger.info(
+                    f"[Server] Received diagnostics for {uri}: {len(diagnostics)} items"
+                )
 
                 # Check if this URI matches a shadow file we know about
-                if not uri: return
-                
+                if not uri:
+                    return
+
                 # If usage of shadow file is internal to this server, we should
                 # map the URI back to the original .wire file
                 wire_uri = virtual_manager.get_original_uri(uri)
@@ -278,9 +296,11 @@ async def initialize(ls: LanguageServer, params: Any):
                             if doc_uri.lower() == norm_wire:
                                 target_uri = doc_uri
                                 break
-                    
-                    logger.info(f"[Server] Mapped {uri} -> {wire_uri} (Target: {target_uri})")
-                    
+
+                    logger.info(
+                        f"[Server] Mapped {uri} -> {wire_uri} (Target: {target_uri})"
+                    )
+
                     # Map diagnostics back
                     mapped_diagnostics = []
                     source_map = virtual_manager.get_source_map(uri)
@@ -289,13 +309,13 @@ async def initialize(ls: LanguageServer, params: Any):
                             mapped = _map_diagnostic(diag, source_map)
                             if mapped:
                                 mapped_diagnostics.append(mapped)
-                    
+
                     # Store and publish using the found TARGET URI
                     ty_diagnostics[target_uri] = mapped_diagnostics
                     _publish_diagnostics(ls, target_uri)
 
             ty_client.set_diagnostics_callback(handle_diagnostics)
-            
+
             # Initialize Ty and wait for it
             await _init_ty(ls, params)
 
@@ -337,16 +357,19 @@ async def _init_ty(ls: LanguageServer, params: Any):
         "processId": os.getpid(),
         "rootUri": root_uri,
         "capabilities": cattrs.unstructure(params.capabilities),
-        "initializationOptions": cattrs.unstructure(getattr(params, "initializationOptions", {})) or {},
+        "initializationOptions": cattrs.unstructure(
+            getattr(params, "initializationOptions", {})
+        )
+        or {},
     }
-    
+
     # Ty might need workspace folders too
     if hasattr(params, "workspace_folders") and params.workspace_folders:
         init_params["workspaceFolders"] = cattrs.unstructure(params.workspace_folders)
 
     logger.info("Sending initialize to Ty...")
     try:
-        # We don't await the result blocking the whole server init? 
+        # We don't await the result blocking the whole server init?
         # But we need to know if Ty accepted.
         # Let's await it.
         res = await ty_client.send_request("initialize", init_params)
@@ -365,26 +388,29 @@ async def _eager_load_workspace(ls: LanguageServer):
 
     root = Path(virtual_manager.root_path)
     logger.info(f"Eager loading workspace: {root}")
-    
+
     # Simple recursive scan
     for wire_file in root.rglob("*.wire"):
         # Skip common ignored dirs
-        if any(part in wire_file.parts for part in [".venv", "node_modules", ".git", ".pywire", "__pycache__"]):
+        if any(
+            part in wire_file.parts
+            for part in [".venv", "node_modules", ".git", ".pywire", "__pycache__"]
+        ):
             continue
-            
+
         uri = wire_file.as_uri()
         if uri in documents:
             continue
-            
+
         try:
             content = wire_file.read_text(encoding="utf-8")
             doc = PyWireDocument(uri, content)
             documents[uri] = doc
-            
+
             shadow_uri = virtual_manager.get_shadow_uri(uri)
             if shadow_uri:
                 virtual_manager.set_source_map(shadow_uri, doc.source_map)
-                
+
                 # Notify Ty of the shadow file
                 shadow_doc_item = {
                     "uri": shadow_uri,
@@ -399,9 +425,11 @@ async def _eager_load_workspace(ls: LanguageServer):
                 # Also notify Ty of the STUB file for import resolution
                 stub_uri = virtual_manager.get_stub_uri(uri)
                 if stub_uri:
-                    stub_content, stub_map = doc.transpiler.generate_stub(str(wire_file))
+                    stub_content, stub_map = doc.transpiler.generate_stub(
+                        str(wire_file)
+                    )
                     virtual_manager.set_source_map(stub_uri, stub_map)
-                    
+
                     stub_doc_item = {
                         "uri": stub_uri,
                         "languageId": "python",
@@ -627,7 +655,7 @@ def _get_imported_components(doc: "PyWireDocument") -> Dict[str, str]:
         source = doc.get_python_source()
         if not source:
             return {}
-        
+
         tree = ast.parse(source)
         for node in ast.walk(tree):
             # Check if this node corresponds to a line in the original file
@@ -636,21 +664,24 @@ def _get_imported_components(doc: "PyWireDocument") -> Dict[str, str]:
                 # map_to_original returns (line, col) or None
                 # node.lineno is 1-based, map_to_original expects 0-based?
                 # doc.map_to_original uses 0-based.
-                orig_pos = doc.map_to_original(node.lineno - 1, 0)
-                if not orig_pos:
-                    continue
+                # Cast to int to satisfy type checker.
+                lineno = getattr(node, "lineno", 1)
+                if isinstance(lineno, int):
+                    orig_pos = doc.map_to_original(lineno - 1, 0)
+                    if not orig_pos:
+                        continue
 
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 if node.level > 0:
                     module = "." * node.level + module
-                    
+
                 for alias in node.names:
                     # Filter out internal types used in Type Hints (like InputElement)
                     check_module = node.module or ""
                     if "web_types" in check_module or check_module.endswith("client"):
                         continue
-                        
+
                     # Heuristic: Components are typically PascalCase
                     if alias.name[0].isupper():
                         name = alias.asname or alias.name
@@ -658,7 +689,7 @@ def _get_imported_components(doc: "PyWireDocument") -> Dict[str, str]:
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     # Less common for components, but possible (import MyComponent)
-                     if alias.name[0].isupper():
+                    if alias.name[0].isupper():
                         name = alias.asname or alias.name
                         components[name] = alias.name
     except Exception:
@@ -673,44 +704,44 @@ def _resolve_import_path(base_uri: str, module_path: str) -> Optional[str]:
     base_path = _uri_to_path(base_uri)
     if not base_path:
         return None
-        
+
     start_dir = Path(base_path).parent
-    
+
     # Handle relative imports
     dots = 0
     while module_path.startswith("."):
         dots += 1
         module_path = module_path[1:]
-        
+
     if dots > 0:
         # Relative import
         current_dir = start_dir
         for _ in range(dots - 1):
             current_dir = current_dir.parent
-            
+
         parts = module_path.split(".") if module_path else []
         target = current_dir.joinpath(*parts)
     else:
         # Absolute import - try to find from root
         # Check virtual manager root
         if virtual_manager and virtual_manager.root_path:
-             target = Path(virtual_manager.root_path).joinpath(*module_path.split("."))
+            target = Path(virtual_manager.root_path).joinpath(*module_path.split("."))
         else:
-             # Fallback: assume src/ or similar structure if we can find it
-             # For now, just return None if not relative and no root path
-             return None
+            # Fallback: assume src/ or similar structure if we can find it
+            # For now, just return None if not relative and no root path
+            return None
 
     # Try extensions
     options = [
         target.with_suffix(".py"),
         target.with_suffix(".wire"),
-        target / "__init__.py"
+        target / "__init__.py",
     ]
-    
+
     for opt in options:
         if opt.exists():
             return opt.as_uri()
-            
+
     return None
 
 
@@ -732,14 +763,14 @@ def _extract_props_from_file(file_uri: str, component_name: str) -> List[PropInf
     try:
         with open(path, "r") as f:
             source = f.read()
-            
+
         # If .wire, extract python block
         if path.endswith(".wire"):
             parts = source.split("---")
             if len(parts) >= 3:
-                source = parts[1] # Python block
+                source = parts[1]  # Python block
             else:
-                return [] # No python block?
+                return []  # No python block?
 
         tree = ast.parse(source)
 
@@ -748,23 +779,27 @@ def _extract_props_from_file(file_uri: str, component_name: str) -> List[PropInf
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 is_props = any(
-                    (isinstance(dec, ast.Name) and dec.id == "props") or
-                    (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name) and dec.func.id == "props")
+                    (isinstance(dec, ast.Name) and dec.id == "props")
+                    or (
+                        isinstance(dec, ast.Call)
+                        and isinstance(dec.func, ast.Name)
+                        and dec.func.id == "props"
+                    )
                     for dec in node.decorator_list
                 )
                 if is_props:
                     props_classes.append(node)
-        
+
         # Artificial error if multiple @props detected
         if len(props_classes) > 1:
             # For now, we'll log it and maybe return empty or just the first one.
-            # True "diagnostic" error would require a different flow, 
+            # True "diagnostic" error would require a different flow,
             # but we can at least detect it here.
             logger.error(f"Multiple @props classes detected in {path}")
             # We'll use the first one but it's an invalid state
-        
+
         props_class = props_classes[0] if props_classes else None
-        
+
         # 2. If no @props decorator, fallback to searching inside component class if specified
         if not props_class and component_name:
             comp_class = None
@@ -772,39 +807,43 @@ def _extract_props_from_file(file_uri: str, component_name: str) -> List[PropInf
                 if isinstance(node, ast.ClassDef) and node.name == component_name:
                     comp_class = node
                     break
-            
+
             if comp_class:
                 for node in comp_class.body:
-                     if isinstance(node, ast.ClassDef) and (node.name == "Props" or "Props" in [b.id for b in node.bases if isinstance(b, ast.Name)]):
-                         props_class = node
-                         break
-        
+                    if isinstance(node, ast.ClassDef) and (
+                        node.name == "Props"
+                        or "Props"
+                        in [b.id for b in node.bases if isinstance(b, ast.Name)]
+                    ):
+                        props_class = node
+                        break
+
         # 3. Final fallback: look for top-level class named "Props" (Legacy)
         if not props_class:
             for node in ast.walk(tree):
-                 if isinstance(node, ast.ClassDef) and node.name == "Props":
-                     props_class = node
-                     break
-        
+                if isinstance(node, ast.ClassDef) and node.name == "Props":
+                    props_class = node
+                    break
+
         if not props_class:
             return []
-            
+
         props = []
         for node in props_class.body:
-             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                 # annotated assignment: x: int
-                 line = node.lineno - 1 # 0-indexed
-                 # Adjust line number if it was from a .wire file (add fence offset)
-                 if path.endswith(".wire"):
-                      # Re-read to find fence offset
-                      with open(path, "r") as f:
-                          full = f.read()
-                          if "---" in full:
-                              preamble = full.split("---")[0]
-                              line += preamble.count("\n")
-                              
-                 props.append(PropInfo(name=node.target.id, line=line))
-                 
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                # annotated assignment: x: int
+                line = node.lineno - 1  # 0-indexed
+                # Adjust line number if it was from a .wire file (add fence offset)
+                if path.endswith(".wire"):
+                    # Re-read to find fence offset
+                    with open(path, "r") as f:
+                        full = f.read()
+                        if "---" in full:
+                            preamble = full.split("---")[0]
+                            line += preamble.count("\n")
+
+                props.append(PropInfo(name=node.target.id, line=line))
+
         return props
 
     except Exception:
@@ -817,7 +856,9 @@ def _get_section(lines: List[str], line_number: int) -> str:
     if start_fence is not None:
         if line_number < start_fence:
             return "directive"
-        if line_number == start_fence or (end_fence is not None and line_number == end_fence):
+        if line_number == start_fence or (
+            end_fence is not None and line_number == end_fence
+        ):
             return "separator"
         if end_fence is not None and start_fence < line_number < end_fence:
             return "python"
@@ -829,12 +870,9 @@ def _get_section(lines: List[str], line_number: int) -> str:
 
     # Fallback / Directives
     line_text = lines[line_number].strip() if line_number < len(lines) else ""
-    if (
-        line_text.startswith("!")
-        or line_text.startswith("#")
-    ):
+    if line_text.startswith("!") or line_text.startswith("#"):
         return "directive"
-        
+
     # If at the very top and empty, assume directive to help with new files
     if line_number == 0 and not line_text:
         return "directive"
@@ -850,16 +888,17 @@ def _validate_path_route(route: str) -> Optional[str]:
     """Return error message if invalid."""
     if not route.startswith("/"):
         return "Path route must be absolute (start with '/')"
-    
+
     # Check segments
     parts = route.split("/")
     for part in parts:
-        if not part: continue
-        
+        if not part:
+            continue
+
         # Check for dynamic param
         name = None
         type_nt = "str"
-        
+
         if part.startswith(":"):
             content = part[1:]
             if ":" in content:
@@ -872,13 +911,13 @@ def _validate_path_route(route: str) -> Optional[str]:
                 name, type_nt = content.split(":", 1)
             else:
                 name = content
-        
+
         if name:
             if not name.isidentifier():
-                 return f"Invalid parameter name '{name}'"
+                return f"Invalid parameter name '{name}'"
             if type_nt not in ("str", "int"):
-                 return f"Unsupported parameter type '{type_nt}'. Supported: str, int"
-             
+                return f"Unsupported parameter type '{type_nt}'. Supported: str, int"
+
     return None
 
 
@@ -911,7 +950,12 @@ def _path_entry_hover(doc: PyWireDocument, position: Position) -> Optional[Hover
             return None
         start_col, end_col, route_value = literal
         if start_col <= position.character <= end_col:
-            return Hover(contents=MarkupContent(kind="markdown", value=f"**Route pattern**\n\n`{route_value}`"))
+            return Hover(
+                contents=MarkupContent(
+                    kind=MarkupKind.Markdown,
+                    value=f"**Route pattern**\n\n`{route_value}`",
+                )
+            )
         return None
 
     # Dict entries: 'name': '/route/:id'
@@ -921,15 +965,30 @@ def _path_entry_hover(doc: PyWireDocument, position: Position) -> Optional[Hover
         key_start, key_end = match.start("key"), match.end("key")
         val_start, val_end = match.start("val"), match.end("val")
         if key_start <= position.character <= key_end:
-            return Hover(contents=MarkupContent(kind="markdown", value=f"**Route name**\n\n`{match.group('key')}`"))
+            return Hover(
+                contents=MarkupContent(
+                    kind=MarkupKind.Markdown,
+                    value=f"**Route name**\n\n`{match.group('key')}`",
+                )
+            )
         if val_start <= position.character <= val_end:
             rel_col = position.character - val_start
             param = _path_param_at(match.group("val"), rel_col)
             if param:
                 name, type_hint = param
                 type_label = type_hint or "string"
-                return Hover(contents=MarkupContent(kind="markdown", value=f"**Path parameter**\n\n`{name}` ({type_label})"))
-            return Hover(contents=MarkupContent(kind="markdown", value=f"**Route pattern**\n\n`{match.group('val')}`"))
+                return Hover(
+                    contents=MarkupContent(
+                        kind=MarkupKind.Markdown,
+                        value=f"**Path parameter**\n\n`{name}` ({type_label})",
+                    )
+                )
+            return Hover(
+                contents=MarkupContent(
+                    kind=MarkupKind.Markdown,
+                    value=f"**Route pattern**\n\n`{match.group('val')}`",
+                )
+            )
 
     return None
 
@@ -954,8 +1013,14 @@ def validate(ls: LanguageServer, uri: str):
                         diagnostics.append(
                             Diagnostic(
                                 range=Range(
-                                    start=Position(line=i, character=stripped.find(directive)),
-                                    end=Position(line=i, character=stripped.find(directive) + len(directive)),
+                                    start=Position(
+                                        line=i, character=stripped.find(directive)
+                                    ),
+                                    end=Position(
+                                        line=i,
+                                        character=stripped.find(directive)
+                                        + len(directive),
+                                    ),
                                 ),
                                 message=f"Unknown directive '{directive}'. Known directives: {', '.join(sorted(KNOWN_DIRECTIVES))}",
                                 severity=DiagnosticSeverity.Error,
@@ -987,15 +1052,19 @@ def validate(ls: LanguageServer, uri: str):
 
                 routes_text = match.group(1).strip()
                 try:
-                    expr_ast = ast.parse(routes_text, mode="eval")
+                    ast.parse(routes_text, mode="eval")
                     parsed = _parse_path_routes(routes_text)
                     if parsed is None:
                         # Specific error for structure
                         diagnostics.append(
                             Diagnostic(
                                 range=Range(
-                                    start=Position(line=i, character=stripped.find("!path") + 5),
-                                    end=Position(line=end_idx, character=len(lines[end_idx])),
+                                    start=Position(
+                                        line=i, character=stripped.find("!path") + 5
+                                    ),
+                                    end=Position(
+                                        line=end_idx, character=len(lines[end_idx])
+                                    ),
                                 ),
                                 message="!path directive expects a string literal or a flat Dict[str, str]",
                                 severity=DiagnosticSeverity.Error,
@@ -1009,8 +1078,14 @@ def validate(ls: LanguageServer, uri: str):
                                 diagnostics.append(
                                     Diagnostic(
                                         range=Range(
-                                            start=Position(line=i, character=stripped.find("!path") + 5),
-                                            end=Position(line=end_idx, character=len(lines[end_idx])),
+                                            start=Position(
+                                                line=i,
+                                                character=stripped.find("!path") + 5,
+                                            ),
+                                            end=Position(
+                                                line=end_idx,
+                                                character=len(lines[end_idx]),
+                                            ),
                                         ),
                                         message=error,
                                         severity=DiagnosticSeverity.Error,
@@ -1023,8 +1098,15 @@ def validate(ls: LanguageServer, uri: str):
                                     diagnostics.append(
                                         Diagnostic(
                                             range=Range(
-                                                start=Position(line=i, character=stripped.find("!path") + 5),
-                                                end=Position(line=end_idx, character=len(lines[end_idx])),
+                                                start=Position(
+                                                    line=i,
+                                                    character=stripped.find("!path")
+                                                    + 5,
+                                                ),
+                                                end=Position(
+                                                    line=end_idx,
+                                                    character=len(lines[end_idx]),
+                                                ),
                                             ),
                                             message=f"Invalid route '{route_path}': {error}",
                                             severity=DiagnosticSeverity.Error,
@@ -1035,8 +1117,12 @@ def validate(ls: LanguageServer, uri: str):
                     diagnostics.append(
                         Diagnostic(
                             range=Range(
-                                start=Position(line=i, character=stripped.find("!path") + 5),
-                                end=Position(line=end_idx, character=len(lines[end_idx])),
+                                start=Position(
+                                    line=i, character=stripped.find("!path") + 5
+                                ),
+                                end=Position(
+                                    line=end_idx, character=len(lines[end_idx])
+                                ),
                             ),
                             message="Invalid Python syntax in !path directive",
                             severity=DiagnosticSeverity.Error,
@@ -1056,7 +1142,9 @@ def validate(ls: LanguageServer, uri: str):
                 diagnostics.append(
                     Diagnostic(
                         range=Range(
-                            start=Position(line=idx, character=stripped.find("!layout") + 7),
+                            start=Position(
+                                line=idx, character=stripped.find("!layout") + 7
+                            ),
                             end=Position(line=idx, character=len(line)),
                         ),
                         message="Layout path must be a string literal (single or double quotes)",
@@ -1100,14 +1188,16 @@ def validate(ls: LanguageServer, uri: str):
             stripped = line.strip()
             if not stripped.startswith("!no_spa"):
                 continue
-            
+
             # Check if any non-whitespace, non-comment content follows !no_spa
             remainder = stripped[7:].strip()
             if remainder and not remainder.startswith("#"):
                 diagnostics.append(
                     Diagnostic(
                         range=Range(
-                            start=Position(line=idx, character=stripped.find("!no_spa") + 7),
+                            start=Position(
+                                line=idx, character=stripped.find("!no_spa") + 7
+                            ),
                             end=Position(line=idx, character=len(line)),
                         ),
                         message="!no_spa directive does not accept arguments",
@@ -1141,21 +1231,30 @@ def validate(ls: LanguageServer, uri: str):
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
                         is_props = any(
-                            (isinstance(dec, ast.Name) and dec.id == "props") or
-                            (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name) and dec.func.id == "props")
+                            (isinstance(dec, ast.Name) and dec.id == "props")
+                            or (
+                                isinstance(dec, ast.Call)
+                                and isinstance(dec.func, ast.Name)
+                                and dec.func.id == "props"
+                            )
                             for dec in node.decorator_list
                         )
                         if is_props:
                             props_classes.append(node)
-                
+
                 if len(props_classes) > 1:
                     for i in range(1, len(props_classes)):
                         cls = props_classes[i]
                         diagnostics.append(
                             Diagnostic(
                                 range=Range(
-                                    start=Position(line=start_fence + cls.lineno, character=0),
-                                    end=Position(line=start_fence + cls.lineno, character=len(cls.name) + 6),
+                                    start=Position(
+                                        line=start_fence + cls.lineno, character=0
+                                    ),
+                                    end=Position(
+                                        line=start_fence + cls.lineno,
+                                        character=len(cls.name) + 6,
+                                    ),
                                 ),
                                 message="Multiple @props classes detected. Only one is allowed per component.",
                                 severity=DiagnosticSeverity.Error,
@@ -1168,39 +1267,44 @@ def validate(ls: LanguageServer, uri: str):
         # Only in HTML section
         html_start = end_fence + 1 if end_fence is not None else 0
         if start_fence is not None and end_fence is None:
-            html_start = len(lines) # Skip if python fence unclosed
-        
-        block_stack = [] # (keyword, line, col)
-        
+            html_start = len(lines)  # Skip if python fence unclosed
+
+        block_stack = []  # (keyword, line, col)
+
         for idx in range(html_start, len(lines)):
             line = lines[idx]
-            
+
             # 1. Validate unknown $attributes in opening tags
             # Regex for $word not inside {} or quoted attribute value
             # This is complex without a real parser, so we use a simpler approach:
             # Check if we are inside an opening tag
-            tag_matches = re.finditer(r'<([a-zA-Z0-9:-]+)', line)
+            tag_matches = re.finditer(r"<([a-zA-Z0-9:-]+)", line)
             for tag_match in tag_matches:
                 tag_start = tag_match.start()
                 # Find end of this tag (simple approach)
-                tag_end = line.find('>', tag_start)
+                tag_end = line.find(">", tag_start)
                 if tag_end == -1:
                     # Multi-line tag, let's scan subsequent lines if needed?
                     # For now just handle single-line tags for $attributes
                     tag_content = line[tag_start:]
                 else:
                     tag_content = line[tag_start:tag_end]
-                
+
                 # Scan for $attributes
-                attr_matches = re.finditer(r'\$([a-zA-Z0-9_-]+)', tag_content)
+                attr_matches = re.finditer(r"\$([a-zA-Z0-9_-]+)", tag_content)
                 for attr_match in attr_matches:
                     attr_name = attr_match.group(1)
                     if attr_name not in KNOWN_ATTRIBUTES:
                         diagnostics.append(
                             Diagnostic(
                                 range=Range(
-                                    start=Position(line=idx, character=tag_start + attr_match.start()),
-                                    end=Position(line=idx, character=tag_start + attr_match.end()),
+                                    start=Position(
+                                        line=idx,
+                                        character=tag_start + attr_match.start(),
+                                    ),
+                                    end=Position(
+                                        line=idx, character=tag_start + attr_match.end()
+                                    ),
                                 ),
                                 message=f"Unknown framework attribute: ${attr_name}",
                                 severity=DiagnosticSeverity.Error,
@@ -1209,20 +1313,20 @@ def validate(ls: LanguageServer, uri: str):
 
             # 2. Validate {$blocks} and {/blocks}
             # Patterns: {$keyword ...} or {/keyword}
-            block_pattern = re.finditer(r'\{([$/])([a-zA-Z0-9_-]+)', line)
+            block_pattern = re.finditer(r"\{([$/])([a-zA-Z0-9_-]+)", line)
             for match in block_pattern:
-                prefix = match.group(1) # '$' or '/'
+                prefix = match.group(1)  # '$' or '/'
                 keyword = match.group(2)
                 start_col = match.start()
-                
+
                 # Find the end of this tag on the same line if possible
-                end_col = line.find('}', match.end())
+                end_col = line.find("}", match.end())
                 if end_col != -1:
-                    end_col += 1 # Include the trailing }
+                    end_col += 1  # Include the trailing }
                 else:
                     end_col = match.end()
-                
-                if prefix == '$':
+
+                if prefix == "$":
                     # Opening or continuation
                     if keyword not in KNOWN_BLOCKS:
                         diagnostics.append(
@@ -1250,7 +1354,7 @@ def validate(ls: LanguageServer, uri: str):
                                 )
                             )
                         else:
-                            # Check if it matches the current opener? 
+                            # Check if it matches the current opener?
                             # e.g. {$elif} inside {$if}
                             parent, _, _ = block_stack[-1]
                             valid_parent = False
@@ -1260,12 +1364,14 @@ def validate(ls: LanguageServer, uri: str):
                                 valid_parent = True
                             elif keyword in ["except", "finally"] and parent == "try":
                                 valid_parent = True
-                            
+
                             if not valid_parent:
                                 diagnostics.append(
                                     Diagnostic(
                                         range=Range(
-                                            start=Position(line=idx, character=start_col),
+                                            start=Position(
+                                                line=idx, character=start_col
+                                            ),
                                             end=Position(line=idx, character=end_col),
                                         ),
                                         message=f"Block keyword '{{${keyword}}}' is not valid inside '{{${parent}}}'",
@@ -1314,10 +1420,12 @@ def validate(ls: LanguageServer, uri: str):
         for keyword, line_idx, start_col in block_stack:
             # Re-scan to find full tag range for opener
             line = lines[line_idx]
-            match_start = line.find(f'{{${keyword}', start_col)
+            match_start = line.find(f"{{${keyword}", start_col)
             if match_start != -1:
-                end_idx = line.find('}', match_start)
-                end_col = end_idx + 1 if end_idx != -1 else match_start + len(keyword) + 2
+                end_idx = line.find("}", match_start)
+                end_col = (
+                    end_idx + 1 if end_idx != -1 else match_start + len(keyword) + 2
+                )
             else:
                 end_col = start_col + len(keyword) + 2
 
@@ -1389,7 +1497,9 @@ def _coerce_diagnostic_severity(
         return None
 
 
-def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Diagnostic]:
+def _map_diagnostic(
+    diag: Dict[str, Any], source_map: SourceMap
+) -> Optional[Diagnostic]:
     """Map a diagnostic from generated .py back to .wire source.
     Uses fuzzy mapping if exact coordinates aren't in the source map.
     """
@@ -1405,7 +1515,7 @@ def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Dia
 
     line, col = start.get("line", 0), start.get("character", 0)
     mapped_start = source_map.to_original(line, col)
-    
+
     # Fuzzy mapping fallback: Ty often points to end of line or tokens slightly outside mappings
     if not mapped_start:
         # Check nearest mapping on same line
@@ -1420,7 +1530,7 @@ def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Dia
                     # If col is outside range, clamp to range
                     offset = max(0, min(m.length, col - m.generated_col))
                     best = (m.original_line, m.original_col + offset)
-        
+
         if best:
             mapped_start = best
         else:
@@ -1428,13 +1538,15 @@ def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Dia
             # Limit logging to avoid spamming 381 lines, maybe just first few?
             # actually server logs are fine.
             if len(diag.get("message", "")) < 50:
-                 logger.warning(f"Failed to map diagnostic at gen {line}:{col} - {diag.get('message')}")
+                logger.warning(
+                    f"Failed to map diagnostic at gen {line}:{col} - {diag.get('message')}"
+                )
             else:
-                 logger.warning(f"Failed to map diagnostic at gen {line}:{col}")
+                logger.warning(f"Failed to map diagnostic at gen {line}:{col}")
 
     if not mapped_start:
         return None
-        
+
     mapped_end = source_map.to_original(end.get("line", 0), end.get("character", 0))
     if not mapped_end:
         mapped_end = mapped_start
@@ -1450,6 +1562,7 @@ def _map_diagnostic(diag: Dict[str, Any], source_map: SourceMap) -> Optional[Dia
         source=diag.get("source"),
         code=diag.get("code"),
     )
+
 
 def _fuzzy_to_original(
     source_map: Any, line: int, col: int
@@ -1479,6 +1592,7 @@ def _fuzzy_to_original(
                 break
     return best
 
+
 def _map_location_to_original(loc: Dict[str, Any]) -> Location:
     """Map a virtual location back to an original .wire location if applicable."""
     if "targetUri" in loc:
@@ -1489,70 +1603,88 @@ def _map_location_to_original(loc: Dict[str, Any]) -> Location:
         # Location
         loc_uri = loc.get("uri")
         loc_range = loc.get("range")
-    
+
     if not loc_uri or not loc_range:
-         return Location(uri=loc.get("uri", ""), range=Range(start=Position(0,0), end=Position(0,0)))
+        return Location(
+            uri=loc.get("uri", ""),
+            range=Range(start=Position(0, 0), end=Position(0, 0)),
+        )
 
     # Check if it's a shadow file or stub file
     orig_uri = virtual_manager.get_original_uri(loc_uri) if virtual_manager else None
     target_map = None
-    if orig_uri:
+    if orig_uri and virtual_manager:
         target_map = virtual_manager.get_source_map(loc_uri)
-    
+
     if target_map and orig_uri:
         loc_uri = orig_uri
         start = loc_range["start"]
         end = loc_range.get("end", start)
-        
+
         orig_start = _fuzzy_to_original(target_map, start["line"], start["character"])
         orig_end = _fuzzy_to_original(target_map, end["line"], end["character"])
-        
+
         # Create a copy of the range to modify
         new_range = {
             "start": {"line": 0, "character": 0},
-            "end": {"line": 0, "character": 0}
+            "end": {"line": 0, "character": 0},
         }
-        
+
         if orig_start:
             new_range["start"] = {"line": orig_start[0], "character": orig_start[1]}
             if orig_end:
                 new_range["end"] = {"line": orig_end[0], "character": orig_end[1]}
             else:
                 new_range["end"] = {"line": orig_start[0], "character": orig_start[1]}
-        
+
         return Location(
             uri=loc_uri,
             range=Range(
-                start=Position(line=new_range["start"]["line"], character=new_range["start"]["character"]),
-                end=Position(line=new_range["end"]["line"], character=new_range["end"]["character"]),
-            )
+                start=Position(
+                    line=new_range["start"]["line"],
+                    character=new_range["start"]["character"],
+                ),
+                end=Position(
+                    line=new_range["end"]["line"],
+                    character=new_range["end"]["character"],
+                ),
+            ),
         )
     else:
         # Keep original (pure python or standard library)
         return Location(
             uri=loc_uri,
             range=Range(
-                start=Position(line=loc_range["start"]["line"], character=loc_range["start"]["character"]),
-                end=Position(line=loc_range["end"]["line"], character=loc_range["end"]["character"]),
-            )
+                start=Position(
+                    line=loc_range["start"]["line"],
+                    character=loc_range["start"]["character"],
+                ),
+                end=Position(
+                    line=loc_range["end"]["line"],
+                    character=loc_range["end"]["character"],
+                ),
+            ),
         )
 
-def _map_edit_to_original(edit: Dict[str, Any], source_map: SourceMap) -> Optional[TextEdit]:
+
+def _map_edit_to_original(
+    edit: Dict[str, Any], source_map: SourceMap
+) -> Optional[TextEdit]:
     """Map a virtual text edit back to an original .wire edit."""
     start = edit["range"]["start"]
     end = edit["range"]["end"]
     new_text = edit["newText"]
-    
+
     orig_start = source_map.to_original(start["line"], start["character"])
     orig_end = source_map.to_original(end["line"], end["character"])
-    
+
     if orig_start and orig_end:
         return TextEdit(
             range=Range(
                 start=Position(orig_start[0], orig_start[1]),
-                end=Position(orig_end[0], orig_end[1])
+                end=Position(orig_end[0], orig_end[1]),
             ),
-            new_text=new_text
+            new_text=new_text,
         )
     return None
 
@@ -1595,7 +1727,7 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
                     doc_path = virtual_manager._uri_to_path(uri) or ""
                     stub_content, stub_map = doc.transpiler.generate_stub(doc_path)
                     virtual_manager.set_source_map(stub_uri, stub_map)
-                    
+
                     stub_doc_item = {
                         "uri": stub_uri,
                         "languageId": "python",
@@ -1635,7 +1767,6 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
             if shadow_uri:
                 virtual_manager.set_source_map(shadow_uri, doc.source_map)
 
-
             if ty_client and shadow_uri:
                 try:
                     shadow_change_params = {
@@ -1655,7 +1786,7 @@ def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
                         doc_path = virtual_manager._uri_to_path(uri) or ""
                         stub_content, stub_map = doc.transpiler.generate_stub(doc_path)
                         virtual_manager.set_source_map(stub_uri, stub_map)
-                        
+
                         stub_change_params = {
                             "textDocument": {
                                 "uri": stub_uri,
@@ -1700,7 +1831,7 @@ async def hover(ls: LanguageServer, params: HoverParams) -> Optional[Hover]:
             return entry_hover
         return Hover(
             contents=MarkupContent(
-                kind="markdown",
+                kind=MarkupKind.Markdown,
                 value="""**!path Directive**
 
 Define routes for this page.
@@ -1728,7 +1859,7 @@ Define routes for this page.
 - `params` - dict of captured parameters
 - `query` - dict of query string parameters
 - `url` - helper to generate URLs
-"""
+""",
             )
         )
 
@@ -1739,7 +1870,7 @@ Define routes for this page.
     # Check for word at cursor to detect directives
     line_text = doc.lines[position.line]
     word = _get_word_at_position(line_text, position.character)
-    
+
     # Direct mapping approach
     gen_pos = doc.map_to_generated(position.line, position.character)
 
@@ -1763,71 +1894,88 @@ Define routes for this page.
                     if result and "contents" in result:
                         contents = result["contents"]
 
-
                         # Enhance formatting if plaintext
-                        kind = "markdown" 
+                        kind = MarkupKind.Markdown
                         value = ""
-                        
+
                         if isinstance(contents, dict):
-                            kind = contents.get("kind", "markdown")
+                            # Default to Markdown, though kind might be plaintext from Ty
+                            raw_kind = contents.get("kind", "markdown")
+                            kind = (
+                                MarkupKind.Markdown
+                                if raw_kind == "markdown"
+                                else MarkupKind.PlainText
+                            )
                             value = contents.get("value", "")
                         elif isinstance(contents, str):
                             value = contents
 
                         # If it looks like a type or signature and is plaintext, perform smart wrapping
-                        if kind == "plaintext" and value:
+                        if kind == MarkupKind.PlainText and value:
                             lines = value.splitlines()
                             if not lines:
-                                return Hover(contents=MarkupContent(kind=kind, value=value))
+                                return Hover(
+                                    contents=MarkupContent(kind=kind, value=value)
+                                )
 
                             first_line = lines[0].strip()
                             # Heuristic: if first line contains [ ] or -> or is a single word starting with uppercase
                             # Also check for 'def ' prefix which Ty often uses for functions
                             is_signature = (
-                                "[" in first_line 
-                                or "->" in first_line 
+                                "[" in first_line
+                                or "->" in first_line
                                 or first_line.startswith("def ")
-                                or (first_line and first_line[0].isupper() and " " not in first_line)
+                                or (
+                                    first_line
+                                    and first_line[0].isupper()
+                                    and " " not in first_line
+                                )
                             )
-                            
+
                             if is_signature:
                                 # Clean up generic type noise like <class 'float'> or <module '...'>
                                 # Ty/Pyright sometimes returns these in plaintext signatures
-                                if first_line.startswith("<class '") and first_line.endswith("'>"):
-                                    first_line = first_line[8:-2]  # Extract inside quotes
-                                elif first_line.startswith("<module '") and first_line.endswith("'>"):
-                                    first_line = f"module {first_line[9:-2]}" # Extract inside quotes
-                                
+                                if first_line.startswith(
+                                    "<class '"
+                                ) and first_line.endswith("'>"):
+                                    first_line = first_line[
+                                        8:-2
+                                    ]  # Extract inside quotes
+                                elif first_line.startswith(
+                                    "<module '"
+                                ) and first_line.endswith("'>"):
+                                    first_line = f"module {first_line[9:-2]}"  # Extract inside quotes
+
                                 # Wrap the signature in python block
                                 new_value = f"```python\n{first_line}\n```"
-                                
+
                                 # If there are more lines, append them as markdown (after a separator/newline)
                                 if len(lines) > 1:
                                     # Ty often separates signature and docstring with a line of dashes if it's from pydoc?
                                     # Or just newlines.
                                     # Let's inspect the second line.
                                     remaining = lines[1:]
-                                    
+
                                     # Convert remaining plain text to markdown friendly format?
                                     # Just appending it is usually fine for Markdown consumers like VS Code.
                                     # But we might want to ensure a blank line before it.
-                                    
+
                                     # Filter out dash separators if Ty adds them
                                     # Ty often adds a line of dashes between signature and doc
                                     if remaining and set(remaining[0].strip()) == {"-"}:
                                         remaining = remaining[1:]
-                                    
+
                                     # Sometimes there is a second line that is just dashes too?
                                     if remaining and set(remaining[0].strip()) == {"-"}:
                                         remaining = remaining[1:]
-                                        
+
                                     if remaining:
                                         doc_content = "\n".join(remaining).strip()
                                         if doc_content:
                                             new_value += f"\n\n---\n\n{doc_content}"
 
                                 value = new_value
-                                kind = "markdown"
+                                kind: MarkupKind = MarkupKind.Markdown
 
                         return Hover(
                             contents=MarkupContent(
@@ -1850,7 +1998,11 @@ Define routes for this page.
     }
 
     if word in framework_hovers:
-        return Hover(contents=MarkupContent(kind="markdown", value=framework_hovers[word]))
+        return Hover(
+            contents=MarkupContent(
+                kind=MarkupKind.Markdown, value=framework_hovers[word]
+            )
+        )
 
     # Check for scoped attribute on <style> tag
     if word == "scoped":
@@ -1859,7 +2011,7 @@ Define routes for this page.
         if "<style" in line_text.lower():
             return Hover(
                 contents=MarkupContent(
-                    kind="markdown",
+                    kind=MarkupKind.Markdown,
                     value="""**Scoped Styles**
 
 Styles in this block are automatically scoped to this component/page/layout.
@@ -1873,7 +2025,7 @@ Example:
 <style scoped>
   .button { color: blue; }
 </style>
-```"""
+```""",
                 )
             )
 
@@ -1916,31 +2068,49 @@ Example:
     # Check if we are inside {$ ... } or {/ ... }
     # Heuristic: check if character before 'word' is '$' and before that is '{'
     # OR if character before 'word' is ' ' and there is '{$' earlier on the line.
-    
+
     # Let's get more precise: find start of word
     word_start = position.character
-    while word_start > 0 and (line_text[word_start-1].isalnum() or line_text[word_start-1] in "@$._"):
+    while word_start > 0 and (
+        line_text[word_start - 1].isalnum() or line_text[word_start - 1] in "@$._"
+    ):
         word_start -= 1
-        
+
     is_block = False
     clean_word = word
     if word.startswith("$"):
         clean_word = word[1:]
-        if word_start > 0 and line_text[word_start-1] == "{":
+        if word_start > 0 and line_text[word_start - 1] == "{":
             is_block = True
-    elif word_start > 1 and line_text[word_start-1] == "/" and line_text[word_start-2] == "{":
+    elif (
+        word_start > 1
+        and line_text[word_start - 1] == "/"
+        and line_text[word_start - 2] == "{"
+    ):
         is_block = True
 
     if is_block:
         if clean_word in block_hover_docs:
-            return Hover(contents=MarkupContent(kind="markdown", value=block_hover_docs[clean_word]))
+            return Hover(
+                contents=MarkupContent(
+                    kind=MarkupKind.Markdown, value=block_hover_docs[clean_word]
+                )
+            )
         return None  # Will be a diagnostic error if unknown
 
     if word in attr_hover_docs:
-        return Hover(contents=MarkupContent(kind="markdown", value=attr_hover_docs[word]))
+        return Hover(
+            contents=MarkupContent(
+                kind=MarkupKind.Markdown, value=attr_hover_docs[word]
+            )
+        )
 
     if word in event_hover_docs:
-        return Hover(contents=MarkupContent(kind="markdown", value=event_hover_docs[word]))
+        return Hover(
+            contents=MarkupContent(
+                kind=MarkupKind.Markdown, value=event_hover_docs[word]
+            )
+        )
 
     if word.startswith("@"):
         parts = word.split(".")
@@ -1948,7 +2118,7 @@ Example:
             base = event_hover_docs[parts[0]]
             if len(parts) > 1:
                 base += f"\n\n**Modifiers:** {', '.join(parts[1:])}"
-            return Hover(contents=MarkupContent(kind="markdown", value=base))
+            return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value=base))
     return None
 
 
@@ -1978,21 +2148,25 @@ async def references(
             )
         if gen_loc:
             gen_line, gen_col = gen_loc
-            shadow_uri = virtual_manager.get_shadow_uri(uri)
-             
-            params = {
+            shadow_uri = (
+                virtual_manager.get_shadow_uri(uri) if virtual_manager else None
+            )
+            if not shadow_uri:
+                return None
+
+            ref_params = {
                 "textDocument": {"uri": shadow_uri},
                 "position": {"line": gen_line, "character": gen_col},
-                "context": {"includeDeclaration": True}
+                "context": {"includeDeclaration": True},
             }
-            
-            res = await ty_client.send_request("textDocument/references", params)
+
+            res = await ty_client.send_request("textDocument/references", ref_params)
             if res:
-                 locations = []
-                 for loc in res:
-                     # Use new consolidated mapping logic
-                     locations.append(_map_location_to_original(loc))
-                 return locations
+                locations = []
+                for loc in res:
+                    # Use new consolidated mapping logic
+                    locations.append(_map_location_to_original(loc))
+                return locations
 
     return None
 
@@ -2020,7 +2194,7 @@ async def rename(ls: LanguageServer, params: RenameParams) -> Optional[Workspace
             gen_pos = source_map.to_generated(position.line, position.character)
             if gen_pos:
                 gen_line, gen_col = gen_pos
-                
+
                 # Ty rename request
                 shadow_params = {
                     "textDocument": {"uri": shadow_uri},
@@ -2029,22 +2203,28 @@ async def rename(ls: LanguageServer, params: RenameParams) -> Optional[Workspace
                 }
 
                 try:
-                    result = await ty_client.send_request("textDocument/rename", shadow_params)
+                    result = await ty_client.send_request(
+                        "textDocument/rename", shadow_params
+                    )
                     if result and "changes" in result:
                         # Map changes back to original files
                         original_changes = {}
-                        
+
                         for gen_uri, edits in result["changes"].items():
                             orig_uri = virtual_manager.get_original_uri(gen_uri)
-                            target_map = virtual_manager.get_source_map(gen_uri) if orig_uri else None
-                            
+                            target_map = (
+                                virtual_manager.get_source_map(gen_uri)
+                                if orig_uri
+                                else None
+                            )
+
                             if orig_uri and target_map:
                                 wire_edits = []
                                 for edit in edits:
                                     mapped = _map_edit_to_original(edit, target_map)
                                     if mapped:
                                         wire_edits.append(mapped)
-                                
+
                                 if wire_edits:
                                     original_changes[orig_uri] = wire_edits
                             else:
@@ -2052,20 +2232,27 @@ async def rename(ls: LanguageServer, params: RenameParams) -> Optional[Workspace
                                 original_changes[gen_uri] = [
                                     TextEdit(
                                         range=Range(
-                                            start=Position(e["range"]["start"]["line"], e["range"]["start"]["character"]),
-                                            end=Position(e["range"]["end"]["line"], e["range"]["end"]["character"])
+                                            start=Position(
+                                                e["range"]["start"]["line"],
+                                                e["range"]["start"]["character"],
+                                            ),
+                                            end=Position(
+                                                e["range"]["end"]["line"],
+                                                e["range"]["end"]["character"],
+                                            ),
                                         ),
-                                        new_text=e["newText"]
-                                    ) for e in edits
+                                        new_text=e["newText"],
+                                    )
+                                    for e in edits
                                 ]
-                        
+
                         return WorkspaceEdit(changes=original_changes)
 
                     # Handle documentChanges if returned instead of changes?
                     # Ty/LSP usually prefers 'changes' for simple edits, but check 'documentChanges'
                     if result and "documentChanges" in result:
-                         # Not implemented for now, Ty usually sends changes
-                         pass
+                        # Not implemented for now, Ty usually sends changes
+                        pass
 
                 except Exception as e:
                     logger.error(f"Ty rename failed: {e}")
@@ -2112,59 +2299,62 @@ async def definition(
                             )
                         ]
 
-
-
     # 1.5 Custom Component Props
     section = _get_section(doc.lines, position.line)
     line_text = doc.lines[position.line]
     in_tag = _is_inside_opening_tag(line_text, position.character)
-    
+
     if (section == "html" or section == "python") and in_tag:
         # Find tag name
-        before_cursor = line_text[:position.character]
-        last_open = line_text[:position.character + 1].rfind("<")
+        line_text[: position.character]
+        last_open = line_text[: position.character + 1].rfind("<")
         if last_open != -1:
             # Look at content starting from <
-            content_after = line_text[last_open+1:]
+            content_after = line_text[last_open + 1 :]
             match = re.match(r"([a-zA-Z0-9_]+)", content_after)
             if match:
                 tag_name = match.group(1)
-                
+
                 # Identify attribute under cursor
                 word = _get_word_at_position(line_text, position.character)
-                
+
                 if word:
-                     # Check if it is a prop of the component
-                     comps = _get_imported_components(doc)
-                     
-                     if tag_name in comps:
-                         module_path = comps[tag_name]
-                         comp_uri = _resolve_import_path(uri, module_path)
+                    # Check if it is a prop of the component
+                    comps = _get_imported_components(doc)
 
+                    if tag_name in comps:
+                        module_path = comps[tag_name]
+                        comp_uri = _resolve_import_path(uri, module_path)
 
+                        if comp_uri:
+                            props = _extract_props_from_file(comp_uri, tag_name)
+                            for p in props:
+                                if p.name == word:
+                                    return [
+                                        Location(
+                                            uri=comp_uri,
+                                            range=Range(
+                                                start=Position(
+                                                    line=p.line, character=0
+                                                ),
+                                                end=Position(
+                                                    line=p.line, character=len(p.name)
+                                                ),
+                                            ),
+                                        )
+                                    ]
 
-                         
-                         if comp_uri:
-                             props = _extract_props_from_file(comp_uri, tag_name)
-                             for p in props:
-                                 if p.name == word:
-                                     return [Location(
-                                         uri=comp_uri,
-                                         range=Range(
-                                             start=Position(line=p.line, character=0),
-                                             end=Position(line=p.line, character=len(p.name))
-                                         )
-                                     )]
-                             
-                             if word == tag_name:
-                                 # Component definition itself!
-                                 return [Location(
-                                     uri=comp_uri,
-                                     range=Range(
-                                         start=Position(line=0, character=0),
-                                         end=Position(line=0, character=0)
-                                     )
-                                 )]
+                            if word == tag_name:
+                                # Component definition itself!
+                                return [
+                                    Location(
+                                        uri=comp_uri,
+                                        range=Range(
+                                            start=Position(line=0, character=0),
+                                            end=Position(line=0, character=0),
+                                        ),
+                                    )
+                                ]
 
     # Map to virtual python
     gen_pos = doc.map_to_generated(position.line, position.character)
@@ -2213,22 +2403,22 @@ def _get_current_block_type(lines: List[str], position: Position) -> Optional[st
     html_start = end_fence + 1 if end_fence is not None else 0
     if start_fence is not None and end_fence is None:
         html_start = len(lines)
-        
-    block_stack = [] # list of (keyword)
-    
+
+    block_stack = []  # list of (keyword)
+
     for idx in range(html_start, position.line + 1):
         line = lines[idx]
         # Only scan up to cursor on the current line
         if idx == position.line:
-            line = line[:position.character]
-            
+            line = line[: position.character]
+
         # Patterns: {$keyword ...} or {/keyword}
-        block_pattern = re.finditer(r'\{([$/])([a-zA-Z0-9_-]+)', line)
+        block_pattern = re.finditer(r"\{([$/])([a-zA-Z0-9_-]+)", line)
         for match in block_pattern:
-            prefix = match.group(1) # '$' or '/'
+            prefix = match.group(1)  # '$' or '/'
             keyword = match.group(2)
-            
-            if prefix == '$':
+
+            if prefix == "$":
                 # Opening or continuation
                 if keyword in BLOCK_OPENERS:
                     block_stack.append(keyword)
@@ -2236,22 +2426,22 @@ def _get_current_block_type(lines: List[str], position: Position) -> Optional[st
                 # Closing {/keyword}
                 if block_stack and block_stack[-1] == keyword:
                     block_stack.pop()
-    
+
     return block_stack[-1] if block_stack else None
 
 
 def _is_component(file_uri: str, component_name: str) -> bool:
     if file_uri.endswith(".wire"):
         return True
-    
+
     path = _uri_to_path(file_uri)
     if not path or not os.path.exists(path):
         return False
-        
+
     try:
         with open(path, "r") as f:
             source = f.read()
-            
+
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name == component_name:
@@ -2289,7 +2479,7 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     # 0. Directive Completions
     if section == "directive":
         stripped = line_text.strip()
-        
+
         # Check if we are inside a string literal (e.g. !layout '...')
         literal = _extract_first_string_literal(line_text)
         if literal:
@@ -2297,64 +2487,88 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
             if start_col <= position.character <= end_col:
                 if stripped.startswith("!layout"):
                     # JS-import style path completion
-                    rel_to_cursor = line_text[start_col:position.character]
-                    
+                    rel_to_cursor = line_text[start_col : position.character]
+
                     doc_path = _uri_to_path(uri)
                     if not doc_path:
                         return CompletionList(is_incomplete=False, items=[])
-                    
+
                     base_dir = Path(doc_path).parent
-                    
+
                     # Split into directory part and partial filename
                     if "/" in rel_to_cursor:
                         dir_part, partial = rel_to_cursor.rsplit("/", 1)
                         # Use resolve() to handle . and .. correctly
                         try:
                             search_dir = (base_dir / dir_part).resolve()
-                        except:
-                            search_dir = (base_dir / dir_part)
+                        except Exception:
+                            search_dir = base_dir / dir_part
                     else:
                         dir_part = ""
                         partial = rel_to_cursor
                         search_dir = base_dir
-                    
+
                     items = []
                     if search_dir.exists() and search_dir.is_dir():
                         try:
                             for entry in search_dir.iterdir():
                                 if entry.name.startswith(partial):
                                     if entry.is_dir():
-                                        items.append(CompletionItem(
-                                            label=entry.name + "/",
-                                            kind=CompletionItemKind.Folder,
-                                            insert_text=entry.name + "/",
-                                            command=Command(title="Suggest", command="editor.action.triggerSuggest")
-                                        ))
+                                        items.append(
+                                            CompletionItem(
+                                                label=entry.name + "/",
+                                                kind=CompletionItemKind.Folder,
+                                                insert_text=entry.name + "/",
+                                                command=Command(
+                                                    title="Suggest",
+                                                    command="editor.action.triggerSuggest",
+                                                ),
+                                            )
+                                        )
                                     elif entry.suffix == ".wire":
-                                        items.append(CompletionItem(
-                                            label=entry.name,
-                                            kind=CompletionItemKind.File,
-                                            insert_text=entry.name
-                                        ))
+                                        items.append(
+                                            CompletionItem(
+                                                label=entry.name,
+                                                kind=CompletionItemKind.File,
+                                                insert_text=entry.name,
+                                            )
+                                        )
                         except Exception as e:
                             logger.error(f"Error listing directory {search_dir}: {e}")
-                    
+
                     return CompletionList(is_incomplete=False, items=items)
 
         # General directive suggestions (!layout, !path, etc.)
         if stripped.startswith("!") or not stripped:
-             items = [
-                 CompletionItem(label="!layout", kind=CompletionItemKind.Keyword, insert_text="!layout '${1:path}.wire'", insert_text_format=InsertTextFormat.Snippet, detail="Layout directive"),
-                 CompletionItem(label="!path", kind=CompletionItemKind.Keyword, insert_text="!path '${1:/route}'", insert_text_format=InsertTextFormat.Snippet, detail="Path route directive"),
-                 CompletionItem(label="!no_spa", kind=CompletionItemKind.Keyword, insert_text="!no_spa", detail="Disable SPA navigation for this page"),
-             ]
-             # Filter if user already typed prefix
-             if stripped:
-                 matched = [item for item in items if item.label.startswith(stripped)]
-                 if matched:
-                     return CompletionList(is_incomplete=False, items=matched)
-             else:
-                 return CompletionList(is_incomplete=False, items=items)
+            items = [
+                CompletionItem(
+                    label="!layout",
+                    kind=CompletionItemKind.Keyword,
+                    insert_text="!layout '${1:path}.wire'",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    detail="Layout directive",
+                ),
+                CompletionItem(
+                    label="!path",
+                    kind=CompletionItemKind.Keyword,
+                    insert_text="!path '${1:/route}'",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    detail="Path route directive",
+                ),
+                CompletionItem(
+                    label="!no_spa",
+                    kind=CompletionItemKind.Keyword,
+                    insert_text="!no_spa",
+                    detail="Disable SPA navigation for this page",
+                ),
+            ]
+            # Filter if user already typed prefix
+            if stripped:
+                matched = [item for item in items if item.label.startswith(stripped)]
+                if matched:
+                    return CompletionList(is_incomplete=False, items=matched)
+            else:
+                return CompletionList(is_incomplete=False, items=items)
 
         if stripped.startswith("!layout"):
             # Fallback: if not in literal or literal not found, maybe show root files if just "!layout "
@@ -2368,41 +2582,50 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                     # Limit to 50 for performance
                     count = 0
                     for p in root.rglob("*.wire"):
-                        if count > 50: break
-                        if str(p) == doc_path: continue
-                        
+                        if count > 50:
+                            break
+                        if str(p) == doc_path:
+                            continue
+
                         try:
                             rel = os.path.relpath(p, base_dir)
                             # Prefix with ./ if not starting with . or /
                             if not rel.startswith("."):
                                 rel = "./" + rel
-                            
-                            items.append(CompletionItem(
-                                label=rel,
-                                kind=CompletionItemKind.File,
-                                insert_text=f"'{rel}'" if "'" not in line_text and "\"" not in line_text else rel
-                            ))
+
+                            items.append(
+                                CompletionItem(
+                                    label=rel,
+                                    kind=CompletionItemKind.File,
+                                    insert_text=f"'{rel}'"
+                                    if "'" not in line_text and '"' not in line_text
+                                    else rel,
+                                )
+                            )
                             count += 1
                         except ValueError:
                             continue
             return CompletionList(is_incomplete=False, items=items)
 
         if stripped.startswith("!path"):
-             return CompletionList(is_incomplete=False, items=[
-                 CompletionItem(
-                     label="Dictionary route",
-                     kind=CompletionItemKind.Snippet,
-                     insert_text="{\n    '${1:name}': '${2:/route}'\n}",
-                     insert_text_format=InsertTextFormat.Snippet
-                 ),
-                 CompletionItem(
-                     label="String route",
-                     kind=CompletionItemKind.Snippet,
-                     insert_text="'${1:/route}'",
-                     insert_text_format=InsertTextFormat.Snippet
-                 )
-             ])
-        
+            return CompletionList(
+                is_incomplete=False,
+                items=[
+                    CompletionItem(
+                        label="Dictionary route",
+                        kind=CompletionItemKind.Snippet,
+                        insert_text="{\n    '${1:name}': '${2:/route}'\n}",
+                        insert_text_format=InsertTextFormat.Snippet,
+                    ),
+                    CompletionItem(
+                        label="String route",
+                        kind=CompletionItemKind.Snippet,
+                        insert_text="'${1:/route}'",
+                        insert_text_format=InsertTextFormat.Snippet,
+                    ),
+                ],
+            )
+
         return CompletionList(is_incomplete=False, items=[])
 
     # 1. Try Ty Completion first if in Python section, inside {$ ... } or inside attribute ={ ... }
@@ -2411,10 +2634,15 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     last_open_block = before_cursor.rfind("{$")
     last_open_attr = before_cursor.rfind("={")
     last_close = before_cursor.rfind("}")
-    
+
     inside_expr = (last_open_block > last_close) or (last_open_attr > last_close)
-    
-    if (section == "python" or inside_expr) and gen_pos and ty_client and virtual_manager:
+
+    if (
+        (section == "python" or inside_expr)
+        and gen_pos
+        and ty_client
+        and virtual_manager
+    ):
         shadow_uri = virtual_manager.get_shadow_uri(uri)
         if shadow_uri:
             gen_line, gen_col = gen_pos
@@ -2422,9 +2650,11 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                 shadow_params = {
                     "textDocument": {"uri": shadow_uri},
                     "position": {"line": gen_line, "character": gen_col},
-                    "context": attrs.asdict(params.context) if params.context else {"triggerKind": 1},
+                    "context": attrs.asdict(params.context)
+                    if params.context
+                    else {"triggerKind": 1},
                 }
-                
+
                 # ... (rest of delegation logic)
 
                 # Ensure triggerKind is present (Ty requires it)
@@ -2445,89 +2675,116 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                         is_incomplete = result.get("isIncomplete", False)
 
                     if items:
-                         # Find python block range for import insertion
-                         py_start, py_end = _find_fences(doc.lines)
-                         
-                         comp_items = []
-                         for item in items:
-                             text_edits = []
-                             
-                             # Handle additionalTextEdits (e.g. auto-imports)
-                             raw_edits = item.get("additionalTextEdits")
-                             if raw_edits:
-                                 for edit in raw_edits:
-                                     # Heuristic: if edit is at the top of the file (lines 0-5), it's likely an import
-                                     # or if text starts with "import"/"from"
-                                     # Note: items from Ty via pygls might be dicts or objects depending on how they are deserialized
-                                     # pygls 1.3+ usually deserializes to object if we use type hints
-                                     
-                                     if isinstance(edit, dict):
-                                         start_line = edit["range"]["start"]["line"]
-                                         start_char = edit["range"]["start"]["character"]
-                                         end_line = edit["range"]["end"]["line"]
-                                         end_char = edit["range"]["end"]["character"]
-                                         new_text = edit["newText"]
-                                     else:
-                                         start_line = edit.range.start.line
-                                         start_char = edit.range.start.character
-                                         end_line = edit.range.end.line
-                                         end_char = edit.range.end.character
-                                         new_text = edit.new_text
-                                     
-                                     is_import = start_line < 10 or new_text.strip().startswith(("import ", "from "))
-                                     
-                                     if is_import:
-                                         if py_start is not None:
-                                             # Map to top of existing python block
-                                             # Insert at py_start + 1
-                                             target_line = py_start + 1
-                                             final_text = new_text
-                                         else:
-                                             # No python block exists. Create one after directives.
-                                             target_line = _scan_directives_end(doc.lines, len(doc.lines))
-                                             # Ensure we have newlines around if needed
-                                             # If we are inserting into a blank line, maybe just fences
-                                             # Simple approach:
-                                             final_text = f"\n---\n{new_text.strip()}\n---\n"
-                                             
-                                         text_edits.append(TextEdit(
-                                             range=Range(
-                                                 start=Position(line=target_line, character=0),
-                                                 end=Position(line=target_line, character=0)
-                                             ),
-                                             new_text=final_text
-                                         ))
-                                     else:
-                                         # Try to map normal edits
-                                         # e.g. refactorings?
-                                         # For now, simplistic mapping or ignore if not mapable
-                                         m_start = doc.map_to_original(start_line, start_char)
-                                         m_end = doc.map_to_original(end_line, end_char)
-                                         
-                                         if m_start and m_end:
-                                             text_edits.append(TextEdit(
-                                                 range=Range(
-                                                     start=Position(line=m_start[0], character=m_start[1]),
-                                                     end=Position(line=m_end[0], character=m_end[1])
-                                                 ),
-                                                 new_text=new_text
-                                             ))
+                        # Find python block range for import insertion
+                        py_start, py_end = _find_fences(doc.lines)
 
-                             new_item = CompletionItem(
-                                 label=item.get("label"),
-                                 kind=item.get("kind"),
-                                 detail=item.get("detail"),
-                                 documentation=item.get("documentation"),
-                                 sort_text=item.get("sortText"),
-                                 filter_text=item.get("filterText"),
-                                 insert_text=item.get("insertText"),
-                                 additional_text_edits=text_edits if text_edits else None,
-                             )
-                             comp_items.append(new_item)
+                        comp_items = []
+                        for item in items:
+                            text_edits = []
 
-                         return CompletionList(
-                             is_incomplete=is_incomplete, items=comp_items
-                         )
+                            # Handle additionalTextEdits (e.g. auto-imports)
+                            raw_edits = item.get("additionalTextEdits")
+                            if raw_edits:
+                                for edit in raw_edits:
+                                    # Heuristic: if edit is at the top of the file (lines 0-5), it's likely an import
+                                    # or if text starts with "import"/"from"
+                                    # Note: items from Ty via pygls might be dicts or objects depending on how they are deserialized
+                                    # pygls 1.3+ usually deserializes to object if we use type hints
+
+                                    if isinstance(edit, dict):
+                                        start_line = edit["range"]["start"]["line"]
+                                        start_char = edit["range"]["start"]["character"]
+                                        end_line = edit["range"]["end"]["line"]
+                                        end_char = edit["range"]["end"]["character"]
+                                        new_text = edit["newText"]
+                                    else:
+                                        start_line = edit.range.start.line
+                                        start_char = edit.range.start.character
+                                        end_line = edit.range.end.line
+                                        end_char = edit.range.end.character
+                                        new_text = edit.new_text
+
+                                    is_import = (
+                                        start_line < 10
+                                        or new_text.strip().startswith(
+                                            ("import ", "from ")
+                                        )
+                                    )
+
+                                    if is_import:
+                                        if py_start is not None:
+                                            # Map to top of existing python block
+                                            # Insert at py_start + 1
+                                            target_line = py_start + 1
+                                            final_text = new_text
+                                        else:
+                                            # No python block exists. Create one after directives.
+                                            target_line = _scan_directives_end(
+                                                doc.lines, len(doc.lines)
+                                            )
+                                            # Ensure we have newlines around if needed
+                                            # If we are inserting into a blank line, maybe just fences
+                                            # Simple approach:
+                                            final_text = (
+                                                f"\n---\n{new_text.strip()}\n---\n"
+                                            )
+
+                                        text_edits.append(
+                                            TextEdit(
+                                                range=Range(
+                                                    start=Position(
+                                                        line=target_line, character=0
+                                                    ),
+                                                    end=Position(
+                                                        line=target_line, character=0
+                                                    ),
+                                                ),
+                                                new_text=final_text,
+                                            )
+                                        )
+                                    else:
+                                        # Try to map normal edits
+                                        # e.g. refactorings?
+                                        # For now, simplistic mapping or ignore if not mapable
+                                        m_start = doc.map_to_original(
+                                            start_line, start_char
+                                        )
+                                        m_end = doc.map_to_original(end_line, end_char)
+
+                                        if m_start and m_end:
+                                            text_edits.append(
+                                                TextEdit(
+                                                    range=Range(
+                                                        start=Position(
+                                                            line=m_start[0],
+                                                            character=m_start[1],
+                                                        ),
+                                                        end=Position(
+                                                            line=m_end[0],
+                                                            character=m_end[1],
+                                                        ),
+                                                    ),
+                                                    new_text=new_text,
+                                                )
+                                            )
+
+                            new_item = CompletionItem(
+                                label=item.get("label"),
+                                kind=item.get("kind"),
+                                detail=item.get("detail"),
+                                documentation=item.get("documentation"),
+                                sort_text=item.get("sortText"),
+                                filter_text=item.get("filterText"),
+                                insert_text=item.get("insertText"),
+                                additional_text_edits=text_edits
+                                if text_edits
+                                else None,
+                            )
+                            comp_items.append(new_item)
+
+                        return CompletionList(
+                            is_incomplete=is_incomplete, items=comp_items
+                        )
 
             except Exception as e:
                 logger.error(f"Ty completion failed: {e}")
@@ -2545,11 +2802,13 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
             items = []
             for name in comps:
                 if not prefix or name.lower().startswith(prefix.lower()):
-                    items.append(CompletionItem(
-                        label=name,
-                        kind=CompletionItemKind.Class,
-                        detail="Imported Component"
-                    ))
+                    items.append(
+                        CompletionItem(
+                            label=name,
+                            kind=CompletionItemKind.Class,
+                            detail="Imported Component",
+                        )
+                    )
             if items:
                 return CompletionList(is_incomplete=False, items=items)
 
@@ -2558,15 +2817,15 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
             # Search backwards for <
             last_open = before_cursor.rfind("<")
             if last_open != -1:
-                content_after = before_cursor[last_open+1:]
+                content_after = before_cursor[last_open + 1 :]
 
                 # Extract first word as tag name
                 match = re.match(r"([a-zA-Z0-9_]+)", content_after)
-                
+
                 prop_items = []
                 if match:
                     tag_name = match.group(1)
-                    
+
                     # Check if we are past the tag name (whitespace check)
                     # length of tag_name vs content_after
                     # partial usage of prop completion while typing name is handled by A) above usually
@@ -2574,10 +2833,10 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                     # We only want props if we have space.
                     if len(content_after) > len(tag_name):
                         # There is something after tag name (likely space)
-                        
+
                         # Check if it's an imported component
                         comps = _get_imported_components(doc)
-                        
+
                         if tag_name in comps:
                             # It is a component!
                             module_path = comps[tag_name]
@@ -2587,97 +2846,124 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                                 props = _extract_props_from_file(comp_uri, tag_name)
                                 for p in props:
                                     snippet = f"{p.name}=${{1}}"
-                                    prop_items.append(CompletionItem(
-                                        label=p.name,
-                                        kind=CompletionItemKind.Property,
-                                        detail=f"Prop (line {p.line+1})",
-                                        documentation=p.doc,
-                                        insert_text=snippet,
-                                        insert_text_format=InsertTextFormat.Snippet,
-                                        sort_text=f"0_{p.name}"
-                                    ))
-                        
+                                    prop_items.append(
+                                        CompletionItem(
+                                            label=p.name,
+                                            kind=CompletionItemKind.Property,
+                                            detail=f"Prop (line {p.line + 1})",
+                                            documentation=p.doc,
+                                            insert_text=snippet,
+                                            insert_text_format=InsertTextFormat.Snippet,
+                                            sort_text=f"0_{p.name}",
+                                        )
+                                    )
+
                         # Now add framework attributes
-                        
+
                         # Get prefix for filtering
                         prefix_match = re.search(r"[@$][\w.]*$", before_cursor)
                         prefix = prefix_match.group(0) if prefix_match else ""
-                        
+
                         # Standard framework attributes
                         attr_suggestions = [
-                           ("$if", "\\$if={${1:condition}}", "Conditional rendering."),
-                           ("$show", "\\$show={${1:condition}}", "Conditional visibility."),
-                           ("$for", "\\$for={${1:item} in ${2:items}} \\$key={${1:item}.${3:id}}", "Loop directive."),
-                           ("$key", "\\$key={${1:item.id}}", "Stable key for loops."),
-                           ("$ref", "\\$ref={${1:my_ref}}", "Element reference."),
-                           ("$permanent", "\\$permanent", "Persistent element."),
-                           ("$reload", "\\$reload", "Reload trigger."),
+                            ("$if", "\\$if={${1:condition}}", "Conditional rendering."),
+                            (
+                                "$show",
+                                "\\$show={${1:condition}}",
+                                "Conditional visibility.",
+                            ),
+                            (
+                                "$for",
+                                "\\$for={${1:item} in ${2:items}} \\$key={${1:item}.${3:id}}",
+                                "Loop directive.",
+                            ),
+                            ("$key", "\\$key={${1:item.id}}", "Stable key for loops."),
+                            ("$ref", "\\$ref={${1:my_ref}}", "Element reference."),
+                            ("$permanent", "\\$permanent", "Persistent element."),
+                            ("$reload", "\\$reload", "Reload trigger."),
                         ]
-                        
+
                         framework_items = []
                         replace_range_local = None
                         if prefix:
-                             p_start = position.character - len(prefix)
-                             replace_range_local = Range(
-                                 start=Position(line=position.line, character=p_start),
-                                 end=position
-                             )
-                             
+                            p_start = position.character - len(prefix)
+                            replace_range_local = Range(
+                                start=Position(line=position.line, character=p_start),
+                                end=position,
+                            )
+
                         for label, snippet, doc_text in attr_suggestions:
-                           if label.startswith(prefix) or not prefix:
-                               framework_items.append(CompletionItem(
-                                   label=label,
-                                   kind=CompletionItemKind.Keyword,
-                                   documentation=doc_text,
-                                   insert_text=snippet,
-                                   insert_text_format=InsertTextFormat.Snippet,
-                                   text_edit=TextEdit(range=replace_range_local, new_text=snippet) if replace_range_local else None,
-                                   sort_text=f"1_{label}"
-                               ))
-                               
-                        event_labels = ["@click", "@submit", "@change", "@input", "@keydown", "@keyup", "@focus", "@blur"]
+                            if label.startswith(prefix) or not prefix:
+                                framework_items.append(
+                                    CompletionItem(
+                                        label=label,
+                                        kind=CompletionItemKind.Keyword,
+                                        documentation=doc_text,
+                                        insert_text=snippet,
+                                        insert_text_format=InsertTextFormat.Snippet,
+                                        text_edit=TextEdit(
+                                            range=replace_range_local, new_text=snippet
+                                        )
+                                        if replace_range_local
+                                        else None,
+                                        sort_text=f"1_{label}",
+                                    )
+                                )
+
+                        event_labels = [
+                            "@click",
+                            "@submit",
+                            "@change",
+                            "@input",
+                            "@keydown",
+                            "@keyup",
+                            "@focus",
+                            "@blur",
+                        ]
                         for ev in event_labels:
-                           if ev.startswith(prefix) or not prefix:
-                               snippet = f"{ev}={{$1}}"
-                               framework_items.append(CompletionItem(
-                                   label=ev,
-                                   kind=CompletionItemKind.Event,
-                                   insert_text=snippet,
-                                   insert_text_format=InsertTextFormat.Snippet,
-                                   text_edit=TextEdit(range=replace_range_local, new_text=snippet) if replace_range_local else None,
-                                   sort_text=f"1_{ev}"
-                               ))
+                            if ev.startswith(prefix) or not prefix:
+                                snippet = f"{ev}={{$1}}"
+                                framework_items.append(
+                                    CompletionItem(
+                                        label=ev,
+                                        kind=CompletionItemKind.Event,
+                                        insert_text=snippet,
+                                        insert_text_format=InsertTextFormat.Snippet,
+                                        text_edit=TextEdit(
+                                            range=replace_range_local, new_text=snippet
+                                        )
+                                        if replace_range_local
+                                        else None,
+                                        sort_text=f"1_{ev}",
+                                    )
+                                )
 
                         # Combine: Props first!
                         all_items = prop_items + framework_items
                         return CompletionList(is_incomplete=False, items=all_items)
 
-
-
     # Suggest control flow tags if prefix is {$ or on empty HTML line
     before_cursor = line_text[: position.character]
     stripped_before = before_cursor.strip()
-    
+
     # Get the prefix to filter suggestions
     prefix_match = re.search(r"[@$][\w.]*$", before_cursor)
     prefix_block_match = re.search(r"\{\$([\w]*)$", before_cursor)
-    
+
     prefix = prefix_match.group(0) if prefix_match else ""
     block_prefix = prefix_block_match.group(1) if prefix_block_match else None
-    
+
     # Define prefix range for replacement
     if prefix:
         p_start = position.character - len(prefix)
         replace_range = Range(
-            start=Position(line=position.line, character=p_start),
-            end=position
+            start=Position(line=position.line, character=p_start), end=position
         )
     elif block_prefix is not None:
         # Range includes the {$
         p_start = position.character - len(block_prefix) - 2
         replace_range = Range(
-            start=Position(line=position.line, character=p_start),
-            end=position
+            start=Position(line=position.line, character=p_start), end=position
         )
     else:
         replace_range = None
@@ -2685,7 +2971,12 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
     current_block = _get_current_block_type(doc.lines, position)
 
     # Check if we are on an empty-ish line in HTML section
-    if section == "html" and not in_tag and not stripped_before and block_prefix is None:
+    if (
+        section == "html"
+        and not in_tag
+        and not stripped_before
+        and block_prefix is None
+    ):
         # Suggest block snippets
         items = [
             CompletionItem(
@@ -2694,7 +2985,7 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                 detail="PyWire if block",
                 insert_text="{\\$if ${1:condition}}\n\t$0\n{/if}",
                 insert_text_format=InsertTextFormat.Snippet,
-                sort_text="00_if"
+                sort_text="00_if",
             ),
             CompletionItem(
                 label="{$for}",
@@ -2702,7 +2993,7 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                 detail="PyWire for block",
                 insert_text="{\\$for ${1:item} in ${2:items}, key=${3:item.id}}\n\t$0\n{/for}",
                 insert_text_format=InsertTextFormat.Snippet,
-                sort_text="01_for"
+                sort_text="01_for",
             ),
             CompletionItem(
                 label="{$await}",
@@ -2710,7 +3001,7 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                 detail="PyWire await block",
                 insert_text="{\\$await ${1:deferred}}\n\t<p>Loading...</p>\n{\\$then ${2:result}}\n\t$0\n{\\$catch ${3:error}}\n\t<p>Error: {${3:error}}</p>\n{/await}",
                 insert_text_format=InsertTextFormat.Snippet,
-                sort_text="02_await"
+                sort_text="02_await",
             ),
             CompletionItem(
                 label="{$try}",
@@ -2718,30 +3009,54 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                 detail="PyWire try block",
                 insert_text="{\\$try}\n\t$1\n{\\$except ${2:Exception} as ${3:e}}\n\t$0\n{/try}",
                 insert_text_format=InsertTextFormat.Snippet,
-                sort_text="03_try"
+                sort_text="03_try",
             ),
         ]
-        
+
         # Add context-specific continuations
         if current_block == "if":
-            items.insert(0, CompletionItem(
-                label="{$elif}",
-                kind=CompletionItemKind.Snippet,
-                insert_text="{\\$elif ${1:other_condition}}",
-                insert_text_format=InsertTextFormat.Snippet,
-                sort_text="00_elif"
-            ))
-            items.insert(1, CompletionItem(
-                label="{$else}",
-                kind=CompletionItemKind.Snippet,
-                insert_text="{\\$else}",
-                insert_text_format=InsertTextFormat.Snippet,
-                sort_text="00_else"
-            ))
+            items.insert(
+                0,
+                CompletionItem(
+                    label="{$elif}",
+                    kind=CompletionItemKind.Snippet,
+                    insert_text="{\\$elif ${1:other_condition}}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    sort_text="00_elif",
+                ),
+            )
+            items.insert(
+                1,
+                CompletionItem(
+                    label="{$else}",
+                    kind=CompletionItemKind.Snippet,
+                    insert_text="{\\$else}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    sort_text="00_else",
+                ),
+            )
         elif current_block == "await":
-            items.insert(0, CompletionItem(label="{$then}", kind=CompletionItemKind.Snippet, insert_text="{\\$then ${1:result}}", insert_text_format=InsertTextFormat.Snippet, sort_text="00_then"))
-            items.insert(1, CompletionItem(label="{$catch}", kind=CompletionItemKind.Snippet, insert_text="{\\$catch ${1:error}}", insert_text_format=InsertTextFormat.Snippet, sort_text="00_catch"))
-        
+            items.insert(
+                0,
+                CompletionItem(
+                    label="{$then}",
+                    kind=CompletionItemKind.Snippet,
+                    insert_text="{\\$then ${1:result}}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    sort_text="00_then",
+                ),
+            )
+            items.insert(
+                1,
+                CompletionItem(
+                    label="{$catch}",
+                    kind=CompletionItemKind.Snippet,
+                    insert_text="{\\$catch ${1:error}}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    sort_text="00_catch",
+                ),
+            )
+
         return CompletionList(is_incomplete=False, items=items)
 
     if block_prefix is not None:
@@ -2751,12 +3066,16 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
             if tag.startswith(block_prefix.lower()):
                 # Determine precedence
                 priority = "zz"
-                if current_block == "if" and tag in ["elif", "else"]: priority = "aa"
-                elif current_block == "await" and tag in ["then", "catch"]: priority = "aa"
-                elif current_block == "try" and tag in ["except", "finally", "else"]: priority = "aa"
-                
+                if current_block == "if" and tag in ["elif", "else"]:
+                    priority = "aa"
+                elif current_block == "await" and tag in ["then", "catch"]:
+                    priority = "aa"
+                elif current_block == "try" and tag in ["except", "finally", "else"]:
+                    priority = "aa"
+
                 # Check if it's a closer
-                if current_block == tag: priority = "ab" # Close current block
+                if current_block == tag:
+                    priority = "ab"  # Close current block
 
                 items.append(
                     CompletionItem(
@@ -2765,10 +3084,12 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                         detail=f"PyWire control flow tag: {{${tag}}}",
                         insert_text=tag,
                         sort_text=f"{priority}_{tag}",
-                        text_edit=TextEdit(range=replace_range, new_text=f"{{${tag}}}") if replace_range else None
+                        text_edit=TextEdit(range=replace_range, new_text=f"{{${tag}}}")
+                        if replace_range
+                        else None,
                     )
                 )
-        
+
         # Add a {/closer} option
         if current_block and current_block.startswith(block_prefix.lower()):
             items.append(
@@ -2776,8 +3097,12 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                     label=f"{{/{current_block}}}",
                     kind=CompletionItemKind.Keyword,
                     insert_text=f"{{/{current_block}}}",
-                    sort_text=f"00_close",
-                    text_edit=TextEdit(range=replace_range, new_text=f"{{/{current_block}}}") if replace_range else None
+                    sort_text="00_close",
+                    text_edit=TextEdit(
+                        range=replace_range, new_text=f"{{/{current_block}}}"
+                    )
+                    if replace_range
+                    else None,
                 )
             )
 
@@ -2809,13 +3134,17 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
         attr_suggestions = [
             ("$if", "\\$if={${1:condition}}", "Conditional rendering."),
             ("$show", "\\$show={${1:condition}}", "Conditional visibility."),
-            ("$for", "\\$for={${1:item} in ${2:items}} \\$key={${1:item}.${3:id}}", "Loop directive."),
+            (
+                "$for",
+                "\\$for={${1:item} in ${2:items}} \\$key={${1:item}.${3:id}}",
+                "Loop directive.",
+            ),
             ("$key", "\\$key={${1:item.id}}", "Stable key for loops."),
             ("$ref", "\\$ref={${1:my_ref}}", "Element reference."),
             ("$permanent", "\\$permanent", "Persistent element."),
             ("$reload", "\\$reload", "Reload trigger."),
         ]
-        
+
         items = []
         for label, snippet, doc_text in attr_suggestions:
             if label.startswith(prefix) or not prefix:
@@ -2828,12 +3157,23 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                         insert_text_format=InsertTextFormat.Snippet,
                         # If we have a prefix like "$", and we want to replace it with "$if={...}",
                         # The range must cover "$".
-                        text_edit=TextEdit(range=replace_range, new_text=snippet) if replace_range else None
+                        text_edit=TextEdit(range=replace_range, new_text=snippet)
+                        if replace_range
+                        else None,
                     )
                 )
-        
+
         # Add event handlers
-        event_labels = ["@click", "@submit", "@change", "@input", "@keydown", "@keyup", "@focus", "@blur"]
+        event_labels = [
+            "@click",
+            "@submit",
+            "@change",
+            "@input",
+            "@keydown",
+            "@keyup",
+            "@focus",
+            "@blur",
+        ]
         for ev in event_labels:
             if ev.startswith(prefix) or not prefix:
                 snippet = f"{ev}={{$1}}"
@@ -2843,10 +3183,12 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                         kind=CompletionItemKind.Event,
                         insert_text=snippet,
                         insert_text_format=InsertTextFormat.Snippet,
-                        text_edit=TextEdit(range=replace_range, new_text=snippet) if replace_range else None
+                        text_edit=TextEdit(range=replace_range, new_text=snippet)
+                        if replace_range
+                        else None,
                     )
                 )
-        
+
         return CompletionList(is_incomplete=False, items=items)
 
     return CompletionList(is_incomplete=False, items=[])

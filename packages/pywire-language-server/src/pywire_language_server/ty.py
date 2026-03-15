@@ -1,4 +1,3 @@
-from importlib.util import find_spec
 import json
 import logging
 import os
@@ -41,7 +40,7 @@ class TyClient:
             logger.info(f"Starting Ty: {cmd}")
             # Ty runs as a standalone binary, no special env vars needed
             env = os.environ.copy()
-            
+
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -81,14 +80,14 @@ class TyClient:
 
     def _find_ty_executable(self) -> Optional[str]:
         import shutil
-        
+
         # 1. PATH
         path_exe = shutil.which("ty")
         if path_exe:
             return path_exe
 
         # 2. Check for bundled binary? (Implement later if needed)
-        
+
         return None
 
     def stop(self):
@@ -189,7 +188,7 @@ class TyClient:
         """Read exactly n bytes from stdout."""
         if not self.process or not self.process.stdout:
             return None
-            
+
         chunks = []
         bytes_read = 0
         while bytes_read < length:
@@ -236,7 +235,9 @@ class TyClient:
                     if self._diagnostics_callback:
                         params = msg.get("params") or {}
                         try:
-                            logger.info(f"[Ty Diagnostics Received] Params: {json.dumps(params)}")
+                            logger.info(
+                                f"[Ty Diagnostics Received] Params: {json.dumps(params)}"
+                            )
                             self._diagnostics_callback(params)
                         except Exception as e:
                             logger.error(f"Diagnostics callback failed: {e}")

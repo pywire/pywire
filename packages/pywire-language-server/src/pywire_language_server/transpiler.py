@@ -1,26 +1,52 @@
+from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 try:
     from pywire.compiler.parser import PyWireParser
     from pywire.compiler.ast_nodes import (
-        ParsedPyWire, TemplateNode, InterpolationNode, 
-        IfAttribute, ElseAttribute, ElifAttribute, ForAttribute,
-        TryAttribute, ExceptAttribute, FinallyAttribute,
-        AwaitAttribute, ThenAttribute, CatchAttribute,
-        EventAttribute, ReactiveAttribute, SpreadAttribute,
-        PathDirective, LayoutDirective
+        ParsedPyWire,  # noqa: F401
+        TemplateNode,
+        InterpolationNode,
+        IfAttribute,
+        ElseAttribute,
+        ElifAttribute,
+        ForAttribute,
+        TryAttribute,
+        ExceptAttribute,
+        FinallyAttribute,
+        AwaitAttribute,
+        ThenAttribute,
+        CatchAttribute,
+        EventAttribute,
+        ReactiveAttribute,
+        SpreadAttribute,
+        PathDirective,
+        LayoutDirective,
     )
+
     HAS_PYWIRE = True
 except ImportError:
     HAS_PYWIRE = False
 
 from .sourcemap import SourceMap
 
-KNOWN_BLOCKS = {"if", "elif", "else", "for", "await", "then", "catch", "try", "except", "finally"}
+KNOWN_BLOCKS = {
+    "if",
+    "elif",
+    "else",
+    "for",
+    "await",
+    "then",
+    "catch",
+    "try",
+    "except",
+    "finally",
+}
 BLOCK_CLOSERS = {"if", "for", "await", "try"}
+
 
 class Transpiler:
     def __init__(self, source: str):
@@ -34,7 +60,7 @@ class Transpiler:
 
         self.current_line_idx = 0
         self.generated_line_idx = 0  # 0-indexed
-        
+
         if HAS_PYWIRE:
             self.parser = PyWireParser()
         else:
@@ -42,7 +68,7 @@ class Transpiler:
 
     def transpile(self) -> Tuple[str, SourceMap]:
         """Convert .wire source to virtual .py source with source map."""
-        if not HAS_PYWIRE:
+        if not HAS_PYWIRE or self.parser is None:
             return '"""PyWire package not found."""', self.source_map
 
         try:
@@ -65,7 +91,11 @@ class Transpiler:
                                 break
                     self.path_routes.update(d.routes)
                     self.directive_ranges["path"] = (start_line, end_line)
-                    routes_repr = repr(d.routes) if not d.is_simple_string else repr(list(d.routes.values())[0])
+                    routes_repr = (
+                        repr(d.routes)
+                        if not d.is_simple_string
+                        else repr(list(d.routes.values())[0])
+                    )
                     self.generated_code.append(f"__path = {routes_repr}\n")
                     self.generated_line_idx += 1
                 elif isinstance(d, LayoutDirective):
@@ -114,9 +144,21 @@ class Transpiler:
                 self._emit_interpolation_from_node(attr)
             elif isinstance(attr, EventAttribute):
                 self._emit_event_handler(attr)
-            elif isinstance(attr, (IfAttribute, ElifAttribute, ElseAttribute, ForAttribute,
-                                 TryAttribute, ExceptAttribute, FinallyAttribute,
-                                 AwaitAttribute, ThenAttribute, CatchAttribute)):
+            elif isinstance(
+                attr,
+                (
+                    IfAttribute,
+                    ElifAttribute,
+                    ElseAttribute,
+                    ForAttribute,
+                    TryAttribute,
+                    ExceptAttribute,
+                    FinallyAttribute,
+                    AwaitAttribute,
+                    ThenAttribute,
+                    CatchAttribute,
+                ),
+            ):
                 self._emit_control_flow(attr)
             elif isinstance(attr, ReactiveAttribute):
                 self._emit_reactive_attr(attr)
@@ -125,20 +167,29 @@ class Transpiler:
 
         for child in node.children:
             self._traverse_node(child)
-            
+
         if node.text_content:
             # Extract and emit interpolations from text content
             text = node.text_content
             import re
+
             for match in re.finditer(r"\{([^}]+)\}", text):
                 expr = match.group(1).strip()
                 # Skip control flow blocks (these are parsed as special_attributes or just part of syntax)
-                if expr.startswith("/") or expr in KNOWN_BLOCKS or expr in BLOCK_CLOSERS:
+                if (
+                    expr.startswith("/")
+                    or expr in KNOWN_BLOCKS
+                    or expr in BLOCK_CLOSERS
+                ):
                     continue
                 # Also skip things starting with $, but wait! $count is an interpolation.
                 # It evaluates `$count` which transpiler needs to rewrite to `count.value`.
                 # So we should just emit it.
-                if expr.startswith("$") and expr[1:].isalpha() and expr[1:] in KNOWN_BLOCKS:
+                if (
+                    expr.startswith("$")
+                    and expr[1:].isalpha()
+                    and expr[1:] in KNOWN_BLOCKS
+                ):
                     # skip control blocks like {$if ...}
                     continue
 
@@ -147,7 +198,9 @@ class Transpiler:
                 prefix = "_ = "
                 self.generated_code.append(prefix)
                 expr_col = self._get_expr_col(line, expr, col)
-                emitted_text = self._emit_rewritten_segment(expr, line, expr_col, self.generated_line_idx, len(prefix))
+                emitted_text = self._emit_rewritten_segment(
+                    expr, line, expr_col, self.generated_line_idx, len(prefix)
+                )
                 self.generated_code.append(emitted_text + "\n")
                 self.generated_line_idx += 1
 
@@ -159,32 +212,38 @@ class Transpiler:
         self.generated_code.append(prefix)
         # Find exactly where expr starts within the line near col
         expr_col = self._get_expr_col(line, expr, col)
-        text = self._emit_rewritten_segment(expr, line, expr_col, self.generated_line_idx, len(prefix))
+        text = self._emit_rewritten_segment(
+            expr, line, expr_col, self.generated_line_idx, len(prefix)
+        )
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
     def _get_expr_col(self, line_idx: int, expr: str, start_at: int) -> int:
-        if line_idx < 0 or line_idx >= len(self.lines): return start_at
+        if line_idx < 0 or line_idx >= len(self.lines):
+            return start_at
         text = self.lines[line_idx]
         # Search for the expression after start_at
         idx = text.find(expr, start_at)
-        if idx != -1: return idx
+        if idx != -1:
+            return idx
         # Fallback if not found (might be preprocessed)
         return start_at + 1
 
-    def _find_attr_location(self, attr_name: str, expr: str, start_line: int, start_col: int) -> Tuple[int, int, int]:
+    def _find_attr_location(
+        self, attr_name: str, expr: str, start_line: int, start_col: int
+    ) -> Tuple[int, int, int]:
         """Find actual line and column for an attribute by searching forward.
-        
+
         Returns (line_idx, brace_col, expr_col).
         """
         expr_stripped = expr.strip()
         search_term_expr = expr_stripped.splitlines()[0][:20] if expr_stripped else ""
-        
+
         # Search up to 50 lines forward from element start
         for i in range(start_line, min(start_line + 50, len(self.lines))):
             line_text = self.lines[i]
             effective_start = start_col if i == start_line else 0
-            
+
             # 1. Try finding as an attribute assignment: name={...} or @name={...} or $name={...}
             # We look for the assignment part to be sure
             for pattern in [f"{attr_name}=", f"{attr_name} ="]:
@@ -202,7 +261,7 @@ class Transpiler:
             # Remove $ from attr_name if it's there to search more flexibly
             display_name = attr_name[1:] if attr_name.startswith("$") else attr_name
             block_patterns = [f"${display_name}", display_name]
-            
+
             for bp in block_patterns:
                 # Look for { followed by optional space, then $, then optional space, then name
                 # Since we don't want re, we just check for { then presence of bp
@@ -210,9 +269,11 @@ class Transpiler:
                 if brace_pos != -1:
                     # Check if the block pattern exists after the brace
                     bp_pos = line_text.find(bp, brace_pos + 1)
-                    if bp_pos != -1 and bp_pos < brace_pos + 10: # Reasonable gap
+                    if bp_pos != -1 and bp_pos < brace_pos + 10:  # Reasonable gap
                         if search_term_expr:
-                            expr_pos = line_text.find(search_term_expr, bp_pos + len(bp))
+                            expr_pos = line_text.find(
+                                search_term_expr, bp_pos + len(bp)
+                            )
                             if expr_pos != -1:
                                 return i, brace_pos, expr_pos
                         return i, brace_pos, bp_pos + len(bp)
@@ -223,7 +284,8 @@ class Transpiler:
                 if expr_pos != -1:
                     # Try to find a preceding brace on the same line
                     brace_pos = line_text.rfind("{", 0, expr_pos)
-                    if brace_pos == -1: brace_pos = max(0, expr_pos - 1)
+                    if brace_pos == -1:
+                        brace_pos = max(0, expr_pos - 1)
                     return i, brace_pos, expr_pos
 
         # Absolute fallback to original
@@ -235,7 +297,7 @@ class Transpiler:
         prefix = ""
         expr = ""
         suffix = ""
-        
+
         if isinstance(attr, IfAttribute):
             prefix = "if ("
             expr = attr.condition
@@ -272,14 +334,18 @@ class Transpiler:
         elif isinstance(attr, CatchAttribute):
             prefix = f"{attr.variable or '_'} = "
             suffix = ""
-        
+
         # Find actual location by searching forward from element start
-        line_idx, brace_col, expr_col = self._find_attr_location(attr.name, expr, line, col)
-        
+        line_idx, brace_col, expr_col = self._find_attr_location(
+            attr.name, expr, line, col
+        )
+
         self.generated_code.append(prefix)
         if expr:
             # IMPORTANT: We must pass the STRIPPED expr to match the expr_col which points to the start of stripped content
-            text = self._emit_rewritten_segment(expr.strip(), line_idx, expr_col, self.generated_line_idx, len(prefix))
+            text = self._emit_rewritten_segment(
+                expr.strip(), line_idx, expr_col, self.generated_line_idx, len(prefix)
+            )
             self.generated_code.append(text)
         self.generated_code.append(suffix + "\n")
         self.generated_line_idx += 1
@@ -290,7 +356,17 @@ class Transpiler:
         # ... event_cls logic ...
         event_cls = "EventData"
         ev_type = attr.event_type.lower()
-        if ev_type in ("click", "dblclick", "mousedown", "mouseup", "mousemove", "mouseenter", "mouseleave", "mouseover", "mouseout"):
+        if ev_type in (
+            "click",
+            "dblclick",
+            "mousedown",
+            "mouseup",
+            "mousemove",
+            "mouseenter",
+            "mouseleave",
+            "mouseover",
+            "mouseout",
+        ):
             event_cls = "MouseEventData"
         elif ev_type in ("keydown", "keyup", "keypress"):
             event_cls = "KeyboardEventData"
@@ -299,15 +375,25 @@ class Transpiler:
         elif ev_type == "submit":
             event_cls = "FormEventData"
 
-        self.generated_code.append(f"def __handler(event: {event_cls} | None = None):\n")
+        self.generated_code.append(
+            f"def __handler(event: {event_cls} | None = None):\n"
+        )
         self.generated_line_idx += 1
         indent = "    "
         self.generated_code.append(indent)
-        
-        # Find actual location
-        line_idx, brace_col, expr_col = self._find_attr_location(f"@{attr.event_type}", attr.handler_name, line, col)
 
-        text = self._emit_rewritten_segment(attr.handler_name.strip(), line_idx, expr_col, self.generated_line_idx, len(indent))
+        # Find actual location
+        line_idx, brace_col, expr_col = self._find_attr_location(
+            f"@{attr.event_type}", attr.handler_name, line, col
+        )
+
+        text = self._emit_rewritten_segment(
+            attr.handler_name.strip(),
+            line_idx,
+            expr_col,
+            self.generated_line_idx,
+            len(indent),
+        )
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
@@ -316,11 +402,15 @@ class Transpiler:
         col = attr.column
         prefix = "_ = "
         self.generated_code.append(prefix)
-        
-        # Find actual location
-        line_idx, brace_col, expr_col = self._find_attr_location(attr.name, attr.expr, line, col)
 
-        text = self._emit_rewritten_segment(attr.expr.strip(), line_idx, expr_col, self.generated_line_idx, len(prefix))
+        # Find actual location
+        line_idx, brace_col, expr_col = self._find_attr_location(
+            attr.name, attr.expr, line, col
+        )
+
+        text = self._emit_rewritten_segment(
+            attr.expr.strip(), line_idx, expr_col, self.generated_line_idx, len(prefix)
+        )
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
@@ -329,24 +419,29 @@ class Transpiler:
         col = attr.column
         prefix = "_ = **"
         self.generated_code.append(prefix)
-        
+
         # For spread, we look for {** or just **
-        line_idx, brace_col, expr_col = self._find_attr_location("**", attr.expr, line, col)
-        
-        text = self._emit_rewritten_segment(attr.expr.strip(), line_idx, expr_col, self.generated_line_idx, len(prefix))
+        line_idx, brace_col, expr_col = self._find_attr_location(
+            "**", attr.expr, line, col
+        )
+
+        text = self._emit_rewritten_segment(
+            attr.expr.strip(), line_idx, expr_col, self.generated_line_idx, len(prefix)
+        )
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
     def generate_stub(self, filename: str) -> Tuple[str, SourceMap]:
         stem = Path(filename).stem
-        if stem.endswith(".wire"): stem = stem[:-5]
+        if stem.endswith(".wire"):
+            stem = stem[:-5]
         parts = stem.replace("-", "_").split("_")
         class_name = "".join(p.capitalize() for p in parts)
         exposed_methods: List[str] = []
         method_mappings: List[Tuple[str, int]] = []
-        
-        if not HAS_PYWIRE:
-             return f"class {class_name}: pass", self.source_map
+
+        if not HAS_PYWIRE or self.parser is None:
+            return f"class {class_name}: pass", self.source_map
 
         try:
             parsed = self.parser.parse(self.source)
@@ -354,38 +449,53 @@ class Transpiler:
                 for node in parsed.python_ast.body:
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         is_exposed = any(
-                            (isinstance(d, ast.Name) and d.id == "expose") or
-                            (isinstance(d, ast.Attribute) and d.attr == "expose")
+                            (isinstance(d, ast.Name) and d.id == "expose")
+                            or (isinstance(d, ast.Attribute) and d.attr == "expose")
                             for d in node.decorator_list
                         )
                         if is_exposed:
-                             start_fence, _ = self._find_python_fences()
-                             py_offset = (start_fence + 1) if start_fence is not None else 0
-                             args = self._format_args(node.args)
-                             ret = " -> Any"
-                             if node.returns:
-                                 try: ret = f" -> {ast.unparse(node.returns)}"
-                                 except: pass
-                             prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
-                             method_name = node.name
-                             exposed_methods.append(f"    {prefix}def {method_name}(self{args}){ret}: ...")
-                             method_mappings.append((method_name, py_offset + (node.lineno - 1)))
-        except: pass
+                            start_fence, _ = self._find_python_fences()
+                            py_offset = (
+                                (start_fence + 1) if start_fence is not None else 0
+                            )
+                            args = self._format_args(node.args)
+                            ret = " -> Any"
+                            if node.returns:
+                                try:
+                                    ret = f" -> {ast.unparse(node.returns)}"
+                                except Exception:
+                                    pass
+                            prefix = (
+                                "async "
+                                if isinstance(node, ast.AsyncFunctionDef)
+                                else ""
+                            )
+                            method_name = node.name
+                            exposed_methods.append(
+                                f"    {prefix}def {method_name}(self{args}){ret}: ..."
+                            )
+                            method_mappings.append(
+                                (method_name, py_offset + (node.lineno - 1))
+                            )
+        except Exception:
+            pass
 
         stub_lines = [
             '"""Generated PyWire stub."""',
-            'from typing import Any, Optional, List, Dict, Union, Callable',
-            'import json',
-            'from pywire.runtime.page import BasePage',
-            'from pywire import wire, effect, derived, props, ref, expose',
-            'from pywire.core import WireComponent',
-            '',
-            f'class {class_name}(BasePage):',
+            "from typing import Any, Optional, List, Dict, Union, Callable",
+            "import json",
+            "from pywire.runtime.page import BasePage",
+            "from pywire import wire, effect, derived, props, ref, expose",
+            "from pywire.core import WireComponent",
+            "",
+            f"class {class_name}(BasePage):",
             '    """Compiled PyWire page/component class."""',
         ]
         header_len = len(stub_lines)
-        if exposed_methods: stub_lines.extend(exposed_methods)
-        else: stub_lines.append('    pass')
+        if exposed_methods:
+            stub_lines.extend(exposed_methods)
+        else:
+            stub_lines.append("    pass")
         stub_content = "\n".join(stub_lines) + "\n"
         sm = SourceMap(self.source, stub_content)
         for i, (name, orig_line) in enumerate(method_mappings):
@@ -393,31 +503,44 @@ class Transpiler:
             line_text = stub_lines[gen_line]
             try:
                 gen_col = line_text.find(f"def {name}")
-                if gen_col != -1: gen_col += 4
-                else: gen_col = 4
-            except: gen_col = 4
+                if gen_col != -1:
+                    gen_col += 4
+                else:
+                    gen_col = 4
+            except Exception:
+                gen_col = 4
             sm.add_mapping(gen_line, gen_col, orig_line, 0, len(name))
         return stub_content, sm
 
     def _format_args(self, args: ast.arguments) -> str:
         parts = []
-        for arg in args.args: parts.append(self._format_arg(arg))
-        if args.vararg: parts.append(f"*{self._format_arg(args.vararg)}")
+        for arg in args.args:
+            parts.append(self._format_arg(arg))
+        if args.vararg:
+            parts.append(f"*{self._format_arg(args.vararg)}")
         if args.kwonlyargs:
             parts.append("*")
-            for arg in args.kwonlyargs: parts.append(self._format_arg(arg))
-        if args.kwarg: parts.append(f"**{self._format_arg(args.kwarg)}")
-        if not parts: return ""
+            for arg in args.kwonlyargs:
+                parts.append(self._format_arg(arg))
+        if args.kwarg:
+            parts.append(f"**{self._format_arg(args.kwarg)}")
+        if not parts:
+            return ""
         return ", " + ", ".join(parts)
 
     def _format_arg(self, arg: ast.arg) -> str:
         if arg.annotation:
-            try: return f"{arg.arg}: {ast.unparse(arg.annotation)}"
-            except: pass
+            try:
+                return f"{arg.arg}: {ast.unparse(arg.annotation)}"
+            except Exception:
+                pass
         return f"{arg.arg}: Any"
 
-    def _split_import_block(self, python_lines: List[Tuple[int, str]]) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
-        if not python_lines: return [], []
+    def _split_import_block(
+        self, python_lines: List[Tuple[int, str]]
+    ) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
+        if not python_lines:
+            return [], []
         import_lines, body_lines = [], []
         in_import_block = True
         for orig_line_idx, line in python_lines:
@@ -464,29 +587,47 @@ class Transpiler:
                 needs_wire_import = False
                 break
         if needs_wire_import:
-            self.generated_code.append("from pywire import wire, effect, derived, props, ref, expose\n")
+            self.generated_code.append(
+                "from pywire import wire, effect, derived, props, ref, expose\n"
+            )
             self.generated_line_idx += 1
         self.generated_code.append("from typing import Any\n")
         self.generated_line_idx += 1
 
     def _emit_python_line_with_rewrites(self, line: str, orig_line_idx: int):
-        text = self._emit_rewritten_segment(line.rstrip("\r\n"), orig_line_idx, 0, self.generated_line_idx, 0)
+        text = self._emit_rewritten_segment(
+            line.rstrip("\r\n"), orig_line_idx, 0, self.generated_line_idx, 0
+        )
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
-    def _emit_rewritten_segment(self, text: str, orig_line: int, start_orig_col: int, gen_line: int, start_gen_col: int) -> str:
+    def _emit_rewritten_segment(
+        self,
+        text: str,
+        orig_line: int,
+        start_orig_col: int,
+        gen_line: int,
+        start_gen_col: int,
+    ) -> str:
         # Split by $vars and also by non-word chars for granularity
         parts = re.split(r"(\$[a-zA-Z_]\w*)", text)
         current_gen_col, current_orig_col = start_gen_col, start_orig_col
         rewritten_parts = []
         for i, part in enumerate(parts):
-            if not part: continue
+            if not part:
+                continue
             if i % 2 == 1:
                 # This is a captured $var
                 var_name = part[1:]
                 rewritten_parts.append(var_name)
                 # Map the var name part
-                self.source_map.add_mapping(gen_line=gen_line, gen_col=current_gen_col, orig_line=orig_line, orig_col=current_orig_col + 1, length=len(var_name))
+                self.source_map.add_mapping(
+                    gen_line=gen_line,
+                    gen_col=current_gen_col,
+                    orig_line=orig_line,
+                    orig_col=current_orig_col + 1,
+                    length=len(var_name),
+                )
                 current_gen_col += len(var_name)
                 suffix = ".value"
                 rewritten_parts.append(suffix)
@@ -498,7 +639,13 @@ class Transpiler:
                 tokens = re.findall(r"\w+|\W+", part)
                 for token in tokens:
                     rewritten_parts.append(token)
-                    self.source_map.add_mapping(gen_line=gen_line, gen_col=current_gen_col, orig_line=orig_line, orig_col=current_orig_col, length=len(token))
+                    self.source_map.add_mapping(
+                        gen_line=gen_line,
+                        gen_col=current_gen_col,
+                        orig_line=orig_line,
+                        orig_col=current_orig_col,
+                        length=len(token),
+                    )
                     current_gen_col += len(token)
                     current_orig_col += len(token)
         return "".join(rewritten_parts)
@@ -507,7 +654,8 @@ class Transpiler:
         """Legacy regex-based directive scanner for robustness."""
         for i, line in enumerate(self.lines):
             stripped = line.strip()
-            if stripped.startswith("---"): break
+            if stripped.startswith("---"):
+                break
             if stripped.startswith("!path"):
                 parts = stripped.split(None, 1)
                 if len(parts) > 1:
@@ -516,30 +664,52 @@ class Transpiler:
                     self.generated_code.append(f"__path = {repr(val)}\n")
                     self.generated_line_idx += 1
             elif stripped.startswith("!layout"):
-                 pass # skip for now
+                pass  # skip for now
 
     def _find_python_fences(self) -> Tuple[Optional[int], Optional[int]]:
         fence_re = re.compile(r"^\s*-{3,}\s*$", re.IGNORECASE)
         start_idx = end_idx = None
         for i, line in enumerate(self.lines):
             if fence_re.match(line):
-                if start_idx is None: start_idx = i
-                elif end_idx is None: start_idx, end_idx = start_idx, i; break
+                if start_idx is None:
+                    start_idx = i
+                elif end_idx is None:
+                    start_idx, end_idx = start_idx, i
+                    break
         return start_idx, end_idx
 
     def _emit_framework_stubs(self) -> None:
-        def _append(text: str): self.generated_code.append(text); self.generated_line_idx += text.count("\n")
+        def _append(text: str):
+            self.generated_code.append(text)
+            self.generated_line_idx += text.count("\n")
+
         route_keys = list(self.path_routes.keys())
         keys_literal = ", ".join([repr(k) for k in route_keys])
         _append("class _PathNamespace:\n")
-        for key in route_keys: _append(f"    {key}: bool\n")
-        if route_keys: _append(f"\n    @overload\n    def __getitem__(self, key: Literal[{keys_literal}]) -> bool: ...\n")
+        for key in route_keys:
+            _append(f"    {key}: bool\n")
+        if route_keys:
+            _append(
+                f"\n    @overload\n    def __getitem__(self, key: Literal[{keys_literal}]) -> bool: ...\n"
+            )
         _append("    def __getitem__(self, key: str) -> bool: ...\n\n")
         _append("class _UrlNamespace:\n")
-        for key in route_keys: _append(f"    {key}: str\n")
-        if route_keys: _append(f"\n    @overload\n    def __getitem__(self, key: Literal[{keys_literal}]) -> str: ...\n")
+        for key in route_keys:
+            _append(f"    {key}: str\n")
+        if route_keys:
+            _append(
+                f"\n    @overload\n    def __getitem__(self, key: Literal[{keys_literal}]) -> str: ...\n"
+            )
         _append("    def __getitem__(self, key: str) -> str: ...\n\n")
-        _append("class _ParamsNamespace:\n    def __getitem__(self, key: str) -> str: ...\n    def __getattr__(self, name: str) -> str: ...\n\n")
-        _append("class _QueryNamespace:\n    def __getitem__(self, key: str) -> str: ...\n    def __getattr__(self, name: str) -> str: ...\n\n")
-        _append("from pywire.runtime.events import (\n    EventData,\n    UIEventData,\n    MouseEventData,\n    KeyboardEventData,\n    InputEventData,\n    FormEventData,\n)\n\n")
-        _append("path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\n\n")
+        _append(
+            "class _ParamsNamespace:\n    def __getitem__(self, key: str) -> str: ...\n    def __getattr__(self, name: str) -> str: ...\n\n"
+        )
+        _append(
+            "class _QueryNamespace:\n    def __getitem__(self, key: str) -> str: ...\n    def __getattr__(self, name: str) -> str: ...\n\n"
+        )
+        _append(
+            "from pywire.runtime.events import (\n    EventData,\n    UIEventData,\n    MouseEventData,\n    KeyboardEventData,\n    InputEventData,\n    FormEventData,\n)\n\n"
+        )
+        _append(
+            "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\n\n"
+        )
