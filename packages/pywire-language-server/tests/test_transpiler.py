@@ -61,35 +61,6 @@ def test_transpile_wrappers():
     assert "def __handler" in code
     assert "do_something()" in code
 
-def test_variable_rewrite_mapping():
-    """Test that $count maps to count in generated code."""
-    source = """
----
-count = wire(0)
----
-<p>{$count}</p>
-"""
-    transpiler = Transpiler(source)
-    code, source_map = transpiler.transpile()
-    
-    # usage: {$count} -> $ is at col 4. count is at col 5.
-    usage_line = 4 
-    usage_col_start = 5 
-    
-    print("CODE IS:", code)
-    print("MAPPINGS:", [(m.original_line, m.original_col, m.generated_line, m.generated_col, m.length) for m in source_map.mappings])
-    
-    gen_loc = source_map.to_generated(usage_line, usage_col_start)
-    assert gen_loc is not None
-    
-    gen_line, gen_col = gen_loc
-    gen_lines = code.splitlines()
-    target_line = gen_lines[gen_line]
-    
-    # extracted length 5 for 'count'
-    extracted = target_line[gen_col:gen_col+5]
-    assert extracted == "count"
-
 def test_explicit_property_mapping():
     """Test that {count.value} maps 'count' correctly."""
     source = """
@@ -115,21 +86,21 @@ count = wire(0)
     assert extracted == "count"
 
 def test_event_handler_mapping():
-    """Test @click={$count} mapping."""
+    """Test @click={count.value += 1} mapping."""
     source = """
 ---
 count = wire(0)
 ---
-<button @click={$count += 1}>Inc</button>
+<button @click={count.value += 1}>Inc</button>
 """
     transpiler = Transpiler(source)
     code, source_map = transpiler.transpile()
     
-    # Usage: {$count}
-    # <button @click={$count...
-    # $ is at 16. count at 17.
+    # Usage: {count.value}
+    # <button @click={count...
+    # c is at 16.
     usage_line = 4
-    usage_col_start = 17
+    usage_col_start = 16
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
     assert gen_loc is not None
