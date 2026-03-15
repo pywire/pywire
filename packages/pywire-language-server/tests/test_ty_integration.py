@@ -42,6 +42,8 @@ async def test_completion_trigger_kind(mock_ls, mock_ty_client):
     server_module.virtual_manager = Mock()
     server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager.get_stub_uri.return_value = None
+    server_module.virtual_manager._uri_to_path.return_value = "/workspace/test.wire"
     
     # Mock document mapping
     uri = "file:///test.wire"
@@ -81,6 +83,8 @@ async def test_hover_formatting(mock_ls, mock_ty_client):
     server_module.virtual_manager = Mock()
     server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager.get_stub_uri.return_value = None
+    server_module.virtual_manager._uri_to_path.return_value = "/workspace/test.wire"
 
     uri = "file:///test.wire"
     text = """
@@ -123,6 +127,8 @@ async def test_hover_docstring_separation(mock_ls, mock_ty_client):
     server_module.virtual_manager = Mock()
     server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager.get_stub_uri.return_value = None
+    server_module.virtual_manager._uri_to_path.return_value = "/workspace/test.wire"
 
     # Test that we separate signature from docstring
     uri = "file:///test.wire"
@@ -269,6 +275,8 @@ async def test_definition_reference_fallback(mock_ls, mock_ty_client):
     server_module.virtual_manager = Mock()
     server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
+    server_module.virtual_manager.get_stub_uri.return_value = None
+    server_module.virtual_manager._uri_to_path.return_value = "/workspace/test.wire"
 
     uri = "file:///test.wire"
     text = """

@@ -1,3 +1,4 @@
+import textwrap
 import pytest
 from pywire_language_server.transpiler import Transpiler
 
@@ -12,14 +13,14 @@ def test_transpile_simple_interpolation():
     # This assertion is vague, we'll refine it as we implement.
 
 def test_transpile_python_section():
-    source = """
----
-x = 1
-def foo():
-    pass
----
-<h1>Hi</h1>
-"""
+    source = textwrap.dedent("""
+        ---
+        x = 1
+        def foo():
+            pass
+        ---
+        <h1>Hi</h1>
+    """).strip()
     transpiler = Transpiler(source)
     code, _ = transpiler.transpile()
     
@@ -36,10 +37,12 @@ def test_transpile_directive():
     assert "'/home'" in code
 
 def test_transpile_multiline_interpolation():
-    source = """<div class={
-    'active' if True
-    else 'inactive'
-}></div>"""
+    source = textwrap.dedent("""
+        <div class={
+            'active' if True
+            else 'inactive'
+        }></div>
+    """).strip()
     transpiler = Transpiler(source)
     code, _ = transpiler.transpile()
     
@@ -47,11 +50,11 @@ def test_transpile_multiline_interpolation():
     assert "else 'inactive'" in code
 
 def test_transpile_wrappers():
-    source = """
-    <div $if={x > 1}></div>
-    <div $for={i in items}></div>
-    <div @click={do_something()}></div>
-    """
+    source = textwrap.dedent("""
+        <div $if={x > 1}></div>
+        <div $for={i in items}></div>
+        <div @click={do_something()}></div>
+    """).strip()
     transpiler = Transpiler(source)
     code, _ = transpiler.transpile()
     
@@ -63,16 +66,16 @@ def test_transpile_wrappers():
 
 def test_explicit_property_mapping():
     """Test that {count.value} maps 'count' correctly."""
-    source = """
----
-count = wire(0)
----
-<p>{count.value}</p>
-"""
+    source = textwrap.dedent("""
+        ---
+        count = wire(0)
+        ---
+        <p>{count.value}</p>
+    """).strip()
     transpiler = Transpiler(source)
     code, source_map = transpiler.transpile()
     
-    usage_line = 4
+    usage_line = 3
     usage_col_start = 4 # { is at 3, count at 4
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
@@ -87,19 +90,19 @@ count = wire(0)
 
 def test_event_handler_mapping():
     """Test @click={count.value += 1} mapping."""
-    source = """
----
-count = wire(0)
----
-<button @click={count.value += 1}>Inc</button>
-"""
+    source = textwrap.dedent("""
+        ---
+        count = wire(0)
+        ---
+        <button @click={count.value += 1}>Inc</button>
+    """).strip()
     transpiler = Transpiler(source)
     code, source_map = transpiler.transpile()
     
     # Usage: {count.value}
     # <button @click={count...
     # c is at 16.
-    usage_line = 4
+    usage_line = 3
     usage_col_start = 16
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
