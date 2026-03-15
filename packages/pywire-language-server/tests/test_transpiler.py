@@ -99,14 +99,21 @@ def test_event_handler_mapping():
     transpiler = Transpiler(source)
     code, source_map = transpiler.transpile()
     
-    # Usage: {count.value}
-    # <button @click={count...
-    # c is at 16.
-    usage_line = 3
-    usage_col_start = 16
+    assert "Parse error:" not in code, f"Parse error occurred: {code}"
+    
+    # Find usage line and col dynamically
+    usage_line = -1
+    usage_col_start = -1
+    for i, line in enumerate(source.splitlines()):
+        if "count.value" in line:
+            usage_line = i
+            usage_col_start = line.find("count.value")
+            break
+            
+    assert usage_line != -1, "Could not find 'count.value' in source"
     
     gen_loc = source_map.to_generated(usage_line, usage_col_start)
-    assert gen_loc is not None
+    assert gen_loc is not None, f"Failed to map {usage_line}:{usage_col_start}. Mappings: {[(m.original_line, m.original_col, m.length) for m in source_map.mappings]}"
     
     gen_line, gen_col = gen_loc
     gen_lines = code.splitlines()

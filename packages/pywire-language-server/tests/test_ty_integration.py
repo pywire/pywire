@@ -296,10 +296,17 @@ my_var = 10
     server_module.virtual_manager.get_original_uri.return_value = uri
     server_module.virtual_manager.get_source_map.return_value = doc.source_map
 
-    # Click exactly on '{' of value={my_var}
-    # This position is not mapped directly, so it should trigger the fallback
-    # Line 4 (0-indexed), character 13 is '{'
-    pos = Position(line=4, character=13)
+    # Find usage line and col dynamically
+    line_idx = -1
+    col_idx = -1
+    for i, line in enumerate(text.splitlines()):
+        if "value={my_var}" in line:
+            line_idx = i
+            col_idx = line.find("{")
+            break
+
+    assert line_idx != -1, "Could not find target line in source"
+    pos = Position(line=line_idx, character=col_idx)
     
     # 1. Test Definition Fallback
     mock_ty_client.send_request.return_value = [{"uri": "file:///shadow.py", "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 6}}}]
