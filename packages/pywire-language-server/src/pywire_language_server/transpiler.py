@@ -4,32 +4,27 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-try:
-    from pywire.compiler.parser import PyWireParser
-    from pywire.compiler.ast_nodes import (
-        ParsedPyWire,  # noqa: F401
-        TemplateNode,
-        InterpolationNode,
-        IfAttribute,
-        ElseAttribute,
-        ElifAttribute,
-        ForAttribute,
-        TryAttribute,
-        ExceptAttribute,
-        FinallyAttribute,
-        AwaitAttribute,
-        ThenAttribute,
-        CatchAttribute,
-        EventAttribute,
-        ReactiveAttribute,
-        SpreadAttribute,
-        PathDirective,
-        LayoutDirective,
-    )
-
-    HAS_PYWIRE = True
-except ImportError:
-    HAS_PYWIRE = False
+from pywire.compiler.parser import PyWireParser
+from pywire.compiler.ast_nodes import (
+    ParsedPyWire,  # noqa: F401
+    TemplateNode,
+    InterpolationNode,
+    IfAttribute,
+    ElseAttribute,
+    ElifAttribute,
+    ForAttribute,
+    TryAttribute,
+    ExceptAttribute,
+    FinallyAttribute,
+    AwaitAttribute,
+    ThenAttribute,
+    CatchAttribute,
+    EventAttribute,
+    ReactiveAttribute,
+    SpreadAttribute,
+    PathDirective,
+    LayoutDirective,
+)
 
 from .sourcemap import SourceMap
 
@@ -61,16 +56,10 @@ class Transpiler:
         self.current_line_idx = 0
         self.generated_line_idx = 0  # 0-indexed
 
-        if HAS_PYWIRE:
-            self.parser = PyWireParser()
-        else:
-            self.parser = None
+        self.parser = PyWireParser()
 
     def transpile(self) -> Tuple[str, SourceMap]:
         """Convert .wire source to virtual .py source with source map."""
-        if not HAS_PYWIRE or self.parser is None:
-            return '"""PyWire package not found."""', self.source_map
-
         try:
             parsed = self.parser.parse(self.source)
         except Exception as e:
@@ -439,9 +428,6 @@ class Transpiler:
         class_name = "".join(p.capitalize() for p in parts)
         exposed_methods: List[str] = []
         method_mappings: List[Tuple[str, int]] = []
-
-        if not HAS_PYWIRE or self.parser is None:
-            return f"class {class_name}: pass", self.source_map
 
         try:
             parsed = self.parser.parse(self.source)

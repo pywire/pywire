@@ -22,7 +22,7 @@ def mock_ls():
 @pytest.fixture
 def mock_ty_client():
     client = Mock()
-    client.send_request = AsyncMock()
+    client.send_request = AsyncMock(return_value=[])
     return client
 
 @pytest.fixture(autouse=True)
@@ -40,6 +40,7 @@ async def test_completion_trigger_kind(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
     server_module.virtual_manager = Mock()
+    server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
     
     # Mock document mapping
@@ -78,6 +79,7 @@ async def test_hover_formatting(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
     server_module.virtual_manager = Mock()
+    server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
 
     uri = "file:///test.wire"
@@ -119,6 +121,7 @@ async def test_hover_docstring_separation(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
     server_module.virtual_manager = Mock()
+    server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
 
     # Test that we separate signature from docstring
@@ -264,6 +267,7 @@ async def test_definition_reference_fallback(mock_ls, mock_ty_client):
     # Setup global state
     server_module.ty_client = mock_ty_client
     server_module.virtual_manager = Mock()
+    server_module.virtual_manager.root_path = "/workspace"
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
 
     uri = "file:///test.wire"

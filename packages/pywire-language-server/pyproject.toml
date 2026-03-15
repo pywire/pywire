@@ -13,7 +13,11 @@ requires-python = ">=3.11"
 dependencies = [
     "pygls>=1.3.0",
     "ty>=0.0.15",
+    "pywire",
 ]
+
+[project.scripts]
+pywire-lsp = "pywire_language_server.server:start"
 
 [project.optional-dependencies]
 dev = [
@@ -24,7 +28,6 @@ dev = [
     "nox",
     "ruff>=0.1.0",
     "ty",
-    "pywire",
 ]
 
 [tool.pytest.ini_options]

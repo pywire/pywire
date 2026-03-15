@@ -27,7 +27,6 @@ from lsprotocol.types import (
     Location,
     MarkupContent,
     MarkupKind,
-    MessageType,
     Position,
     PublishDiagnosticsParams,
     Range,
@@ -36,7 +35,6 @@ from lsprotocol.types import (
     SemanticTokens,
     SemanticTokensLegend,
     SemanticTokensParams,
-    ShowMessageParams,
     TextDocumentSyncKind,
     TextEdit,
     WorkspaceEdit,
@@ -48,12 +46,7 @@ from .ty import TyClient
 from .transpiler import Transpiler
 from .sourcemap import SourceMap
 
-try:
-    import pywire  # noqa: F401
-
-    HAS_PYWIRE = True
-except ImportError:
-    HAS_PYWIRE = False
+import pywire  # noqa: F401
 
 # Valid block keywords: used in {$keyword ...} and {/keyword}
 KNOWN_BLOCKS = {
@@ -244,17 +237,6 @@ ty_diagnostics: dict[str, List[Diagnostic]] = {}
 async def initialize(ls: LanguageServer, params: Any):
     global virtual_manager, ty_client
     logger.info("PyWire Language Server initializing...")
-
-    if not HAS_PYWIRE:
-        ls.window_show_message(
-            ShowMessageParams(
-                message="PyWire Language Server: 'pywire' package not found in current environment. Please install it for full functionality.",
-                type=MessageType.Error,
-            )
-        )
-        logger.error(
-            "pywire package not found. Tree-sitter parsing will be unavailable."
-        )
 
     root_uri = params.root_uri or (
         params.workspace_folders[0].uri if params.workspace_folders else None
