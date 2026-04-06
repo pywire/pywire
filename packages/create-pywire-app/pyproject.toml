@@ -1,6 +1,6 @@
 [project]
 name = "create-pywire-app"
-version = "0.1.10"
+version = "0.1.5"
 description = "Init wizard for new pywire projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,9 +26,6 @@ dev = [
     "ty",
     "ruff",
 ]
-
-[tool.ruff]
-exclude = ["src/create_pywire_app/_version.py"]
 
 [tool.ty.src]
 exclude = [

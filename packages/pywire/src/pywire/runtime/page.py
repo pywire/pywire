@@ -1,5 +1,6 @@
 """Base page class with lifecycle system."""
 
+import asyncio
 import inspect
 from collections import defaultdict
 from typing import (
@@ -228,11 +229,11 @@ class BasePage:
         # Normal replacement semantics
         if target_id and slot_name in self.slots[target_id]:
             renderer: Union[Callable[..., Any], str] = self.slots[target_id][slot_name]
-            if callable(renderer):
-                if inspect.iscoroutinefunction(renderer):
-                    return str(await renderer())
-                return str(renderer())
-            return str(renderer)
+            if not callable(renderer):
+                return str(renderer)
+            if inspect.iscoroutinefunction(renderer):
+                return str(await renderer())
+            return str(renderer())  # ty: ignore[call-top-callable]
 
         # Fallback to default content if provided
         if default_renderer:
@@ -625,9 +626,7 @@ class BasePage:
                 "error": None,
             }
         except Exception as e:
-            logger.debug(
-                f"[{self._instance_id}] Resolution error for {await_id}: {e}"
-            )
+            logger.debug(f"[{self._instance_id}] Resolution error for {await_id}: {e}")
             self._await_states[await_id] = {
                 "status": "error",
                 "result": None,

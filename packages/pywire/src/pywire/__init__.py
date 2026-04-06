@@ -1,12 +1,9 @@
-try:
-    from ._version import __version__
-except ImportError:
-    from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import version, PackageNotFoundError
 
-    try:
-        __version__ = version("pywire")
-    except PackageNotFoundError:
-        __version__ = "unknown"
+try:
+    __version__ = version("pywire")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 from pywire.runtime.app import PyWire
 from pywire.runtime.page import BasePage

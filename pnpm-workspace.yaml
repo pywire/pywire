@@ -1,4 +1,6 @@
 packages:
+  - "packages/pywire/src/pywire/client"
+  - "packages/pywire/docs"
   - "packages/tree-sitter-pywire"
   - "packages/vscode-pywire"
   - "packages/prettier-plugin-pywire"

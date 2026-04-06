@@ -374,7 +374,7 @@ toml = [
 
 [[package]]
 name = "create-pywire-app"
-version = "0.1.10"
+version = "0.1.5"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
@@ -1523,7 +1523,7 @@ provides-extras = ["dev", "http3"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.1.11"
+version = "0.1.4"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },

@@ -5,7 +5,7 @@
     "packages/pywire": {
       "release-type": "python",
       "component": "pywire",
-      "extra-files": ["packages/pywire/Cargo.toml"]
+      "extra-files": ["Cargo.toml", "src/pywire/client/package.json"]
     },
     "packages/pywire-language-server": {
       "release-type": "python",

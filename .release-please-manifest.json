@@ -1,8 +1,8 @@
 {
   "packages/pywire": "0.1.10",
-  "packages/pywire-language-server": "0.1.11",
-  "packages/tree-sitter-pywire": "0.1.0",
+  "packages/pywire-language-server": "0.1.4",
+  "packages/tree-sitter-pywire": "0.1.3",
   "packages/vscode-pywire": "0.1.4",
-  "packages/prettier-plugin-pywire": "0.1.0",
-  "packages/create-pywire-app": "0.1.10"
+  "packages/prettier-plugin-pywire": "0.1.2",
+  "packages/create-pywire-app": "0.1.5"
 }
