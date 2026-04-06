@@ -1,0 +1,91 @@
+#!/bin/sh -e
+
+export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TARGET_DIR="$ROOT_DIR/bundled/libs"
+if [ -d "$TARGET_DIR" ]; then
+    rm -rf "$TARGET_DIR"
+fi
+mkdir -p "$TARGET_DIR"
+
+PYTHON_BIN="python"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+fi
+
+PYWIRE_LS_REPO="https://github.com/pywire/pywire-language-server.git"
+
+resolve_local_src() {
+    src="$1"
+    case "$src" in
+        /*) ;;
+        *) src="$ROOT_DIR/$src" ;;
+    esac
+
+    if [ -d "$src" ] && { [ -f "$src/pyproject.toml" ] || [ -f "$src/setup.py" ]; }; then
+        echo "$src"
+        return 0
+    fi
+    return 1
+}
+
+get_latest_tag() {
+    repo_url="$1"
+    tag=$(git ls-remote --tags --sort='v:refname' "$repo_url" 'refs/tags/v*' | tail -n1 | sed 's|.*refs/tags/||')
+    if [ -z "$tag" ]; then
+        echo "main"
+    else
+        echo "$tag"
+    fi
+}
+
+# Determine build mode
+if [ "$PYWIRE_RELEASE" = "1" ]; then
+    MODE="publish"
+elif [ "$GITHUB_ACTIONS" = "true" ]; then
+    MODE="ci"
+else
+    MODE="local"
+fi
+
+echo "Bundling mode: $MODE"
+
+case "$MODE" in
+    publish)
+        PYWIRE_LS_REF="$(get_latest_tag "$PYWIRE_LS_REPO")"
+        DEPS="pygls git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
+        ;;
+    ci)
+        DEPS="pygls"
+
+        if [ -n "$PYWIRE_LANGUAGE_SERVER_SRC" ]; then
+             pywire_ls_path="$(resolve_local_src "$PYWIRE_LANGUAGE_SERVER_SRC")"
+             DEPS="$DEPS $pywire_ls_path"
+        else
+             DEPS="$DEPS git+$PYWIRE_LS_REPO@main"
+        fi
+        ;;
+    *)
+        # Local development mode
+        pywire_ls_path="$(resolve_local_src "${PYWIRE_LANGUAGE_SERVER_SRC:-../pywire-language-server}")" || pywire_ls_path=""
+        
+        DEPS="pygls"
+        
+        if [ -n "$pywire_ls_path" ]; then
+            DEPS="$DEPS $pywire_ls_path"
+        else
+            DEPS="$DEPS git+$PYWIRE_LS_REPO@main"
+        fi
+        ;;
+esac
+
+echo "Installing dependencies: $DEPS"
+
+if command -v uv >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    uv pip install $DEPS --target "$TARGET_DIR"
+else
+    # shellcheck disable=SC2086
+    "$PYTHON_BIN" -m pip install $DEPS -t "$TARGET_DIR"
+fi

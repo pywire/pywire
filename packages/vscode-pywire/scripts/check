@@ -1,0 +1,15 @@
+#!/bin/sh -e
+
+if [ ! -x node_modules/.bin/eslint ]; then
+    echo "-> Installing dependencies..."
+    pnpm install --frozen-lockfile --force
+fi
+
+echo "-> Formatting check..."
+pnpm format:check
+
+echo "-> Linting..."
+pnpm lint
+
+echo "-> Type checking..."
+pnpm check-types

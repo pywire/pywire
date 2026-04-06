@@ -1,0 +1,479 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "PyWire",
+  "scopeName": "source.pywire",
+  "patterns": [
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#frontmatter"
+    },
+    {
+      "include": "#html-content"
+    }
+  ],
+  "repository": {
+    "directives": {
+      "patterns": [
+        {
+          "comment": "Block directive: !name { ... }",
+          "begin": "^\\s*(![a-zA-Z_]\\w*)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.directive.pywire"
+            },
+            "2": {
+              "name": "punctuation.section.embedded.begin.pywire"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.embedded.end.pywire"
+            }
+          },
+          "contentName": "meta.embedded.block.python",
+          "patterns": [
+            {
+              "include": "source.python"
+            }
+          ]
+        },
+        {
+          "comment": "Inline directive: !name ...",
+          "match": "^\\s*(![a-zA-Z_]\\w*)(.*)$",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.pywire"
+            },
+            "2": {
+              "name": "string.unquoted.directive-value.pywire"
+            }
+          }
+        }
+      ]
+    },
+    "frontmatter": {
+      "comment": "Python code fenced between --- separators",
+      "begin": "^(---(?:\\s*html\\s*---)?\\s*)$",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.separator.frontmatter.pywire"
+        }
+      },
+      "end": "^(---(?:\\s*html\\s*---)?\\s*)$",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.separator.frontmatter.pywire"
+        }
+      },
+      "contentName": "meta.embedded.block.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "html-content": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#control-flow"
+        },
+        {
+          "include": "#tags"
+        },
+        {
+          "include": "#interpolation"
+        }
+      ]
+    },
+    "comments": {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.html"
+    },
+    "control-flow": {
+      "patterns": [
+        {
+          "comment": "Opening control flow block: {$if ...}, {$for ...}, {$elif ...}, {$else}, etc.",
+          "name": "meta.control-flow.pywire",
+          "begin": "(\\{)(\\$)(if|elif|else|for|await|then|catch|try|except|finally|html)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.section.embedded.begin.pywire"
+            },
+            "2": {
+              "name": "keyword.control.pywire"
+            },
+            "3": {
+              "name": "keyword.control.pywire"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.embedded.end.pywire"
+            }
+          },
+          "contentName": "meta.embedded.inline.python",
+          "patterns": [
+            {
+              "include": "source.python"
+            }
+          ]
+        },
+        {
+          "comment": "Closing control flow block: {/if}, {/for}, {/await}, {/try}",
+          "name": "meta.control-flow.end.pywire",
+          "match": "(\\{)(/)(if|for|await|try)(\\})",
+          "captures": {
+            "1": {
+              "name": "punctuation.section.embedded.begin.pywire"
+            },
+            "2": {
+              "name": "keyword.control.pywire"
+            },
+            "3": {
+              "name": "keyword.control.pywire"
+            },
+            "4": {
+              "name": "punctuation.section.embedded.end.pywire"
+            }
+          }
+        }
+      ]
+    },
+    "interpolation": {
+      "comment": "Python expression interpolation: {expr}",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.pywire"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.pywire"
+        }
+      },
+      "contentName": "meta.embedded.inline.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "tags": {
+      "patterns": [
+        {
+          "include": "#tags-void"
+        },
+        {
+          "include": "#tags-script-style"
+        },
+        {
+          "include": "#tags-general"
+        },
+        {
+          "include": "#tags-end"
+        }
+      ]
+    },
+    "tags-void": {
+      "begin": "(<)(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)(?=\\s|/?>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.html"
+        }
+      },
+      "end": "/?>",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "name": "meta.tag.void.html",
+      "patterns": [
+        {
+          "include": "#attributes"
+        }
+      ]
+    },
+    "tags-script-style": {
+      "patterns": [
+        {
+          "comment": "Script tag with raw content",
+          "begin": "(<)(script)(?=\\s|>)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            }
+          },
+          "end": "(</)(script)(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "begin": ">",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.definition.tag.end.html"
+                }
+              },
+              "end": "(?=</script>)",
+              "contentName": "meta.embedded.block.javascript",
+              "patterns": [
+                {
+                  "include": "source.js"
+                }
+              ]
+            },
+            {
+              "include": "#attributes"
+            }
+          ]
+        },
+        {
+          "comment": "Style tag with raw content",
+          "begin": "(<)(style)(?=\\s|>)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            }
+          },
+          "end": "(</)(style)(>)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.html"
+            },
+            "2": {
+              "name": "entity.name.tag.html"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.html"
+            }
+          },
+          "patterns": [
+            {
+              "begin": ">",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.definition.tag.end.html"
+                }
+              },
+              "end": "(?=</style>)",
+              "contentName": "meta.embedded.block.css",
+              "patterns": [
+                {
+                  "include": "source.css"
+                }
+              ]
+            },
+            {
+              "include": "#attributes"
+            }
+          ]
+        }
+      ]
+    },
+    "tags-general": {
+      "begin": "(<)([^/\\s>/]*)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.html"
+        }
+      },
+      "end": "(/?>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#attributes"
+        }
+      ]
+    },
+    "tags-end": {
+      "match": "(</)(\\S+?)(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.html"
+        },
+        "2": {
+          "name": "entity.name.tag.html"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.html"
+        }
+      }
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "include": "#attribute-spread"
+        },
+        {
+          "include": "#attribute-shorthand"
+        },
+        {
+          "include": "#attribute-event"
+        },
+        {
+          "include": "#attribute-directive"
+        },
+        {
+          "include": "#attribute-normal"
+        }
+      ]
+    },
+    "attribute-spread": {
+      "comment": "Spread attribute: {**expr}",
+      "begin": "(\\{)(\\*\\*)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.section.embedded.begin.pywire"
+        },
+        "2": {
+          "name": "keyword.operator.spread.pywire"
+        }
+      },
+      "end": "(\\})",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.section.embedded.end.pywire"
+        }
+      },
+      "contentName": "meta.embedded.inline.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "attribute-shorthand": {
+      "comment": "Shorthand attribute: {name}",
+      "match": "(\\{)([a-zA-Z_]\\w*)(\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.section.embedded.begin.pywire"
+        },
+        "2": {
+          "name": "variable.other.readwrite.pywire"
+        },
+        "3": {
+          "name": "punctuation.section.embedded.end.pywire"
+        }
+      }
+    },
+    "attribute-event": {
+      "comment": "Event handler attribute: @click={...}",
+      "begin": "(@[\\w.\\-]+)(?=\\s*=?|/?>)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.event.pywire support.function.event.pywire"
+        }
+      },
+      "end": "(?=[\\s/>])",
+      "patterns": [
+        {
+          "include": "#attribute-value-assignment"
+        }
+      ]
+    },
+    "attribute-directive": {
+      "comment": "Directive attribute: $if={...}, $show={...}, $model={...}",
+      "begin": "(\\$[\\w.\\-]+)(?=\\s*=?|/?>)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.attribute.pywire"
+        }
+      },
+      "end": "(?=[\\s/>])",
+      "patterns": [
+        {
+          "include": "#attribute-value-assignment"
+        }
+      ]
+    },
+    "attribute-normal": {
+      "begin": "([^\\s\"'=<>`/{]+)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.html"
+        }
+      },
+      "end": "(?=[\\s/>])",
+      "patterns": [
+        {
+          "include": "#attribute-value-assignment"
+        }
+      ]
+    },
+    "attribute-value-assignment": {
+      "begin": "=",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.separator.key-value.html"
+        }
+      },
+      "end": "(?=[\\s/>])",
+      "patterns": [
+        {
+          "include": "#interpolation"
+        },
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.html",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            }
+          ]
+        },
+        {
+          "begin": "'",
+          "end": "'",
+          "name": "string.quoted.single.html",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            }
+          ]
+        },
+        {
+          "match": "[^\\s\"'=<>`/]+",
+          "name": "string.unquoted.html"
+        }
+      ]
+    }
+  }
+}

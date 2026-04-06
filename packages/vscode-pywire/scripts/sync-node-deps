@@ -1,0 +1,57 @@
+#!/bin/sh -e
+
+# This script ensures that prettier-plugin-pywire is pinned to the correct version
+# (tag for release, main for development/nightly).
+
+REPO_URL="https://github.com/pywire/prettier-plugin-pywire.git"
+
+get_latest_tag() {
+    # Get the latest tag matching v* sorted by version number
+    TAG=$(git ls-remote --tags --sort='v:refname' "$REPO_URL" 'refs/tags/v*' | tail -n1 | sed 's|.*refs/tags/||')
+    if [ -z "$TAG" ]; then
+        echo "main"
+    else
+        echo "$TAG"
+    fi
+}
+
+# Determine build mode
+if [ "$PYWIRE_RELEASE" = "1" ]; then
+    MODE="publish"
+elif [ "$GITHUB_ACTIONS" = "true" ]; then
+    MODE="ci"
+else
+    MODE="local"
+fi
+
+case "$MODE" in
+    publish)
+        echo "Release mode detected. Fetching latest tag..."
+        REF=$(get_latest_tag)
+        ;;
+    ci)
+        echo "CI mode. Using main."
+        REF="main"
+        ;;
+    *)
+        echo "Local mode. Using main."
+        REF="main"
+        ;;
+esac
+
+echo "Using prettier-plugin-pywire@$REF"
+
+# Check current version in package.json to avoid unnecessary pnpm add
+# Also check if it's a local link (e.g. "link:../...")
+IS_LINK=$(grep -q "prettier-plugin-pywire\": \"link:" package.json && echo "yes" || echo "no")
+CURRENT=$(grep -o "prettier-plugin-pywire\": \"git+$REPO_URL#[^\"]*" package.json | sed "s|.*#||" || echo "")
+
+if [ "$IS_LINK" = "yes" ] && [ "$MODE" = "local" ]; then
+    echo "prettier-plugin-pywire is linked to a local directory. Skipping sync."
+elif [ "$CURRENT" != "$REF" ]; then
+    echo "Updating prettier-plugin-pywire dependency to #$REF..."
+    # We use pnpm add to update package.json and pnpm-lock.yaml
+    pnpm add "git+$REPO_URL#$REF"
+else
+    echo "prettier-plugin-pywire is already at #$REF."
+fi

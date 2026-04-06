@@ -1,0 +1,185 @@
+{
+  "name": "pywire",
+  "displayName": "PyWire",
+  "description": "Language support for PyWire files",
+  "version": "0.1.4",
+  "type": "module",
+  "publisher": "pywire",
+  "icon": "images/icon.jpg",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pywire/pywire"
+  },
+  "main": "./out/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "ms-python.python"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "pywire",
+        "aliases": [
+          "PyWire",
+          "pywire"
+        ],
+        "extensions": [
+          ".wire"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "pywire",
+        "scopeName": "source.pywire",
+        "path": "./syntaxes/pywire.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.python": "python",
+          "meta.embedded.inline.python": "python",
+          "text.html.basic": "html",
+          "meta.embedded.block.javascript": "javascript",
+          "meta.embedded.block.css": "css"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "PyWire",
+      "properties": {
+        "pywire.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python interpreter"
+        },
+        "pywire.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server"
+        },
+        "pywire.tyPath": {
+          "type": "string",
+          "description": "Path to the Ty language server executable. If not set, 'ty' is expected to be in the PATH."
+        },
+        "pywire.disableUpdateNotifications": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disable periodic checks for PyWire updates."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "pywire.update",
+        "title": "PyWire: Attempt Upgrade"
+      },
+      {
+        "command": "pywire.toggleComment",
+        "title": "PyWire: Toggle Comment"
+      },
+      {
+        "command": "pywire.restartLanguageServer",
+        "title": "PyWire: Restart Language Server"
+      },
+      {
+        "command": "pywire.openDocs",
+        "title": "PyWire: Open Docs"
+      },
+      {
+        "command": "pywire.openDocsNightly",
+        "title": "PyWire: Open Docs (Nightly)"
+      },
+      {
+        "command": "pywire.runDev",
+        "title": "PyWire: Run Dev Server",
+        "icon": "$(play)"
+      },
+      {
+        "command": "pywire.stopDev",
+        "title": "PyWire: Stop Dev Server",
+        "icon": "$(debug-stop)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "pywire.runDev",
+          "when": "editorLangId == pywire && !pywire.devServerRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "pywire.stopDev",
+          "when": "editorLangId == pywire && pywire.devServerRunning",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "pywire.toggleComment",
+        "key": "cmd+/",
+        "mac": "cmd+/",
+        "win": "ctrl+/",
+        "linux": "ctrl+/",
+        "when": "editorTextFocus && editorLangId == pywire"
+      }
+    ],
+    "configurationDefaults": {
+      "[pywire]": {
+        "editor.defaultFormatter": "pywire.pywire",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run sync-node-deps && pnpm run bundle-deps && pnpm run package",
+    "compile": "pnpm run check-types && node build.js",
+    "watch": "concurrently \"pnpm run watch:esbuild\" \"pnpm run watch:tsc\"",
+    "watch:esbuild": "node build.js --watch",
+    "watch:tsc": "tsc --noEmit --watch -p ./",
+    "package": "pnpm run check-types && node build.js --production",
+    "vsix": "pnpm run vscode:prepublish && npx @vscode/vsce package --no-dependencies",
+    "check-types": "tsc --noEmit -p ./",
+    "bundle-deps": "./scripts/bundle-deps",
+    "sync-node-deps": "./scripts/sync-node-deps",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm check-types",
+    "coverage": "echo \"No coverage configured\"",
+    "check": "pnpm format:check && pnpm lint && pnpm check-types"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
+    "@vscode/vsce": "^2.22.0",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.27.2",
+    "eslint": "^9.35.0",
+    "globals": "^16.4.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@wasm-fmt/ruff_fmt": "^0.9.0",
+    "prettier": "^3.6.2",
+    "prettier-plugin-pywire": "link:../prettier-plugin-pywire",
+    "vscode-languageclient": "^9.0.1",
+    "web-tree-sitter": "^0.26.3"
+  }
+}
