@@ -1,0 +1,18 @@
+servo-upstream/
+
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyodide-*
+**/*.egg-info/*
+.coverage
+
+# Rust
+target/
+src/pywire/*.so
+src/pywire/*.pyd
+Cargo.lock
+build/

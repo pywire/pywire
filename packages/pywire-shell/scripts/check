@@ -1,0 +1,13 @@
+#!/bin/sh -e
+set -x
+
+echo "--- Linting Python (pywire-shell) ---"
+uv run ruff format --check --diff src/
+uv run ruff check src/
+
+echo "--- Linting Rust (pywire_servo) ---"
+(cd rust/pywire_servo && cargo clippy -- -D warnings)
+(cd rust/pywire_servo && cargo fmt --check)
+
+echo "--- Testing (pywire-shell) ---"
+uv run pytest
