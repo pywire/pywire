@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -ex
+
+uv run pytest --cov=pywire_language_server $@
+
+if [ -z $GITHUB_ACTIONS ]; then
+    scripts/coverage
+fi

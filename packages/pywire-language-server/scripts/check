@@ -1,0 +1,19 @@
+#!/bin/sh -e
+
+# Assumes running from pywire-language-server root
+# Usage: ./scripts/check
+
+FILES="src/pywire_language_server"
+
+echo "-> Formatting..."
+uv run ruff format --check --diff $FILES
+
+echo "-> Type Checking..."
+uv run --with ty ty check $FILES
+
+echo "-> Linting..."
+uv run ruff check $FILES
+
+echo "-> Testing (Multi-version)..."
+# Use uv run to execute nox from dev dependencies
+uv run nox
