@@ -1,0 +1,11 @@
+!path '/'
+!layout 'main'
+---
+count = 10
+def get_count():
+    return count
+---
+<div class="test">
+    <h1>Count is {count}</h1>
+    <button @click={count += 1}>Increment</button>
+</div>

@@ -1,0 +1,17 @@
+[package]
+name = "tree-sitter-pywire"
+version = "0.1.0"
+authors = ["Reece Holmdahl <reece@pywire.dev>"]
+edition = "2021"
+license = "ISC"
+links = "tree-sitter-pywire"
+build = "bindings/rust/build.rs"
+
+[lib]
+path = "bindings/rust/lib.rs"
+
+[dependencies]
+tree-sitter = "0.24"
+
+[build-dependencies]
+cc = "1.0"

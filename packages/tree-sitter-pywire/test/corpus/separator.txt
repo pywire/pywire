@@ -1,0 +1,20 @@
+==================
+Separator
+==================
+
+---
+x = 1
+---
+<div></div>
+
+---
+
+(source_file
+  (frontmatter
+    (separator)
+    (python_content)
+    (separator))
+  (template_section
+    (tag
+      (tag_name)
+      (tag_name))))
