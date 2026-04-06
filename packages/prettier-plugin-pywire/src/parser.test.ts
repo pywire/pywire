@@ -40,6 +40,4 @@ describe('parsePywire', () => {
     expect(result.headerNodes).toHaveLength(0)
     expect(result.html).toBe(input)
   })
-
 })
-

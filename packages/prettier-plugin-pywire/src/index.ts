@@ -73,7 +73,11 @@ function extractComponentNames(sections: SplitSections): string[] {
     if (list.startsWith('{')) {
       const braceContent = list.slice(1, -1)
       braceContent.split(',').forEach((n) => {
-        const name = n.trim().split(/\s+as\s+/).pop()?.trim()
+        const name = n
+          .trim()
+          .split(/\s+as\s+/)
+          .pop()
+          ?.trim()
         if (name && /^[a-zA-Z_]\w*$/.test(name)) {
           names.add(name)
         }
@@ -92,7 +96,11 @@ function extractComponentNames(sections: SplitSections): string[] {
     const importList = match[1] || match[2] || match[3]
     if (importList) {
       importList.split(',').forEach((n) => {
-        const name = n.trim().split(/\s+as\s+/).pop()?.trim()
+        const name = n
+          .trim()
+          .split(/\s+as\s+/)
+          .pop()
+          ?.trim()
         if (name && /^[a-zA-Z_]\w*$/.test(name)) {
           names.add(name)
         }

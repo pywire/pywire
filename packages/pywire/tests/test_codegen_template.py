@@ -16,7 +16,9 @@ class TestCodegenTemplate(unittest.TestCase):
     def setUp(self) -> None:
         self.codegen = TemplateCodegen()
 
-    def normalize_ast(self, node: Union[ast.AST, List[ast.AST]]) -> Union[ast.AST, List[ast.AST]]:
+    def normalize_ast(
+        self, node: Union[ast.AST, List[ast.AST]]
+    ) -> Union[ast.AST, List[ast.AST]]:
         """Ensure all nodes have lineno/col_offset for unparse."""
         if isinstance(node, list):
             for n in node:
@@ -79,7 +81,10 @@ class TestCodegenTemplate(unittest.TestCase):
         # Interpolation must be wrapped in a TemplateNode with tag=None
         interp_node = InterpolationNode(line=1, column=0, expression="msg")
         text_wrapper = TemplateNode(
-            tag=None, special_attributes=[cast(SpecialAttribute, interp_node)], line=1, column=0
+            tag=None,
+            special_attributes=[cast(SpecialAttribute, interp_node)],
+            line=1,
+            column=0,
         )
         node = TemplateNode(tag="div", children=[text_wrapper], line=1, column=0)
 
@@ -96,13 +101,20 @@ class TestCodegenTemplate(unittest.TestCase):
     def test_document_root_elements_do_not_become_regions(self) -> None:
         interp_node = InterpolationNode(line=1, column=0, expression="msg")
         text_wrapper = TemplateNode(
-            tag=None, special_attributes=[cast(SpecialAttribute, interp_node)], line=1, column=0
+            tag=None,
+            special_attributes=[cast(SpecialAttribute, interp_node)],
+            line=1,
+            column=0,
         )
         dynamic_div = TemplateNode(tag="div", children=[text_wrapper], line=1, column=0)
         body = TemplateNode(tag="body", children=[dynamic_div], line=1, column=0)
         head = TemplateNode(
             tag="head",
-            children=[TemplateNode(tag="meta", attributes={"charset": "utf-8"}, line=1, column=0)],
+            children=[
+                TemplateNode(
+                    tag="meta", attributes={"charset": "utf-8"}, line=1, column=0
+                )
+            ],
             line=1,
             column=0,
         )
@@ -128,7 +140,9 @@ class TestCodegenTemplate(unittest.TestCase):
         node = TemplateNode(
             tag="slot",
             attributes={"name": "header"},
-            children=[TemplateNode(tag=None, text_content="Header content", line=1, column=0)],
+            children=[
+                TemplateNode(tag=None, text_content="Header content", line=1, column=0)
+            ],
             line=1,
             column=0,
         )
@@ -145,9 +159,13 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("parts.append('Header content')", code)
 
     def test_codegen_component_instantiation(self) -> None:
-        node = TemplateNode(tag="MyComp", attributes={"title": "Hello"}, line=1, column=0)
+        node = TemplateNode(
+            tag="MyComp", attributes={"title": "Hello"}, line=1, column=0
+        )
         comp_map = {"MyComp": "MyComponent"}
-        func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
+        func_def, _ = self.codegen.generate_render_method(
+            [node], component_map=comp_map
+        )
 
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
@@ -157,14 +175,18 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("'_style_collector': self._style_collector", code)
 
     def test_codegen_component_slots(self) -> None:
-        child1 = TemplateNode(tag="div", attributes={"slot": "header"}, line=1, column=0)
+        child1 = TemplateNode(
+            tag="div", attributes={"slot": "header"}, line=1, column=0
+        )
         child2 = TemplateNode(tag="span", attributes={}, line=1, column=0)
         node = TemplateNode(
             tag="MyComp", attributes={}, children=[child1, child2], line=1, column=0
         )
         comp_map = {"MyComp": "MyComponent"}
 
-        func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
+        func_def, _ = self.codegen.generate_render_method(
+            [node], component_map=comp_map
+        )
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("'slots': {'header':", code)
@@ -182,11 +204,17 @@ class TestCodegenTemplate(unittest.TestCase):
             modifiers=[],
         )
         node = TemplateNode(
-            tag="MyComp", attributes={}, special_attributes=[event_attr], line=1, column=0
+            tag="MyComp",
+            attributes={},
+            special_attributes=[event_attr],
+            line=1,
+            column=0,
         )
         comp_map = {"MyComp": "MyComponent"}
 
-        func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
+        func_def, _ = self.codegen.generate_render_method(
+            [node], component_map=comp_map
+        )
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("'click': self.handleClick", code)
@@ -285,7 +313,6 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("'max_files': 3", code)
         self.assertIn("'allowed_names': '^avatar_.*\\\\.(png|jpg)$'", code)
 
-
     def test_codegen_form_extracts_file_input_component_rules(self) -> None:
         file_component_node = TemplateNode(
             tag="FileInput",
@@ -339,11 +366,15 @@ class TestCodegenTemplate(unittest.TestCase):
             attributes={"scoped": ""},
             line=1,
             column=0,
-            children=[TemplateNode(tag=None, text_content=css_content, line=1, column=0)],
+            children=[
+                TemplateNode(tag=None, text_content=css_content, line=1, column=0)
+            ],
         )
         scope_id = "xyz123"
 
-        func_def, _ = self.codegen.generate_render_method([style_node], scope_id=scope_id)
+        func_def, _ = self.codegen.generate_render_method(
+            [style_node], scope_id=scope_id
+        )
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
         self.assertIn("self._style_collector.add('xyz123'", code)

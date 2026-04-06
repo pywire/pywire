@@ -11,9 +11,13 @@ class TestGeneratorAdvanced(unittest.TestCase):
 
     def test_generate_layout_mode(self) -> None:
         # Page with layout inheriting slots
-        layout = LayoutDirective(name="layout", layout_path="base.wire", line=1, column=0)
+        layout = LayoutDirective(
+            name="layout", layout_path="base.wire", line=1, column=0
+        )
         parsed = ParsedPyWire(
-            template=[TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)],
+            template=[
+                TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)
+            ],
             directives=[layout],
             python_code="",
             python_ast=ast.parse(""),
@@ -25,7 +29,9 @@ class TestGeneratorAdvanced(unittest.TestCase):
 
         # Should have _init_slots calling super()
         init_slots = next(
-            n for n in class_def.body if isinstance(n, ast.FunctionDef) and n.name == "_init_slots"
+            n
+            for n in class_def.body
+            if isinstance(n, ast.FunctionDef) and n.name == "_init_slots"
         )
         self.assertIsInstance(init_slots.body[0], ast.If)  # hasatrr(super(), ...)
 
@@ -35,14 +41,19 @@ class TestGeneratorAdvanced(unittest.TestCase):
         # Note: path is resolved relative to cwd if not absolute, let's just check
         # it contains a string constant
         self.assertTrue(
-            any(isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) for n in init_slots.body)
+            any(
+                isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+                for n in init_slots.body
+            )
         )
 
     def test_generate_spa_metadata(self) -> None:
         from pywire.compiler.ast_nodes import PathDirective
 
         # Multi-path page enables SPA
-        path = PathDirective(name="path", routes={"a": "/a", "b": "/b"}, line=1, column=0)
+        path = PathDirective(
+            name="path", routes={"a": "/a", "b": "/b"}, line=1, column=0
+        )
         parsed = ParsedPyWire(
             template=[],
             directives=[path],

@@ -1,22 +1,27 @@
-
 import sys
 import os
-import asyncio
 from unittest.mock import MagicMock
 
 # Mock dependencies
-for mod in ["starlette", "starlette.applications", "starlette.responses", "starlette.requests", "uvicorn", "watchfiles", "jinja2", "textual", "rich_click", "pydantic"]:
+for mod in [
+    "starlette",
+    "starlette.applications",
+    "starlette.responses",
+    "starlette.requests",
+    "uvicorn",
+    "watchfiles",
+    "jinja2",
+    "textual",
+    "rich_click",
+    "pydantic",
+]:
     sys.modules[mod] = MagicMock()
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from lsprotocol.types import (
-    Diagnostic,
-    Position,
-    Range
-)
-from pywire_language_server.server import validate, server as ls_instance, documents
+from pywire_language_server.server import validate, server as ls_instance, documents  # noqa: E402
+
 
 # Mock Document
 class MockDocument:
@@ -25,13 +30,14 @@ class MockDocument:
         self.text = source
         self.lines = source.splitlines()
         self.diagnostics = []
-        self.directive_ranges = {"path": (0, 0)} # Minimal
+        self.directive_ranges = {"path": (0, 0)}  # Minimal
 
     def get_python_source(self):
         parts = self.text.split("---")
         if len(parts) >= 3:
             return parts[1]
         return ""
+
 
 def test_props_diagnostic():
     # Setup
@@ -51,12 +57,14 @@ class PropsB:
 """
     doc = MockDocument(uri, CONTENT)
     documents[uri] = doc
-    
+
     ls_instance.text_document_publish_diagnostics = MagicMock()
     validate(ls_instance, uri)
-    
+
     published = ls_instance.text_document_publish_diagnostics.call_args
     assert published, "Expected diagnostics to be published"
     params = published[0][0]
     has_error = any("Multiple @props" in d.message for d in params.diagnostics)
-    assert has_error, f"Expected 'Multiple @props' diagnostic, got {[d.message for d in params.diagnostics]}"
+    assert has_error, (
+        f"Expected 'Multiple @props' diagnostic, got {[d.message for d in params.diagnostics]}"
+    )

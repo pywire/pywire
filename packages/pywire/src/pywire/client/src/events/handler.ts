@@ -6,6 +6,9 @@ import { logger } from '../core/logger'
 // Type alias for backward compatibility
 type Application = PyWireApp
 
+type UploadResult = { _upload_id: string }
+type FormDataValue = string | string[] | UploadResult | UploadResult[]
+
 export class UnifiedEventHandler {
   private app: Application
   private debouncers = new Map<string, number>()
@@ -404,7 +407,7 @@ export class UnifiedEventHandler {
     const eventData: EventData = {
       type: eventType,
       id: element.id || undefined,
-      name: (element as any).name || undefined,
+      name: (element as HTMLElement & { name?: string }).name || undefined,
       tagName: element.tagName,
       args: args,
     }
@@ -473,7 +476,7 @@ export class UnifiedEventHandler {
       }
 
       const formData = new FormData(element)
-      const data: Record<string, any> = {}
+      const data: Record<string, FormDataValue> = {}
       const uploadFormData = new FormData()
       let hasFileUploads = false
       formData.forEach((value, key) => {
@@ -489,9 +492,9 @@ export class UnifiedEventHandler {
         // Handle multiple values for same key
         if (data[key] !== undefined) {
           if (Array.isArray(data[key])) {
-            data[key].push(strVal)
+            ;(data[key] as string[]).push(strVal)
           } else {
-            data[key] = [data[key], strVal]
+            data[key] = [data[key] as string, strVal]
           }
         } else {
           data[key] = strVal
@@ -585,7 +588,7 @@ export class UnifiedEventHandler {
   private async uploadFiles(
     fileData: FormData,
     form?: HTMLFormElement
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, UploadResult | UploadResult[]>> {
     const token = (
       document.querySelector('meta[name="pywire-upload-token"]') as HTMLMetaElement | null
     )?.content
@@ -596,7 +599,8 @@ export class UnifiedEventHandler {
     const headers: Record<string, string> = {
       'X-Upload-Token': token,
     }
-    const httpSession = (window as any).__PYWIRE_HTTP_SESSION
+    const httpSession = (window as Window & { __PYWIRE_HTTP_SESSION?: string | null })
+      .__PYWIRE_HTTP_SESSION
     if (typeof httpSession === 'string' && httpSession.length > 0) {
       headers['X-PyWire-Session'] = httpSession
     }
@@ -607,14 +611,14 @@ export class UnifiedEventHandler {
       body: fileData,
       credentials: 'same-origin',
     })
-    const payload = (await response.json()) as Record<string, any>
+    const payload = (await response.json()) as Record<string, unknown>
     if (!response.ok) {
       const uploadError = payload?.error || 'File upload failed'
-      throw new Error(uploadError)
+      throw new Error(String(uploadError))
     }
 
-    const uploadIds = (payload.uploads ?? payload) as Record<string, any>
-    const result: Record<string, any> = {}
+    const uploadIds = (payload.uploads ?? payload) as Record<string, unknown>
+    const result: Record<string, UploadResult | UploadResult[]> = {}
     const multipleFieldNames = new Set<string>()
     if (form) {
       form.querySelectorAll('input[type="file"][multiple][name]').forEach((input) => {
@@ -626,14 +630,14 @@ export class UnifiedEventHandler {
     for (const [field, raw] of Object.entries(uploadIds)) {
       const isMultipleField = multipleFieldNames.has(field)
       if (Array.isArray(raw)) {
-        result[field] = raw.map((uploadId) => ({ _upload_id: uploadId }))
+        result[field] = raw.map((uploadId: unknown) => ({ _upload_id: String(uploadId) }))
         continue
       }
       if (isMultipleField) {
-        result[field] = [{ _upload_id: raw }]
+        result[field] = [{ _upload_id: String(raw) }]
         continue
       }
-      result[field] = { _upload_id: raw }
+      result[field] = { _upload_id: String(raw) }
     }
     return result
   }

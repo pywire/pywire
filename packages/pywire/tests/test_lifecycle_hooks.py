@@ -24,7 +24,7 @@ class TestLifecycleHooks:
     @pytest.mark.asyncio
     async def test_top_level_init_execution(self) -> None:
         """---
-Verify top-level executable statements run on init=True."""
+        Verify top-level executable statements run on init=True."""
         content = """
 ---
 __no_spa__ = True
@@ -57,7 +57,7 @@ self.counter = 1
     @pytest.mark.asyncio
     async def test_mount_hook(self) -> None:
         """---
-Verify @mount decorated method runs on init."""
+        Verify @mount decorated method runs on init."""
         content = """
 ---
 __no_spa__ = True
@@ -82,7 +82,7 @@ def initialize(self):
     @pytest.mark.asyncio
     async def test_execution_order(self) -> None:
         """---
-Verify order: top-level -> @mount."""
+        Verify order: top-level -> @mount."""
         content = """
 ---
 __no_spa__ = True

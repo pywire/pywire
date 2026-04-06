@@ -42,11 +42,11 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Define a !path dictionary"
+    description: 'Define a !path dictionary'
     target: pages/main.wire
     pattern: '!path \{'
   - type: file_contains
-    description: "Wrap settings in {$if path.settings}"
+    description: 'Wrap settings in {$if path.settings}'
     target: pages/main.wire
     pattern: '{\$if path.settings}'
   - type: browser_route_text

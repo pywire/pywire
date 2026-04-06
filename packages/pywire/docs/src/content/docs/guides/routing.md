@@ -45,7 +45,7 @@ A unique feature of PyWire's explicit routing is mapping multiple URL patterns t
     <div $if={path.home}>
         <h1>Welcome Home</h1>
     </div>
-    
+
     <div $if={path.user}>
         <h1>User Profile: {params.uid}</h1>
     </div>
@@ -53,17 +53,18 @@ A unique feature of PyWire's explicit routing is mapping multiple URL patterns t
 ```
 
 In this example:
+
 - Visiting `/home` sets `path.home` to `True`.
 - Visiting `/user/123` sets `path.user` to `True` and populates `params.uid`.
 
 ## Choosing a Strategy
 
-| Feature | Path-Based (File-System) | Explicit (`!path`) |
-| :--- | :--- | :--- |
-| **Setup** | Zero config. Just create files. | Requires `!path` directive in files. |
-| **Structure** | Strictly coupled to directory structure. | Decoupled. File location doesn't dictate URL. |
-| **Complexity** | Best for simple, page-centric apps. | Best for complex UIs, "app-like" experiences. |
-| **State** | Navigation always resets component state. | One component can handle route changes without unmounting (preserving state). |
+| Feature        | Path-Based (File-System)                  | Explicit (`!path`)                                                            |
+| :------------- | :---------------------------------------- | :---------------------------------------------------------------------------- |
+| **Setup**      | Zero config. Just create files.           | Requires `!path` directive in files.                                          |
+| **Structure**  | Strictly coupled to directory structure.  | Decoupled. File location doesn't dictate URL.                                 |
+| **Complexity** | Best for simple, page-centric apps.       | Best for complex UIs, "app-like" experiences.                                 |
+| **State**      | Navigation always resets component state. | One component can handle route changes without unmounting (preserving state). |
 
 ### The Power of State Preservation
 
@@ -72,6 +73,7 @@ Explicit routing's biggest advantage is **state continuity**. In traditional fil
 With Explicit Routing and a dictionary-based `!path`, the component instance **stays alive** when the URL matches a different key in the same dictionary. Only the `path` and `params` reactive objects update.
 
 This is invaluable for:
+
 - **Persistent Filters**: Keeping search filters active while clicking through result pages.
 - **Background Tasks**: Allowing a file upload or long-running process to continue while the user navigates between sub-views of the same "App" component.
 - **Transitions**: Orchestrating smooth animations between view states that would otherwise be interrupted by a page unmount.

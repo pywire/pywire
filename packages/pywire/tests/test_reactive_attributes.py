@@ -1,4 +1,3 @@
-import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -27,7 +26,7 @@ def mock_app() -> MagicMock:
 @pytest.mark.asyncio
 async def test_variable_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
-Test attr={var} binding."""
+    Test attr={var} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
@@ -56,9 +55,11 @@ my_class = "btn"
 
 
 @pytest.mark.asyncio
-async def test_method_binding_paramless(loader: PageLoader, mock_app: MagicMock) -> None:
+async def test_method_binding_paramless(
+    loader: PageLoader, mock_app: MagicMock
+) -> None:
     """---
-Test attr="method" auto-call binding."""
+    Test attr="method" auto-call binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
@@ -88,7 +89,7 @@ def get_title():
 @pytest.mark.asyncio
 async def test_expression_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
-Test attr={expr} binding."""
+    Test attr={expr} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
@@ -117,7 +118,7 @@ is_error = True
 @pytest.mark.asyncio
 async def test_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
-Test boolean attribute behavior."""
+    Test boolean attribute behavior."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
@@ -153,7 +154,7 @@ is_readonly = None
 @pytest.mark.asyncio
 async def test_async_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
-Test attr={await async_call()} binding."""
+    Test attr={await async_call()} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """
@@ -183,7 +184,7 @@ async def get_data():
 @pytest.mark.asyncio
 async def test_aria_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
-Test ARIA boolean attributes (true/false strings)."""
+    Test ARIA boolean attributes (true/false strings)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         page_code = """

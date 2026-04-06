@@ -135,7 +135,7 @@ def schema_fields(exclude: Any = None) -> list[dict]:
     elif isinstance(actual_exclude, (list, set, tuple)):
         exclude_set = set(actual_exclude)
 
-    fields = getattr(model, "model_fields", getattr(model, "__fields__", {}))
+    fields = getattr(model, "model_fields", None) or getattr(model, "__fields__", {})
     rules = extract_field_rules(model)
 
     result_fields = []

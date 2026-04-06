@@ -6,9 +6,11 @@ from pywire.runtime.page import BasePage
 from pywire.components import Form
 from pywire.core import ref
 
+
 class UserModel(BaseModel):
     username: str = Field(min_length=3)
     email: str
+
 
 @pytest.fixture
 def mock_page(request):
@@ -20,22 +22,23 @@ def mock_page(request):
     page._refs_by_id = {}
     return page
 
+
 @pytest.mark.asyncio
 async def test_form_validation_success():
     """Test that valid data calls submit."""
     submit_mock = AsyncMock()
-    
+
     # Instantiate component
     # Form(request, params, query, [path, url], model=..., ...)
     form = Form(None, {}, {}, model=UserModel, on_submit=submit_mock)
-    
+
     # Mock ref data
     form.form_ref._data = {"username": "testuser", "email": "test@example.com"}
     form.form_ref._bound_type = "form"
-    
+
     # Simulate submit
     await form.handle_submit(AsyncMock())
-    
+
     # Assertions
     assert form.errors == {}
     submit_mock.assert_called_once()
@@ -43,22 +46,24 @@ async def test_form_validation_success():
     assert isinstance(args[0], UserModel)
     assert args[0].username == "testuser"
 
+
 @pytest.mark.asyncio
 async def test_form_validation_failure():
     """Test that invalid data populates errors."""
     submit_mock = AsyncMock()
-    
+
     form = Form(None, {}, {}, model=UserModel, on_submit=submit_mock)
-    
+
     # Invalid data (username too short)
     form.form_ref._data = {"username": "ab", "email": "test@example.com"}
     form.form_ref._bound_type = "form"
-    
+
     await form.handle_submit(AsyncMock())
-    
+
     assert form.errors != {}
     assert "username" in form.errors
     submit_mock.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_form_render():
@@ -70,7 +75,7 @@ async def test_form_render():
     # If no slots passed, it might key error or render empty?
     # BasePage (component base) handles slots?
     # We didn't implement slot handling in Form.wire explicitly, relying on base class/codegen.
-    
+
     # For this test, let's just see if handle_submit exists
     assert hasattr(form, "handle_submit")
 
@@ -116,7 +121,11 @@ async def test_form_html5_rules_validation_success():
         },
     )
 
-    form.form_ref._data = {"username": "alice", "email": "alice@example.com", "age": "25"}
+    form.form_ref._data = {
+        "username": "alice",
+        "email": "alice@example.com",
+        "age": "25",
+    }
     form.form_ref._bound_type = "form"
     await form.handle_submit(AsyncMock())
 

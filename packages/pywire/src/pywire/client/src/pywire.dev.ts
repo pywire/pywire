@@ -18,6 +18,9 @@ export { ErrorTraceHandler } from './dev/error-trace'
 // Auto-init with dev app
 const app = new PyWireDevApp()
 
+// Expose on window for dev tools and testing
+;(window as unknown as Record<string, unknown>).pywire = app
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => app.init())
 } else {

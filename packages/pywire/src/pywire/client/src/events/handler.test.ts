@@ -198,9 +198,16 @@ describe('UnifiedEventHandler', () => {
       ok: true,
       json: async () => ({ attachments: 'u1' }),
     })
-    vi.stubGlobal('fetch', fetchMock as any)
+    vi.stubGlobal('fetch', fetchMock as typeof fetch)
 
-    const result = await (handler as any).uploadFiles(fileData, form)
+    const result = await (
+      handler as unknown as {
+        uploadFiles: (
+          fileData: FormData,
+          form?: HTMLFormElement
+        ) => Promise<Record<string, unknown>>
+      }
+    ).uploadFiles(fileData, form)
 
     expect(result).toEqual({ attachments: [{ _upload_id: 'u1' }] })
     vi.unstubAllGlobals()

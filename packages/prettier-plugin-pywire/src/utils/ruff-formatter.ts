@@ -1,5 +1,10 @@
 import * as ruffModule from '@wasm-fmt/ruff_fmt'
 
+type RuffModule = typeof ruffModule & {
+  default?: (input?: ArrayBuffer | Buffer) => Promise<void>
+  format?: (code: string, filename: string | undefined, options: Record<string, unknown>) => string
+}
+
 let initPromise: Promise<void> | null = null
 let isInitialized = false
 
@@ -7,7 +12,7 @@ export function initializeRuff(): Promise<void> {
   if (initPromise) return initPromise
 
   initPromise = (async () => {
-    const module = ruffModule as any
+    const module = ruffModule as RuffModule
     const initFn = module.default
 
     if (typeof initFn === 'function') {
@@ -24,7 +29,6 @@ export function initializeRuff(): Promise<void> {
             if (typeof __dirname !== 'undefined') {
               currentDir = __dirname
             } else {
-              // @ts-ignore
               currentDir = path.dirname(fileURLToPath(import.meta.url))
             }
 
@@ -32,7 +36,7 @@ export function initializeRuff(): Promise<void> {
             if (fs.existsSync(wasmPath)) {
               wasmBuffer = fs.readFileSync(wasmPath)
             }
-          } catch (e) {
+          } catch {
             // Fallback to fetch
           }
         }
@@ -61,7 +65,7 @@ export function formatPython(code: string, options: Record<string, unknown>): st
     return code
   }
 
-  const formatter = (ruffModule as any).format
+  const formatter = (ruffModule as RuffModule).format
 
   if (typeof formatter !== 'function') {
     return code

@@ -18,7 +18,9 @@ def test_inline_handler_extraction() -> None:
         handler_name="count += 1",
     )
 
-    button_node = TemplateNode(line=1, column=1, tag="button", special_attributes=[click_attr])
+    button_node = TemplateNode(
+        line=1, column=1, tag="button", special_attributes=[click_attr]
+    )
 
     parsed = ParsedPyWire(template=[button_node], file_path="test_inline.wire")
 
@@ -30,7 +32,9 @@ def test_inline_handler_extraction() -> None:
     for node in module_ast.body:
         if isinstance(node, ast.ClassDef):
             for item in node.body:
-                if isinstance(item, ast.AsyncFunctionDef) and item.name.startswith("_handler_"):
+                if isinstance(item, ast.AsyncFunctionDef) and item.name.startswith(
+                    "_handler_"
+                ):
                     found_handler = True
 
     assert found_handler, "No synthetic handler created!"

@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, Optional, Set, Type, cast
@@ -13,6 +14,9 @@ from typing import Any, Dict, Optional, Set, Type, cast
 from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.compiler.parser import PyWireParser
 from pywire.runtime.page import BasePage
+
+# Tracks the file currently being loaded so the import hook can record dependencies.
+_loading_file: ContextVar[Optional[str]] = ContextVar("_loading_file", default=None)
 
 
 class PageLoader:
@@ -83,7 +87,12 @@ class PageLoader:
         # Inject __file__ for relative path resolution
         module.__file__ = str(pywire_file)
 
-        exec(code, module.__dict__)
+        # Set loading context so the import hook can record reverse dependencies
+        token = _loading_file.set(path_key)
+        try:
+            exec(code, module.__dict__)
+        finally:
+            _loading_file.reset(token)
 
         page_class = self._find_page_class(module, pywire_file)
         self._cache[path_key] = page_class

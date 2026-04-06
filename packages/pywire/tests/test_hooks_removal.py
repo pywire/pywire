@@ -24,7 +24,7 @@ class TestHooksRemoval:
     @pytest.mark.asyncio
     async def test_standard_hooks_ignored(self) -> None:
         """---
-Verify on_load/on_before_load are ignored unless called manually."""
+        Verify on_load/on_before_load are ignored unless called manually."""
         content = """
 ---
 self.called_hooks = []

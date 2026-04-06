@@ -1,17 +1,13 @@
 """---
 Tests for form validation features."""
 
-import ast
 import sys
 import unittest
 from pathlib import Path
-from typing import Any, cast
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pywire.compiler.codegen.generator import CodeGenerator
-from pywire.compiler.parser import PyWireParser
 from pywire.runtime.validation import FieldRules, FormValidator
 
 
@@ -101,13 +97,17 @@ class TestFormValidation(unittest.TestCase):
 
         # Invalid data
         data = {"username": "ab", "email": "invalid"}
-        cleaned_data, errors = validator.validate_form(data, schema, state_getter=lambda x: None)
+        cleaned_data, errors = validator.validate_form(
+            data, schema, state_getter=lambda x: None
+        )
         self.assertIn("username", errors)
         self.assertIn("email", errors)
 
         # Valid data
         data = {"username": "john", "email": "john@example.com"}
-        cleaned_data, errors = validator.validate_form(data, schema, state_getter=lambda x: None)
+        cleaned_data, errors = validator.validate_form(
+            data, schema, state_getter=lambda x: None
+        )
         self.assertEqual(errors, {})
 
     def test_nested_data_parsing(self) -> None:
@@ -124,8 +124,6 @@ class TestFormValidation(unittest.TestCase):
         self.assertEqual(result["customer"]["name"], "John")
         self.assertEqual(result["customer"]["email"], "john@example.com")
         self.assertEqual(result["shipping"]["street"], "123 Main St")
-
-
 
 
 if __name__ == "__main__":

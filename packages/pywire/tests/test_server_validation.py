@@ -72,7 +72,9 @@ class TestServerValidation(unittest.TestCase):
         """Test email validation."""
         rules = FieldRules(input_type="email")
 
-        self.assertIsNone(self.validator.validate_field("email", "test@test.com", rules))
+        self.assertIsNone(
+            self.validator.validate_field("email", "test@test.com", rules)
+        )
         self.assertIsNotNone(self.validator.validate_field("email", "test", rules))
         self.assertIsNotNone(
             self.validator.validate_field("email", "test@com", rules)
@@ -102,7 +104,9 @@ class TestServerValidation(unittest.TestCase):
         # Form data matches what comes from starlette/HTML form (strings)
         data = {"age": "20", "active": "on", "email": "test@example.com"}
 
-        cleaned, errors = self.validator.validate_form(data, schema, state_getter=lambda x: None)
+        cleaned, errors = self.validator.validate_form(
+            data, schema, state_getter=lambda x: None
+        )
         self.assertEqual(errors, {})
         self.assertIsInstance(cleaned["age"], (int, float))
         self.assertEqual(cleaned["age"], 20)
@@ -125,7 +129,9 @@ class TestServerValidation(unittest.TestCase):
         )
 
         # Case 1: Value meeting dynamic min
-        self.assertIsNone(self.validator.validate_field("val", "22", rules, state_getter=get_state))
+        self.assertIsNone(
+            self.validator.validate_field("val", "22", rules, state_getter=get_state)
+        )
 
         # Case 2: Value failing dynamic min
         self.assertIsNotNone(
@@ -134,7 +140,9 @@ class TestServerValidation(unittest.TestCase):
 
         # Case 3: Required check
         # admin is True, so required is False. Empty should pass.
-        self.assertIsNone(self.validator.validate_field("val", "", rules, state_getter=get_state))
+        self.assertIsNone(
+            self.validator.validate_field("val", "", rules, state_getter=get_state)
+        )
 
         # Change state
         state["is_admin"] = False

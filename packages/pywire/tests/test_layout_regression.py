@@ -1,5 +1,3 @@
-
-import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -7,7 +5,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from pywire.runtime.loader import PageLoader
-from pywire.runtime.page import BasePage
 
 
 @pytest.fixture
@@ -23,7 +20,9 @@ def mock_app() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_component_with_layout_no_content_regression(loader: PageLoader, mock_app: MagicMock) -> None:
+async def test_component_with_layout_no_content_regression(
+    loader: PageLoader, mock_app: MagicMock
+) -> None:
     """Test that a component with !layout but NO content (or empty default slot) does not crash."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -56,17 +55,18 @@ from component import Component
         os.chdir(tmpdir)
         import sys
         from pywire.runtime.importer import install_import_hook
+
         install_import_hook()
         if tmpdir not in sys.path:
             sys.path.insert(0, tmpdir)
-        
+
         try:
             # Load and render the page
             page_class = loader.load(tmp_path / "page.wire", use_cache=False)
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            
+
             # Helper to run async render
             async def run_render():
                 response = await page.render()
@@ -79,8 +79,10 @@ from component import Component
             # Assertions
             # 1. Should NOT crash (AttributeError regression)
             # 2. Should NOT contain layout wrapper (Layout duplication fix)
-            assert '<div id="layout-wrapper">' not in html, "Layout wrapper unexpectedly rendered!"
-            
+            assert '<div id="layout-wrapper">' not in html, (
+                "Layout wrapper unexpectedly rendered!"
+            )
+
             # 3. Should contain base page scripts (verifying successful render)
             assert '<script id="_pywire_spa_meta"' in html
 

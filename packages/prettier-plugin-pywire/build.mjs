@@ -48,7 +48,9 @@ await build({
 console.log('Build complete: ESM and CJS')
 
 // Copy WASM file
-const wasmSrc = fileURLToPath(new URL('./node_modules/@wasm-fmt/ruff_fmt/ruff_fmt_bg.wasm', import.meta.url))
+const wasmSrc = fileURLToPath(
+  new URL('./node_modules/@wasm-fmt/ruff_fmt/ruff_fmt_bg.wasm', import.meta.url)
+)
 const wasmDest = fileURLToPath(new URL('./dist/ruff_fmt_bg.wasm', import.meta.url))
 if (existsSync(wasmSrc)) {
   copyFileSync(wasmSrc, wasmDest)

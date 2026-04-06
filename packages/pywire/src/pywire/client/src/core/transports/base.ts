@@ -38,7 +38,7 @@ export interface StackFrame {
 export interface Command {
   cmd: string
   refId: string
-  args?: Record<string, any>
+  args?: Record<string, unknown>
 }
 
 export interface ServerMessage {
@@ -87,7 +87,7 @@ export interface RelocateMessage {
 export interface RefSyncMessage {
   type: 'ref_sync'
   refId: string
-  value: any
+  value: unknown
 }
 
 export interface EventData {
@@ -98,7 +98,7 @@ export interface EventData {
   value?: unknown
   checked?: boolean
   inputType?: string
-  formData?: Record<string, any>
+  formData?: Record<string, unknown>
   args?: Record<string, unknown>
   // Keyboard
   key?: string

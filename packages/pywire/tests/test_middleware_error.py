@@ -7,7 +7,9 @@ from starlette.responses import PlainTextResponse
 
 
 class MockApp:
-    async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
+    async def __call__(
+        self, scope: MutableMapping[str, Any], receive: Any, send: Any
+    ) -> None:
         if scope["path"] == "/error":
             raise ValueError("Test Error")
         response = PlainTextResponse("OK")
@@ -36,7 +38,9 @@ async def test_middleware_catches_exception() -> None:
     assert sent_messages[0]["status"] == 500
 
     # Verify body
-    body = b"".join([m["body"] for m in sent_messages if m["type"] == "http.response.body"])
+    body = b"".join(
+        [m["body"] for m in sent_messages if m["type"] == "http.response.body"]
+    )
     html = body.decode("utf-8")
     assert "ValueError" in html
     assert "Test Error" in html

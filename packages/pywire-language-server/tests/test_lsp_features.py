@@ -18,7 +18,6 @@ def test_directive_ranges_multiline() -> None:
     # Directives don't need fences if no python code
 
 
-
 def test_source_map_roundtrip() -> None:
     text = """---
 value = 1

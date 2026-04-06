@@ -1,7 +1,6 @@
 import pytest
 import shutil
 import tempfile
-import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -46,7 +45,9 @@ class TestAppRuntime:
         (users / "[id].wire").touch()
 
         # Mock loader to return dummy classes
-        with patch.object(self.app.loader, "load", return_value=type("Page", (BasePage,), {})):
+        with patch.object(
+            self.app.loader, "load", return_value=type("Page", (BasePage,), {})
+        ):
             self.app.router = MagicMock()
             self.app._scan_directory(self.pages_dir)
 
@@ -54,6 +55,7 @@ class TestAppRuntime:
         # index -> /
         # users/[id].wire -> /users/{id}
         from unittest.mock import ANY
+
         self.app.router.add_route.assert_any_call("/", ANY)
         self.app.router.add_route.assert_any_call("/users/{id}", ANY)
 
@@ -96,6 +98,7 @@ class TestAppRuntime:
 
         # Should register the custom route if found via regex
         from unittest.mock import ANY
+
         self.app.router.add_route.assert_any_call("/broken", ANY)
 
     def test_reload_page_implicit_routing(self) -> None:
@@ -108,7 +111,9 @@ class TestAppRuntime:
         with (
             patch.object(self.app.loader, "load", return_value=page_class),
             patch.object(
-                self.app.loader, "invalidate_cache", return_value={str(page_path.resolve())}
+                self.app.loader,
+                "invalidate_cache",
+                return_value={str(page_path.resolve())},
             ),
         ):
             # Mock router

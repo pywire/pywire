@@ -30,6 +30,13 @@ dev = [
     "ty",
 ]
 
+[tool.ty.environment]
+python-version = "3.11"
+
+[[tool.ty.overrides]]
+include = ["tests/**"]
+rules = { unresolved-attribute = "ignore", invalid-assignment = "ignore", invalid-argument-type = "ignore", unsupported-operator = "ignore" }
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 

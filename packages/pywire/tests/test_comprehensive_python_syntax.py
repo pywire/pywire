@@ -643,7 +643,7 @@ test_result = "All Python syntax elements defined successfully!"
     <p>Testing all Python syntax and structures below the separator</p>
 </div>
 """
-    
+
     test_file = tmp_path / "test_comprehensive.wire"
     test_file.write_text(wire_content)
     return test_file
@@ -651,20 +651,20 @@ test_result = "All Python syntax elements defined successfully!"
 
 def test_parse_comprehensive_python_syntax(test_wire_file: Path) -> None:
     """---
-Test that comprehensive Python syntax can be parsed."""
+    Test that comprehensive Python syntax can be parsed."""
     parser = PyWireParser()
-    
+
     # Should parse without errors
     parsed = parser.parse_file(test_wire_file)
-    
+
     # Verify template was parsed
     assert len(parsed.template) > 0
     assert parsed.template[0].tag == "div"
-    
+
     # Verify Python code exists
     assert parsed.python_code is not None
     assert len(parsed.python_code) > 0
-    
+
     # Verify Python AST was created
     assert parsed.python_ast is not None
 
@@ -673,13 +673,13 @@ def test_generate_code_from_comprehensive_syntax(test_wire_file: Path) -> None:
     """Test that code generation works with comprehensive Python syntax."""
     parser = PyWireParser()
     generator = CodeGenerator()
-    
+
     # Parse the file
     parsed = parser.parse_file(test_wire_file)
-    
+
     # Generate code - should not raise any errors
     module_ast = generator.generate(parsed)
-    
+
     # Verify we got a valid module
     assert isinstance(module_ast, ast.Module)
     assert len(module_ast.body) > 0
@@ -689,42 +689,44 @@ def test_compile_comprehensive_python_syntax(test_wire_file: Path) -> None:
     """Test that generated code compiles to valid Python bytecode."""
     parser = PyWireParser()
     generator = CodeGenerator()
-    
+
     # Parse and generate
     parsed = parser.parse_file(test_wire_file)
     module_ast = generator.generate(parsed)
-    
+
     # Fix missing locations (required for compilation)
     ast.fix_missing_locations(module_ast)
-    
+
     # Convert to Python source code
     generated_code = ast.unparse(module_ast)
-    
+
     # This should compile without syntax errors
     try:
         compile(generated_code, str(test_wire_file), "exec")
     except SyntaxError as e:
-        pytest.fail(f"Generated code has syntax error: {e}\n\nGenerated code:\n{generated_code}")
+        pytest.fail(
+            f"Generated code has syntax error: {e}\n\nGenerated code:\n{generated_code}"
+        )
 
 
 def test_execute_comprehensive_python_syntax(test_wire_file: Path) -> None:
     """Test that generated code can be executed without runtime errors during class definition."""
     parser = PyWireParser()
     generator = CodeGenerator()
-    
+
     # Parse and generate
     parsed = parser.parse_file(test_wire_file)
     module_ast = generator.generate(parsed)
-    
+
     # Fix missing locations
     ast.fix_missing_locations(module_ast)
-    
+
     # Convert to Python source code
     generated_code = ast.unparse(module_ast)
-    
+
     # Compile
     code_obj = compile(generated_code, str(test_wire_file), "exec")
-    
+
     # Execute - this tests that all the Python syntax is valid at runtime
     # Note: This only tests that the module/class can be defined, not that all functions work
     namespace: dict = {}
@@ -735,19 +737,23 @@ def test_execute_comprehensive_python_syntax(test_wire_file: Path) -> None:
             f"Generated code raised exception during execution: {e}\n\n"
             f"Generated code:\n{generated_code}"
         )
-    
+
     # Verify that the component class was created
     page_or_component_classes = [
-        obj for obj in namespace.values() 
-        if isinstance(obj, type) and (obj.__name__.endswith("Component") or obj.__name__.endswith("Page"))
+        obj
+        for obj in namespace.values()
+        if isinstance(obj, type)
+        and (obj.__name__.endswith("Component") or obj.__name__.endswith("Page"))
     ]
-    assert len(page_or_component_classes) > 0, "No page/component class found in generated code"
+    assert len(page_or_component_classes) > 0, (
+        "No page/component class found in generated code"
+    )
 
 
 def test_python_syntax_preservation() -> None:
     """Test that specific Python constructs are preserved correctly."""
     parser = PyWireParser()
-    
+
     # Test content with various Python features
     content = """---
 # Decorators
@@ -807,12 +813,12 @@ class Manager:
 
     <div>Test</div>
     """
-    
+
     parsed = parser.parse(content)
     generator = CodeGenerator()
     module_ast = generator.generate(parsed)
     ast.fix_missing_locations(module_ast)
-    
+
     # Should compile successfully
     generated = ast.unparse(module_ast)
     compile(generated, "test.wire", "exec")

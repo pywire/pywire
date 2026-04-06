@@ -52,20 +52,30 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         )
         span = TemplateNode(tag="span", attributes={}, line=1, column=0)
         node = TemplateNode(
-            tag="template", special_attributes=[for_attr], children=[span], line=1, column=0
+            tag="template",
+            special_attributes=[for_attr],
+            children=[span],
+            line=1,
+            column=0,
         )
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
 
-        self.assert_code_in("async for item in ensure_async_iterator(self.items):", lines)
+        self.assert_code_in(
+            "async for item in ensure_async_iterator(self.items):", lines
+        )
         # Check that child node was added with increased indent
         self.assert_code_in("parts.append('<span')", lines)
 
     def test_add_node_if_condition(self) -> None:
         # <div $if={show_me}>Content</div>
-        if_attr = IfAttribute(name="$if", value="show_me", condition="show_me", line=1, column=0)
-        node = TemplateNode(tag="div", special_attributes=[if_attr], children=[], line=1, column=0)
+        if_attr = IfAttribute(
+            name="$if", value="show_me", condition="show_me", line=1, column=0
+        )
+        node = TemplateNode(
+            tag="div", special_attributes=[if_attr], children=[], line=1, column=0
+        )
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
@@ -76,7 +86,9 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         reactive = ReactiveAttribute(
             name="disabled", value="is_disabled", expr="is_disabled", line=1, column=0
         )
-        node = TemplateNode(tag="button", special_attributes=[reactive], line=1, column=0)
+        node = TemplateNode(
+            tag="button", special_attributes=[reactive], line=1, column=0
+        )
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
@@ -94,7 +106,9 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
         self.assert_code_in("if not unwrap_wire(self.is_visible):", lines)
-        self.assert_code_in("attrs['style'] = attrs.get('style', '') + '; display: none'", lines)
+        self.assert_code_in(
+            "attrs['style'] = attrs.get('style', '') + '; display: none'", lines
+        )
 
     def test_add_node_if_condition_wire_dot_value(self) -> None:
         if_attr = IfAttribute(
@@ -157,17 +171,22 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, local_vars={"user"})
         # Should encode arguments to data-arg-0
-        self.assert_code_in("attrs['data-arg-0'] = json.dumps(unwrap_wire(user.id))", lines)
-
+        self.assert_code_in(
+            "attrs['data-arg-0'] = json.dumps(unwrap_wire(user.id))", lines
+        )
 
     def test_add_node_script_tag(self) -> None:
         # <script src="foo">console.log(1)</script>
-        child = TemplateNode(tag=None, text_content="console.log(1)", is_raw=True, line=1, column=0)
-        node = TemplateNode(tag="script", attributes={"src": "foo"}, children=[child], line=1, column=0)
+        child = TemplateNode(
+            tag=None, text_content="console.log(1)", is_raw=True, line=1, column=0
+        )
+        node = TemplateNode(
+            tag="script", attributes={"src": "foo"}, children=[child], line=1, column=0
+        )
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
-        
+
         self.assert_code_in("parts.append('<script')", lines)
         self.assert_code_in("parts.append(render_attrs(attrs, None))", lines)
         self.assert_code_in("parts.append('>')", lines)
@@ -176,12 +195,14 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
 
     def test_add_node_script_tag_brittle_content(self) -> None:
         # <script>if (i < 10) {}</script>
-        child = TemplateNode(tag=None, text_content="if (i < 10) {}", is_raw=True, line=1, column=0)
+        child = TemplateNode(
+            tag=None, text_content="if (i < 10) {}", is_raw=True, line=1, column=0
+        )
         node = TemplateNode(tag="script", children=[child], line=1, column=0)
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
-        
+
         self.assert_code_in("parts.append('<script')", lines)
         self.assert_code_in("parts.append('>')", lines)
         self.assert_code_in("parts.append('if (i < 10) {}')", lines)

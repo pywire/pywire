@@ -1,7 +1,8 @@
 import unittest
 from pywire.compiler.parser import PyWireParser, PyWireSyntaxError
 from pywire.compiler.codegen.template import TemplateCodegen
-from pywire.compiler.ast_nodes import IfAttribute, ShowAttribute, ForAttribute
+from pywire.compiler.ast_nodes import IfAttribute, ForAttribute
+
 
 class TestControlFlow(unittest.TestCase):
     def test_if_block(self):
@@ -12,17 +13,17 @@ class TestControlFlow(unittest.TestCase):
         parser = PyWireParser()
         ast = parser.parse(source)
         node = ast.template[0]
-        
+
         # Check node type (tag=None -> template wrapper)
         self.assertIsNone(node.tag)
         # Check IfAttribute
         if_attrs = [a for a in node.special_attributes if isinstance(a, IfAttribute)]
         self.assertEqual(len(if_attrs), 1)
         self.assertEqual(if_attrs[0].condition, "True")
-        
+
         # Check child exists (ignoring whitespace)
         real_children = [c for c in node.children if c.tag]
-        self.assertEqual(len(real_children), 1) # div
+        self.assertEqual(len(real_children), 1)  # div
 
     def test_html_block(self):
         source = """{$html "<b>Raw</b>"}
@@ -32,7 +33,10 @@ class TestControlFlow(unittest.TestCase):
         node = ast.template[0]
         self.assertIsNone(node.tag)
         from pywire.compiler.ast_nodes import InterpolationNode
-        interp_attrs = [a for a in node.special_attributes if isinstance(a, InterpolationNode)]
+
+        interp_attrs = [
+            a for a in node.special_attributes if isinstance(a, InterpolationNode)
+        ]
         self.assertEqual(len(interp_attrs), 1)
         self.assertTrue(interp_attrs[0].is_raw)
         self.assertEqual(interp_attrs[0].expression, '"<b>Raw</b>"')
@@ -57,7 +61,7 @@ class TestControlFlow(unittest.TestCase):
 {/for}
 """
         parser = PyWireParser()
-        parser.parse(source) # Should pass
+        parser.parse(source)  # Should pass
 
     def test_for_block_invalid_multi_root(self):
         source = """{$for i in x}
@@ -67,7 +71,7 @@ class TestControlFlow(unittest.TestCase):
 """
         parser = PyWireParser()
         with self.assertRaises(PyWireSyntaxError) as cm:
-             parser.parse(source)
+            parser.parse(source)
         self.assertIn("must have exactly one root element", str(cm.exception))
 
     def test_for_else(self):
@@ -81,15 +85,14 @@ class TestControlFlow(unittest.TestCase):
 """
         parser = PyWireParser()
         parsed = parser.parse(source)
-        
-        from pywire.compiler.codegen.template import TemplateCodegen
+
         import ast
-        
+
         codegen = TemplateCodegen()
         body = []
         # Simulate items is empty
         codegen._add_node(parsed.template[0], body, local_vars={"items"})
-        
+
         # Verify AST contains the loop_any flag and If block
         dump = "\n".join(ast.dump(s) for s in body)
         self.assertIn("_loop_any", dump)
@@ -105,7 +108,8 @@ class TestControlFlow(unittest.TestCase):
 </ul>
 """
         parser = PyWireParser()
-        parser.parse(source) # Should pass
+        parser.parse(source)  # Should pass
+
 
 if __name__ == "__main__":
     unittest.main()

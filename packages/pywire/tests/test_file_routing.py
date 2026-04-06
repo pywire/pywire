@@ -114,7 +114,9 @@ class TestFileRouting(unittest.TestCase):
         # Check routes
         routes = {r.pattern: r for r in self.app.router.routes}
         # Check regex pattern for root since / is often compiled to regex
-        root_patterns = [r.regex.pattern for r in self.app.router.routes if r.pattern == "/"]
+        root_patterns = [
+            r.regex.pattern for r in self.app.router.routes if r.pattern == "/"
+        ]
         self.assertTrue(any("^/$" in p for p in root_patterns) or "/" in routes)
         self.assertIn("/about", routes)
 
@@ -182,7 +184,9 @@ class TestFileRouting(unittest.TestCase):
         self.assertIn((norm(layout), None), loaded_normalized)
 
         # Index should have root layout
-        self.assertIn((norm(self.tmp_path / "index.wire"), norm(layout)), loaded_normalized)
+        self.assertIn(
+            (norm(self.tmp_path / "index.wire"), norm(layout)), loaded_normalized
+        )
 
         # Sub layout should be loaded with root layout as implicit!
         self.assertIn((norm(sub_layout), norm(layout)), loaded_normalized)
@@ -212,7 +216,9 @@ class TestFileRouting(unittest.TestCase):
         def mock_load(
             path: Path, use_cache: bool = True, implicit_layout: str | None = None
         ) -> Type[MockPage]:
-            cls = original_load(path, use_cache=use_cache, implicit_layout=implicit_layout)
+            cls = original_load(
+                path, use_cache=use_cache, implicit_layout=implicit_layout
+            )
             if path.name == "explicit.wire":
                 cast(Any, cls).__routes__ = {"main": "/explicit"}
             return cast(Type[MockPage], cls)

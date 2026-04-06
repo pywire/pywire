@@ -55,7 +55,10 @@ class TestValidationExhaustive(unittest.TestCase):
 
     def test_validate_form_conditional(self) -> None:
         # Test get_state for conditional required
-        fields = {"is_admin": FieldRules(), "admin_code": FieldRules(required_expr="is_admin")}
+        fields = {
+            "is_admin": FieldRules(),
+            "admin_code": FieldRules(required_expr="is_admin"),
+        }
 
         # Mock get_state to simulate self.is_admin
         def get_state(expr: str) -> bool:
@@ -94,7 +97,9 @@ class TestValidationExhaustive(unittest.TestCase):
         self.assertIn("start_date", errors)
 
     def test_validate_numeric_step(self) -> None:
-        fields = {"amount": FieldRules(input_type="number", step="0.5", min_value="1.0")}
+        fields = {
+            "amount": FieldRules(input_type="number", step="0.5", min_value="1.0")
+        }
 
         # 1. Valid
         data = {"amount": "1.5"}
@@ -175,7 +180,9 @@ class TestValidationExhaustive(unittest.TestCase):
     def test_dynamic_range_failures(self) -> None:
         # Test when state_getter fails for dynamic min/max
         fields = {
-            "val": FieldRules(input_type="number", min_expr="non_existent", max_expr="error_expr")
+            "val": FieldRules(
+                input_type="number", min_expr="non_existent", max_expr="error_expr"
+            )
         }
 
         def failing_getter(expr: str) -> str:
@@ -191,9 +198,17 @@ class TestValidationExhaustive(unittest.TestCase):
     def test_url_validation(self) -> None:
         fields = {"website": FieldRules(input_type="url")}
         self.assertEqual(
-            len(validate_form({"website": "https://google.com"}, fields, lambda x: None)[1]), 0
+            len(
+                validate_form(
+                    {"website": "https://google.com"}, fields, lambda x: None
+                )[1]
+            ),
+            0,
         )
-        self.assertIn("website", validate_form({"website": "not-a-url"}, fields, lambda x: None)[1])
+        self.assertIn(
+            "website",
+            validate_form({"website": "not-a-url"}, fields, lambda x: None)[1],
+        )
 
     def test_custom_title_error(self) -> None:
         fields = {"name": FieldRules(required=True, title="NAME_REQUIRED")}
@@ -297,7 +312,9 @@ class TestValidationExhaustive(unittest.TestCase):
         file2.content_type = "text/plain"
         file2.filename = "doc_beta.txt"
 
-        err = form_validator.validate_field("documents", [file1, file2], fields["documents"])
+        err = form_validator.validate_field(
+            "documents", [file1, file2], fields["documents"]
+        )
         self.assertIsNone(err)
 
         too_many = form_validator.validate_field(
@@ -310,7 +327,9 @@ class TestValidationExhaustive(unittest.TestCase):
         bad_name.size = 128
         bad_name.content_type = "application/pdf"
         bad_name.filename = "invoice.pdf"
-        name_err = form_validator.validate_field("documents", [bad_name], fields["documents"])
+        name_err = form_validator.validate_field(
+            "documents", [bad_name], fields["documents"]
+        )
         self.assertIsNotNone(name_err)
         self.assertEqual(cast(Any, name_err).rule, "file_name_mismatch")
 
@@ -318,7 +337,9 @@ class TestValidationExhaustive(unittest.TestCase):
         tiny.size = 1
         tiny.content_type = "application/pdf"
         tiny.filename = "doc_small.pdf"
-        size_err = form_validator.validate_field("documents", [tiny], fields["documents"])
+        size_err = form_validator.validate_field(
+            "documents", [tiny], fields["documents"]
+        )
         self.assertIsNotNone(size_err)
         self.assertEqual(cast(Any, size_err).rule, "file_too_small")
 
@@ -330,7 +351,9 @@ class TestValidationExhaustive(unittest.TestCase):
         file_value.content_type = "image/png"
         file_value.filename = "avatar.png"
 
-        rules = FieldRules(input_type="file", allowed_types=cast(Any, wire("image/*,.png")))
+        rules = FieldRules(
+            input_type="file", allowed_types=cast(Any, wire("image/*,.png"))
+        )
         err = form_validator.validate_field("avatar", file_value, rules)
         self.assertIsNone(err)
 
@@ -378,16 +401,21 @@ class TestValidationExhaustive(unittest.TestCase):
         from pywire.runtime.upload_manager import upload_manager
 
         with patch.object(upload_manager, "get") as mock_get:
-            mock_get.return_value = FileUpload("doc_one.pdf", "application/pdf", 3, b"one")
+            mock_get.return_value = FileUpload(
+                "doc_one.pdf", "application/pdf", 3, b"one"
+            )
             cleaned, errors = validate_form(
                 {"attachments": {"_upload_id": "u1"}},
-                {"attachments": FieldRules(input_type="file", multiple=True, max_files=3)},
+                {
+                    "attachments": FieldRules(
+                        input_type="file", multiple=True, max_files=3
+                    )
+                },
                 lambda x: None,
             )
             self.assertEqual(errors, {})
             self.assertIsInstance(cleaned["attachments"], list)
             self.assertEqual(len(cleaned["attachments"]), 1)
-
 
     def test_upload_id_resolution_from_json_string(self) -> None:
         from unittest.mock import patch

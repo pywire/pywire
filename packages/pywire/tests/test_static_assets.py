@@ -13,7 +13,9 @@ def test_static_asset_serving(tmp_path: Path) -> None:
 
     static_dir = tmp_path / "static_assets"
     static_dir.mkdir()
-    (static_dir / "style.css").write_text("body { background: blue; }", encoding="utf-8")
+    (static_dir / "style.css").write_text(
+        "body { background: blue; }", encoding="utf-8"
+    )
 
     app = PyWire(pages_dir=str(pages_dir), static_dir=str(static_dir))
     client = TestClient(app)
@@ -29,12 +31,16 @@ def test_static_asset_serving(tmp_path: Path) -> None:
     assert response_default.status_code == 404
 
 
-def test_smart_static_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_smart_static_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify smart resolution of static_dir (root vs src fallback)."""
     # Mock caller dir to be our tmp_path
-    monkeypatch.setattr("pywire.runtime.app.PyWire._get_caller_dir", lambda self: tmp_path)
+    monkeypatch.setattr(
+        "pywire.runtime.app.PyWire._get_caller_dir", lambda self: tmp_path
+    )
     monkeypatch.chdir(tmp_path)
-    
+
     # New logic requires pages_dir to exist if not provided
     (tmp_path / "pages").mkdir(exist_ok=True)
 
@@ -61,7 +67,9 @@ def test_static_dir_missing_warning(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify warning when static directory is missing."""
-    monkeypatch.setattr("pywire.runtime.app.PyWire._get_caller_dir", lambda self: tmp_path)
+    monkeypatch.setattr(
+        "pywire.runtime.app.PyWire._get_caller_dir", lambda self: tmp_path
+    )
     # New logic requires pages_dir to exist if not provided
     (tmp_path / "pages").mkdir(exist_ok=True)
     with caplog.at_level("WARNING"):
@@ -78,7 +86,9 @@ def test_custom_static_path(tmp_path: Path) -> None:
     static_dir.mkdir()
     (static_dir / "test.js").write_text("console.log('test')", encoding="utf-8")
 
-    app = PyWire(pages_dir=str(pages_dir), static_dir=str(static_dir), static_path="/public")
+    app = PyWire(
+        pages_dir=str(pages_dir), static_dir=str(static_dir), static_path="/public"
+    )
     client = TestClient(app)
 
     response = client.get("/public/test.js")

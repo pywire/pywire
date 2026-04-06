@@ -50,7 +50,7 @@ def test_bundle_selection_integration(tmp_path: Path) -> None:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
     (pages_dir / "index.wire").write_text(
-      """!path { 'a': '/a', 'b': '/b' }
+        """!path { 'a': '/a', 'b': '/b' }
 ---
 # Python
 ---
@@ -85,7 +85,7 @@ def test_no_spa_directive_disables_injection(tmp_path: Path) -> None:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
     (pages_dir / "no_spa.wire").write_text(
-      """!path { 'a': '/a', 'b': '/b' }
+        """!path { 'a': '/a', 'b': '/b' }
 !no_spa
 ---
 # Python

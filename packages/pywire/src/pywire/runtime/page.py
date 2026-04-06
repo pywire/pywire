@@ -444,7 +444,7 @@ class BasePage:
             if callable(renderer):
                 if inspect.iscoroutinefunction(renderer):
                     return str(await renderer())
-                return str(renderer())
+                return str(renderer())  # ty: ignore[call-top-callable]
             return str(renderer)
 
         # Fallback to default content if provided
@@ -756,7 +756,7 @@ class BasePage:
         html = bytes(response.body).decode("utf-8")
         logger.debug(f"render_update: returning FULL update (len={len(html)})")
 
-        result = {"type": "full", "html": html}
+        result: dict[str, Any] = {"type": "full", "html": html}
         commands = self._collect_all_commands()
         if commands:
             result["commands"] = commands

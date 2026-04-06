@@ -1,6 +1,5 @@
 import asyncio
 import pytest
-import unittest
 from typing import Any, Dict, Optional, cast
 from unittest.mock import MagicMock
 
@@ -53,7 +52,9 @@ class MockPage(BasePage):
         self.event_called = False
         self.last_event_data: Optional[Dict[str, Any]] = None
 
-    async def handle_event(self, event_name: str, event_data: Dict[str, Any]) -> Response:
+    async def handle_event(
+        self, event_name: str, event_data: Dict[str, Any]
+    ) -> Response:
         self.event_called = True
         self.last_event_data = event_data
         # Return a real Response object
@@ -120,7 +121,9 @@ class TestWebSocketHandler:
     async def test_send_console_message(self) -> None:
         ws = MockWebSocket()
         await self.handler._send_console_message(cast(WebSocket, ws), "Hello Stdout")
-        await self.handler._send_console_message(cast(WebSocket, ws), "Hello Stderr", level="error")
+        await self.handler._send_console_message(
+            cast(WebSocket, ws), "Hello Stderr", level="error"
+        )
 
         assert len(ws.sent_messages) == 2
         assert ws.sent_messages[0]["type"] == "console"

@@ -108,7 +108,7 @@ is_even = derived(lambda: count % 2 == 0)
 
 ## Side Effects (`@effect`)
 
-If you need to run code *in response* to state changes (like logging, saving to local storage, or fetching data), use the `@effect` decorator.
+If you need to run code _in response_ to state changes (like logging, saving to local storage, or fetching data), use the `@effect` decorator.
 
 ```python
 from pywire import wire, effect

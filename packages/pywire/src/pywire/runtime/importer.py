@@ -14,11 +14,19 @@ class PyWireLoader(importlib.abc.Loader):
         return None  # Use default module creation
 
     def exec_module(self, module):
-        from pywire.runtime.loader import get_loader
+        from pywire.runtime.loader import get_loader, _loading_file
 
         loader = get_loader()
         # Compile the .wire file into a page class
         page_class = loader.load(Path(self.path))
+
+        # Record reverse dependency if we're being loaded from another .wire file
+        dependent = _loading_file.get()
+        if dependent:
+            resolved = str(Path(self.path).resolve())
+            if resolved not in loader._reverse_deps:
+                loader._reverse_deps[resolved] = set()
+            loader._reverse_deps[resolved].add(dependent)
 
         # Inject the page class into the module
         # Convention: The class name is PascalCase of the filename
@@ -31,7 +39,7 @@ class PyWireLoader(importlib.abc.Loader):
         setattr(module, class_name, page_class)
         # Also store it as __page_class__ for loader consistency
         module.__page_class__ = page_class
-        module.__file__ = self.path
+        module.__file__ = str(Path(self.path).resolve())
 
 
 class PyWireFinder(importlib.abc.MetaPathFinder):

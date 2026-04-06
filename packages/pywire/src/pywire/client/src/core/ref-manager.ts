@@ -1,11 +1,25 @@
 import { Command } from './transports'
 import { logger } from './logger'
 
-function debounce(func: (...args: any[]) => any, wait: number) {
-  let timeout: any
-  return function (this: any, ...args: any[]) {
+type FileMeta = { name: string; size: number; type: string }
+type ElementValue = string | number | boolean | FileMeta[]
+type RectData = {
+  x: number
+  y: number
+  width: number
+  height: number
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+type FormFieldValue = string | string[] | FileMeta | FileMeta[]
+
+function debounce(func: (...args: unknown[]) => unknown, wait: number) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  return function (...args: unknown[]) {
     clearTimeout(timeout)
-    timeout = setTimeout(() => func.apply(this, args), wait)
+    timeout = setTimeout(() => func(...args), wait)
   }
 }
 
@@ -14,11 +28,11 @@ function debounce(func: (...args: any[]) => any, wait: number) {
  */
 export class RefManager {
   private pendingRectRequests = new Set<string>()
-  private onSync?: (refId: string, value: any) => void
+  private onSync?: (refId: string, value: ElementValue) => void
   private observer: MutationObserver
   private observedElements = new WeakSet<HTMLElement>()
 
-  constructor(onSync?: (refId: string, value: any) => void) {
+  constructor(onSync?: (refId: string, value: ElementValue) => void) {
     this.onSync = onSync
     this.observer = new MutationObserver(this.handleMutations.bind(this))
   }
@@ -127,22 +141,22 @@ export class RefManager {
           }
           break
         case 'scrollTo':
-          element.scrollIntoView(args)
+          element.scrollIntoView(args as ScrollIntoViewOptions)
           break
         case 'addClass':
-          if (args.name) element.classList.add(args.name)
+          if (args.name) element.classList.add(args.name as string)
           break
         case 'removeClass':
-          if (args.name) element.classList.remove(args.name)
+          if (args.name) element.classList.remove(args.name as string)
           break
         case 'toggleClass':
-          if (args.name) element.classList.toggle(args.name)
+          if (args.name) element.classList.toggle(args.name as string)
           break
         case 'setAttribute':
-          if (args.name) element.setAttribute(args.name, String(args.value))
+          if (args.name) element.setAttribute(args.name as string, String(args.value))
           break
         case 'removeAttribute':
-          if (args.name) element.removeAttribute(args.name)
+          if (args.name) element.removeAttribute(args.name as string)
           break
         case 'requestRect':
           this.pendingRectRequests.add(refId)
@@ -167,11 +181,19 @@ export class RefManager {
   /**
    * Extract data from a ref (form or input).
    */
-  getRefData(refId: string): { value?: any; formData?: Record<string, any>; rect?: any } {
+  getRefData(refId: string): {
+    value?: ElementValue
+    formData?: Record<string, FormFieldValue>
+    rect?: RectData
+  } {
     const element = this.findElement(refId)
     if (!element) return {}
 
-    const data: any = {}
+    const data: {
+      value?: ElementValue
+      formData?: Record<string, FormFieldValue>
+      rect?: RectData
+    } = {}
 
     if (this.pendingRectRequests.has(refId)) {
       const rect = element.getBoundingClientRect()
@@ -204,9 +226,9 @@ export class RefManager {
   /**
    * Serialize a form into a JSON-friendly object.
    */
-  private serializeForm(form: HTMLFormElement): Record<string, any> {
+  private serializeForm(form: HTMLFormElement): Record<string, FormFieldValue> {
     const formData = new FormData(form)
-    const data: Record<string, any> = {}
+    const data: Record<string, FormFieldValue> = {}
 
     formData.forEach((value, key) => {
       if (value instanceof File) {
@@ -217,9 +239,9 @@ export class RefManager {
         }
         if (key in data) {
           if (!Array.isArray(data[key])) {
-            data[key] = [data[key]]
+            data[key] = [data[key] as FileMeta]
           }
-          data[key].push(fileMeta)
+          ;(data[key] as FileMeta[]).push(fileMeta)
         } else {
           data[key] = fileMeta
         }
@@ -227,9 +249,9 @@ export class RefManager {
       }
       if (key in data) {
         if (!Array.isArray(data[key])) {
-          data[key] = [data[key]]
+          data[key] = [data[key] as string]
         }
-        data[key].push(value)
+        ;(data[key] as string[]).push(value)
       } else {
         data[key] = value
       }
@@ -241,7 +263,9 @@ export class RefManager {
   /**
    * Get value from an input element.
    */
-  private getElementValue(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): any {
+  private getElementValue(
+    el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+  ): ElementValue {
     if (el instanceof HTMLInputElement) {
       if (el.type === 'checkbox') return el.checked
       if (el.type === 'number' || el.type === 'range') return el.valueAsNumber

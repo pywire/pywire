@@ -39,7 +39,9 @@ raise ValueError("Boom")
             error_frame = frames[-1]
 
             # raise on line 1
-            assert error_frame.lineno == 1, f"Raise should be on line 1, got {error_frame.lineno}"
+            assert error_frame.lineno == 1, (
+                f"Raise should be on line 1, got {error_frame.lineno}"
+            )
 
     @pytest.mark.asyncio
     async def test_traceback_line_numbers_embedded_expr(self, tmp_path: Path) -> None:

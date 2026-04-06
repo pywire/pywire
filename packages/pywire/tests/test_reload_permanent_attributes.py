@@ -1,5 +1,5 @@
-import pytest
 from pywire.compiler.parser import PyWireParser
+
 
 def test_permanent_reload_shorthand():
     parser = PyWireParser()
@@ -9,18 +9,18 @@ def test_permanent_reload_shorthand():
 """
     ast = parser.parse(source)
     nodes = [n for n in ast.template if n.tag is not None]
-    
+
     # 1. Permanent div
     div = nodes[0]
     assert div.tag == "div"
     assert div.attributes["data-pw-permanent"] == "true"
-    
+
     # 2. Reload link
     a = nodes[1]
     assert a.tag == "a"
     assert a.attributes["data-pw-reload"] == "true"
     assert a.attributes["href"] == "/test"
-    
+
     # 3. Mixed attributes
     mixed = nodes[2]
     assert mixed.tag == "div"
@@ -29,6 +29,7 @@ def test_permanent_reload_shorthand():
     assert mixed.attributes["data-pw-permanent"] == "true"
     assert mixed.attributes["data-other"] == "bar"
 
+
 def test_permanent_no_space():
     parser = PyWireParser()
     # $permanent at end of tag
@@ -36,7 +37,7 @@ def test_permanent_no_space():
     ast = parser.parse(source)
     div = [n for n in ast.template if n.tag == "div"][0]
     assert div.attributes["data-pw-permanent"] == "true"
-    
+
     # $permanent followed by />
     source = "<div $permanent/>"
     ast = parser.parse(source)

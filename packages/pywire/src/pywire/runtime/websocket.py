@@ -597,8 +597,8 @@ class WebSocketHandler:
                     else:
                         page.on_load()
 
-                # Render and send initial HTML
-                response = await page.render()
+                # Render and send body-only HTML (init=False avoids re-injecting client scripts)
+                response = await page.render(init=False)
                 html = cast(bytes, response.body).decode("utf-8")
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
@@ -732,8 +732,8 @@ class WebSocketHandler:
                     else:
                         cast(Any, new_page).on_load()
 
-                # Render and send HTML
-                response = await new_page.render()
+                # Render and send body-only HTML (init=False avoids re-injecting client scripts)
+                response = await new_page.render(init=False)
                 html = cast(bytes, response.body).decode("utf-8")
 
                 # Check for pending navigation
@@ -845,8 +845,8 @@ class WebSocketHandler:
                         # Update our reference
                         self.connection_pages[connection] = new_page
 
-                        # Render with new code but preserved state
-                        response = await new_page.render()
+                        # Render with new code but preserved state (init=False avoids re-injecting client scripts)
+                        response = await new_page.render(init=False)
                         html = cast(bytes, response.body).decode("utf-8")
                         await connection.send_bytes(
                             msgpack.packb({"type": "update", "html": html})

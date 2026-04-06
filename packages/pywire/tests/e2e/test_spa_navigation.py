@@ -1,14 +1,16 @@
 import pytest
 from playwright.sync_api import Page, expect
 
+
 @pytest.fixture(autouse=True)
 def capture_console(page: Page):
     def handle_console(msg):
         print(f"\n[BROWSER CONSOLE] {msg.type}: {msg.text}")
+
     page.on("console", handle_console)
     page.on("pageerror", lambda exc: print(f"\n[BROWSER ERROR] {exc}"))
 
-@pytest.mark.xfail(reason="Issue #5: Inline scripts execute multiple times on PJAX")
+
 def test_spa_navigation_script_execution(page: Page, pywire_server: str):
     # Go to the home page
     page.goto(pywire_server)
@@ -23,7 +25,7 @@ def test_spa_navigation_script_execution(page: Page, pywire_server: str):
 
     # Verify we are on the About page without a full reload
     expect(page.locator("#about-title")).to_have_text("About Page")
-    
+
     # Wait for the script to execute and set the attribute
     expect(page.locator("body")).to_have_attribute("data-script-runs", "1")
 

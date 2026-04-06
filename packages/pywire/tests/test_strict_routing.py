@@ -10,29 +10,6 @@ from starlette.requests import Request
 
 
 class TestStrictRequirements:
-    def setup_method(self) -> None:
-        self.test_dir = tempfile.mkdtemp()
-        self.pages_dir = Path(self.test_dir)
-        (self.pages_dir / "index.wire").write_text("<h1>Index</h1>")
-
-        # Mock Starlette deps
-        self.patches = [
-            patch("starlette.applications.Starlette"),
-            patch("pywire.runtime.app.HTTPTransportHandler"),
-            patch("pywire.runtime.app.WebSocketHandler"),
-            patch("pywire.runtime.webtransport_handler.WebTransportHandler"),
-        ]
-        
-        # Mock get_loader
-        self.mock_get_loader_patch = patch("pywire.runtime.loader.get_loader")
-        self.patches.append(self.mock_get_loader_patch)
-        
-        for p in self.patches:
-            p.start()
-
-        self.mock_get_loader = self.mock_get_loader_patch.target  # Note: this is a bit tricky with patch inside setup
-        # Re-evaluating patch strategy: cleaner to just use patch inside setup_method
-        
     def setup_method(self, method) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir)
@@ -42,8 +19,10 @@ class TestStrictRequirements:
         self.p1 = patch("starlette.applications.Starlette").start()
         self.p2 = patch("pywire.runtime.app.HTTPTransportHandler").start()
         self.p3 = patch("pywire.runtime.app.WebSocketHandler").start()
-        self.p4 = patch("pywire.runtime.webtransport_handler.WebTransportHandler").start()
-        
+        self.p4 = patch(
+            "pywire.runtime.webtransport_handler.WebTransportHandler"
+        ).start()
+
         self.p5 = patch("pywire.runtime.loader.get_loader").start()
         self.mock_loader_instance = MagicMock()
         self.p5.return_value = self.mock_loader_instance
@@ -102,4 +81,6 @@ class TestStrictRequirements:
         loader = cast(Any, app.loader)
         loaded_paths = [str(call.args[0]) for call in loader.load.call_args_list]
 
-        assert str(nested_error_path) not in loaded_paths, "Nested __error__.wire should NOT be loaded"
+        assert str(nested_error_path) not in loaded_paths, (
+            "Nested __error__.wire should NOT be loaded"
+        )

@@ -171,17 +171,17 @@ describe('DOMUpdater', () => {
 
   it('should execute scripts in new content', () => {
     // Mock global window property to track script execution
-    ;(window as any).scriptValue = 0
+    ;(window as Window & { scriptValue?: number }).scriptValue = 0
 
     updater.update('<div><script>window.scriptValue = 42</script></div>')
 
-    expect((window as any).scriptValue).toBe(42)
-    delete (window as any).scriptValue
+    expect((window as Window & { scriptValue?: number }).scriptValue).toBe(42)
+    delete (window as Window & { scriptValue?: number }).scriptValue
   })
 
   it('should execute scripts before pywire:update event', () => {
     let scriptExecutedBeforeUpdate = false
-    ;(window as any).testExecuted = () => {
+    ;(window as Window & { testExecuted?: () => void }).testExecuted = () => {
       scriptExecutedBeforeUpdate = true
     }
 
@@ -193,11 +193,13 @@ describe('DOMUpdater', () => {
     updater.update('<div><script>window.testExecuted()</script></div>')
 
     expect(scriptExecutedBeforeUpdate).toBe(true)
-    delete (window as any).testExecuted
+    delete (window as Window & { testExecuted?: () => void }).testExecuted
   })
 
   it('should execute scripts with attributes', () => {
-    const appendSpy = vi.spyOn(document.head, 'appendChild')
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
 
     updater.update('<div><script src="test.js" async></script></div>')
 

@@ -6,7 +6,7 @@ from starlette.testclient import TestClient
 
 def test_synchronous_loop(tmp_path: Path) -> None:
     """---
-Verify that synchronous lists work in $for loops."""
+    Verify that synchronous lists work in $for loops."""
 
     page_content = """
 ---
@@ -46,7 +46,9 @@ def test_static_path_config(tmp_path: Path) -> None:
     (static_dir / "logo.png").write_text("fake image", encoding="utf-8")
 
     # Configure custom path
-    app = PyWire(pages_dir=str(pages_dir), static_dir=str(static_dir), static_path="/public")
+    app = PyWire(
+        pages_dir=str(pages_dir), static_dir=str(static_dir), static_path="/public"
+    )
     client = TestClient(app)
 
     # Request at new path

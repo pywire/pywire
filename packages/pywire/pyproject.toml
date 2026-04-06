@@ -56,11 +56,14 @@ include = [
     "src/pywire/templates/**",
 ]
 
+[tool.ruff.lint]
+per-file-ignores = { "docs/public/shim.py" = ["E402"], "setup.py" = ["E402"], "tests/repro_*.py" = ["E402", "F821"], "tests/e2e/test_regression.py" = ["E402"] }
+
 [tool.ty.environment]
 python-version = "3.11"
 
 [tool.ty.src]
-exclude = ["docs/public/shim.py"]
+exclude = ["docs/public/shim.py", "setup.py"]
 
 [tool.ty.analysis]
 allowed-unresolved-imports = [
@@ -76,13 +79,20 @@ allowed-unresolved-imports = [
 
 [[tool.ty.overrides]]
 include = ["tests/**"]
-rules = { possibly-missing-attribute = "ignore", invalid-argument-type = "ignore", unresolved-attribute = "ignore", call-non-callable = "ignore", invalid-method-override = "ignore", redundant-cast = "ignore" }
+rules = { possibly-missing-attribute = "ignore", invalid-argument-type = "ignore", unresolved-attribute = "ignore", call-non-callable = "ignore", invalid-method-override = "ignore", redundant-cast = "ignore", unresolved-reference = "ignore", invalid-assignment = "ignore", too-many-positional-arguments = "ignore", possibly-missing-submodule = "ignore", unresolved-import = "ignore", not-iterable = "ignore" }
+
+[[tool.ty.overrides]]
+include = ["src/pywire/compiler/codegen/**"]
+rules = { no-matching-overload = "ignore", invalid-argument-type = "ignore" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["emsdk", "docs", "src/pywire/client"]
 addopts = "--cov=pywire"
 asyncio_mode = "strict"
+
+[tool.coverage.run]
+source = ["src/pywire"]
 
 [dependency-groups]
 dev = [

@@ -23,7 +23,9 @@ class MockRequest:
             "type": "http",
             "path": path,
             "query_string": b"",
-            "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            "headers": [
+                (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+            ],
             "client": ["127.0.0.1", 1234],
             "method": "POST",
         }
@@ -113,7 +115,8 @@ class TestHTTPTransportHandler:
         self.handler.sessions[session_id] = session
 
         request = MockRequest.create(
-            body_data={"handler": "click", "data": {}}, headers={"X-PyWire-Session": session_id}
+            body_data={"handler": "click", "data": {}},
+            headers={"X-PyWire-Session": session_id},
         )
 
         response = await self.handler.handle_event(request)

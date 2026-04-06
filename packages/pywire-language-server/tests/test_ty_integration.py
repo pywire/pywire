@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import Mock, AsyncMock
 from pygls.lsp.server import LanguageServer
@@ -15,15 +14,18 @@ from lsprotocol.types import (
 )
 import pywire_language_server.server as server_module
 
+
 @pytest.fixture
 def mock_ls():
     return Mock(spec=LanguageServer)
+
 
 @pytest.fixture
 def mock_ty_client():
     client = Mock()
     client.send_request = AsyncMock(return_value=[])
     return client
+
 
 @pytest.fixture(autouse=True)
 def clean_globals():
@@ -35,6 +37,7 @@ def clean_globals():
     server_module.ty_client = original_ty
     server_module.virtual_manager = original_shadow
 
+
 @pytest.mark.asyncio
 async def test_completion_trigger_kind(mock_ls, mock_ty_client):
     # Setup global state
@@ -44,7 +47,7 @@ async def test_completion_trigger_kind(mock_ls, mock_ty_client):
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
     server_module.virtual_manager.get_stub_uri.return_value = None
     server_module.virtual_manager._uri_to_path.return_value = "/workspace/test.wire"
-    
+
     # Mock document mapping
     uri = "file:///test.wire"
     text = """
@@ -52,21 +55,24 @@ async def test_completion_trigger_kind(mock_ls, mock_ty_client):
 x = 1
 ---
 """
-    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
-        text_document=TextDocumentItem(
-            uri=uri, language_id="pywire", version=1, text=text
-        )
-    ))
-    
+    server_module.did_open(
+        mock_ls,
+        DidOpenTextDocumentParams(
+            text_document=TextDocumentItem(
+                uri=uri, language_id="pywire", version=1, text=text
+            )
+        ),
+    )
+
     # Trigger completion
     params = CompletionParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=Position(line=2, character=1),
-        context=None 
+        context=None,
     )
-    
+
     await server_module.completions(mock_ls, params)
-    
+
     # Verify triggerKind was added
     call_args = mock_ty_client.send_request.call_args
     assert call_args is not None
@@ -92,18 +98,18 @@ async def test_hover_formatting(mock_ls, mock_ty_client):
 x = 1
 ---
 """
-    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
-        text_document=TextDocumentItem(
-            uri=uri, language_id="pywire", version=1, text=text
-        )
-    ))
+    server_module.did_open(
+        mock_ls,
+        DidOpenTextDocumentParams(
+            text_document=TextDocumentItem(
+                uri=uri, language_id="pywire", version=1, text=text
+            )
+        ),
+    )
 
     # Mock Ty response - plaintext signature
     mock_ty_client.send_request.return_value = {
-        "contents": {
-            "kind": "plaintext",
-            "value": "(function) def foo() -> int"
-        }
+        "contents": {"kind": "plaintext", "value": "(function) def foo() -> int"}
     }
 
     params = HoverParams(
@@ -113,12 +119,12 @@ x = 1
 
     result = await server_module.hover(mock_ls, params)
 
-
     assert result is not None
     assert isinstance(result.contents, MarkupContent)
     assert result.contents.kind == "markdown"
     assert "```python" in result.contents.value
     assert "(function) def foo() -> int" in result.contents.value
+
 
 @pytest.mark.asyncio
 async def test_hover_docstring_separation(mock_ls, mock_ty_client):
@@ -137,20 +143,23 @@ async def test_hover_docstring_separation(mock_ls, mock_ty_client):
 def calc_total(): pass
 ---
 """
-    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
-        text_document=TextDocumentItem(
-            uri=uri, language_id="pywire", version=1, text=text
-        )
-    ))
-    
+    server_module.did_open(
+        mock_ls,
+        DidOpenTextDocumentParams(
+            text_document=TextDocumentItem(
+                uri=uri, language_id="pywire", version=1, text=text
+            )
+        ),
+    )
+
     # Mock Ty response with signature + docstring + dashes
     mock_response = {
         "contents": {
             "kind": "plaintext",
-            "value": "def calc_total() -> int\n-----------------\nCalculate total."
+            "value": "def calc_total() -> int\n-----------------\nCalculate total.",
         }
     }
-    
+
     async def mock_send_request(method, params):
         if method == "textDocument/hover":
             return mock_response
@@ -160,26 +169,28 @@ def calc_total(): pass
 
     # Hover on 'calc_total'
     pos = Position(line=2, character=4)
-    result = await server_module.hover(mock_ls, HoverParams(
-        text_document=TextDocumentIdentifier(uri=uri), position=pos
-    ))
+    result = await server_module.hover(
+        mock_ls,
+        HoverParams(text_document=TextDocumentIdentifier(uri=uri), position=pos),
+    )
 
     assert result is not None
     assert isinstance(result.contents, MarkupContent)
     val = result.contents.value
-    
+
     # Signature should be wrapped
     assert "```python\ndef calc_total() -> int\n```" in val
-    
+
     # Docstring should NOT be wrapped in python block
     # But should be present
     assert "Calculate total." in val
-    
+
     # Dashes should be removed or handled
     assert "-----------------" not in val
-    
+
     # Separator check
     assert "\n\n---\n\n" in val
+
 
 @pytest.mark.asyncio
 async def test_script_style_isolation(mock_ls):
@@ -193,29 +204,39 @@ async def test_script_style_isolation(mock_ls):
   .foo { color: red; }
 </style>
 """
-    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
-        text_document=TextDocumentItem(
-            uri=uri, language_id="pywire", version=1, text=text
-        )
-    ))
+    server_module.did_open(
+        mock_ls,
+        DidOpenTextDocumentParams(
+            text_document=TextDocumentItem(
+                uri=uri, language_id="pywire", version=1, text=text
+            )
+        ),
+    )
 
     # Inside script
     pos_script = Position(line=2, character=10)
-    hover_res = await server_module.hover(mock_ls, HoverParams(
-        text_document=TextDocumentIdentifier(uri=uri), position=pos_script
-    ))
+    hover_res = await server_module.hover(
+        mock_ls,
+        HoverParams(text_document=TextDocumentIdentifier(uri=uri), position=pos_script),
+    )
     assert hover_res is None
 
-    comp_res = await server_module.completions(mock_ls, CompletionParams(
-        text_document=TextDocumentIdentifier(uri=uri), position=pos_script, context=None
-    ))
+    comp_res = await server_module.completions(
+        mock_ls,
+        CompletionParams(
+            text_document=TextDocumentIdentifier(uri=uri),
+            position=pos_script,
+            context=None,
+        ),
+    )
     assert comp_res.items == []
 
     # Inside style
     pos_style = Position(line=5, character=10)
-    hover_res = await server_module.hover(mock_ls, HoverParams(
-        text_document=TextDocumentIdentifier(uri=uri), position=pos_style
-    ))
+    hover_res = await server_module.hover(
+        mock_ls,
+        HoverParams(text_document=TextDocumentIdentifier(uri=uri), position=pos_style),
+    )
     assert hover_res is None
 
 
@@ -223,26 +244,30 @@ async def test_script_style_isolation(mock_ls):
 async def test_shorthand_removal(mock_ls):
     uri = "file:///test.wire"
     text = """<div $foo></div>"""
-    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
-        text_document=TextDocumentItem(
-            uri=uri, language_id="pywire", version=1, text=text
-        )
-    ))
+    server_module.did_open(
+        mock_ls,
+        DidOpenTextDocumentParams(
+            text_document=TextDocumentItem(
+                uri=uri, language_id="pywire", version=1, text=text
+            )
+        ),
+    )
 
     # Hover on $foo
     pos = Position(line=0, character=6)
-    hover_res = await server_module.hover(mock_ls, HoverParams(
-        text_document=TextDocumentIdentifier(uri=uri), position=pos
-    ))
+    hover_res = await server_module.hover(
+        mock_ls,
+        HoverParams(text_document=TextDocumentIdentifier(uri=uri), position=pos),
+    )
     # Should NOT satisfy "Reactive Shorthand"
     # But might satisfy "Directive" if generic fallback is used?
     # Logic: if word matches known directive, return doc.
     # Else if word startswith $, return "Directive".
-    
+
     # Wait, the user complained about <div $permanent> showing "Reactive Shorthand".
     # My new code:
     # elif word.startswith("$"): return "Directive"
-    
+
     # So it will now say "Directive". Is that okay?
     # User said: "It also affects $attributes in HTML tags which is wholly incorrect."
     # AND "Message hovering over <div $permanent> is ... Reactive Shorthand ... Equivalent to permanent.value"
@@ -265,8 +290,9 @@ async def test_shorthand_removal(mock_ls):
     # But usually $ indicates a directive in PyWire now.
     #
     # So it will now return None
-    
+
     assert hover_res is None
+
 
 @pytest.mark.asyncio
 async def test_definition_reference_fallback(mock_ls, mock_ty_client):
@@ -285,11 +311,14 @@ my_var = 10
 ---
 <input value={my_var}>
 """
-    server_module.did_open(mock_ls, DidOpenTextDocumentParams(
-        text_document=TextDocumentItem(
-            uri=uri, language_id="pywire", version=1, text=text
-        )
-    ))
+    server_module.did_open(
+        mock_ls,
+        DidOpenTextDocumentParams(
+            text_document=TextDocumentItem(
+                uri=uri, language_id="pywire", version=1, text=text
+            )
+        ),
+    )
 
     # Fix the mock so reverse mapping works
     doc = server_module.documents[uri]
@@ -307,38 +336,55 @@ my_var = 10
 
     assert line_idx != -1, "Could not find target line in source"
     pos = Position(line=line_idx, character=col_idx)
-    
+
     # 1. Test Definition Fallback
-    mock_ty_client.send_request.return_value = [{"uri": "file:///shadow.py", "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 6}}}]
-    
+    mock_ty_client.send_request.return_value = [
+        {
+            "uri": "file:///shadow.py",
+            "range": {
+                "start": {"line": 2, "character": 0},
+                "end": {"line": 2, "character": 6},
+            },
+        }
+    ]
+
     def_params = DefinitionParams(
-        text_document=TextDocumentIdentifier(uri=uri),
-        position=pos
+        text_document=TextDocumentIdentifier(uri=uri), position=pos
     )
-    
+
     # Force mock return value for this test
     server_module.virtual_manager.get_shadow_uri.return_value = "file:///shadow.py"
-    
+
     result = await server_module.definition(mock_ls, def_params)
-    
+
     # Verify send_request was called (meaning fallback found a mapped position)
     call_args = mock_ty_client.send_request.call_args
-    assert call_args is not None, f"Ty send_request was not called. doc.source_map.mappings: {[(m.original_line, m.original_col, m.length) for m in doc.source_map.mappings]}"
+    assert call_args is not None, (
+        f"Ty send_request was not called. doc.source_map.mappings: {[(m.original_line, m.original_col, m.length) for m in doc.source_map.mappings]}"
+    )
     method, _ = call_args[0]
     assert method == "textDocument/definition"
     assert result is not None
 
     # 2. Test References Fallback
     mock_ty_client.send_request.reset_mock()
-    mock_ty_client.send_request.return_value = [{"uri": "file:///shadow.py", "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 6}}}]
-    
+    mock_ty_client.send_request.return_value = [
+        {
+            "uri": "file:///shadow.py",
+            "range": {
+                "start": {"line": 2, "character": 0},
+                "end": {"line": 2, "character": 6},
+            },
+        }
+    ]
+
     ref_params = ReferenceParams(
         text_document=TextDocumentIdentifier(uri=uri),
         position=pos,
-        context={"includeDeclaration": True}
+        context={"includeDeclaration": True},
     )
     result = await server_module.references(mock_ls, ref_params)
-    
+
     call_args = mock_ty_client.send_request.call_args
     assert call_args is not None
     method, _ = call_args[0]

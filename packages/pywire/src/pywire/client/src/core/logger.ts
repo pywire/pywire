@@ -4,24 +4,24 @@
 export class Logger {
   constructor(private debug: boolean = false) {}
 
-  log(...args: any[]): void {
+  log(...args: unknown[]): void {
     if (this.debug) {
       console.log(...args)
     }
   }
 
-  warn(...args: any[]): void {
+  warn(...args: unknown[]): void {
     if (this.debug) {
       console.warn(...args)
     }
   }
 
-  error(...args: any[]): void {
+  error(...args: unknown[]): void {
     // Errors are always logged
     console.error(...args)
   }
 
-  info(...args: any[]): void {
+  info(...args: unknown[]): void {
     if (this.debug) {
       console.info(...args)
     }

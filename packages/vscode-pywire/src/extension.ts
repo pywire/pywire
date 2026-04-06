@@ -1,5 +1,5 @@
 import * as path from 'path'
-import * as fs from 'fs'
+
 import { createRequire } from 'module'
 import { pathToFileURL } from 'url'
 import {
@@ -13,35 +13,21 @@ import {
   TextEditor,
   TextEditorEdit,
   TextEdit,
-  Diagnostic,
-  InlayHint,
   DocumentHighlight,
   extensions,
   Uri,
   TextDocument,
-  CancellationToken,
   Hover,
   Location,
   LocationLink,
-  CompletionItem,
   CompletionList,
-  ReferenceContext,
-  CompletionContext,
   env,
   WorkspaceEdit,
   TextDocumentContentProvider,
   SignatureHelp,
   EventEmitter,
 } from 'vscode'
-import {
-  LanguageClient,
-  LanguageClientOptions,
-  ServerOptions,
-  ProvideHoverSignature,
-  ProvideDefinitionSignature,
-  ProvideReferencesSignature,
-  ProvideCompletionItemsSignature,
-} from 'vscode-languageclient/node'
+import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node'
 import { setupUpdateCheck, performUpdate } from './updateCheck'
 
 type PrettierModule = typeof import('prettier')
@@ -51,7 +37,7 @@ type PrettierPlugin = import('prettier').Plugin
  * Handles embedded JS/CSS requests by forwarding them to a virtual document.
  */
 class EmbeddedLanguageSupport {
-  constructor() { }
+  constructor() {}
 
   /**
    * Check if position is inside a script or style tag.
@@ -91,9 +77,10 @@ class EmbeddedLanguageSupport {
     let result = ''
     let lastIndex = 0
 
-    const regex = mode === 'javascript'
-      ? /<script\b[^>]*>([\s\S]*?)<\/script>/g
-      : /<style\b[^>]*>([\s\S]*?)<\/style>/g
+    const regex =
+      mode === 'javascript'
+        ? /<script\b[^>]*>([\s\S]*?)<\/script>/g
+        : /<style\b[^>]*>([\s\S]*?)<\/style>/g
 
     let match
     while ((match = regex.exec(text)) !== null) {
@@ -125,7 +112,9 @@ class EmbeddedLanguageSupport {
     if (!mode) return undefined
 
     // Use a custom scheme to avoid "dirty" untitled files
-    const vUri = Uri.parse(`pywire-embedded://${document.uri.path}${mode === 'css' ? '.css' : '.js'}`)
+    const vUri = Uri.parse(
+      `pywire-embedded://${document.uri.path}${mode === 'css' ? '.css' : '.js'}`
+    )
 
     try {
       // workspace.openTextDocument with a custom scheme triggers the provider.
@@ -138,7 +127,7 @@ class EmbeddedLanguageSupport {
 
       // Trigger update if needed?
       // Actually, openTextDocument will call provider.
-      const vDoc = await workspace.openTextDocument(vUri)
+      await workspace.openTextDocument(vUri)
 
       // We don't use WorkspaceEdit. We rely on the provider.
       // BUT if the doc is already open, it might be stale.
@@ -159,7 +148,9 @@ const embeddedSupport = new EmbeddedLanguageSupport()
 
 class EmbeddedContentProvider implements TextDocumentContentProvider {
   private _onDidChange = new EventEmitter<Uri>()
-  get onDidChange() { return this._onDidChange.event }
+  get onDidChange() {
+    return this._onDidChange.event
+  }
 
   update(uri: Uri) {
     this._onDidChange.fire(uri)
@@ -169,10 +160,10 @@ class EmbeddedContentProvider implements TextDocumentContentProvider {
     // Recover source document path...
     // uri.path is /path/to/file.wire.js
     // We want /path/to/file.wire
-    // But uri.path includes the leading slash? 
+    // But uri.path includes the leading slash?
     const originalPath = uri.path.replace(/\.(js|css)$/, '')
     // Find doc
-    const doc = workspace.textDocuments.find(d => d.uri.path === originalPath)
+    const doc = workspace.textDocuments.find((d) => d.uri.path === originalPath)
     if (doc) {
       const ext = path.extname(uri.path)
       const mode = ext === '.css' ? 'css' : 'javascript'
@@ -397,36 +388,65 @@ export function activate(context: ExtensionContext) {
 
   // Registration for completion and hover
   context.subscriptions.push(
-    languages.registerCompletionItemProvider('pywire', {
-      async provideCompletionItems(doc, pos, token, context) {
-        const result = await embeddedSupport.forwardRequest<CompletionList>(doc, pos, 'vscode.executeCompletionItemProvider', [pos, context.triggerCharacter], log)
-        if (result) {
-          log(`Found completions: ${result.items.length} items`)
-          return result
-        }
-        return undefined
-      }
-    }, '.', '"', "'", '/', '<')
+    languages.registerCompletionItemProvider(
+      'pywire',
+      {
+        async provideCompletionItems(doc, pos, _token, context) {
+          const result = await embeddedSupport.forwardRequest<CompletionList>(
+            doc,
+            pos,
+            'vscode.executeCompletionItemProvider',
+            [pos, context.triggerCharacter],
+            log
+          )
+          if (result) {
+            log(`Found completions: ${result.items.length} items`)
+            return result
+          }
+          return undefined
+        },
+      },
+      '.',
+      '"',
+      "'",
+      '/',
+      '<'
+    )
   )
 
   context.subscriptions.push(
     languages.registerHoverProvider('pywire', {
-      async provideHover(doc, pos, token) {
-        const result = await embeddedSupport.forwardRequest<Hover[]>(doc, pos, 'vscode.executeHoverProvider', [pos], log)
+      async provideHover(doc, pos, _token) {
+        const result = await embeddedSupport.forwardRequest<Hover[]>(
+          doc,
+          pos,
+          'vscode.executeHoverProvider',
+          [pos],
+          log
+        )
         if (result && result.length > 0) return result[0]
         return undefined
-      }
+      },
     })
   )
 
   context.subscriptions.push(
     languages.registerDefinitionProvider('pywire', {
-      async provideDefinition(doc, pos, token) {
-        const result = await embeddedSupport.forwardRequest<Location | Location[] | LocationLink[]>(doc, pos, 'vscode.executeDefinitionProvider', [pos], log)
+      async provideDefinition(doc, pos, _token) {
+        const result = await embeddedSupport.forwardRequest<Location | Location[] | LocationLink[]>(
+          doc,
+          pos,
+          'vscode.executeDefinitionProvider',
+          [pos],
+          log
+        )
         if (!result) return undefined
 
         const remapUri = (u: Uri) => {
-          if (u.scheme === 'pywire-embedded' && (u.path.endsWith('.js') || u.path.endsWith('.css'))) {
+          if (
+            u.scheme === 'pywire-embedded' &&
+            (u.path.endsWith('.js') || u.path.endsWith('.css'))
+          ) {
             if (u.path.startsWith(doc.uri.path)) {
               return doc.uri
             }
@@ -440,10 +460,13 @@ export function activate(context: ExtensionContext) {
             const first = result[0]
             if ('targetUri' in first) {
               // LocationLink[]
-              return (result as LocationLink[]).map(l => ({ ...l, targetUri: remapUri(l.targetUri) }))
+              return (result as LocationLink[]).map((l) => ({
+                ...l,
+                targetUri: remapUri(l.targetUri),
+              }))
             } else {
               // Location[]
-              return (result as Location[]).map(l => new Location(remapUri(l.uri), l.range))
+              return (result as Location[]).map((l) => new Location(remapUri(l.uri), l.range))
             }
           }
           return []
@@ -451,16 +474,22 @@ export function activate(context: ExtensionContext) {
           // Single Location
           return new Location(remapUri((result as Location).uri), (result as Location).range)
         }
-      }
+      },
     })
   )
 
   context.subscriptions.push(
     languages.registerReferenceProvider('pywire', {
-      async provideReferences(doc, pos, context, token) {
-        const result = await embeddedSupport.forwardRequest<Location[]>(doc, pos, 'vscode.executeReferenceProvider', [pos, context], log)
+      async provideReferences(doc, pos, context, _token) {
+        const result = await embeddedSupport.forwardRequest<Location[]>(
+          doc,
+          pos,
+          'vscode.executeReferenceProvider',
+          [pos, context],
+          log
+        )
         if (result) {
-          return result.map(l => {
+          return result.map((l) => {
             if (l.uri.scheme === 'pywire-embedded' && l.uri.path.startsWith(doc.uri.path)) {
               return new Location(doc.uri, l.range)
             }
@@ -468,14 +497,20 @@ export function activate(context: ExtensionContext) {
           })
         }
         return result
-      }
+      },
     })
   )
 
   context.subscriptions.push(
     languages.registerRenameProvider('pywire', {
-      async provideRenameEdits(doc, pos, newName, token) {
-        const result = await embeddedSupport.forwardRequest<WorkspaceEdit>(doc, pos, 'vscode.executeDocumentRenameProvider', [pos, newName], log)
+      async provideRenameEdits(doc, pos, newName, _token) {
+        const result = await embeddedSupport.forwardRequest<WorkspaceEdit>(
+          doc,
+          pos,
+          'vscode.executeDocumentRenameProvider',
+          [pos, newName],
+          log
+        )
         if (result) {
           const newEdit = new WorkspaceEdit()
           for (const [uri, edits] of result.entries()) {
@@ -485,7 +520,10 @@ export function activate(context: ExtensionContext) {
             // and map them back to their corresponding .wire files.
             // For now, simpler logic: check if it matches OUR virtual uri.
             const vUriPath = doc.uri.path + (uri.path.endsWith('.css') ? '.css' : '.js')
-            if (uri.path === vUriPath && (uri.scheme === 'untitled' || uri.scheme === 'pywire-embedded')) {
+            if (
+              uri.path === vUriPath &&
+              (uri.scheme === 'untitled' || uri.scheme === 'pywire-embedded')
+            ) {
               newEdit.set(doc.uri, edits)
             } else {
               // It's some other file? Keep it as is?
@@ -495,28 +533,44 @@ export function activate(context: ExtensionContext) {
           return newEdit
         }
         return result
-      }
+      },
     })
   )
 
   context.subscriptions.push(
-    languages.registerSignatureHelpProvider('pywire', {
-      async provideSignatureHelp(doc, pos, token, context) {
-        const result = await embeddedSupport.forwardRequest<SignatureHelp>(doc, pos, 'vscode.executeSignatureHelpProvider', [pos, context.triggerCharacter], log)
-        return result
-      }
-    }, '(', ',')
+    languages.registerSignatureHelpProvider(
+      'pywire',
+      {
+        async provideSignatureHelp(doc, pos, _token, context) {
+          const result = await embeddedSupport.forwardRequest<SignatureHelp>(
+            doc,
+            pos,
+            'vscode.executeSignatureHelpProvider',
+            [pos, context.triggerCharacter],
+            log
+          )
+          return result
+        },
+      },
+      '(',
+      ','
+    )
   )
 
   context.subscriptions.push(
     languages.registerDocumentHighlightProvider('pywire', {
-      async provideDocumentHighlights(doc, pos, token) {
-        const result = await embeddedSupport.forwardRequest<DocumentHighlight[]>(doc, pos, 'vscode.executeDocumentHighlights', [pos], log)
+      async provideDocumentHighlights(doc, pos, _token) {
+        const result = await embeddedSupport.forwardRequest<DocumentHighlight[]>(
+          doc,
+          pos,
+          'vscode.executeDocumentHighlights',
+          [pos],
+          log
+        )
         return result
-      }
+      },
     })
   )
-
 
   const formattingProvider = languages.registerDocumentFormattingEditProvider(
     { language: 'pywire' },
@@ -637,7 +691,7 @@ export function activate(context: ExtensionContext) {
         },
         initializationOptions: {
           tyPath: config.get<string>('tyPath'),
-        }
+        },
       }
 
       // Create the language client

@@ -50,7 +50,8 @@ def handle_submit(data):
 4. **Validation**: Before calling `handle_submit`, PyWire validates the incoming data against the extracted rules.
 5. **Routing**:
    - **Valid**: Calls `handle_submit(data)`.
-  - **Invalid**: Intercepted before calling `handle_submit` and populates `form_ref.errors`.
+
+- **Invalid**: Intercepted before calling `handle_submit` and populates `form_ref.errors`.
 
 ## Reactive Validation Attributes
 

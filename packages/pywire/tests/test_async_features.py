@@ -15,7 +15,9 @@ class TestAsyncFeatures(unittest.TestCase):
     def setUp(self) -> None:
         self.generator = CodeGenerator()
 
-    def compile_and_get_handlers(self, template_node: Any, python_code: str = "") -> Any:
+    def compile_and_get_handlers(
+        self, template_node: Any, python_code: str = ""
+    ) -> Any:
         parsed = ParsedPyWire(
             template=[template_node],
             python_code=python_code,
@@ -30,7 +32,9 @@ class TestAsyncFeatures(unittest.TestCase):
         for node in module_ast.body:
             if isinstance(node, ast.ClassDef):
                 for item in node.body:
-                    if isinstance(item, ast.AsyncFunctionDef) and item.name.startswith("_handler_"):
+                    if isinstance(item, ast.AsyncFunctionDef) and item.name.startswith(
+                        "_handler_"
+                    ):
                         handlers[item.name] = item
         return handlers, parsed
 
@@ -51,7 +55,9 @@ async def my_async_task(self):
             handler_name="my_async_task()",
         )
 
-        button = TemplateNode(line=1, column=1, tag="button", special_attributes=[click_attr])
+        button = TemplateNode(
+            line=1, column=1, tag="button", special_attributes=[click_attr]
+        )
 
         handlers, parsed = self.compile_and_get_handlers(button, py_code)
 

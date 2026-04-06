@@ -10,6 +10,7 @@ from setuptools_rust import Binding, RustExtension
 
 log = logging.getLogger(__name__)
 
+
 def build_client():
     root = Path(__file__).parent
     client_dir = root / "src" / "pywire" / "client"
@@ -25,11 +26,12 @@ def build_client():
     # Sync version if possible (optional but good)
     try:
         from setuptools_scm import get_version
+
         version = get_version(root=root, relative_to=__file__)
         if version:
             data = json.loads(pkg_path.read_text("utf-8"))
             # Normalize PEP440 to SemVer-ish for npm
-            semver = version.replace(".dev", "-dev").split("+")[0] 
+            semver = version.replace(".dev", "-dev").split("+")[0]
             if data.get("version") != semver:
                 log.info(f"Syncing client version: {data.get('version')} -> {semver}")
                 data["version"] = semver
@@ -40,7 +42,9 @@ def build_client():
     pnpm = shutil.which("pnpm")
     if not pnpm:
         if not (static_dir / "pywire.core.min.js").exists():
-            raise RuntimeError("pnpm not found and client assets missing. Please install pnpm.")
+            raise RuntimeError(
+                "pnpm not found and client assets missing. Please install pnpm."
+            )
         log.warning("pnpm not found, skipping client build.")
         return
 
@@ -65,7 +69,7 @@ def build_client():
             if path.is_file() and path.stat().st_mtime > bundle_mtime:
                 needs_build = True
                 break
-    
+
     if needs_build:
         log.info("Building client assets...")
         subprocess.run(
@@ -76,18 +80,22 @@ def build_client():
             env={**os.environ, "CI": "true"},
         )
 
+
 class BuildPy(build_py):
     def run(self):
         build_client()
         super().run()
 
+
 # Correctly import sdist
 from setuptools.command.sdist import sdist as _sdist
+
 
 class Sdist(_sdist):
     def run(self):
         build_client()
         super().run()
+
 
 setup(
     rust_extensions=[

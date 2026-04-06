@@ -1,5 +1,3 @@
-
-import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -7,7 +5,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from pywire.runtime.loader import PageLoader
-from pywire.runtime.page import BasePage
 
 
 @pytest.fixture
@@ -25,7 +22,9 @@ def mock_app() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_component_with_layout_rendering(loader: PageLoader, mock_app: MagicMock) -> None:
+async def test_component_with_layout_rendering(
+    loader: PageLoader, mock_app: MagicMock
+) -> None:
     """Test that a component with !layout does NOT render its layout when used as a child component."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -63,17 +62,18 @@ from component import Component
         os.chdir(tmpdir)
         import sys
         from pywire.runtime.importer import install_import_hook
+
         install_import_hook()
         if tmpdir not in sys.path:
             sys.path.insert(0, tmpdir)
-        
+
         try:
             # Load and render the page
             page_class = loader.load(tmp_path / "page.wire", use_cache=False)
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            
+
             # Helper to run async render
             async def run_render():
                 response = await page.render()
@@ -85,11 +85,13 @@ from component import Component
 
             # Assertions
             assert '<div id="page-wrapper">' in html
-            assert '<p>Component Content</p>' in html
-            
+            assert "<p>Component Content</p>" in html
+
             # The BUG: Layout wrapper SHOULD NOT be present inside component output
-            assert '<div id="layout-wrapper">' not in html, "Layout wrapper unexpectedly rendered for child component!"
-            assert '<h1>Layout Header</h1>' not in html
+            assert '<div id="layout-wrapper">' not in html, (
+                "Layout wrapper unexpectedly rendered for child component!"
+            )
+            assert "<h1>Layout Header</h1>" not in html
 
         finally:
             if tmpdir in sys.path:

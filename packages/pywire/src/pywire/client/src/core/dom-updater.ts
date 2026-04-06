@@ -207,7 +207,11 @@ export class DOMUpdater {
         Array.from(oldScript.attributes).forEach((attr) => {
           newScript.setAttribute(attr.name, attr.value)
         })
-        document.head.appendChild(newScript)
+        try {
+          document.head.appendChild(newScript)
+        } catch {
+          // Script load errors are surfaced via the 'error' event on the element
+        }
       } else {
         // For inline scripts, use indirect eval to ensure global execution
         // This is more reliable in some test environments than appendChild
@@ -272,7 +276,7 @@ export class DOMUpdater {
 
       if (morphdom) {
         try {
-          morphdom(target, contentToMorph as any, {
+          morphdom(target, contentToMorph as Element | string, {
             childrenOnly,
             // Custom key function for stable element matching
             getNodeKey: (node: Node) => this.getNodeKey(node),
@@ -328,7 +332,7 @@ export class DOMUpdater {
                 // Preserve by value (more robust than index)
                 if (
                   fromEl.value &&
-                  Array.from(toEl.options).some((o: any) => o.value === fromEl.value)
+                  Array.from(toEl.options).some((o: HTMLOptionElement) => o.value === fromEl.value)
                 ) {
                   toEl.value = fromEl.value
                 } else if (

@@ -212,7 +212,8 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
                 let open_end_rel = node_source.find('>');
                 let close_start_rel = lower.rfind(closing_tag);
 
-                if let (Some(open_end_rel), Some(close_start_rel)) = (open_end_rel, close_start_rel) {
+                if let (Some(open_end_rel), Some(close_start_rel)) = (open_end_rel, close_start_rel)
+                {
                     let start_rel = open_end_rel + 1;
                     if close_start_rel >= start_rel {
                         let raw_text = node_source[start_rel..close_start_rel].to_string();

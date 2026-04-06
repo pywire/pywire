@@ -50,11 +50,15 @@ class TestNamingConventions:
         # Filter calls for layout loading
         loader = cast(Any, self.app.loader)
         layout_load_calls = [
-            call for call in loader.load.call_args_list if call.args[0] == expected_layout_path
+            call
+            for call in loader.load.call_args_list
+            if call.args[0] == expected_layout_path
         ]
 
         legacy_load_calls = [
-            call for call in loader.load.call_args_list if call.args[0] == legacy_layout_path
+            call
+            for call in loader.load.call_args_list
+            if call.args[0] == legacy_layout_path
         ]
 
         assert len(layout_load_calls) > 0, "__layout__.wire MUST be loaded"
@@ -63,7 +67,9 @@ class TestNamingConventions:
         # Verify index page was loaded with implicit layout
         index_path = self.pages_dir / "index.wire"
         loader = cast(Any, self.app.loader)
-        loader.load.assert_any_call(index_path, implicit_layout=str(expected_layout_path.resolve()))
+        loader.load.assert_any_call(
+            index_path, implicit_layout=str(expected_layout_path.resolve())
+        )
 
     def test_error_page_registration(self) -> None:
         """Verify __error__.wire is registered at /__error__."""
@@ -78,6 +84,7 @@ class TestNamingConventions:
 
         # Verify router add_route("/__error__", ...)
         from unittest.mock import ANY
+
         router = cast(Any, self.app.router)
         router.add_route.assert_any_call("/__error__", ANY)
 

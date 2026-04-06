@@ -1,6 +1,5 @@
 import pytest
 import asyncio
-import unittest
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,7 +41,9 @@ class MockRequest:
             "type": "http",
             "path": path,
             "query_string": b"",
-            "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            "headers": [
+                (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+            ],
             "client": ["127.0.0.1", 1234],
             "method": "POST",
         }
@@ -143,7 +144,8 @@ class TestTransportExhaustive:
         self.handler.sessions["s1"] = session
 
         request = MockRequest.create(
-            body_data={"handler": "test", "data": {"x": 1}}, headers={"X-PyWire-Session": "s1"}
+            body_data={"handler": "test", "data": {"x": 1}},
+            headers={"X-PyWire-Session": "s1"},
         )
 
         response = await self.handler.handle_event(request)

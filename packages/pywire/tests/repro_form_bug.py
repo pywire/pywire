@@ -7,6 +7,7 @@ sys.path.append(os.path.join(os.getcwd(), "src"))
 
 # Mock starlette and other dependencies that might be missing
 from unittest.mock import MagicMock
+
 sys.modules["starlette"] = MagicMock()
 sys.modules["starlette.applications"] = MagicMock()
 sys.modules["starlette.responses"] = MagicMock()

@@ -1,4 +1,3 @@
-import asyncio
 import sys
 import unittest
 from typing import Any, cast
@@ -114,7 +113,9 @@ class TestPageRendering:
                 if hasattr(super(), "_init_slots"):
                     super()._init_slots()
                 # Register self for parent
-                self.register_slot("ROOT", "default", self._render_slot_fill_default_sub)
+                self.register_slot(
+                    "ROOT", "default", self._render_slot_fill_default_sub
+                )
 
         # 3. Leaf Page (parent="SUB")
         class LeafPage(SubLayout):
@@ -127,7 +128,9 @@ class TestPageRendering:
             def _init_slots(self) -> None:
                 if hasattr(super(), "_init_slots"):
                     super()._init_slots()
-                self.register_slot("SUB", "default", self._render_slot_fill_default_leaf)
+                self.register_slot(
+                    "SUB", "default", self._render_slot_fill_default_leaf
+                )
 
         # Execution
         request = MagicMock()

@@ -3,7 +3,8 @@ import { printPywire } from './printer.js'
 import { parsePywire } from './parser.js'
 
 vi.mock('./utils/ruff-formatter.js', () => ({
-  formatPython: (code: string) => code.startsWith('_ = ') ? `_ = FORMATTED_${code.slice(4).trim()}` : `FORMATTED_${code.trim()}`,
+  formatPython: (code: string) =>
+    code.startsWith('_ = ') ? `_ = FORMATTED_${code.slice(4).trim()}` : `FORMATTED_${code.trim()}`,
 }))
 
 vi.mock('./utils/ruff-config.js', () => ({

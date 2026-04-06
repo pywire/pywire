@@ -1,5 +1,4 @@
 import pytest
-import unittest
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,7 +41,9 @@ class TestAppAdvanced:
 
         response = await self.app._handle_request(request)
         assert response.status_code == 200
-        page_inst.handle_event.assert_called_once_with("save", {"handler": "save", "data": {}})
+        page_inst.handle_event.assert_called_once_with(
+            "save", {"handler": "save", "data": {}}
+        )
 
     async def test_handle_request_injection(self) -> None:
         # Test injection of scripts/meta tags

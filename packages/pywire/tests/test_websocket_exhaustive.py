@@ -55,7 +55,9 @@ class TestWebSocketExhaustive:
         data = msgpack.packb({"type": "event", "handler": "click"})
         ws.receive_bytes.side_effect = [data, WebSocketDisconnect()]
 
-        with patch.object(self.handler, "_process_message", new_callable=AsyncMock) as mock_proc:
+        with patch.object(
+            self.handler, "_process_message", new_callable=AsyncMock
+        ) as mock_proc:
             await self.handler.handle(ws)
             mock_proc.assert_called_once()
 
@@ -63,11 +65,15 @@ class TestWebSocketExhaustive:
     async def test_process_message_types(self) -> None:
         ws = self.create_mock_ws()
 
-        with patch.object(self.handler, "_handle_event", new_callable=AsyncMock) as mock_event:
+        with patch.object(
+            self.handler, "_handle_event", new_callable=AsyncMock
+        ) as mock_event:
             await self.handler._process_message(ws, {"type": "event"})
             mock_event.assert_called_once()
 
-        with patch.object(self.handler, "_handle_relocate", new_callable=AsyncMock) as mock_reloc:
+        with patch.object(
+            self.handler, "_handle_relocate", new_callable=AsyncMock
+        ) as mock_reloc:
             await self.handler._process_message(ws, {"type": "relocate"})
             mock_reloc.assert_called_once()
 

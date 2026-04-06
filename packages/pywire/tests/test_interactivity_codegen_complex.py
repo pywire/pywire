@@ -1,7 +1,6 @@
 import ast
 import unittest
 
-from pywire.compiler.ast_nodes import EventAttribute
 from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.compiler.parser import PyWireParser
 
@@ -35,7 +34,9 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
 
     def test_multiple_handlers_complex(self) -> None:
         """Verify behavior with multiple handlers having arguments and modifiers."""
-        template = "<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>"
+        template = (
+            "<button @click.stop={foo(id1)} @click.prevent={bar(id2)}>Click</button>"
+        )
         # Add python code to define handlers
         python_code = "async def foo(id): pass\nasync def bar(id): pass"
         content = f"---\n{python_code}\n---\n{template}"
@@ -50,7 +51,9 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.assertIn("_h['args'] = [unwrap_wire(self.id2)]", code)
         # Verify modifiers are collected (order is unstable because of set())
         modifiers_line = [
-            line for line in code.split("\n") if "attrs['data-modifiers-click'] =" in line
+            line
+            for line in code.split("\n")
+            if "attrs['data-modifiers-click'] =" in line
         ][0]
         self.assertIn("stop", modifiers_line)
         self.assertIn("prevent", modifiers_line)

@@ -1,11 +1,11 @@
 import ast
-import asyncio
 import pytest
 from textwrap import dedent
 from types import SimpleNamespace
 from pywire.compiler.parser import PyWireParser
 from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.runtime.loader import PageLoader
+
 
 def test_wire_primitive_compilation():
     source = dedent("""
@@ -18,33 +18,34 @@ def test_wire_primitive_compilation():
             <button @click={count += 1}>Inc</button>
         </div>
     """)
-    
+
     parser = PyWireParser()
     parsed = parser.parse(source, "test.pywire")
-    
+
     generator = CodeGenerator()
     module_ast = generator.generate(parsed)
     code = ast.unparse(module_ast)
-    
+
     print("\nGenerated Code:\n", code)
-    
+
     # 1. Verify initialization
     assert "self.count = wire(0)" in code
-    
+
     # 2. Verify Render Usage
     # {count} -> unwrap_wire(self.count)
     assert "unwrap_wire(self.count)" in code
-    
+
     # 3. Verify Handler Usage
     # @click={count += 1} -> self.count += 1
     # NOTE: Since preprocessor is now no-op, it stays self.count += 1
-    # And and wire objects support += via __iadd__ if implemented, 
+    # And and wire objects support += via __iadd__ if implemented,
     # but here it's likely transformed by the assignment lifter to self.count
     assert "self.count += 1" in code
 
     # 4. Verify __top_level_init__ calls
     # Should be called in __init__, not just INIT_HOOKS
     assert "self.__top_level_init__()" in code
+
 
 def test_wire_string_handling():
     """Ensure $ inside strings is NOT replaced."""
@@ -58,22 +59,22 @@ def test_wire_string_handling():
             Text: {text}
         </div>
     """)
-    
+
     parser = PyWireParser()
     parsed = parser.parse(source, "test.pywire")
-    
+
     generator = CodeGenerator()
     module_ast = generator.generate(parsed)
     code = ast.unparse(module_ast)
-    
+
     print("\nGenerated Code String:\n", code)
-    
+
     # Initialization should keep "$100" literal
     assert 'self.text = wire("$100")' in code or "self.text = wire('$100')" in code
-    
+
     # Dummy assignment should keep "$not_a_var" - literals stay class attributes
     assert "dummy = '$not_a_var'" in code or 'dummy = "$not_a_var"' in code
-    
+
     # Interpolation should work
     assert "unwrap_wire(self.text)" in code
 
@@ -100,9 +101,11 @@ async def test_wire_auto_unwrap_in_template(tmp_path) -> None:
     page_class = loader.load(file_path)
     from types import SimpleNamespace
 
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
-        sibling_paths=[], enable_pjax=False, debug=False
-    )))
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False)
+        )
+    )
     page = page_class(request, {}, {}, {}, None)
     html = await page._render_template()
 
@@ -134,9 +137,11 @@ async def test_wire_region_updates(tmp_path) -> None:
     page_class = loader.load(file_path)
     from types import SimpleNamespace
 
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
-        sibling_paths=[], enable_pjax=False, debug=False
-    )))
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False)
+        )
+    )
     page = page_class(request, {}, {}, {}, None)
     await page.render()
     update = await page.handle_event("increment", {})
@@ -178,7 +183,9 @@ async def test_wire_dot_value_compilation_and_updates(tmp_path) -> None:
     from types import SimpleNamespace
 
     request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False))
+        app=SimpleNamespace(
+            state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False)
+        )
     )
     page = page_class(request, {}, {}, {}, None)
 
@@ -227,7 +234,9 @@ async def test_loop_click_handler_id_based_runtime(tmp_path) -> None:
     loader = PageLoader()
     page_class = loader.load(file_path)
     request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False))
+        app=SimpleNamespace(
+            state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False)
+        )
     )
     page = page_class(request, {}, {}, {}, None)
 
@@ -236,9 +245,10 @@ async def test_loop_click_handler_id_based_runtime(tmp_path) -> None:
     assert "B" in html
 
     # Simulate click on first row's delete - handler receives id "a"
-    update = await page.handle_event("_handler_0", {"type": "click", "args": {"arg0": "a"}})
+    update = await page.handle_event(
+        "_handler_0", {"type": "click", "args": {"arg0": "a"}}
+    )
     assert update["type"] in ("regions", "full")
     assert page.deleted_ids.value == ["a"]
     assert len(page.items.value) == 1
     assert page.items.value[0].get("id") == "b"
-

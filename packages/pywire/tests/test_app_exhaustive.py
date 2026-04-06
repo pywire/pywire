@@ -1,8 +1,6 @@
 import pytest
-import asyncio
 import json
 import time
-import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Optional, Type, cast
@@ -34,7 +32,9 @@ class TestAppExhaustive:
         self.http_mock = patch("pywire.runtime.app.HTTPTransportHandler").start()
         self.mock_http = self.http_mock
 
-        self.wt_mock = patch("pywire.runtime.webtransport_handler.WebTransportHandler").start()
+        self.wt_mock = patch(
+            "pywire.runtime.webtransport_handler.WebTransportHandler"
+        ).start()
         self.mock_wt = self.wt_mock
 
     def teardown_method(self, method) -> None:
@@ -101,7 +101,10 @@ class TestAppExhaustive:
         files: Optional[Dict[str, Any]] = None,
     ) -> Any:
         request = AsyncMock(spec=Request)
-        request.headers = {"X-Upload-Token": token, "content-length": str(content_length)}
+        request.headers = {
+            "X-Upload-Token": token,
+            "content-length": str(content_length),
+        }
         request.form = AsyncMock(return_value=files or {})
         request.url = MagicMock()
         return await app._handle_upload(request)
@@ -184,11 +187,15 @@ class TestAppExhaustive:
         app = PyWire(str(self.pages_dir))
         cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
-        with patch.object(MockPage, "handle_event", new_callable=AsyncMock) as mock_handle:
+        with patch.object(
+            MockPage, "handle_event", new_callable=AsyncMock
+        ) as mock_handle:
             mock_handle.side_effect = Exception("Event failure")
 
             headers = {"X-PyWire-Event": "click"}
-            response = await self._async_test_request(app, method="POST", headers=headers)
+            response = await self._async_test_request(
+                app, method="POST", headers=headers
+            )
             assert response.status_code == 500
 
     @pytest.mark.asyncio
@@ -205,7 +212,9 @@ class TestAppExhaustive:
 
         # 3. Valid token but too large
         app.upload_tokens.add("valid_token")
-        response = await self._async_test_upload(app, "valid_token", content_length=20 * 1024 * 1024)
+        response = await self._async_test_upload(
+            app, "valid_token", content_length=20 * 1024 * 1024
+        )
         assert response.status_code == 413
 
     @patch("pywire.runtime.app.upload_manager")
@@ -303,13 +312,17 @@ class TestAppExhaustive:
         cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
         # Mock handle_event
-        with patch.object(MockPage, "handle_event", new_callable=AsyncMock) as mock_handle:
+        with patch.object(
+            MockPage, "handle_event", new_callable=AsyncMock
+        ) as mock_handle:
             mock_handle.return_value = JSONResponse({"ok": True})
 
             headers = {"X-PyWire-Event": "click"}
             json_data = {"handler": "do_something", "data": {"val": 1}}
 
-            response = await self._async_test_request(app, method="POST", headers=headers, json_data=json_data)
+            response = await self._async_test_request(
+                app, method="POST", headers=headers, json_data=json_data
+            )
 
             assert response.status_code == 200
             mock_handle.assert_called_with("do_something", json_data)

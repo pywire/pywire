@@ -66,7 +66,9 @@ def test_debug_middleware_attribute_forwarding() -> None:
         def __init__(self) -> None:
             self.foo = "bar"
 
-        async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
+        async def __call__(
+            self, scope: MutableMapping[str, Any], receive: Any, send: Any
+        ) -> None:
             pass
 
     mock_app = MockApp()
