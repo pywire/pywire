@@ -1,0 +1,10 @@
+!path '/'
+
+---
+name = "World"
+
+def greet():
+    return f"Hi {name}"
+---
+
+<div><p>{name}</p></div>

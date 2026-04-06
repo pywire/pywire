@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+if [ ! -x node_modules/.bin/prettier ]; then
+    echo "-> Installing dependencies..."
+    pnpm install --frozen-lockfile --force
+fi
+
+pnpm check

@@ -1,0 +1,9 @@
+!import Form from .components
+
+---
+from .components import Button
+---
+
+<Form>
+  <Button>Click me</Button>
+</Form>
