@@ -1,0 +1,116 @@
+---
+import DefaultLayout from '@layouts/DefaultLayout.astro'
+import Feature from '@components/Feature.astro'
+import { Heading, Link } from 'accessible-astro-components'
+import { Icon } from 'astro-icon/components'
+import { createHighlighter } from 'shiki'
+import pywireGrammar from '../../public/grammars/pywire.tmLanguage.json'
+
+const highlighter = await createHighlighter({
+  themes: ['github-dark', 'catppuccin-mocha'],
+  langs: [
+    'python',
+    {
+      ...pywireGrammar,
+      name: 'pywire',
+    } as any,
+  ],
+})
+
+const pywireCode = `---
+count = wire(0)
+---
+<p>Count: {count}</p>
+<button @click={count.value += 1}>
+    Add One
+</button>`
+
+const pywireHtml = highlighter.codeToHtml(pywireCode, {
+  lang: 'pywire',
+  theme: 'catppuccin-mocha',
+})
+---
+
+<DefaultLayout title="Home">
+  <section class="hero my-24">
+    <div class="container">
+      <div class="grid grid-cols-1 items-center gap-24 lg:grid-cols-2">
+        <div class="flex flex-col items-center gap-8 md:items-start">
+          <h1 class="text-center text-6xl md:text-left lg:text-8xl">
+            The <span class="text-gradient">Live Conduit</span> for Python
+          </h1>
+          <p class="text-center text-2xl md:text-left lg:text-3xl">
+            HTML-over-the-wire without the JavaScript hangover.
+          </p>
+          <div class="flex flex-col gap-3 min-[500px]:flex-row">
+            <Link href="/docs/guides/quickstart/" isButton type="primary" animateOnHover animationType="boop">
+              Get Started
+            </Link>
+            <Link href="https://github.com/pywire/pywire" isButton type="secondary" animateOnHover animationType="boop">
+              <Icon aria-hidden="true" name="lucide:github" size="1.5rem" />
+              View on GitHub
+            </Link>
+          </div>
+        </div>
+        <div class="hero-code-block relative">
+          <div class="absolute -inset-4 rounded-full bg-cyan-500/10 blur-2xl"></div>
+          <div
+            class="relative rounded-lg border border-[var(--theme-dark-border)] bg-[var(--theme-dark-surface)] p-6 shadow-2xl"
+          >
+            <div class="mb-4 flex gap-2">
+              <div class="h-3 w-3 rounded-full bg-red-500/50"></div>
+              <div class="h-3 w-3 rounded-full bg-yellow-500/50"></div>
+              <div class="h-3 w-3 rounded-full bg-green-500/50"></div>
+              <span class="ml-2 font-mono text-xs text-[var(--theme-dark-muted)]">counter.wire</span>
+            </div>
+            <Fragment set:html={pywireHtml} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="my-64">
+    <div class="container">
+      <Heading level="h2" class="mb-8">The "Always On" Experience</Heading>
+      <div class="grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-3">
+        <Feature icon="lucide:zap" title="Instant Reactivity">
+          Real-time updates without the page refresh. pywire creates a persistent, bi-directional conduit between your
+          Python logic and the Browser.
+        </Feature>
+        <Feature icon="lucide:file-code" title="Single File Components">
+          Keep your Python logic, HTML structure, and scoped styles in one cohesive `.wire` file. No more context
+          switching between languages.
+        </Feature>
+        <Feature icon="lucide:ban" title="Zero JS Overhead">
+          Write pure Python and HTML. pywire handles the transport layer, so you can build modern interactive apps
+          without touching a single line of JavaScript.
+        </Feature>
+      </div>
+    </div>
+  </section>
+</DefaultLayout>
+
+<style lang="scss">
+  .hero {
+    margin: 6rem 0;
+  }
+
+  .text-gradient {
+    background: linear-gradient(315deg, var(--color-wire-glow) 25%, var(--color-wire-dim));
+    background-clip: border-box;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-code-block {
+    /* The "Wire" Glow */
+    box-shadow: 0 0 50px -10px rgba(0, 240, 255, 0.15);
+    border-radius: var(--radius-m);
+  }
+
+  .avatar {
+    border: 1px solid var(--border-color-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-s);
+  }
+</style>

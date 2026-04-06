@@ -1,0 +1,58 @@
+---
+import Navigation from '../components/Navigation.astro'
+import { DarkMode, Link, SkipLink } from 'accessible-astro-components'
+import { Icon } from 'astro-icon/components'
+
+/**
+ * Header Component
+ *
+ * @description A component that displays the header of the website
+ */
+---
+
+<header>
+  <SkipLink />
+  <Navigation>
+    <li class="menu-item">
+      <Link href="/docs/guides/quickstart/">Docs</Link>
+    </li>
+    <li class="menu-item">
+      <Link href="/docs/tutorial/">Tutorial</Link>
+    </li>
+    <li class="menu-item">
+      <Link href="/docs/reference/api/">API</Link>
+    </li>
+    <li class="menu-item type-icon">
+      <Link isExternal href="https://github.com/pywire/pywire" title="GitHub">
+        <Icon aria-hidden="true" name="lucide:github" />
+        <span class="sr-only">GitHub</span>
+      </Link>
+    </li>
+    <li class="menu-item type-icon">
+      <Link isExternal href="https://discord.gg/pywire" title="Discord">
+        <Icon aria-hidden="true" name="lucide:message-square" />
+        <span class="sr-only">Discord</span>
+      </Link>
+    </li>
+    <li class="menu-item type-icon">
+      <DarkMode>
+        <Icon aria-hidden="true" name="lucide:moon" slot="light" />
+        <Icon aria-hidden="true" name="lucide:sun" slot="dark" />
+      </DarkMode>
+    </li>
+  </Navigation>
+</header>
+
+<style lang="scss" is:global>
+  header {
+    .type-icon {
+      display: block;
+      margin-inline: -7px;
+
+      svg {
+        inline-size: 30px;
+        block-size: 30px;
+      }
+    }
+  }
+</style>
