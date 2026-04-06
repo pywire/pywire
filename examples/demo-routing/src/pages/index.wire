@@ -1,0 +1,10 @@
+<article>
+    <h2>Welcome to pywire</h2>
+    <p>This demo showcases Svelte-like file-based routing features:</p>
+    <ul>
+        <li><strong>Automatic Routing</strong>: Pages are derived from the file system.</li>
+        <li><strong>Hierarchical Layouts</strong>: Layouts can be nested and inherited.</li>
+        <li><strong>Dynamic Parameters</strong>: Using <code>[param].wire</code> syntax.</li>
+    </ul>
+    <p>Try navigating to the <a href="/users">Users</a> section to see dynamic parameters in action.</p>
+</article>

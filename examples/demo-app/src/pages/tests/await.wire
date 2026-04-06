@@ -1,0 +1,77 @@
+!path "/tests/blocks/await"
+
+---
+import asyncio
+
+# Python Logic
+async def fast_data():
+    return "Instant Data"
+
+async def slow_data():
+    await asyncio.sleep(2)
+    return "Delayed Data (2s)"
+
+async def failing_task():
+    await asyncio.sleep(1)
+    raise ValueError("Something went wrong on the server!")
+
+def trigger_reload():
+    # Helper to force re-render logic if needed, 
+    # though await usually runs on mount/init.
+    pass
+---
+
+<div class="test-container">
+    <h1>Await Block Tests</h1>
+
+    <!-- 1. Fast Resolution -->
+    <section id="fast-await">
+        <h2>Fast Task</h2>
+        {$await fast_data()}
+            <p>Loading...</p>
+        {$then result}
+            <p class="success">Result: {result}</p>
+        {$catch e}
+            <p class="error">{str(e)}</p>
+        {/await}
+    </section>
+
+    <!-- 2. Slow Resolution (Loading State) -->
+    <section id="slow-await">
+        <h2>Slow Task (2s)</h2>
+        {$await slow_data()}
+            <div class="spinner">
+                Loading data, please wait...
+            </div>
+        {$then data}
+            <div class="card">
+                <h3>Data Received</h3>
+                <p>{data}</p>
+            </div>
+        {/await}
+    </section>
+
+    <!-- 3. Error Handling -->
+    <section id="error-await">
+        <h2>Failing Task</h2>
+        {$await failing_task()}
+            <p>Attempting risky operation...</p>
+        {$then res}
+            <p>{res}</p>
+        {$catch err}
+            <div class="error-banner">
+                <strong>Error Caught:</strong> {str(err)}
+            </div>
+        {/await}
+    </section>
+    
+    <!-- 4. Implicit Then/Catch (Ignore args) -->
+    <section id="implicit">
+        <h2>Implicit Arguments</h2>
+        {$await fast_data()}
+            ...
+        {$then}
+            <p>Done!</p>
+        {/await}
+    </section>
+</div>

@@ -1,0 +1,80 @@
+!path "/tests/blocks/try"
+
+---
+# Python Logic
+def safe_render():
+    return "Safe Content"
+
+def risky_render():
+    raise KeyError("Missing key in data dictionary")
+
+def critical_failure():
+    raise Exception("Database connection lost")
+
+user_input = "<script>alert('xss')</script>"
+
+def render_markdown(text):
+    if "<script>" in text:
+        raise ValueError("Unsafe content detected")
+    return f"<b>{text}</b>"
+---
+
+<div class="test-container">
+    <h1>Try/Except Block Tests</h1>
+
+    <!-- 1. Standard Success Path -->
+    <section id="try-success">
+        <h2>Success Path</h2>
+        {$try}
+            <p>{safe_render()}</p>
+        {$except Exception}
+            <p>This should not show.</p>
+        {/try}
+    </section>
+
+    <!-- 2. Specific Exception Catching -->
+    <section id="try-specific">
+        <h2>Catch KeyError</h2>
+        {$try}
+            <p>{risky_render()}</p>
+        {$except KeyError as e}
+            <p class="error">Caught expected error: {str(e)}</p>
+        {$except Exception}
+            <p class="error">Caught unexpected error.</p>
+        {/try}
+    </section>
+
+    <!-- 3. General Exception Fallback -->
+    <section id="try-general">
+        <h2>Catch All</h2>
+        {$try}
+            <p>{critical_failure()}</p>
+        {$except Exception as e}
+            <p class="fatal">System Failure: {str(e)}</p>
+        {/try}
+    </section>
+
+    <!-- 4. Else/Finally Semantics -->
+    <section id="try-else-finally">
+        <h2>Else / Finally</h2>
+        {$try}
+            <p>Operation successful</p>
+        {$except}
+            <p>Failed</p>
+        {$else}
+            <p class="success">Else block ran (Success)</p>
+        {$finally}
+            <p class="info">Finally block always runs</p>
+        {/try}
+    </section>
+    
+    <!-- 5. Real World Use Case: Unsafe Content -->
+    <section id="content-boundary">
+        <h2>Error Boundary</h2>
+        {$try}
+            {$html render_markdown(user_input)}
+        {$except ValueError}
+            <p class="warning">Content blocked due to security rules.</p>
+        {/try}
+    </section>
+</div>

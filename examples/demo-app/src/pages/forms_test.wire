@@ -1,0 +1,557 @@
+!path "/forms_test"
+
+---
+import json
+from pydantic import BaseModel
+from typing import Optional, Dict, List, Any
+from pywire.components import Form, FileInput
+from pywire.runtime.files import FileUpload
+from pywire import ref
+
+# State
+success_message = wire("")
+form_data = wire({})
+delivery_method = wire("standard")
+has_referral = wire(False)
+pydantic_success = wire("")
+pydantic_data = wire(None)
+advanced_success = wire("")
+advanced_data = wire(None)
+# Async Task State
+task_progress = wire(0)
+task_status_text = wire("Idle")
+task_running = wire(False)
+dynamic_accept_types = wire("image/*,.png,.jpg")
+file_success = wire("")
+file_data = wire(None)
+file_form_ref = ref()
+fileinput_success = wire("")
+fileinput_data = wire(None)
+fileinput_form_ref = ref()
+fileinput_avatar_ref = ref()
+fileinput_docs_ref = ref()
+
+def update_has_referral(event_data):
+    has_referral.value = bool(event_data.checked)
+
+def update_delivery_method(event_data):
+    delivery_method.value = event_data.value
+
+# Error states for different forms
+basic_form_ref = ref()
+pydantic_form_ref = ref()
+advanced_form_ref = ref()
+shipment_form_ref = ref()
+
+async def handle_submit(data: Dict[str, str]):
+    # Native form demo: payload is raw form data.
+    success_message.value = (
+        f"Form submitted successfully! Data: {json.dumps(data, indent=2)}"
+    )
+    form_data.clear()
+    form_data.update(data)
+    
+    
+    # We want to keep the success message to show the success state!
+    # The form will hide because of $if={not success_message}
+
+async def reset_form():
+    success_message.value = ""
+    form_data.clear()
+    has_referral.value = False
+    # self.errors = {} # errors is on the instance, not a wire variable here?
+    # If errors is implicit, we might not be able to reset it easily via wire syntax unless usage changes. 
+    # But usually re-rendering clears it or new submission.
+    pydantic_success.value = ""
+    pydantic_data.value = None
+    advanced_success.value = ""
+    advanced_data.value = None
+
+import asyncio
+
+async def run_long_task(event_data):
+    if task_running:
+        return
+
+    task_running.value = True
+    task_progress.value = 0
+    task_status_text.value = "Initializing task..."
+    await self.push_state()
+    
+    # Simulate processing steps
+    total_steps = 50
+    for i in range(1, total_steps + 1):
+        # Simulate work
+        await asyncio.sleep(0.05)
+        
+        # Update progress
+        task_progress.value = (i / total_steps) * 100
+        task_status_text.value = f"Processing item {i} of {total_steps}..."
+        
+        # Push updates to UI periodically (every 5 steps or so to avoid flooding)
+        if i % 2 == 0:
+            await self.push_state()
+            
+    task_status_text.value = "Task Completed Successfully!"
+    task_progress.value = 100
+    task_running.value = False
+    # Final state update happens automatically on return, but explicit doesn't hurt
+
+
+# Pydantic Model
+class User(BaseModel):
+    username: str
+    age: int
+    is_active: bool = False
+
+# New models for migration
+from pydantic import Field, EmailStr
+class ShipmentModel(BaseModel):
+    delivery_method: str = "standard"
+    street: Optional[str] = None
+    city: Optional[str] = None
+    zip: Optional[str] = Field(None, pattern="^[0-9]{5}$")
+    delivery_date: Optional[date] = None
+
+# Phase 4: Advanced Models
+from enum import Enum
+from datetime import date
+
+class Role(str, Enum):
+    ADMIN = 'admin'
+    USER = 'user'
+    GUEST = 'guest'
+
+class Address(BaseModel):
+    street: str
+    city: str
+
+class AdvancedUser(BaseModel):
+    full_name: str
+    role: Role
+    birth_date: date
+    address: Address
+    profile_pic: Optional[FileUpload] = Field(
+        default=None,
+        json_schema_extra={
+            "max_size": 2 * 1024 * 1024,
+            "allowed_types": ["image/*", ".png", ".jpg", ".jpeg"],
+        },
+    )
+    attachments: List[FileUpload] = Field(
+        default_factory=list,
+        json_schema_extra={
+            "multiple": True,
+            "max_files": 3,
+            "max_size": 3 * 1024 * 1024,
+            "allowed_types": ["application/pdf", "text/plain", ".pdf", ".txt"],
+            "allowed_names": "^doc_.*\\.(pdf|txt)$",
+        },
+    )
+
+async def handle_advanced(user: AdvancedUser):
+    advanced_success.value = f"Advanced Valid! Name: {user.full_name}, Role: {user.role}"
+    advanced_data.value = str(user)
+    
+    
+async def handle_pydantic_submit(user: User):
+    # This handler receives a Pydantic model instance!
+    pydantic_success.value = f"Pydantic Form Valid! User: {user.username}, Age: {user.age}, Active: {user.is_active}"
+    pydantic_data.value = user.dict()
+    # errors are cleared automatically
+
+from datetime import date, timedelta
+tomorrow = wire((date.today() + timedelta(days=1)).isoformat())
+shipment_success = wire("")
+shipment_data = wire(None)
+# delivery_method was already defined effectively shadowed? No, python scoping.
+# But delivery_method is defined at top level. Redefining it here?
+# Ah, the previous one was top level. This one seems to be redefining/shadowing or just initializing again?
+# The example has duplicate variable names. Let's fix this.
+# top level: delivery_method = "standard"
+# here: delivery_method = 'standard'
+# It seems the file has a bit of a mess.
+# I'll stick to the top definition and remove this one if it's redundant.
+# unique vars: shipment_success, shipment_data, image_preview.
+
+async def create_shipment(data: ShipmentModel):
+    shipment_success.value = f"Shipment Created! Method: {data.delivery_method}, Address: {data.street}, Date: {data.delivery_date}"
+    shipment_data.value = data.dict()
+    # Reset for demo
+    delivery_method.value = 'standard'
+
+def _summarize_file(value):
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [_summarize_file(item) for item in value]
+    if isinstance(value, FileUpload):
+        return {
+            "filename": value.filename,
+            "type": value.content_type,
+            "size": value.size,
+        }
+    return str(value)
+
+async def handle_file_rules_submit(data: Dict[str, Any]):
+    file_success.value = "File validation passed"
+    file_data.value = {
+        "avatar": _summarize_file(data.get("avatar")),
+        "documents": _summarize_file(data.get("documents")),
+    }
+
+async def handle_fileinput_submit(data: Dict[str, Any]):
+    fileinput_success.value = "FileInput validation passed"
+    fileinput_data.value = {
+        "avatar": _summarize_file(data.get("avatar")),
+        "documents": _summarize_file(data.get("documents")),
+    }
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pywire Form Validation Test</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <style>
+        .error { color: #d93526; font-size: 0.875rem; margin-top: 0.25rem; display: block; }
+        input.invalid { border-color: #d93526; }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <h1>Form Validation Demo</h1>
+        
+        <div $if={success_message}>
+            <article class="success">
+                <header>Success!</header>
+                {success_message}
+                <footer><button @click={reset_form}>Reset</button></footer>
+            </article>
+        </div>
+
+        <Form @submit={handle_submit} $ref={basic_form_ref} $if={not success_message}>
+            <!-- Username: Required, Min Lenth 3, Pattern -->
+            <label for="username">
+                Username (3+ chars, letters only)
+                <input type="text" 
+                       id="username" 
+                       name="username" 
+                       pattern="^[A-Za-z]+$"
+                       title="Letters only"
+                       minlength="3"
+                       maxlength="20"
+                       required
+                       aria-invalid={True if basic_form_ref.errors.username else False}>
+                <small class="error" $if={basic_form_ref.errors.username}>{basic_form_ref.errors.username.message}</small>
+            </label>
+
+            <!-- Email: Required, Type Email -->
+            <label for="email">
+                Email Address
+                <input type="email" 
+                       id="email" 
+                       name="email" 
+                       required
+                       aria-invalid={True if basic_form_ref.errors.email else False}>
+                <small class="error" $if={basic_form_ref.errors.email}>{basic_form_ref.errors.email.message}</small>
+            </label>
+
+            <!-- Age: Number, Min 18, Max 100 -->
+            <label for="age">
+                Age (18-100)
+                <input type="number" 
+                       id="age" 
+                       name="age"
+                       min="18"
+                       max="100"
+                       step="1"
+                       required
+                       aria-invalid={True if basic_form_ref.errors.age else False}>
+                <small class="error" $if={basic_form_ref.errors.age}>{basic_form_ref.errors.age.message}</small>
+            </label>
+
+            <!-- Conditional Validation (Note: UI visibility still reactive) -->
+            <label for="has_referral">
+                <input type="checkbox" 
+                       id="has_referral" 
+                       checked={has_referral}
+                       @change={update_has_referral}>
+                I have a referral code
+            </label>
+
+            <label for="referral_code" $show={has_referral}>
+                Referral Code (Required if checked)
+                <input type="text" 
+                       id="referral_code" 
+                       name="referral_code"
+                       pattern="^[A-Z0-9]{6,12}$"
+                       title="Use 6-12 uppercase letters/numbers"
+                       required={has_referral}
+                       aria-invalid={True if basic_form_ref.errors.referral_code else False}>
+                <small class="error" $if={basic_form_ref.errors.referral_code}>{basic_form_ref.errors.referral_code.message}</small>
+            </label>
+
+            <button type="submit">Submit Form</button>
+        </Form>
+        
+        <details>
+            <summary>Debug State</summary>
+            <pre>Errors: {json.dumps(dict(basic_form_ref.errors) if isinstance(basic_form_ref.errors, dict) else {}, indent=2)}</pre>
+            <pre>Data: {json.dumps(form_data.value, indent=2)}</pre>
+            <pre>Has Referral: {has_referral}</pre>
+        </details>
+        
+        <hr>
+        
+        <h2>Pydantic Integration Test</h2>
+        <div $if={pydantic_success}>
+            <article class="success">
+                <header>Pydantic Success!</header>
+                {pydantic_success}
+                <pre>{json.dumps(pydantic_data.value, indent=2)}</pre>
+            </article>
+        </div>
+        
+        <Form model={User} @submit={handle_pydantic_submit} $ref={pydantic_form_ref} $if={not pydantic_success}>
+            <label>
+                Username (Pydantic)
+                <input name="username" required>
+                <small class="error" $if={pydantic_form_ref.errors.username}>{pydantic_form_ref.errors.username.message}</small>
+            </label>
+            
+            <label>
+                Age (Pydantic Int)
+                <input type="number" name="age" required>
+                <small class="error" $if={pydantic_form_ref.errors.age}>{pydantic_form_ref.errors.age.message}</small>
+            </label>
+            
+            <label>
+                <input type="checkbox" name="is_active">
+                Is Active (Pydantic Bool)
+            </label>
+            
+            <button type="submit">Submit Pydantic Form</button>
+        </Form>
+        
+        <hr>
+        
+        <h2>File Upload Validation (HTML Rules)</h2>
+        <div $if={file_success}>
+            <article class="success">
+                <header>{file_success}</header>
+                <pre>{json.dumps(file_data.value, indent=2, default=str)}</pre>
+            </article>
+        </div>
+
+        <Form @submit={handle_file_rules_submit} $ref={file_form_ref}>
+            <label>
+                Avatar (required, min 1KB, max 2MB, dynamic accept, filename rule)
+                <input
+                    type="file"
+                    name="avatar"
+                    required
+                    accept={dynamic_accept_types}
+                    data-min-size="1024"
+                    data-max-size="2097152"
+                    data-allowed-names="^avatar_.*\\.(png|jpg|jpeg)$"
+                >
+                <small class="error" $if={file_form_ref.errors.avatar}>{file_form_ref.errors.avatar.message}</small>
+            </label>
+
+            <label>
+                Documents (optional, multiple, max 3 files, allowed name/type)
+                <input
+                    type="file"
+                    name="documents"
+                    multiple
+                    accept=".pdf,text/plain"
+                    data-max-files="3"
+                    data-max-size="3145728"
+                    data-allowed-names="^doc_.*\\.(pdf|txt)$"
+                >
+                <small class="error" $if={file_form_ref.errors.documents}>{file_form_ref.errors.documents.message}</small>
+            </label>
+
+            <button type="submit">Submit File Rules Form</button>
+        </Form>
+
+        <hr>
+
+        <h2>FileInput Component Demo</h2>
+        <div $if={fileinput_success}>
+            <article class="success">
+                <header>{fileinput_success}</header>
+                <pre>{json.dumps(fileinput_data.value, indent=2, default=str)}</pre>
+            </article>
+        </div>
+
+        <Form @submit={handle_fileinput_submit} $ref={fileinput_form_ref}>
+            <label>
+                Avatar via FileInput (required, min 1KB, max 2MB, avatar_* names)
+                <FileInput
+                    name="avatar"
+                    required={True}
+                    accept="image/*,.png,.jpg,.jpeg"
+                    min_size={1024}
+                    max_size={2097152}
+                    allowed_names="^avatar_.*\\.(png|jpg|jpeg)$"
+                    $ref={fileinput_avatar_ref}
+                />
+                <small>Progress: {fileinput_avatar_ref.progress if fileinput_avatar_ref.progress is not None else 0}%</small>
+                <small class="error" $if={fileinput_avatar_ref.error}>{fileinput_avatar_ref.error}</small>
+                <small class="error" $if={fileinput_form_ref.errors.avatar}>{fileinput_form_ref.errors.avatar.message}</small>
+            </label>
+
+            <label>
+                Documents via FileInput (max 3, doc_* names, pdf/txt)
+                <FileInput
+                    name="documents"
+                    multiple={True}
+                    max_files={3}
+                    max_size={3145728}
+                    accept=".pdf,text/plain,.txt"
+                    allowed_names="^doc_.*\\.(pdf|txt)$"
+                    upload_on="select"
+                    $ref={fileinput_docs_ref}
+                />
+                <small>Upload mode: select (uploads immediately for this field)</small>
+                <small>Progress: {fileinput_docs_ref.progress if fileinput_docs_ref.progress is not None else 0}%</small>
+                <small class="error" $if={fileinput_docs_ref.error}>{fileinput_docs_ref.error}</small>
+                <small class="error" $if={fileinput_form_ref.errors.documents}>{fileinput_form_ref.errors.documents.message}</small>
+            </label>
+
+            <button type="submit">Submit FileInput Form</button>
+        </Form>
+
+        <hr>
+
+        <h2>Advanced Features (Phase 4)</h2>
+        <div $if={advanced_success}>
+            <article class="success">
+                <header>Advanced Success!</header>
+                {advanced_success}
+                <pre>{advanced_data}</pre>
+            </article>
+        </div>
+        
+        <Form model={AdvancedUser} @submit={handle_advanced} $ref={advanced_form_ref} $if={not advanced_success}>
+            <label>
+                Full Name
+                <input name="full_name" required>
+                <small class="error" $if={advanced_form_ref.errors.full_name}>{advanced_form_ref.errors.full_name.message}</small>
+            </label>
+            
+            <label>
+                Role (Enum Binding)
+                <select name="role">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                    <option value="guest">Guest</option>
+                </select>
+                <small class="error" $if={advanced_form_ref.errors.role}>{advanced_form_ref.errors.role.message}</small>
+            </label>
+            
+            <label>
+                Birth Date (Date Validation)
+                <input type="date" name="birth_date" required>
+                <small class="error" $if={advanced_form_ref.errors.birth_date}>{advanced_form_ref.errors.birth_date.message}</small>
+            </label>
+            
+            <fieldset>
+                <legend>Address (Nested Model)</legend>
+                <label>
+                    Street
+                    <input name="address.street" required>
+                    <small class="error" $if={advanced_form_ref.errors.address.street}>{advanced_form_ref.errors.address.street.message}</small>
+                </label>
+                <label>
+                    City
+                    <input name="address.city" required>
+                    <small class="error" $if={advanced_form_ref.errors.address.city}>{advanced_form_ref.errors.address.city.message}</small>
+                </label>
+            </fieldset>
+
+            <label>
+                Profile Picture (Pydantic FileUpload)
+                <input type="file" name="profile_pic" accept="image/*,.png,.jpg,.jpeg">
+                <small class="error" $if={advanced_form_ref.errors.profile_pic}>{advanced_form_ref.errors.profile_pic.message}</small>
+            </label>
+
+            <label>
+                Attachments (List[FileUpload], max 3, doc_* names)
+                <input type="file" name="attachments" multiple accept=".pdf,text/plain">
+                <small class="error" $if={advanced_form_ref.errors.attachments}>{advanced_form_ref.errors.attachments.message}</small>
+            </label>
+            
+            <button type="submit">Submit Advanced Form</button>
+        </Form>
+        
+        <hr>
+        
+        <h2>Dynamic Validation (Phase 5)</h2>
+        <div $if={shipment_success}>
+            <article class="success">
+                <header>Shipment Created!</header>
+                {shipment_success}
+                <pre>{json.dumps(shipment_data.value, indent=2, default=str)}</pre>
+            </article>
+        </div>
+        
+        <Form model={ShipmentModel} @submit={create_shipment} $ref={shipment_form_ref} $if={not shipment_success}>
+            <div>
+                <label>Delivery Method</label>
+                <select name="delivery_method" @change={update_delivery_method}>
+                    <option value="standard" selected={delivery_method == 'standard'}>Standard Shipping</option>
+                    <option value="express" selected={delivery_method == 'express'}>Express Shipping</option>
+                    <option value="pickup" selected={delivery_method == 'pickup'}>Store Pickup</option>
+                </select>
+            </div>
+            
+            <!-- Address fields only required if not pickup -->
+            <fieldset $if={delivery_method != 'pickup'}>
+                <legend>Delivery Address</legend>
+                
+                <label>Street
+                <input name="street" placeholder="Street Address" required={delivery_method != 'pickup'}>
+                <small class="error" $if={shipment_form_ref.errors.street}>{shipment_form_ref.errors.street.message}</small>
+                </label>
+                
+                <label>City
+                <input name="city" placeholder="City" required={delivery_method != 'pickup'}>
+                <small class="error" $if={shipment_form_ref.errors.city}>{shipment_form_ref.errors.city.message}</small>
+                </label>
+                
+                <label>ZIP Code (5 digits)
+                <input name="zip" pattern="[0-9]{{5}}" title="Must be exactly 5 digits" placeholder="ZIP Code" required={delivery_method != 'pickup'}>
+                <small class="error" $if={shipment_form_ref.errors.zip}>{shipment_form_ref.errors.zip.message}</small>
+                </label>
+            </fieldset>
+            
+            <!-- Express delivery date only shown/required for express -->
+            <div $if={delivery_method == 'express'}>
+                <label>Delivery Date (Must be tomorrow+)</label>
+                <input name="delivery_date" type="date" min={tomorrow} required>
+                <small class="error" $if={shipment_form_ref.errors.delivery_date}>{shipment_form_ref.errors.delivery_date.message}</small>
+            </div>
+            
+            <button type="submit">Submit Order</button>
+        </Form>
+        
+        <hr>
+        
+        <h2>Custom Progress Provider (Async Task)</h2>
+        <div style="background: #f0f0f0; padding: 20px; border-radius: 8px;">
+            <p>Task Status: <strong>{task_status_text}</strong></p>
+            <progress value={task_progress} max="100" style="width: 100%; height: 20px;"></progress>
+            <div style="margin-top: 10px;">
+                <button @click={run_long_task} disabled={task_running}>
+                    { 'Running...' if task_running else 'Start Long Task' }
+                </button>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

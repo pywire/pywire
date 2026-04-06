@@ -1,0 +1,15 @@
+---
+print(f"users/{uid}.wire")
+print("hello world")
+---
+
+<head>
+    <meta name="Test: users/[uid].wire">
+</head>
+
+
+<article>
+    <h3>User Profile</h3>
+    <p>Profile ID: <mark>{uid}</mark></p>
+    <p>This route is handled by <code>users/[uid].wire</code>.</p>
+</article>

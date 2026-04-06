@@ -1,0 +1,7 @@
+---
+---
+!inject { count: 'COUNT' }
+
+<div>
+    <h1>Count: {count}</h1>
+</div>

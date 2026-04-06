@@ -1,0 +1,9 @@
+!path {
+    'home': '/basic'
+}
+!layout "__layout__.wire"
+
+<slot name="title">Basic Home</slot>
+
+<h1>Hello, world!</h1>
+<p>Welcome to your new app.</p>

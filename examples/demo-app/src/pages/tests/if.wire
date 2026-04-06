@@ -1,0 +1,86 @@
+!path "/tests/blocks/if"
+
+---
+# Python Logic
+is_admin = wire(True)
+status = wire("active")
+items = wire([1, 2, 3])
+count = wire(0)
+
+def toggle_admin():
+    is_admin.value = not is_admin.value
+
+def set_status(new_status):
+    status.value = new_status
+
+def clear_items():
+    items.value = []
+---
+
+<div class="test-container">
+    <h1>If Block Tests</h1>
+
+    <!-- 1. Basic Boolean Logic -->
+    <section id="basic-boolean">
+        <h2>Basic Boolean</h2>
+        <button @click={toggle_admin}>Toggle Admin</button>
+        
+        {$if is_admin.value}
+            <div class="admin-panel">Admin Access Granted</div>
+        {$else}
+            <div class="guest-panel">Guest Access</div>
+        {/if}
+    </section>
+
+    <!-- 2. Multiple Branches (Elif) -->
+    <section id="elif-branches">
+        <h2>Elif Branches</h2>
+        <div class="controls">
+            <button @click={set_status("active")}>Active</button>
+            <button @click={set_status("pending")}>Pending</button>
+            <button @click={set_status("error")}>Error</button>
+            <button @click={set_status("unknown")}>Unknown</button>
+        </div>
+
+        {$if status.value == "active"}
+            <p class="status-green">System Active</p>
+        {$elif status.value == "pending"}
+            <p class="status-yellow">System Pending</p>
+        {$elif status.value == "error"}
+            <p class="status-red">System Error</p>
+        {$else}
+            <p class="status-gray">Unknown Status</p>
+        {/if}
+    </section>
+
+    <!-- 3. Truthiness Checks (Empty List) -->
+    <section id="truthiness">
+        <h2>Truthiness</h2>
+        <button @click={clear_items}>Clear List</button>
+
+        {$if items.value}
+            <ul>
+                <li>Item 1</li>
+                <li>...</li>
+            </ul>
+        {$else}
+            <p>List is empty</p>
+        {/if}
+    </section>
+
+    <!-- 4. Complex Expressions -->
+    <section id="complex-expr">
+        <h2>Complex Expressions</h2>
+        {$if len(items.value) > 0 and is_admin.value}
+            <p>Admin with items</p>
+        {/if}
+    </section>
+    
+    <!-- 5. Inline Assignment (Walrus) - if supported by parser environment -->
+    <section id="walrus">
+        <h2>Walrus Operator</h2>
+        {$if (current_count := count.value) > -1}
+            <p>Count is valid: {current_count}</p>
+        {/if}
+    </section>
+</div>

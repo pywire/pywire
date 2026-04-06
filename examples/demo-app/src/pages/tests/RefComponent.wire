@@ -1,0 +1,17 @@
+---
+counter = wire(0)
+
+@expose
+def increment_by(amount):
+    counter.value += amount
+
+@expose
+def reset():
+    counter.value = 0
+---
+
+<div style="border: 1px solid #ccc; padding: 1rem; border-radius: 8px;">
+    <h3>Ref Child Component</h3>
+    <p>Internal Counter: <strong>{counter}</strong></p>
+    <button @click={counter += 1}>Inc Internal</button>
+</div>

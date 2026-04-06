@@ -1,0 +1,86 @@
+!path "/tests/signals"
+---
+RefComponent = load_component("RefComponent.wire", __file__)
+
+count = wire(10)
+price = wire(50)
+
+def change_count(event):
+    try:
+        count.value = int(event.value)
+    except (ValueError, TypeError):
+        pass
+
+def change_price(event):
+    try:
+        price.value = int(event.value)
+    except (ValueError, TypeError):
+        pass
+
+# 1. @derived decorator
+@derived
+def total():
+    return count.value * price.value
+
+# 2. derived() functional
+double_total = derived(lambda: total.value * 2)
+
+my_string = derived(lambda: f"Double total: {double_total}, Total: {total}, count: {count}, price: {price}")
+
+# 3. @effect
+log_msg = wire("Waiting for change...")
+@effect
+def _():
+    log_msg.value = f"Effect: total changed to {total.value} at instance level"
+
+# 4. Component Ref Groundwork
+#child_ref = wire()
+#
+#def call_child_inc():
+#    # .value on a ref eventually returns the proxy
+#    # In groundwork, it's just the object instance
+#    if child_ref.value:
+#        child_ref.value.increment_by(10)
+#
+#def call_child_reset():
+#    if child_ref.value:
+#        child_ref.value.reset()
+---
+
+<div style="max-width: 800px; margin: 2rem auto; font-family: sans-serif;">
+    <h1>Signal & Ref Live Test</h1>
+
+    <section style="margin-bottom: 2rem; padding: 1rem; background: #f9f9f9; border-radius: 8px;">
+        <h2>Reactivity Primitives</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <p>Count: <input type="number" @input={change_count} /></p>
+                <p>Price: <input type="number" @input={change_price} /></p>
+            </div>
+            <div style="background: white; padding: 1rem; border-radius: 4px; border: 1px solid #eee;">
+                <p>Total (@derived): <strong>{total}</strong></p>
+                <p>Double Total (functional): <strong>{double_total}</strong></p>
+                <p>My String: <strong>{my_string}</strong></p>
+                <p style="color: #666; font-size: 0.9rem;">{log_msg}</p>
+            </div>
+        </div>
+    </section>
+
+    <!--<section style="padding: 1rem; background: #eff6ff; border-radius: 8px;">
+        <h2>Component Ref Groundwork</h2>
+        <div style="margin-bottom: 1rem;">
+            <button @click={call_child_inc}>Call Child increment_by(10)</button>
+            <button @click={call_child_reset}>Call Child reset()</button>
+        </div>
+        
+        <RefComponent ref={child_ref} />
+        
+        <p style="margin-top: 1rem; font-size: 0.8rem; color: #555;">
+            Ref is bound: <strong>{child_ref.value is not None}</strong>
+        </p>
+    </section>-->
+    
+    <div style="margin-top: 2rem;">
+        <a href="/">back to index</a>
+    </div>
+</div>

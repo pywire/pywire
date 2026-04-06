@@ -1,0 +1,80 @@
+!path "/"
+
+user_input = ""
+stored_value = ""
+link_input = "https://example.com"
+secret_flag = False
+secret_message = "locked"
+
+def set_user_input(event_data):
+    value = event_data.value
+    if value is None:
+        return
+    user_input = value
+
+def set_link_input(event_data):
+    value = event_data.value
+    if value is None:
+        return
+    link_input = value
+
+def store_value():
+    stored_value = user_input
+
+def reset_secret():
+    secret_flag = False
+    secret_message = "locked"
+
+def secret_action():
+    secret_flag = True
+    secret_message = "unlocked"
+
+---html---
+<main style="font-family: sans-serif; max-width: 800px; margin: 40px auto;">
+    <h1>PyWire Demo Security</h1>
+    <p>Use this page to probe XSS and handler-abuse behaviors.</p>
+
+    <section style="margin-top: 24px;">
+        <h2>1) XSS via text interpolation</h2>
+        <label>
+            User input (rendered as raw HTML)
+            <input id="user-input" @input={set_user_input} style="display: block; width: 100%; margin-top: 6px;">
+        </label>
+        <div style="margin-top: 10px;">
+            <button id="store-input" @click={store_value}>Store value</button>
+        </div>
+        <div style="margin-top: 12px;">
+            <div>Current:</div>
+            <div id="xss-text" style="padding: 8px; border: 1px solid #ddd;">{user_input}</div>
+        </div>
+        <div style="margin-top: 12px;">
+            <div>Stored:</div>
+            <div id="xss-stored" style="padding: 8px; border: 1px solid #ddd;">{stored_value}</div>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px;">
+        <h2>2) Attribute injection</h2>
+        <label>
+            Link target (attribute interpolation)
+            <input id="link-input" @input={set_link_input} style="display: block; width: 100%; margin-top: 6px;">
+        </label>
+        <div style="margin-top: 10px;">
+            <a id="xss-link" href="{link_input}">Visit link</a>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px;">
+        <h2>3) Handler abuse probe</h2>
+        <p>
+            The method <code>secret_action</code> is not bound to any event handler.
+            A crafted client event should not be able to trigger it.
+        </p>
+        <div id="secret-status" style="padding: 8px; border: 1px solid #ddd;">
+            Secret: {secret_message}
+        </div>
+        <div style="margin-top: 10px;">
+            <button id="reset-secret" @click={reset_secret}>Reset secret</button>
+        </div>
+    </section>
+</main>

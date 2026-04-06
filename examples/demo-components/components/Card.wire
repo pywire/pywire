@@ -1,0 +1,21 @@
+---
+from pywire import props
+
+@props
+class Props:
+    title: str = 'Card Title'
+---
+
+<style scoped>
+.card { border: 1px solid #ccc; padding: 10px; }
+.header { font-weight: bold; border-bottom: 1px solid #eee; }
+</style>
+
+<div class="card">
+    <div class="header">
+        <slot name="header">Default Header</slot>
+    </div>
+    <div class="body">
+        <slot></slot>
+    </div>
+</div>

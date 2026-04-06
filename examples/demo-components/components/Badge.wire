@@ -1,0 +1,22 @@
+---
+from pywire import props
+
+@props
+class Props:
+    label: str
+    type: str = 'primary'
+---
+
+<style scoped>
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.badge-primary { background: blue; color: white; }
+.badge-secondary { background: gray; color: white; }
+</style>
+
+<span class="badge badge-{type}">
+    {label} <slot>Default Slot</slot>
+</span>
