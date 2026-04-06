@@ -73,6 +73,8 @@ jobs:
           workspaces: packages/pywire
       - name: Install Workspace
         run: scripts/install
+      - name: Install Playwright Browsers
+        run: uv run playwright install --with-deps
       - name: Rust Checks
         run: cd packages/pywire && cargo clippy -- -D warnings && cargo fmt --check
       - name: Cargo Tests
