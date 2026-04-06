@@ -1,0 +1,24 @@
+#!/bin/sh -e
+
+echo "--- Syncing Workspace Environment ---"
+uv sync
+
+echo "--- Installing Sub-project Dependencies ---"
+
+# VS Code Extension
+if [ -d "packages/vscode-pywire" ]; then
+    echo "-> Installing vscode-pywire pnpm deps..."
+    (cd packages/vscode-pywire && pnpm install)
+fi
+
+# PyWire.dev Site
+if [ -d "docs/site" ]; then
+    echo "-> Installing docs/site pnpm deps..."
+    (cd docs/site && pnpm install)
+fi
+
+# PyWire Core (Must run install to build client assets for forced inclusion)
+if [ -d "packages/pywire" ]; then
+    echo "-> Installing PyWire core dependencies and building assets..."
+    (cd packages/pywire && ./scripts/install)
+fi

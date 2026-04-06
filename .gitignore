@@ -1,0 +1,37 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Rust
+target/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# PyWire
+.pywire/
+scratch/
+
+# Certs
+localhost.pem
+localhost-key.pem
+
+# Other
+chatbot.db
+.gemini/
+gha-creds-*.json

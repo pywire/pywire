@@ -1,0 +1,37 @@
+[project]
+name = "pywire-monorepo"
+version = "0.0.0"
+dependencies = [
+    "pywire[dev]",
+    "pywire-language-server",
+    "tree-sitter>=0.25.2",
+]
+
+[tool.uv]
+workspace = { members = [
+    "packages/pywire",
+    "packages/pywire-language-server",
+    "packages/create-pywire-app",
+    "examples/demo-app",
+    "examples/demo-components",
+    "examples/demo-routing",
+    "examples/demo-shell",
+] }
+
+[tool.uv.sources]
+pywire = { workspace = true }
+pywire-language-server = { workspace = true }
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.src]
+exclude = [
+    "create_pywire_app/templates/*",
+    "aioquic.*",
+    "cryptography.*",
+    "hypercorn.*",
+]
+
+[tool.pytest.ini_options]
+norecursedirs = ["scratch", ".*", "build", "dist", "CVS", "_darcs", "{arch}", "*.egg", "venv"]

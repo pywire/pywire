@@ -1,0 +1,5 @@
+packages:
+  - "packages/tree-sitter-pywire"
+  - "packages/vscode-pywire"
+  - "packages/prettier-plugin-pywire"
+  - "docs/site"

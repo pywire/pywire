@@ -1,0 +1,28 @@
+#!/bin/sh -e
+
+echo "=== Checking Rust (cargo clippy + fmt) ==="
+(cd packages/pywire && cargo clippy -- -D warnings && cargo fmt --check)
+
+echo "=== Checking PyWire (Core, Client, Docs) ==="
+(cd packages/pywire && ./scripts/check)
+
+echo "=== Checking PyWire Language Server ==="
+(cd packages/pywire-language-server && ./scripts/check)
+
+echo "=== Checking Create PyWire App ==="
+(cd packages/create-pywire-app && ./scripts/check)
+
+echo "=== Checking Examples ==="
+(cd examples && ./scripts/check)
+
+echo "=== Checking VS Code Extension ==="
+(cd packages/vscode-pywire && ./scripts/check)
+
+echo "=== Checking Prettier Plugin PyWire ==="
+(cd packages/prettier-plugin-pywire && ./scripts/check)
+
+echo "=== Checking PyWire Marketing Site ==="
+(cd docs && ./scripts/check)
+
+echo "=== Running Workspace Tests ==="
+./scripts/test

@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Determine which packages changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      pywire: ${{ steps.filter.outputs.pywire }}
+      ls: ${{ steps.filter.outputs.ls }}
+      vscode: ${{ steps.filter.outputs.vscode }}
+      prettier: ${{ steps.filter.outputs.prettier }}
+      treesitter: ${{ steps.filter.outputs.treesitter }}
+      create-app: ${{ steps.filter.outputs.create-app }}
+      examples: ${{ steps.filter.outputs.examples }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            pywire:
+              - 'packages/pywire/**'
+            ls:
+              - 'packages/pywire-language-server/**'
+            vscode:
+              - 'packages/vscode-pywire/**'
+            prettier:
+              - 'packages/prettier-plugin-pywire/**'
+            treesitter:
+              - 'packages/tree-sitter-pywire/**'
+            create-app:
+              - 'packages/create-pywire-app/**'
+            examples:
+              - 'examples/**'
+            docs:
+              - 'docs/**'
+
+  # PyWire Core: lint, clippy, test, wheel build
+  check-pywire:
+    name: "Check PyWire Core"
+    needs: changes
+    if: needs.changes.outputs.pywire == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/pywire
+      - name: Install Workspace
+        run: scripts/install
+      - name: Rust Checks
+        run: cd packages/pywire && cargo clippy -- -D warnings && cargo fmt --check
+      - name: Cargo Tests
+        run: cd packages/pywire && cargo test
+      - name: Python Checks
+        run: cd packages/pywire && ./scripts/check
+      - name: Verify Wheel Build
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: packages/pywire
+          command: build
+          args: --release --out dist
+
+  # Language Server: lint, test
+  check-language-server:
+    name: "Check Language Server"
+    needs: changes
+    if: needs.changes.outputs.ls == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Workspace
+        run: scripts/install
+      - name: Run Checks
+        run: cd packages/pywire-language-server && ./scripts/check
+
+  # VS Code Extension: lint, build
+  check-vscode:
+    name: "Check VS Code Extension"
+    needs: changes
+    if: needs.changes.outputs.vscode == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - name: Run Checks
+        run: cd packages/vscode-pywire && pnpm install && ./scripts/check
+
+  # Prettier Plugin: lint, build
+  check-prettier:
+    name: "Check Prettier Plugin"
+    needs: changes
+    if: needs.changes.outputs.prettier == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - name: Run Checks
+        run: cd packages/prettier-plugin-pywire && pnpm install && ./scripts/check
+
+  # Tree-sitter Grammar: build, test
+  check-treesitter:
+    name: "Check Tree-sitter Grammar"
+    needs: changes
+    if: needs.changes.outputs.treesitter == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/tree-sitter-pywire
+      - name: Cargo Tests
+        run: cd packages/tree-sitter-pywire && cargo test
+
+  # Create PyWire App: lint
+  check-create-app:
+    name: "Check Create PyWire App"
+    needs: changes
+    if: needs.changes.outputs.create-app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Workspace
+        run: scripts/install
+      - name: Run Checks
+        run: cd packages/create-pywire-app && ./scripts/check
+
+  # Examples: lint
+  check-examples:
+    name: "Check Examples"
+    needs: changes
+    if: needs.changes.outputs.examples == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Workspace
+        run: scripts/install
+      - name: Run Checks
+        run: cd examples && ./scripts/check
+
+  # Docs site
+  check-docs:
+    name: "Check Docs"
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - name: Run Checks
+        run: cd docs && ./scripts/check
+
+  # Python Tests (run when core or LS changes)
+  python-tests:
+    name: "Python Tests"
+    needs: changes
+    if: needs.changes.outputs.pywire == 'true' || needs.changes.outputs.ls == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Workspace
+        run: scripts/install
+      - name: Run Tests
+        run: scripts/test

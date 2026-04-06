@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "packages": {
+    "packages/pywire": {
+      "release-type": "python",
+      "component": "pywire",
+      "extra-files": ["packages/pywire/Cargo.toml"]
+    },
+    "packages/pywire-language-server": {
+      "release-type": "python",
+      "component": "pywire-language-server"
+    },
+    "packages/tree-sitter-pywire": {
+      "release-type": "node",
+      "component": "tree-sitter-pywire"
+    },
+    "packages/vscode-pywire": {
+      "release-type": "node",
+      "component": "vscode-pywire"
+    },
+    "packages/prettier-plugin-pywire": {
+      "release-type": "node",
+      "component": "prettier-plugin-pywire"
+    },
+    "packages/create-pywire-app": {
+      "release-type": "python",
+      "component": "create-pywire-app"
+    }
+  }
+}

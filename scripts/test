@@ -1,0 +1,4 @@
+#!/bin/sh -e
+
+echo "=== Running PyWire Core Tests ==="
+(cd packages/pywire && ./scripts/test)

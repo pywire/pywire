@@ -1,5 +1,0 @@
-[workspace]
-members = [
-    "rust/pywire_servo",
-]
-resolver = "2"
