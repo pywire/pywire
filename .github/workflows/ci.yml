@@ -30,20 +30,28 @@ jobs:
           filters: |
             pywire:
               - 'packages/pywire/**'
+              - '.github/workflows/ci.yml'
             ls:
               - 'packages/pywire-language-server/**'
+              - '.github/workflows/ci.yml'
             vscode:
               - 'packages/vscode-pywire/**'
+              - '.github/workflows/ci.yml'
             prettier:
               - 'packages/prettier-plugin-pywire/**'
+              - '.github/workflows/ci.yml'
             treesitter:
               - 'packages/tree-sitter-pywire/**'
+              - '.github/workflows/ci.yml'
             create-app:
               - 'packages/create-pywire-app/**'
+              - '.github/workflows/ci.yml'
             examples:
               - 'examples/**'
+              - '.github/workflows/ci.yml'
             docs:
               - 'docs/**'
+              - '.github/workflows/ci.yml'
 
   # PyWire Core: lint, clippy, test, wheel build
   check-pywire:
@@ -204,5 +212,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Workspace
         run: scripts/install
+      - name: Install Playwright Browsers
+        run: uv run playwright install --with-deps
       - name: Run Tests
         run: scripts/test
