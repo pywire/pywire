@@ -1,0 +1,7 @@
+<div class="box">
+  <style>
+    .box {
+      color: red;
+    }
+  </style>
+</div>

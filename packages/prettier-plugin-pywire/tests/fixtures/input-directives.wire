@@ -1,0 +1,9 @@
+!path {
+  "main": "/"
+}
+
+---
+count = 1
+---
+
+<section><h1>{count}</h1></section>
