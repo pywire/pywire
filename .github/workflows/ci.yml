@@ -56,6 +56,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -86,6 +89,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - name: Install Workspace
         run: scripts/install
       - name: Run Checks
@@ -100,6 +106,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - name: Run Checks
         run: cd packages/vscode-pywire && pnpm install && ./scripts/check
 
@@ -112,6 +120,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - name: Run Checks
         run: cd packages/prettier-plugin-pywire && pnpm install && ./scripts/check
 
@@ -141,6 +151,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - name: Install Workspace
         run: scripts/install
       - name: Run Checks
@@ -157,6 +170,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - name: Install Workspace
         run: scripts/install
       - name: Run Checks
@@ -171,6 +187,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - name: Run Checks
         run: cd docs && ./scripts/check
 
@@ -187,6 +205,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Workspace
         run: scripts/install
