@@ -15,7 +15,6 @@ workspace = { members = [
     "examples/demo-app",
     "examples/demo-components",
     "examples/demo-routing",
-    "examples/demo-shell",
 ] }
 
 [tool.uv.sources]
