@@ -13,8 +13,8 @@ files:
       attempt = wire(0)
 
       def get_data():
-        # Dependency on $attempt ensures this re-runs on click
-        _ = $attempt
+        # Dependency on attempt ensures this re-runs on click
+        _ = attempt
         
         # Simulate a 50% chance of failure
         if random.random() < 0.5:
@@ -22,7 +22,7 @@ files:
         return "Data loaded successfully!"
 
       def retry():
-        $attempt += 1
+        attempt.value += 1
       ---
       <div class="container">
         <h3>Data Fetcher</h3>
@@ -42,8 +42,8 @@ files:
       attempt = wire(0)
 
       def get_data():
-        # Dependency on $attempt ensures this re-runs on click
-        _ = $attempt
+        # Dependency on attempt ensures this re-runs on click
+        _ = attempt
         
         # Simulate a 50% chance of failure
         if random.random() < 0.5:
@@ -51,7 +51,7 @@ files:
         return "Data loaded successfully!"
 
       def retry():
-        $attempt += 1
+        attempt.value += 1
       ---
       <div class="container">
         <h3>Data Fetcher</h3>

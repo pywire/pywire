@@ -69,7 +69,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
-        self.assert_code_in("if self.show_me:", lines)
+        self.assert_code_in("if unwrap_wire(self.show_me):", lines)
 
     def test_add_node_reactive_boolean(self) -> None:
         # <button disabled={is_disabled}>Click</button>
@@ -93,8 +93,53 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, enable_regions=False)
-        self.assert_code_in("if not self.is_visible:", lines)
+        self.assert_code_in("if not unwrap_wire(self.is_visible):", lines)
         self.assert_code_in("attrs['style'] = attrs.get('style', '') + '; display: none'", lines)
+
+    def test_add_node_if_condition_wire_dot_value(self) -> None:
+        if_attr = IfAttribute(
+            name="$if",
+            value="count.value",
+            condition="count.value",
+            line=1,
+            column=0,
+        )
+        node = TemplateNode(
+            tag="div",
+            special_attributes=[if_attr],
+            children=[],
+            line=1,
+            column=0,
+        )
+        lines: list[ast.stmt] = []
+        self.codegen._add_node(
+            node,
+            lines,
+            enable_regions=False,
+            wire_vars={"count"},
+            known_globals={"count"},
+        )
+        self.assert_code_in("if unwrap_wire(self.count.value):", lines)
+
+    def test_add_node_show_attribute_wire_dot_value(self) -> None:
+        show = ShowAttribute(
+            name="$show",
+            value="is_visible.value",
+            condition="is_visible.value",
+            line=1,
+            column=0,
+        )
+        node = TemplateNode(tag="div", special_attributes=[show], line=1, column=0)
+
+        lines: list[ast.stmt] = []
+        self.codegen._add_node(
+            node,
+            lines,
+            enable_regions=False,
+            wire_vars={"is_visible"},
+            known_globals={"is_visible"},
+        )
+        self.assert_code_in("if not unwrap_wire(self.is_visible.value):", lines)
 
     def test_add_node_event_with_args(self) -> None:
         # <button @click={delete_user(user.id)}>Delete</button>
@@ -112,7 +157,7 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, local_vars={"user"})
         # Should encode arguments to data-arg-0
-        self.assert_code_in("attrs['data-arg-0'] = json.dumps(user.id)", lines)
+        self.assert_code_in("attrs['data-arg-0'] = json.dumps(unwrap_wire(user.id))", lines)
 
 
     def test_add_node_script_tag(self) -> None:

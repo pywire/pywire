@@ -5,10 +5,8 @@ import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
 
 from pywire.compiler.ast_nodes import (
-    ComponentDirective,
     Directive,
     EventAttribute,
-    FormValidationSchema,
     InjectDirective,
     LayoutDirective,
     NoSpaDirective,
@@ -43,42 +41,6 @@ class CodeGenerator:
         self.template_codegen = TemplateCodegen()
         self._collected_props = None
 
-    def _generate_component_loading(
-        self, parsed: ParsedPyWire, component_map: Dict[str, str]
-    ) -> List[ast.stmt]:
-        """
-        Generate code to load components for !component directives.
-        Updates component_map for those directives.
-        """
-        stmts: List[ast.stmt] = []
-
-        for directive in parsed.directives:
-            if isinstance(directive, ComponentDirective):
-                target_name = directive.component_name
-                path = directive.path
-
-                # Only generate if not already in map (prefer imports)
-                if target_name.lower() in component_map:
-                    continue
-
-                component_map[target_name.lower()] = target_name
-
-                stmts.append(
-                    ast.Assign(
-                        targets=[ast.Name(id=target_name, ctx=ast.Store())],
-                        value=ast.Call(
-                            func=ast.Name(id="load_component", ctx=ast.Load()),
-                            args=[
-                                ast.Constant(value=path),
-                                ast.Constant(value=parsed.file_path),
-                            ],
-                            keywords=[],
-                        ),
-                    )
-                )
-
-        return stmts
-
     def generate(self, parsed: ParsedPyWire) -> ast.Module:
         """Generate complete module AST."""
         self.file_path = parsed.file_path
@@ -101,9 +63,9 @@ class CodeGenerator:
         # 1. From Imports (PascalCase convention)
         component_map = self._generate_component_map_from_imports(parsed.python_ast)
 
-        # 2. From Legacy Directives
-        comp_stmts = self._generate_component_loading(parsed, component_map)
-        module_body.extend(comp_stmts)
+        # 2. From Legacy Directives (Removed)
+        # comp_stmts = self._generate_component_loading(parsed, component_map)
+        # module_body.extend(comp_stmts)
 
         # Layout logic
         layout_directive = parsed.get_directive_by_type(LayoutDirective)
@@ -138,27 +100,32 @@ class CodeGenerator:
             # Extract user imports from Python section
         if parsed.python_ast:
             module_body.extend(self._extract_user_imports(parsed.python_ast))
-            # Extract user classes to module level (Pydantic models, etc.)
             module_body.extend(self._extract_user_classes(parsed.python_ast))
 
-        # Extract method names early for binding logic
+        # Extract props from @props decorator
+        self._collected_props = self._extract_props_from_ast(parsed.python_ast)
+
         known_methods, known_vars, async_methods = self._collect_global_names(
             parsed.python_ast
         )
+        known_methods_names = set(known_methods.keys())
+
+        if self._collected_props:
+            for prop_name, _, _ in self._collected_props.args:
+                known_vars.add(prop_name)
 
         # Include explicit variable assignments
         known_vars.update(self._extract_user_variables(parsed.python_ast))
 
         known_imports = self._extract_import_names(parsed.python_ast)
-        all_globals = known_methods.union(known_vars).union(known_imports)
 
         # Inline handlers (with method names)
         # Note: Handlers only need to know about globals to avoid "self." prefixing if needed,
         # but _process_handlers mostly cares about wrapping logic.
         # Actually _process_handlers calls _transform_inline_code which uses known_methods.
         # Ideally it should know about all globals too.
-        handlers, allowed_handlers = self._process_handlers(
-            parsed, all_globals, async_methods
+        handlers = self._process_handlers(
+            parsed, known_methods_names, known_vars, async_methods
         )
 
         # Extract wire variables for auto-unwrapping
@@ -174,7 +141,6 @@ class CodeGenerator:
             known_imports,
             async_methods,
             component_map,
-            allowed_handlers,
             wire_vars,
         )
         module_body.append(page_class)
@@ -234,14 +200,9 @@ class CodeGenerator:
                 level=0,
             ),
             ast.Import(names=[ast.alias(name="json", asname=None)]),
-            # Form validation imports
             ast.ImportFrom(
-                module="pywire.runtime.validation",
-                names=[
-                    ast.alias(name="form_validator", asname=None),
-                    ast.alias(name="FieldRules", asname=None),
-                    ast.alias(name="FormValidationSchema", asname=None),
-                ],
+                module="pywire.core.refs",
+                names=[ast.alias(name="ref", asname=None)],
                 level=0,
             ),
             ast.ImportFrom(
@@ -307,7 +268,7 @@ class CodeGenerator:
                     name = alias.asname or alias.name
                     # PascalCase starts with uppercase
                     if name and name[0].isupper():
-                        component_map[name.lower()] = name
+                        component_map[name] = name
         return component_map
 
     def _generate_component_imports(self, parsed: ParsedPyWire):
@@ -335,17 +296,77 @@ class CodeGenerator:
                     classes.append(node)
         return classes
 
+    def _extract_props_from_ast(
+        self, python_ast: Optional[ast.Module]
+    ) -> Optional[PropsDirective]:
+        """Extract PropsDirective from @props decorated class."""
+        if not python_ast:
+            return None
+
+        from pywire.compiler.exceptions import PyWireSyntaxError
+
+        props_classes = []
+        for node in python_ast.body:
+            if isinstance(node, ast.ClassDef):
+                # Check for @props decorator
+                is_props = any(
+                    isinstance(dec, ast.Name) and dec.id == "props"
+                    for dec in node.decorator_list
+                )
+                if is_props:
+                    props_classes.append(node)
+
+        if not props_classes:
+            return None
+
+        if len(props_classes) > 1:
+            raise PyWireSyntaxError(
+                "Multiple classes decorated with @props detected. Only one @props class is allowed per file.",
+                file_path=self.file_path,
+                line=props_classes[1].lineno,
+                column=props_classes[1].col_offset,
+            )
+
+        node = props_classes[0]
+        # Convert AnnAssigns to PropsDirective
+        args = []
+        for item in node.body:
+            if isinstance(item, ast.AnnAssign):
+                name = item.target.id if isinstance(item.target, ast.Name) else None
+                if not name:
+                    continue
+
+                # Type hint as string
+                try:
+                    type_hint = ast.unparse(item.annotation)
+                except AttributeError:
+                    type_hint = "Any"
+
+                # Default value
+                default_val = None
+                if item.value:
+                    try:
+                        default_val = ast.unparse(item.value)
+                    except Exception:
+                        default_val = "None"
+
+                args.append((name, type_hint, default_val))
+
+        return PropsDirective(
+            name="props", args=args, line=node.lineno, column=node.col_offset
+        )
+
     def _extract_import_names(self, python_ast: Optional[ast.Module]) -> Set[str]:
         """Extract names defined by imports."""
         names = set()
         # Add default imports
         names.add("json")
-        names.add("form_validator")
-        names.add("FieldRules")
         names.add("props")
         names.add("derived")
         names.add("effect")
         names.add("expose")
+        names.add("wire")
+        names.add("ref")
 
         if python_ast:
             for node in python_ast.body:
@@ -357,6 +378,10 @@ class CodeGenerator:
                 elif isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         names.add(alias.asname or alias.name)
+                elif isinstance(node, ast.ClassDef):
+                    # Keep frontmatter class symbols (e.g. Pydantic models) as
+                    # module-level names in template expressions.
+                    names.add(node.name)
         return names
 
     def _extract_user_variables(self, python_ast: Optional[ast.Module]) -> Set[str]:
@@ -440,12 +465,11 @@ class CodeGenerator:
         self,
         parsed: ParsedPyWire,
         handlers: List[ast.AsyncFunctionDef],
-        known_methods: Set[str],
+        known_methods: Dict[str, int],
         known_vars: Set[str],
         known_imports: Set[str],
         async_methods: Set[str],
         component_map: Dict[str, str],
-        allowed_handlers: Optional[Set[str]] = None,
         wire_vars: Set[str] = set(),
     ) -> ast.ClassDef:
         """Generate page class definition."""
@@ -464,12 +488,10 @@ class CodeGenerator:
         class_body.extend(self._generate_spa_metadata(parsed))
 
         # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
-        if allowed_handlers is None:
-            allowed_handlers = set()
 
         # Transform user Python code to class methods (Must run before __init__ to set flags)
         route_params = self._extract_route_params(parsed)
-        all_globals = known_methods.union(known_vars).union(route_params)
+        all_globals = set(known_methods.keys()).union(known_vars).union(route_params)
         user_code_stmts: List[ast.stmt] = []
         if parsed.python_ast:
             user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
@@ -496,15 +518,9 @@ class CodeGenerator:
         # Add user code
         class_body.extend(user_code_stmts)
 
-        # Generate form validation schemas and wrappers
-        # MUST happen before render generation as it updates EventAttributes to point to wrappers
-        form_validation_methods = self._generate_form_validation_methods(
-            parsed, all_globals, known_imports
-        )
-        class_body.extend(form_validation_methods)
         # Generate _render_template method AND binding methods
         # Pass ALL globals to avoid auto-calling variables and prefixing imports
-        all_globals = known_methods.union(known_vars).union(route_params)
+        all_globals = set(known_methods.keys()).union(known_vars).union(route_params)
 
         render_func, binding_funcs = self._generate_render_template_method(
             parsed,
@@ -593,11 +609,11 @@ class CodeGenerator:
 
     def _collect_global_names(
         self, python_ast: Optional[ast.Module]
-    ) -> Tuple[Set[str], Set[str], Set[str]]:
+    ) -> Tuple[Dict[str, int], Set[str], Set[str]]:
         """Collect defined function names and variables, and identify async functions.
-        Returns: (method_names, variable_names, async_method_names)
+        Returns: (method_info_dict, variable_names, async_method_names)
         """
-        methods = set()
+        methods: Dict[str, int] = {}
         variables = {
             "path",
             "params",
@@ -607,6 +623,7 @@ class CodeGenerator:
             "error_code",
             "error_detail",
             "error_trace",
+            "navigate",
         }
         async_methods = set()
 
@@ -614,7 +631,15 @@ class CodeGenerator:
             # First pass: Collect method names (shallow)
             for node in python_ast.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    methods.add(node.name)
+                    # Count non-self arguments
+                    arg_count = len(node.args.args)
+                    if arg_count > 0 and node.args.args[0].arg == "self":
+                        arg_count -= 1
+
+                    # Add varargs/kwargs count if needed?
+                    # For now, if it has any args, we don't auto-call.
+                    methods[node.name] = arg_count
+
                     if isinstance(node, ast.AsyncFunctionDef):
                         async_methods.add(node.name)
 
@@ -655,19 +680,21 @@ class CodeGenerator:
                 match = re.match(r"^\[(.*?)\]$", part.replace(".pywire", ""))
                 if match:
                     variables.add(match.group(1))
-
         return methods, variables, async_methods
 
     def _process_handlers(
-        self, parsed: ParsedPyWire, known_methods: Set[str], async_methods: Set[str]
-    ) -> Tuple[List[ast.AsyncFunctionDef], Set[str]]:
+        self,
+        parsed: "ParsedPyWire",
+        known_methods: Set[str],
+        known_vars: Set[str],
+        async_methods: Set[str],
+    ) -> List[ast.AsyncFunctionDef]:
         """Extract inline handlers and wrap handlers for bindings.
 
         Returns:
             Tuple of (handler_methods, allowed_handler_names)
         """
         handlers = []
-        allowed_handlers: Set[str] = set()
         handler_count = 0
         from pywire.compiler.ast_nodes import EventAttribute
 
@@ -685,7 +712,11 @@ class CodeGenerator:
                             attr.handler_name = raw[1:-1].strip()
 
                         is_identifier = attr.handler_name.isidentifier()
-                        needs_wrapper = not is_identifier
+                        # If it's an identifier but NOT a user-defined method, it's likely
+                        # a builtin or import, so we need to wrap it to pass the event correctly.
+                        needs_wrapper = (
+                            not is_identifier or attr.handler_name not in known_methods
+                        )
 
                         if needs_wrapper:
                             # Create distinct handler methods
@@ -695,19 +726,28 @@ class CodeGenerator:
                             try:
                                 # Transform body logic
                                 code_to_transform = attr.handler_name
+                                if is_identifier:
+                                    # If it's a bare identifier (like 'print'), transform it to call with event
+                                    code_to_transform = f"{code_to_transform}(event)"
 
                                 body, args = self._transform_inline_code(
-                                    code_to_transform, known_methods, async_methods
+                                    code_to_transform,
+                                    known_methods,
+                                    known_vars,
+                                    async_methods,
                                 )
 
                                 # Store extracted args
                                 attr.args = args
 
                                 # Create handler method
-                                # async def _handler_X(self, arg0, arg1...):
+                                # async def _handler_X(self, arg0, arg1..., *, event=None):
                                 arg_definitions = [ast.arg(arg="self")]
                                 for i in range(len(args)):
                                     arg_definitions.append(ast.arg(arg=f"arg{i}"))
+
+                                kwonly_args = [ast.arg(arg="event")]
+                                kw_defaults = [ast.Constant(value=None)]
 
                                 handlers.append(
                                     ast.AsyncFunctionDef(
@@ -716,8 +756,8 @@ class CodeGenerator:
                                             posonlyargs=[],
                                             args=arg_definitions,
                                             vararg=None,
-                                            kwonlyargs=[],
-                                            kw_defaults=[],
+                                            kwonlyargs=kwonly_args,
+                                            kw_defaults=kw_defaults,
                                             defaults=[],
                                         ),
                                         body=body,
@@ -727,26 +767,22 @@ class CodeGenerator:
                                 )
 
                                 attr.handler_name = method_name
-                                # Add generated handler to allowlist
-                                allowed_handlers.add(method_name)
 
                             except Exception as e:
                                 print(
                                     f"Error compiling handler '{attr.handler_name}': {e}"
                                 )
-                        else:
-                            # Simple identifier handler - add to allowlist
-                            allowed_handlers.add(attr.handler_name)
 
                 visit_nodes(node.children)
 
         visit_nodes(parsed.template)
-        return handlers, allowed_handlers
+        return handlers
 
     def _transform_inline_code(
         self,
         code: str,
         known_methods: Set[str] = set(),
+        known_vars: Set[str] = set(),
         async_methods: Set[str] = set(),
     ) -> Tuple[List[ast.stmt], List[str]]:
         """Transform inline code: lift arguments and prefix globals with self."""
@@ -761,11 +797,38 @@ class CodeGenerator:
         tree = ast.parse(code)
         extracted_args: List[str] = []
 
+        # Pre-pass: if body is a single Call, lift whole argument expressions (not just
+        # unbound names) so we serialize expr results (e.g. item.get('id','')) not vars.
+        if len(tree.body) == 1:
+            stmt = tree.body[0]
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                call = stmt.value
+                for i, arg in enumerate(call.args):
+                    if isinstance(arg, ast.Starred):
+                        continue
+
+                    # Only lift if it's not a known name
+                    arg_str = ast.unparse(arg).strip()
+                    if arg_str.isidentifier() and (
+                        arg_str in known_vars
+                        or arg_str in known_methods
+                        or arg_str in dir(builtins)
+                        or arg_str in ("self", "event")
+                    ):
+                        continue
+
+                    extracted_args.append(arg_str)
+                    call.args[i] = ast.Name(id=f"arg{i}", ctx=ast.Load())
+
         class ArgumentLifter(ast.NodeTransformer):
             def __init__(self):
                 self.local_names = set()
-                # 'event' is a special implicit local in handlers
+                # 'self' and 'event' are special implicit locals in handlers
+                self.local_names.add("self")
                 self.local_names.add("event")
+                # arg0, arg1, ... from pre-pass must not be re-lifted
+                for i in range(32):
+                    self.local_names.add(f"arg{i}")
 
             def visit_Name(self, node: ast.Name) -> Any:
                 # 1. Locally defined or event - keep as is
@@ -784,7 +847,15 @@ class CodeGenerator:
                 if node.id in dir(builtins):
                     return node
 
-                # 4. Handle Store context (e.g. assignments in handler)
+                # 4. Known instance variable - transform to self.X
+                if node.id in known_vars:
+                    return ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr=node.id,
+                        ctx=node.ctx,
+                    )
+
+                # 5. Handle Store context (e.g. assignments in handler)
                 if isinstance(node.ctx, ast.Store):
                     self.local_names.add(node.id)
                     return node
@@ -843,469 +914,6 @@ class CodeGenerator:
         ast.fix_missing_locations(new_tree)
 
         return new_tree.body, extracted_args
-
-    def _generate_form_validation_methods(
-        self,
-        parsed: ParsedPyWire,
-        known_globals: Set[str],
-        known_imports: Optional[Set[str]] = None,
-    ) -> List[ast.stmt]:
-        """Generate validation schema and wrapper methods for forms with @submit."""
-        methods: List[ast.stmt] = []
-        form_count = 0
-
-        def visit_nodes(nodes: List[TemplateNode]) -> None:
-            nonlocal form_count
-            for node in nodes:
-                # Check for form with @submit that has validation schema
-                if node.tag and node.tag.lower() == "form":
-                    for attr in node.special_attributes:
-                        if (
-                            isinstance(attr, EventAttribute)
-                            and attr.event_type == "submit"
-                        ):
-                            if attr.validation_schema and attr.validation_schema.fields:
-                                form_id = form_count
-                                form_count += 1
-
-                                # Generate validation schema as class attribute
-                                schema_name = f"_form_schema_{form_id}"
-                                original_handler = attr.handler_name
-
-                                # Build dict literal for schema fields
-                                schema_methods = self._generate_form_schema_literal(
-                                    attr.validation_schema,
-                                    schema_name,
-                                    known_globals,
-                                    known_imports,
-                                )
-                                methods.extend(schema_methods)
-
-                                # Generate wrapper handler
-                                wrapper = self._generate_form_wrapper(
-                                    form_id,
-                                    original_handler,
-                                    schema_name,
-                                    attr.validation_schema,
-                                    known_globals,
-                                    known_imports,
-                                )
-                                methods.append(wrapper)
-
-                                # Update handler name to point to wrapper
-                                attr.handler_name = f"_form_submit_{form_id}"
-
-                # Recurse
-                visit_nodes(node.children)
-
-        visit_nodes(parsed.template)
-        return methods
-
-    def _generate_form_schema_literal(
-        self,
-        schema: FormValidationSchema,
-        schema_name: str,
-        known_globals: Set[str],
-        known_imports: Optional[Set[str]] = None,
-    ) -> List[ast.stmt]:
-        """Generate validation schema as a class attribute."""
-        field_items = []
-        for field_name, rules in schema.fields.items():
-            keywords = []
-
-            if rules.required:
-                keywords.append(
-                    ast.keyword(arg="required", value=ast.Constant(value=True))
-                )
-            if rules.required_expr:
-                expr_ast = self.template_codegen._transform_expr(
-                    rules.required_expr, set(), known_globals, known_imports
-                )
-                expr_str = ast.unparse(expr_ast)
-                keywords.append(
-                    ast.keyword(arg="required_expr", value=ast.Constant(value=expr_str))
-                )
-            if rules.pattern:
-                keywords.append(
-                    ast.keyword(arg="pattern", value=ast.Constant(value=rules.pattern))
-                )
-            if rules.minlength is not None:
-                keywords.append(
-                    ast.keyword(
-                        arg="minlength", value=ast.Constant(value=rules.minlength)
-                    )
-                )
-            if rules.maxlength is not None:
-                keywords.append(
-                    ast.keyword(
-                        arg="maxlength", value=ast.Constant(value=rules.maxlength)
-                    )
-                )
-            if rules.min_value:
-                keywords.append(
-                    ast.keyword(
-                        arg="min_value", value=ast.Constant(value=rules.min_value)
-                    )
-                )
-            if rules.min_expr:
-                expr_ast = self.template_codegen._transform_expr(
-                    rules.min_expr, set(), known_globals, known_imports
-                )
-                expr_str = ast.unparse(expr_ast)
-                keywords.append(
-                    ast.keyword(arg="min_expr", value=ast.Constant(value=expr_str))
-                )
-            if rules.max_value:
-                keywords.append(
-                    ast.keyword(
-                        arg="max_value", value=ast.Constant(value=rules.max_value)
-                    )
-                )
-            if rules.max_expr:
-                expr_ast = self.template_codegen._transform_expr(
-                    rules.max_expr, set(), known_globals, known_imports
-                )
-                expr_str = ast.unparse(expr_ast)
-                keywords.append(
-                    ast.keyword(arg="max_expr", value=ast.Constant(value=expr_str))
-                )
-            if rules.step:
-                keywords.append(
-                    ast.keyword(arg="step", value=ast.Constant(value=rules.step))
-                )
-            if rules.input_type != "text":
-                keywords.append(
-                    ast.keyword(
-                        arg="input_type", value=ast.Constant(value=rules.input_type)
-                    )
-                )
-            if rules.title:
-                keywords.append(
-                    ast.keyword(arg="title", value=ast.Constant(value=rules.title))
-                )
-            if rules.max_size is not None:
-                keywords.append(
-                    ast.keyword(
-                        arg="max_size", value=ast.Constant(value=rules.max_size)
-                    )
-                )
-            if rules.allowed_types:
-                keywords.append(
-                    ast.keyword(
-                        arg="allowed_types",
-                        value=ast.List(
-                            elts=[ast.Constant(value=t) for t in rules.allowed_types],
-                            ctx=ast.Load(),
-                        ),
-                    )
-                )
-
-            field_rules_call = ast.Call(
-                func=ast.Name(id="FieldRules", ctx=ast.Load()),
-                args=[],
-                keywords=keywords,
-            )
-
-            field_items.append((ast.Constant(value=field_name), field_rules_call))
-
-        schema_dict = ast.Dict(
-            keys=[k for k, v in field_items], values=[v for k, v in field_items]
-        )
-
-        schema_call = ast.Call(
-            func=ast.Name(id="FormValidationSchema", ctx=ast.Load()),
-            args=[],
-            keywords=[ast.keyword(arg="fields", value=schema_dict)],
-        )
-
-        if schema.model_name:
-            schema_call.keywords.append(
-                ast.keyword(
-                    arg="model_name", value=ast.Constant(value=schema.model_name)
-                )
-            )
-
-        return [
-            ast.Assign(
-                targets=[ast.Name(id=schema_name, ctx=ast.Store())], value=schema_call
-            )
-        ]
-
-    def _generate_form_wrapper(
-        self,
-        form_id: int,
-        original_handler: str,
-        schema_name: str,
-        schema: FormValidationSchema,
-        known_globals: Set[str],
-        known_imports: Optional[Set[str]] = None,
-    ) -> ast.AsyncFunctionDef:
-        """Generate wrapper handler that validates then calls original handler."""
-        wrapper_name = f"_form_submit_{form_id}"
-
-        # Generate:
-        # async def _form_submit_0(self, **kwargs):
-        #     form_data = kwargs.get('formData', {})
-        #
-        #     # Build state getter for conditional validation
-        #     def get_state(expr):
-        #         return eval(expr, {'self': self})
-        #
-        #     # Validate
-        #     self.errors = form_validator.validate_form(form_data, self._form_schema_0, get_state)
-        #     if self.errors:
-        #         return
-        #
-        #     # Call original handler
-        #     await self.original_handler(form_data)
-
-        body: List[ast.stmt] = []
-
-        # form_data = kwargs.get('formData', {})
-        body.append(
-            ast.Assign(
-                targets=[ast.Name(id="form_data", ctx=ast.Store())],
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="kwargs", ctx=ast.Load()),
-                        attr="get",
-                        ctx=ast.Load(),
-                    ),
-                    args=[ast.Constant(value="formData"), ast.Dict(keys=[], values=[])],
-                    keywords=[],
-                ),
-            )
-        )
-
-        # Define state getter for conditional validation
-        # def get_state(expr):
-        #     return eval(expr, {'self': self})
-        state_getter = ast.FunctionDef(
-            name="get_state",
-            args=ast.arguments(
-                posonlyargs=[],
-                args=[ast.arg(arg="expr")],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                defaults=[],
-            ),
-            body=[
-                ast.Return(
-                    value=ast.Call(
-                        func=ast.Name(id="eval", ctx=ast.Load()),
-                        args=[
-                            ast.Name(id="expr", ctx=ast.Load()),
-                            # Use module globals (imports, classes)
-                            ast.Call(
-                                func=ast.Name(id="globals", ctx=ast.Load()),
-                                args=[],
-                                keywords=[],
-                            ),
-                            # Locals: just self, because _transform_expr converts other names
-                            # to self.x
-                            ast.Dict(
-                                keys=[ast.Constant(value="self")],
-                                values=[ast.Name(id="self", ctx=ast.Load())],
-                            ),
-                        ],
-                        keywords=[],
-                    )
-                )
-            ],
-            decorator_list=[],
-            returns=None,
-        )
-        body.append(state_getter)
-
-        # cleaned_data, self.errors = form_validator.validate_form(
-        #     form_data, self._form_schema_X.fields, get_state
-        # )
-        # Note: pass .fields from the schema object
-        body.append(
-            ast.Assign(
-                targets=[
-                    ast.Tuple(
-                        elts=[
-                            ast.Name(id="cleaned_data", ctx=ast.Store()),
-                            ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()),
-                                attr="errors",
-                                ctx=ast.Store(),
-                            ),
-                        ],
-                        ctx=ast.Store(),
-                    )
-                ],
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="form_validator", ctx=ast.Load()),
-                        attr="validate_form",
-                        ctx=ast.Load(),
-                    ),
-                    args=[
-                        ast.Name(id="form_data", ctx=ast.Load()),
-                        ast.Attribute(
-                            value=ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()),
-                                attr=schema_name,
-                                ctx=ast.Load(),
-                            ),
-                            attr="fields",
-                            ctx=ast.Load(),
-                        ),
-                        ast.Name(id="get_state", ctx=ast.Load()),
-                    ],
-                    keywords=[],
-                ),
-            )
-        )
-
-        # If Pydantic model is used:
-        # if not self.errors and self._form_schema_X.model_name:
-        #    model_instance, pydantic_errors = validate_with_model(
-        #        cleaned_data, globals()[self._form_schema_X.model_name]
-        #    )
-        #    if pydantic_errors:
-        #        self.errors.update(pydantic_errors)
-        #    else:
-        #        cleaned_data = model_instance # Replace dict with model instance
-
-        if schema.model_name:
-            pydantic_block: List[ast.stmt] = []
-
-            # model_instance, pydantic_errors = validate_with_model(cleaned_data, ModelClass)
-
-            # PARSE NESTED DATA FIRST
-            # nested_data = form_validator.parse_nested_data(cleaned_data)
-            pydantic_block.append(
-                ast.Assign(
-                    targets=[ast.Name(id="nested_data", ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="form_validator", ctx=ast.Load()),
-                            attr="parse_nested_data",
-                            ctx=ast.Load(),
-                        ),
-                        args=[ast.Name(id="cleaned_data", ctx=ast.Load())],
-                        keywords=[],
-                    ),
-                )
-            )
-
-            validate_call = ast.Call(
-                func=ast.Name(id="validate_with_model", ctx=ast.Load()),
-                args=[
-                    ast.Name(id="nested_data", ctx=ast.Load()),
-                    ast.Name(id=schema.model_name, ctx=ast.Load()),
-                ],
-                keywords=[],
-            )
-
-            pydantic_block.append(
-                ast.Assign(
-                    targets=[
-                        ast.Tuple(
-                            elts=[
-                                ast.Name(id="model_instance", ctx=ast.Store()),
-                                ast.Name(id="pydantic_errors", ctx=ast.Store()),
-                            ],
-                            ctx=ast.Store(),
-                        )
-                    ],
-                    value=validate_call,
-                )
-            )
-
-            # if pydantic_errors: self.errors.update(pydantic_errors)
-            # else: cleaned_data = model_instance
-            pydantic_block.append(
-                ast.If(
-                    test=ast.Name(id="pydantic_errors", ctx=ast.Load()),
-                    body=[
-                        ast.Expr(
-                            value=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Attribute(
-                                        value=ast.Name(id="self", ctx=ast.Load()),
-                                        attr="errors",
-                                        ctx=ast.Load(),
-                                    ),
-                                    attr="update",
-                                    ctx=ast.Load(),
-                                ),
-                                args=[ast.Name(id="pydantic_errors", ctx=ast.Load())],
-                                keywords=[],
-                            )
-                        )
-                    ],
-                    orelse=[
-                        ast.Assign(
-                            targets=[ast.Name(id="cleaned_data", ctx=ast.Store())],
-                            value=ast.Name(id="model_instance", ctx=ast.Load()),
-                        )
-                    ],
-                )
-            )
-
-            # Wrap in check: if not self.errors:
-            body.append(
-                ast.If(
-                    test=ast.UnaryOp(
-                        op=ast.Not(),
-                        operand=ast.Attribute(
-                            value=ast.Name(id="self", ctx=ast.Load()),
-                            attr="errors",
-                            ctx=ast.Load(),
-                        ),
-                    ),
-                    body=pydantic_block,
-                    orelse=[],
-                )
-            )
-
-        # if self.errors: return
-        body.append(
-            ast.If(
-                test=ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()),
-                    attr="errors",
-                    ctx=ast.Load(),
-                ),
-                body=[ast.Return(value=None)],
-                orelse=[],
-            )
-        )
-
-        # Call original handler - need to check if it's async
-        handler_call = ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id="self", ctx=ast.Load()),
-                attr=original_handler,
-                ctx=ast.Load(),
-            ),
-            args=[ast.Name(id="cleaned_data", ctx=ast.Load())],
-            keywords=[],
-        )
-
-        # Assume async for safety - await it
-        body.append(ast.Expr(value=ast.Await(value=handler_call)))
-
-        return ast.AsyncFunctionDef(
-            name=wrapper_name,
-            args=ast.arguments(
-                posonlyargs=[],
-                args=[ast.arg(arg="self")],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                kwarg=ast.arg(arg="kwargs"),
-                defaults=[],
-            ),
-            body=body,
-            decorator_list=[],
-            returns=None,
-        )
 
     def _generate_spa_metadata(self, parsed: ParsedPyWire) -> List[ast.stmt]:
         """Generate __spa_enabled__ and __sibling_paths__ class attributes."""
@@ -1458,7 +1066,7 @@ class CodeGenerator:
                         )
                     ],
                 )
-            )
+            ),
         ]
 
         # Add prop assignments
@@ -1603,6 +1211,9 @@ class CodeGenerator:
 
                 if is_props:
                     self._collected_props = self._extract_props_from_class(node)
+                    # Add prop names to known_globals so they are correctly transformed in methods
+                    for name, _, _ in self._collected_props.args:
+                        known_globals.add(name)
                     continue
 
                 # Standard classes are moved to module level (handled by UserCodeTransformer in some versions,
@@ -1843,7 +1454,7 @@ class CodeGenerator:
     def _generate_render_template_method(
         self,
         parsed: ParsedPyWire,
-        known_methods: Optional[Set[str]] = None,
+        known_methods: Optional[Dict[str, int]] = None,
         known_globals: Optional[Set[str]] = None,
         known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
@@ -1868,11 +1479,12 @@ class CodeGenerator:
         if layout_directive:
             layout_directive = cast(LayoutDirective, layout_directive)
             # === Layout Mode ===
-            file_id = parsed.file_path or ""
-
-            # Ensure layout_id is generated for intermediate layouts
             import hashlib
 
+            file_id = parsed.file_path or ""
+            file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
+
+            # Ensure layout_id is generated for intermediate layouts
             layout_id = (
                 hashlib.md5(str(parsed.file_path).encode()).hexdigest()
                 if parsed.file_path
@@ -2048,7 +1660,7 @@ class CodeGenerator:
                                     ctx=ast.Store(),
                                 )
                             ],
-                            value=val_ast,
+                            value=cast(ast.expr, val_ast),
                         )
                     )
 
@@ -2089,6 +1701,80 @@ class CodeGenerator:
                     returns=None,
                 )
                 binding_funcs.append(render_override)
+
+            # Generate _render_template override to bypass layout when used as a component
+            default_slot_method = (
+                f"_render_slot_fill_default_{file_hash}"
+                if file_hash
+                else "_render_slot_fill_default"
+            )
+
+            # Check if default slot method was actually generated
+            has_default_slot = "default" in slot_funcs_methods
+
+            if has_default_slot:
+                component_render_body = [
+                    ast.Return(
+                        value=ast.Await(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                    attr=default_slot_method,
+                                    ctx=ast.Load(),
+                                ),
+                                args=[],
+                                keywords=[],
+                            )
+                        )
+                    )
+                ]
+            else:
+                component_render_body = [ast.Return(value=ast.Constant(value=""))]
+
+            render_func = ast.AsyncFunctionDef(
+                name="_render_template",
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[ast.arg(arg="self")],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=[
+                    ast.If(
+                        test=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="__is_component__",
+                            ctx=ast.Load(),
+                        ),
+                        body=component_render_body,
+                        orelse=[
+                            ast.Return(
+                                value=ast.Await(
+                                    value=ast.Call(
+                                        func=ast.Attribute(
+                                            value=ast.Call(
+                                                func=ast.Name(
+                                                    id="super", ctx=ast.Load()
+                                                ),
+                                                args=[],
+                                                keywords=[],
+                                            ),
+                                            attr="_render_template",
+                                            ctx=ast.Load(),
+                                        ),
+                                        args=[],
+                                        keywords=[],
+                                    )
+                                )
+                            )
+                        ],
+                    )
+                ],
+                decorator_list=[],
+                returns=None,
+            )
 
         else:
             # === Standard Mode ===
@@ -2188,7 +1874,7 @@ class CodeGenerator:
                                     ctx=ast.Store(),
                                 )
                             ],
-                            value=val_ast,
+                            value=cast(ast.expr, val_ast),
                         )
                     )
 

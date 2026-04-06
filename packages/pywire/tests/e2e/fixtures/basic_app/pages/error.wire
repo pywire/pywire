@@ -1,0 +1,8 @@
+---
+def trigger_error(self):
+    raise ValueError("This is a deliberate error")
+---
+<div>
+    <h1>Error Boundaries Test</h1>
+    <button id="btn-error" @click={trigger_error}>Trigger Error</button>
+</div>

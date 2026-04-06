@@ -14,6 +14,8 @@ def escape_html(value: Any) -> str:
     Returns:
         HTML-escaped string safe for embedding in HTML content
     """
+    if value is None:
+        return ""
     s = str(value)
     return (
         s.replace("&", "&amp;")

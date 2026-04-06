@@ -42,27 +42,27 @@ files:
       </div>
 successCriteria:
   - type: file_contains
-    description: "Add !path '/home' to the top of the file"
-    target: pages/homepage.wire
-    pattern: '!path "/home"'
+    description: "Define a !path dictionary"
+    target: pages/main.wire
+    pattern: '!path \{'
   - type: file_contains
-    description: "Change the `<h1>` tag to contain the word 'secret'"
-    target: pages/homepage.wire
-    pattern: 'secret'
+    description: "Wrap settings in {$if path.settings}"
+    target: pages/main.wire
+    pattern: '{\$if path.settings}'
   - type: browser_route_text
-    route: '/home'
-    description: 'Navigate to /home and see the content'
-    pattern: 'now at /home'
+    route: '/menu/settings'
+    description: 'Navigate to /menu/settings and see the settings list'
+    pattern: 'Preferences'
 pagesDir: pages
-initialRoute: '/home'
+initialRoute: '/menu'
 ---
 
-By default, files in the `pages/` directory are served at a route matching their filename. You can override this using the `!path` directive.
+By default, files in the `pages/` directory are served at a route matching their filename. For complex components that handle multiple sub-views, you can use a dictionary with the `!path` directive.
 
 ### Your Task
 
-1.  At the very top of `pages/homepage.wire`, add `!path "/home"`.
-2.  Add 'secret' somewhere in the `<h1>` tag.
-3.  Notice that the preview (which is already pointed at `/home`) now shows the content of this file instead of a 404.
+1.  In `pages/main.wire`, change the `!path` directive to a dictionary mapping `"menu"` to `"/menu"` and `"settings"` to `"/menu/settings"`.
+2.  Wrap the "Settings" `<h2>` and its `<ul>` list in a `{$if path.settings} ... {/if}` block.
+3.  Click the "Go to Settings" link in the preview.
 
-Directives like `!path` allow you to decouple your file structure from your URL structure.
+Notice how the same component instance can handle multiple routes, allowing you to maintain state across "page" changes!

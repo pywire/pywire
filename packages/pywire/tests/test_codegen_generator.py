@@ -2,15 +2,16 @@ import ast
 import unittest
 from typing import cast
 
+from textwrap import dedent
+
 from pywire.compiler.ast_nodes import (
     EventAttribute,
-    FieldValidationRules,
-    FormValidationSchema,
     ParsedPyWire,
     PathDirective,
     TemplateNode,
 )
 from pywire.compiler.codegen.generator import CodeGenerator
+from pywire.compiler.parser import PyWireParser
 
 
 class TestCodeGenerator(unittest.TestCase):
@@ -58,44 +59,21 @@ class TestCodeGenerator(unittest.TestCase):
         self.assertEqual(class_defs[0].name, "TestPage")
 
     def test_transform_inline_code_argument_lifting(self) -> None:
-        # Test that unbound variables in arguments are lifted to parameters
+        # Test that whole argument expressions are lifted (not just unbound names)
         code = "update_user(user_id, 'new_name')"
-        # user_id is unbound
         body, args = self.generator._transform_inline_code(code, known_methods={"update_user"})
 
-        self.assertEqual(len(args), 1)
+        self.assertEqual(len(args), 2)
         self.assertEqual(args[0], "user_id")
+        self.assertEqual(args[1], "'new_name'")
 
-        # Verify the call was transformed to use arg0
+        # Verify the call was transformed to use arg0, arg1
         expr = cast(ast.Expr, body[0])
         call = cast(ast.Call, expr.value)
         self.assertIsInstance(call.args[0], ast.Name)
         self.assertEqual(cast(ast.Name, call.args[0]).id, "arg0")
-
-    def test_generate_form_validation(self) -> None:
-        schema = FormValidationSchema(
-            fields={"email": FieldValidationRules(name="email", required=True, input_type="email")}
-        )
-        node = TemplateNode(tag="form", line=1, column=0)
-        node.special_attributes = [
-            EventAttribute(
-                name="@submit",
-                value="save",
-                event_type="submit",
-                handler_name="save",
-                validation_schema=schema,
-                line=1,
-                column=0,
-            )
-        ]
-        parsed = ParsedPyWire(template=[node])
-
-        methods = self.generator._generate_form_validation_methods(parsed, set())
-        # Should have schema assignment and wrapper method
-        self.assertEqual(len(methods), 2)
-        self.assertIsInstance(methods[0], ast.Assign)
-        self.assertIsInstance(methods[1], ast.AsyncFunctionDef)
-        self.assertTrue(cast(ast.AsyncFunctionDef, methods[1]).name.startswith("_form_submit_"))
+        self.assertIsInstance(call.args[1], ast.Name)
+        self.assertEqual(cast(ast.Name, call.args[1]).id, "arg1")
 
     def test_extract_import_names(self) -> None:
         code = "import os as my_os\nfrom math import sqrt as my_sqrt"
@@ -144,6 +122,28 @@ class TestCodeGenerator(unittest.TestCase):
         paths = [cast(ast.Constant, elt).value for elt in cast(ast.List, sibling_paths_assign.value).elts]
         self.assertIn("/a", paths)
         self.assertIn("/b", paths)
+
+    def test_props_decorator_compilation(self) -> None:
+        source = dedent("""
+            ---
+            from pywire import props
+
+            @props
+            class Props:
+                name: str
+                count: int = 0
+                variant: str = "primary"
+            ---
+            <div>{name} ({count})</div>
+        """)
+        parser = PyWireParser()
+        parsed = parser.parse(source, "test.wire")
+        module_ast = self.generator.generate(parsed)
+        code = ast.unparse(module_ast)
+        assert "def __init__(self, request, params, query, path=None, url=None, *, name: str, count: int=0, variant: str='primary', **kwargs):" in code
+        assert "self.name = name" in code
+        assert "self.count = count" in code
+        assert "self.variant = variant" in code
 
 
 if __name__ == "__main__":

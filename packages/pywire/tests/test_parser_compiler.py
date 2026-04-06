@@ -1,7 +1,7 @@
 import unittest
 
 from pywire.compiler.ast_nodes import (
-    ComponentDirective,
+
     InjectDirective,
     InterpolationNode,
     LayoutDirective,
@@ -53,32 +53,6 @@ def hello(): pass
         assert isinstance(parsed.directives[0], LayoutDirective)
         self.assertEqual(parsed.directives[0].layout_path, "main.wire")
 
-    def test_extract_form_validation(self) -> None:
-        content = """
-<form @submit={save}>
-    <input name="email" type="email" required minlength="5">
-    <input name="age" type="number" min="18">
-</form>
-"""
-        parsed = self.parser.parse(content)
-        form = parsed.template[0]
-        # The parser extracts validation schema for forms with @submit
-        from pywire.compiler.ast_nodes import EventAttribute
-
-        submit_attr = next(
-            a
-            for a in form.special_attributes
-            if isinstance(a, EventAttribute) and a.event_type == "submit"
-        )
-        assert isinstance(submit_attr, EventAttribute)
-        self.assertIsNotNone(submit_attr.validation_schema)
-        schema = submit_attr.validation_schema
-        assert schema is not None
-        fields = schema.fields
-        self.assertIn("email", fields)
-        self.assertTrue(fields["email"].required)
-        self.assertEqual(fields["email"].minlength, 5)
-        self.assertEqual(fields["age"].min_value, "18")
 
 
 

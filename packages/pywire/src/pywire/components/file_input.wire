@@ -1,0 +1,505 @@
+---
+from typing import Any, Optional
+import inspect
+import json
+import re
+from uuid import uuid4
+
+from pywire import ref, props, expose, EventHandler, wire
+
+@props
+class Props:
+    name: str
+    accept: Optional[str] = None
+    allowed_names: Optional[str] = None
+    min_size: Optional[int] = None
+    max_size: Optional[int] = None
+    multiple: bool = False
+    max_files: Optional[int] = None
+    required: bool = False
+    disabled: bool = False
+    select: Optional[EventHandler] = None
+    upload_on: str = "submit"
+
+_file_input_id = f"pwfi_{uuid4().hex}"
+
+file_ref = ref()
+progress_bridge_ref = ref()
+uploading_bridge_ref = ref()
+upload_ids_bridge_ref = ref()
+error_bridge_ref = ref()
+
+_progress_wire = wire(0)
+_uploading_wire = wire(False)
+_error_wire = wire("")
+_files_wire = wire([])
+_upload_ids_wire = wire([])
+
+
+def _set_error(message: str):
+    _error_wire.value = message
+    _uploading_wire.value = False
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+async def change(event):
+    raw_files = event.value
+    if not isinstance(raw_files, list):
+        raw_files = []
+
+    parsed_files = []
+    for item in raw_files:
+        if not isinstance(item, dict):
+            continue
+        file_name = str(item.get("name") or "")
+        file_type = str(item.get("type") or "")
+        file_size = _coerce_int(item.get("size"))
+        if file_size is None:
+            continue
+        parsed_files.append({"name": file_name, "type": file_type, "size": file_size})
+
+    _files_wire.clear()
+    _files_wire.extend(parsed_files)
+    _upload_ids_wire.clear()
+    _progress_wire.value = 0
+
+    if len(parsed_files) == 0:
+        _error_wire.value = ""
+        _uploading_wire.value = False
+        return
+
+    if not multiple and len(parsed_files) > 1:
+        _set_error("Only one file is allowed")
+        return
+
+    if max_files is not None and len(parsed_files) > max_files:
+        _set_error(f"At most {max_files} files are allowed")
+        return
+
+    for file_meta in parsed_files:
+        if min_size is not None and file_meta["size"] < min_size:
+            _set_error(f"File is too small (min {min_size} bytes)")
+            return
+        if max_size is not None and file_meta["size"] > max_size:
+            size_mb = max_size / (1024 * 1024)
+            _set_error(f"File is too large (max {size_mb:.1f}MB)")
+            return
+        if allowed_names:
+            normalized_allowed_names = allowed_names.replace("\\\\", "\\")
+            try:
+                if not re.fullmatch(normalized_allowed_names, file_meta["name"]):
+                    _set_error("Filename is not allowed")
+                    return
+            except re.error:
+                pass
+
+    if select:
+        try:
+            result = select(parsed_files)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            _set_error(str(exc))
+            return
+
+    _error_wire.value = ""
+    _progress_wire.value = 0
+    if upload_on == "select":
+        _uploading_wire.value = True
+        await self.push_state()
+        return
+    _uploading_wire.value = False
+
+
+@expose
+@property
+def progress():
+    return _progress_wire.value
+
+
+@expose
+@property
+def uploading():
+    return _uploading_wire.value
+
+
+@expose
+@property
+def error():
+    return _error_wire.value
+
+
+@expose
+@property
+def files():
+    return _files_wire.value
+
+
+@expose
+@property
+def upload_ids():
+    return _upload_ids_wire.value
+
+
+@expose
+def clear():
+    _progress_wire.value = 0
+    _uploading_wire.value = False
+    _error_wire.value = ""
+    _files_wire.clear()
+    _upload_ids_wire.clear()
+    try:
+        file_ref.clear_file()
+    except Exception:
+        pass
+
+
+def progress_input(event):
+    numeric = _coerce_int(event.value)
+    if numeric is None:
+        return
+    if numeric < 0:
+        numeric = 0
+    if numeric > 100:
+        numeric = 100
+    _progress_wire.value = numeric
+
+
+def uploading_input(event):
+    raw = str(event.value or "").lower()
+    _uploading_wire.value = raw in ("1", "true", "yes")
+
+
+def upload_ids_input(event):
+    raw = event.value
+    if raw is None:
+        _upload_ids_wire.clear()
+        return
+    try:
+        parsed = json.loads(str(raw))
+    except Exception:
+        parsed = []
+    if isinstance(parsed, list):
+        _upload_ids_wire.clear()
+        _upload_ids_wire.extend([str(item) for item in parsed if item])
+        return
+    if parsed:
+        _upload_ids_wire.clear()
+        _upload_ids_wire.append(str(parsed))
+        return
+    _upload_ids_wire.clear()
+
+
+def error_input(event):
+    _error_wire.value = str(event.value or "")
+---
+<div data-pw-file-input-root={_file_input_id} data-pw-file-input-upload-on={upload_on}>
+    <input
+        type="file"
+        name={name}
+        accept={accept}
+        multiple={multiple}
+        disabled={disabled}
+        $ref={file_ref}
+        @change={change}
+        data-pw-file-input="1"
+        data-pw-file-input-id={_file_input_id}
+    >
+
+    <input type="hidden" $ref={progress_bridge_ref} @input={progress_input} value={str(_progress_wire.value)} data-pw-file-input-bridge="progress" data-pw-file-input-id={_file_input_id}>
+    <input type="hidden" $ref={uploading_bridge_ref} @input={uploading_input} value={str(_uploading_wire.value).lower()} data-pw-file-input-bridge="uploading" data-pw-file-input-id={_file_input_id}>
+    <input type="hidden" $ref={upload_ids_bridge_ref} @input={upload_ids_input} value={json.dumps(_upload_ids_wire.value)} data-pw-file-input-bridge="upload_ids" data-pw-file-input-id={_file_input_id}>
+    <input type="hidden" $ref={error_bridge_ref} @input={error_input} value={_error_wire.value} data-pw-file-input-bridge="error" data-pw-file-input-id={_file_input_id}>
+
+    <div data-pw-file-input-upload-ids={_file_input_id}></div>
+
+    <script>
+(function () {
+  const STARTED = '__pwFileInputStarted';
+  const ACTIVE_UPLOADS = '__pwFileInputActiveUploads';
+  const FORM_BOUND = '__pwFileInputFormBound';
+  const FORM_RESUBMIT = '__pwFileInputResubmit';
+  const UPLOAD_TIMEOUT_MS = 60000;
+  if (!window[ACTIVE_UPLOADS]) {
+    window[ACTIVE_UPLOADS] = {};
+  }
+
+  const dispatchInput = (el, value) => {
+    if (!el) return;
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  const isTruthy = (val) => {
+    const normalized = String(val || '').trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+  };
+
+  const getUploadMode = (root) => {
+    if (!(root instanceof HTMLElement)) return 'submit';
+    const raw = String(root.getAttribute('data-pw-file-input-upload-on') || '').trim().toLowerCase();
+    if (raw === 'select') return 'select';
+    return 'submit';
+  };
+
+  const getBridges = (root, rootId) => {
+    const fileInput = root.querySelector('input[type="file"][data-pw-file-input="1"]');
+    const progressBridge = root.querySelector('[data-pw-file-input-bridge="progress"]');
+    const uploadingBridge = root.querySelector('[data-pw-file-input-bridge="uploading"]');
+    const uploadIdsBridge = root.querySelector('[data-pw-file-input-bridge="upload_ids"]');
+    const errorBridge = root.querySelector('[data-pw-file-input-bridge="error"]');
+    const idsContainer = root.querySelector(`[data-pw-file-input-upload-ids="${rootId}"]`);
+    return { fileInput, progressBridge, uploadingBridge, uploadIdsBridge, errorBridge, idsContainer };
+  };
+
+  const syncUploadIdsToForm = (container, fieldName, ids) => {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!fieldName || !Array.isArray(ids) || ids.length === 0) return;
+    ids.forEach((id) => {
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = fieldName;
+      hidden.value = JSON.stringify({ _upload_id: id });
+      container.appendChild(hidden);
+    });
+  };
+
+  const rootHasClientError = (root, rootId) => {
+    const { errorBridge } = getBridges(root, rootId);
+    if (!(errorBridge instanceof HTMLInputElement)) return false;
+    return String(errorBridge.value || '').trim().length > 0;
+  };
+
+  const uploadWithProgress = (root) => {
+    if (!root) return;
+    const rootId = root.getAttribute('data-pw-file-input-root');
+    if (!rootId) return Promise.resolve(false);
+
+    const { fileInput, progressBridge, uploadingBridge, uploadIdsBridge, errorBridge, idsContainer } = getBridges(root, rootId);
+
+    if (!(fileInput instanceof HTMLInputElement)) return Promise.resolve(false);
+    if (!fileInput.name) return Promise.resolve(false);
+    if (!fileInput.files || fileInput.files.length === 0) return Promise.resolve(true);
+
+    const token = document.querySelector('meta[name="pywire-upload-token"]')?.getAttribute('content');
+    if (!token) {
+      dispatchInput(errorBridge, 'Missing upload token. File uploads are not enabled for this page.');
+      dispatchInput(uploadingBridge, '0');
+      return Promise.resolve(false);
+    }
+
+    if (rootHasClientError(root, rootId)) {
+      dispatchInput(uploadingBridge, '0');
+      return Promise.resolve(false);
+    }
+
+    const fileData = new FormData();
+    Array.from(fileInput.files).forEach((file) => {
+      if (file.size > 0) {
+        fileData.append(fileInput.name, file);
+      }
+    });
+
+    if ([...fileData.keys()].length === 0) {
+      dispatchInput(uploadingBridge, '0');
+      dispatchInput(progressBridge, '0');
+      syncUploadIdsToForm(idsContainer, fileInput.name, []);
+      return Promise.resolve(true);
+    }
+
+    dispatchInput(errorBridge, '');
+    dispatchInput(progressBridge, '0');
+    dispatchInput(uploadingBridge, '1');
+
+    return new Promise((resolve) => {
+      const finishFailure = (message) => {
+        window[ACTIVE_UPLOADS][rootId] = false;
+        dispatchInput(uploadingBridge, '0');
+        dispatchInput(progressBridge, '0');
+        dispatchInput(errorBridge, message);
+        dispatchInput(uploadIdsBridge, '[]');
+        syncUploadIdsToForm(idsContainer, fileInput.name, []);
+        resolve(false);
+      };
+
+      const finishSuccess = (ids) => {
+        window[ACTIVE_UPLOADS][rootId] = false;
+        dispatchInput(uploadingBridge, '0');
+        dispatchInput(errorBridge, '');
+        dispatchInput(uploadIdsBridge, JSON.stringify(ids));
+        syncUploadIdsToForm(idsContainer, fileInput.name, ids);
+        dispatchInput(progressBridge, '100');
+        fileInput.value = '';
+        resolve(true);
+      };
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/_pywire/upload', true);
+      xhr.withCredentials = true;
+      xhr.timeout = UPLOAD_TIMEOUT_MS;
+      xhr.setRequestHeader('X-Upload-Token', token);
+
+      const session = window.__PYWIRE_HTTP_SESSION;
+      if (typeof session === 'string' && session.length > 0) {
+        xhr.setRequestHeader('X-PyWire-Session', session);
+      }
+
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable || evt.total <= 0) return;
+        const pct = Math.max(0, Math.min(100, Math.round((evt.loaded / evt.total) * 100)));
+        dispatchInput(progressBridge, String(pct));
+      };
+
+      xhr.onerror = () => finishFailure('File upload failed');
+      xhr.onabort = () => finishFailure('File upload was cancelled');
+      xhr.ontimeout = () => finishFailure('File upload timed out. Please try again on a faster connection.');
+
+      xhr.onload = () => {
+        let payload = {};
+        try {
+          payload = JSON.parse(xhr.responseText || '{}');
+        } catch (_err) {
+          finishFailure('File upload failed: invalid server response');
+          return;
+        }
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const msg = payload && typeof payload.error === 'string' ? payload.error : 'File upload failed';
+          finishFailure(msg);
+          return;
+        }
+
+        const uploadMap = payload.uploads ?? payload;
+        const raw = uploadMap ? uploadMap[fileInput.name] : null;
+        const ids = Array.isArray(raw) ? raw : raw ? [raw] : [];
+        if (ids.length === 0) {
+          finishFailure('File upload failed: missing upload id');
+          return;
+        }
+        finishSuccess(ids);
+      };
+
+      window[ACTIVE_UPLOADS][rootId] = true;
+      xhr.send(fileData);
+    });
+  };
+
+  const uploadRootsForSubmit = async (form) => {
+    if (!(form instanceof HTMLFormElement)) return true;
+    const roots = Array.from(form.querySelectorAll('[data-pw-file-input-root]'));
+    const pendingRoots = [];
+    for (const root of roots) {
+      if (!(root instanceof HTMLElement)) continue;
+      if (getUploadMode(root) !== 'submit') continue;
+      const rootId = root.getAttribute('data-pw-file-input-root');
+      if (!rootId) continue;
+      if (window[ACTIVE_UPLOADS][rootId]) return false;
+      const { fileInput } = getBridges(root, rootId);
+      if (!(fileInput instanceof HTMLInputElement)) continue;
+      if (!fileInput.files || fileInput.files.length === 0) continue;
+      pendingRoots.push(root);
+    }
+    if (pendingRoots.length === 0) return true;
+    for (const root of pendingRoots) {
+      const ok = await uploadWithProgress(root);
+      if (!ok) return false;
+    }
+    return true;
+  };
+
+  const formNeedsSubmitUpload = (form) => {
+    if (!(form instanceof HTMLFormElement)) return false;
+    const roots = Array.from(form.querySelectorAll('[data-pw-file-input-root]'));
+    for (const candidate of roots) {
+      if (!(candidate instanceof HTMLElement)) continue;
+      if (getUploadMode(candidate) !== 'submit') continue;
+      const rootId = candidate.getAttribute('data-pw-file-input-root');
+      if (!rootId) continue;
+      const { fileInput } = getBridges(candidate, rootId);
+      if (!(fileInput instanceof HTMLInputElement)) continue;
+      if (!fileInput.files || fileInput.files.length === 0) continue;
+      return true;
+    }
+    return false;
+  };
+
+  const bindRoot = (root) => {
+    if (!(root instanceof HTMLElement)) return;
+    if (root[STARTED]) return;
+    root[STARTED] = true;
+
+    const fileInput = root.querySelector('input[type="file"][data-pw-file-input="1"]');
+    const uploadIdsBridge = root.querySelector('[data-pw-file-input-bridge="upload_ids"]');
+    const progressBridge = root.querySelector('[data-pw-file-input-bridge="progress"]');
+    const errorBridge = root.querySelector('[data-pw-file-input-bridge="error"]');
+    const idsContainer = root.querySelector(`[data-pw-file-input-upload-ids="${root.getAttribute('data-pw-file-input-root')}"]`);
+    if (!(fileInput instanceof HTMLInputElement)) return;
+
+    fileInput.addEventListener('change', async () => {
+      if (uploadIdsBridge instanceof HTMLInputElement) {
+        uploadIdsBridge.value = '[]';
+      }
+      if (progressBridge instanceof HTMLInputElement) {
+        progressBridge.value = '0';
+      }
+      if (errorBridge instanceof HTMLInputElement) {
+        errorBridge.value = '';
+      }
+      if (idsContainer instanceof HTMLElement) {
+        idsContainer.innerHTML = '';
+      }
+
+      if (getUploadMode(root) !== 'select') return;
+
+      const rootId = root.getAttribute('data-pw-file-input-root');
+      const uploadingBridge = root.querySelector('[data-pw-file-input-bridge="uploading"]');
+      if (!rootId) return;
+      if (window[ACTIVE_UPLOADS][rootId]) return;
+      if (!(uploadingBridge instanceof HTMLInputElement)) return;
+      if (!isTruthy(uploadingBridge.value)) return;
+      await uploadWithProgress(root);
+    });
+
+    const form = fileInput.form;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form[FORM_BOUND]) return;
+    form[FORM_BOUND] = true;
+
+    form.addEventListener('submit', (event) => {
+      if (!(event instanceof Event)) return;
+      if (form[FORM_RESUBMIT]) {
+        form[FORM_RESUBMIT] = false;
+        return;
+      }
+      if (!formNeedsSubmitUpload(form)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
+      uploadRootsForSubmit(form).then((uploadOk) => {
+        if (!uploadOk) return;
+        form[FORM_RESUBMIT] = true;
+        form.requestSubmit();
+      });
+    }, { capture: true });
+  };
+
+  const scan = () => {
+    document.querySelectorAll('[data-pw-file-input-root]').forEach((root) => bindRoot(root));
+  };
+
+  scan();
+  document.documentElement.addEventListener('pywire:postupdate', scan);
+})();
+    </script>
+</div>

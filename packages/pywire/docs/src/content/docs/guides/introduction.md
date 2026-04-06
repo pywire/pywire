@@ -25,7 +25,7 @@ Define reactive variables using `wire()`. When you update them in your Python co
 count = wire(0)
 
 def increment():
-    $count += 1
+    count.value += 1
 ```
 
 ### ⚡ No JavaScript Required

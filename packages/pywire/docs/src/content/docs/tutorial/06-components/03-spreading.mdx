@@ -6,8 +6,9 @@ description: Spread attributes onto elements for better flexibility.
 files:
   - path: pages/index.wire
     initial: |
-      !component "../components/custom_input.wire" as CustomInput
-
+      ---
+      from components.custom_input import CustomInput
+      ---
       <div>
         <h1>Spreading</h1>
         <CustomInput placeholder="Type here..." type="password" />

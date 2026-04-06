@@ -24,7 +24,8 @@ def mock_app() -> MagicMock:
     return app
 
 
-def test_variable_binding(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_variable_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
 Test attr={var} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -46,7 +47,7 @@ my_class = "btn"
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             assert 'id="dynamic-id"' in html
             assert 'class="btn"' in html
@@ -54,7 +55,8 @@ my_class = "btn"
             os.chdir(orig_cwd)
 
 
-def test_method_binding_paramless(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_method_binding_paramless(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
 Test attr="method" auto-call binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -76,14 +78,15 @@ def get_title():
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             assert 'title="My Title"' in html
         finally:
             os.chdir(orig_cwd)
 
 
-def test_expression_binding(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_expression_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
 Test attr={expr} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -104,14 +107,15 @@ is_error = True
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             assert 'class="error"' in html
         finally:
             os.chdir(orig_cwd)
 
 
-def test_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
 Test boolean attribute behavior."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -134,7 +138,7 @@ is_readonly = None
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             # checked="True" -> checked=""
             assert 'checked=""' in html
@@ -146,7 +150,8 @@ is_readonly = None
             os.chdir(orig_cwd)
 
 
-def test_async_binding(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_async_binding(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
 Test attr={await async_call()} binding."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -168,14 +173,15 @@ async def get_data():
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             assert 'data-val="async-data"' in html
         finally:
             os.chdir(orig_cwd)
 
 
-def test_aria_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_aria_boolean_attributes(loader: PageLoader, mock_app: MagicMock) -> None:
     """---
 Test ARIA boolean attributes (true/false strings)."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -197,11 +203,60 @@ is_expanded = False
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             # aria-busy="true"
             assert 'aria-busy="true"' in html
             # aria-expanded="false"
             assert 'aria-expanded="false"' in html
+        finally:
+            os.chdir(orig_cwd)
+
+
+@pytest.mark.asyncio
+async def test_reactive_attributes_wire_and_dot_value(
+    loader: PageLoader, mock_app: MagicMock
+) -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        page_code = """
+---
+title_wire = wire("A")
+disabled_wire = wire(False)
+
+def toggle():
+    self.disabled_wire.value = not self.disabled_wire.value
+    self.title_wire.value = "B"
+---
+
+<button title={title_wire} aria-label={title_wire.value} disabled={disabled_wire.value} @click={toggle}>x</button>
+"""
+        (tmp_path / "page.wire").write_text(page_code)
+
+        orig_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            page_class = loader.load(tmp_path / "page.wire")
+            request = MagicMock()
+            request.app = mock_app
+            page = page_class(request, {}, {}, {}, None)
+
+            initial = await page.render(init=True)
+            html = initial.body.decode()
+            assert 'title="A"' in html
+            assert 'aria-label="A"' in html
+            assert "disabled" not in html
+
+            update = await page.handle_event("toggle", {})
+
+            if update["type"] == "full":
+                assert 'title="B"' in update["html"]
+                assert 'aria-label="B"' in update["html"]
+                assert "disabled" in update["html"]
+                return
+            joined = " ".join(region["html"] for region in update["regions"])
+            assert 'title="B"' in joined
+            assert 'aria-label="B"' in joined
+            assert "disabled" in joined
         finally:
             os.chdir(orig_cwd)

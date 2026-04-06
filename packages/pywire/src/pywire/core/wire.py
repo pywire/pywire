@@ -1,3 +1,4 @@
+import logging
 from contextvars import ContextVar
 from typing import (
     TypeVar,
@@ -7,10 +8,16 @@ from typing import (
     Tuple,
     Dict as PyDict,
     Iterable,
+    overload,
+    TYPE_CHECKING,
 )
 from weakref import WeakSet
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
 
 # Render context for tracking which page/region is reading a wire
 _render_context: ContextVar[Optional[Tuple[Any, Optional[str]]]] = ContextVar(
@@ -65,6 +72,10 @@ class WireBase:
         if ctx:
             page, region_id = ctx
             self._pages.add(page)
+            print(
+                f"WIRE-TRACK: wire={id(self)} registered page={id(page)} region={region_id} field={field}",
+                flush=True,
+            )
             register = getattr(page, "_register_wire_read", None)
             if register:
                 register(self, field, region_id)
@@ -107,6 +118,10 @@ class WireBase:
 
         # Notify connected pages for re-render
         for page in list(self._pages):
+            print(
+                f"WIRE-NOTIFY: wire={id(self)} notifying page={id(page)} field={field}",
+                flush=True,
+            )
             invalidate = getattr(page, "_invalidate_wire", None)
             if invalidate:
                 invalidate(self, field)
@@ -141,51 +156,55 @@ class WirePrimitive(WireBase, Generic[T]):
         super().__init__(parent, field)
         self._value = value
 
-    @property
-    def value(self) -> T:
-        self._track_read()
-        return self._value
+    if TYPE_CHECKING:
+        value: T
+    else:
 
-    @value.setter
-    def value(self, new_val: T):
-        self._check_frozen()
-        if self._value == new_val:
-            return
-        self._value = new_val
-        self._notify_write()
+        @property
+        def value(self) -> T:
+            self._track_read()
+            return self._value
+
+        @value.setter
+        def value(self, new_val: T):
+            self._check_frozen()
+            if self._value == new_val:
+                return
+            self._value = new_val
+            self._notify_write()
 
     def peek(self) -> T:
         return self._value
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"WirePrimitive({self._value!r})"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.value)
 
-    def __format__(self, spec):
+    def __format__(self, spec) -> str:
         return format(self.value, spec)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.value)
 
     # Delegate arithmetic/comparisons
-    def __add__(self, other):
+    def __add__(self, other) -> Any:
         return self.value + other
 
-    def __radd__(self, other):
+    def __radd__(self, other) -> Any:
         return other + self.value
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> Any:
         return self.value - other
 
-    def __rsub__(self, other):
+    def __rsub__(self, other) -> Any:
         return other - self.value
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> Any:
         return self.value * other
 
-    def __rmul__(self, other):
+    def __rmul__(self, other) -> Any:
         return other * self.value
 
     def __hash__(self) -> int:
@@ -231,7 +250,7 @@ class WirePrimitive(WireBase, Generic[T]):
         return self
 
 
-class WireList(WireBase, list):
+class WireList(WireBase, list, Generic[T]):
     """Reactive proxy for a list."""
 
     def __init__(
@@ -301,6 +320,14 @@ class WireList(WireBase, list):
         super().reverse()
         self._notify_write()
 
+    def __iter__(self):
+        self._track_read()
+        return super().__iter__()
+
+    def __contains__(self, item):
+        self._track_read()
+        return super().__contains__(item)
+
     def __len__(self):
         self._track_read()
         return super().__len__()
@@ -343,11 +370,19 @@ class WireList(WireBase, list):
         self._track_read()
         return self
 
+    @value.setter
+    def value(self, new_list):
+        self._check_frozen()
+        if not isinstance(new_list, (list, tuple)):
+            raise TypeError("value must be a list or tuple")
+        self.clear()
+        self.extend(new_list)
+
     def __repr__(self):
         return f"WireList({list(self)!r})"
 
 
-class WireDict(WireBase, dict):
+class WireDict(WireBase, dict, Generic[K, V]):
     """Reactive proxy for a dict."""
 
     def __init__(
@@ -377,6 +412,26 @@ class WireDict(WireBase, dict):
         super().__setitem__(key, value)
         self._notify_write()
 
+    def __iter__(self):
+        self._track_read()
+        return super().__iter__()
+
+    def __contains__(self, key):
+        self._track_read()
+        return super().__contains__(key)
+
+    def keys(self):
+        self._track_read()
+        return super().keys()
+
+    def values(self):
+        self._track_read()
+        return super().values()
+
+    def items(self):
+        self._track_read()
+        return super().items()
+
     def __delitem__(self, key):
         self._check_frozen()
         super().__delitem__(key)
@@ -386,6 +441,22 @@ class WireDict(WireBase, dict):
         self._check_frozen()
         super().update(*args, **kwargs)
         self._notify_write()
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            return super().__getattribute__(name)
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name.startswith("_") or name == "value":
+            super().__setattr__(name, value)
+        else:
+            self[name] = value
 
     def clear(self):
         self._check_frozen()
@@ -412,15 +483,15 @@ class WireDict(WireBase, dict):
             return res
         return self[key]
 
-    def __len__(self):
+    def __len__(self) -> int:
         self._track_read()
         return super().__len__()
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         self._track_read()
         return super().__len__() > 0
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         self._track_read()
         return super().__ne__(other)
 
@@ -432,11 +503,19 @@ class WireDict(WireBase, dict):
         self._track_read()
         return self
 
+    @value.setter
+    def value(self, new_dict):
+        self._check_frozen()
+        if not isinstance(new_dict, dict):
+            raise TypeError("value must be a dict")
+        self.clear()
+        self.update(new_dict)
+
     def __repr__(self):
         return f"WireDict({dict(self)!r})"
 
 
-class WireSet(WireBase, set):
+class WireSet(WireBase, set, Generic[T]):
     """Reactive proxy for a set."""
 
     def __init__(
@@ -447,6 +526,14 @@ class WireSet(WireBase, set):
     ):
         WireBase.__init__(self, parent, field)
         set.__init__(self, items)
+
+    def __iter__(self):
+        self._track_read()
+        return super().__iter__()
+
+    def __contains__(self, item):
+        self._track_read()
+        return super().__contains__(item)
 
     def add(self, item):
         self._check_frozen()
@@ -498,31 +585,31 @@ class WireSet(WireBase, set):
         super().symmetric_difference_update(*args)
         self._notify_write()
 
-    def __len__(self):
+    def __len__(self) -> int:
         self._track_read()
         return super().__len__()
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         self._track_read()
         return super().__len__() > 0
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
         self._track_read()
         return super().__lt__(other)
 
-    def __le__(self, other):
+    def __le__(self, other) -> bool:
         self._track_read()
         return super().__le__(other)
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> bool:
         self._track_read()
         return super().__gt__(other)
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> bool:
         self._track_read()
         return super().__ge__(other)
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         self._track_read()
         return super().__ne__(other)
 
@@ -533,6 +620,14 @@ class WireSet(WireBase, set):
     def value(self):
         self._track_read()
         return self
+
+    @value.setter
+    def value(self, new_set):
+        self._check_frozen()
+        if not isinstance(new_set, (set, list, tuple)):
+            raise TypeError("value must be a set, list or tuple")
+        self.clear()
+        self.update(new_set)
 
     def __repr__(self):
         return f"WireSet({set(self)!r})"
@@ -556,6 +651,10 @@ class WireNamespace(WireBase):
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
+
+    def _wrap_value(self, val: Any, field: str) -> Any:
+        self._track_read(field)
+        return val
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name.startswith("_") or name == "value":
@@ -591,6 +690,18 @@ class WireNamespace(WireBase):
         return f"wire({', '.join(items)})"
 
 
+@overload
+def wire(initial_value: list[T]) -> WireList[T]: ...
+@overload
+def wire(initial_value: PyDict[K, V]) -> WireDict[K, V]: ...
+@overload
+def wire(initial_value: set[T]) -> WireSet[T]: ...
+@overload
+def wire(initial_value: T) -> WirePrimitive[T]: ...
+@overload
+def wire(**kwargs: Any) -> WireNamespace: ...
+
+
 def wire(initial_value: Any = None, **kwargs) -> Any:
     """Factory for reactive wires."""
     if kwargs:
@@ -611,20 +722,21 @@ def wire(initial_value: Any = None, **kwargs) -> Any:
 def unwrap_wire(val: Any) -> Any:
     """Recursively unwrap wires and proxies into raw Python objects."""
     from pywire.core.signals import Derived
+    from pywire.core.wire import WireBase
 
     if isinstance(val, Derived):
         return unwrap_wire(val.value)
 
-    if hasattr(val, "value"):
+    if isinstance(val, WireBase):
         val = val.value
 
-    if isinstance(val, dict):
+    if type(val) is dict:
         return {k: unwrap_wire(v) for k, v in val.items()}
-    if isinstance(val, list):
+    if type(val) is list:
         return [unwrap_wire(i) for i in val]
-    if isinstance(val, set):
+    if type(val) is set:
         return {unwrap_wire(i) for i in val}
-    if isinstance(val, tuple):
+    if type(val) is tuple:
         return tuple(unwrap_wire(i) for i in val)
 
     return val

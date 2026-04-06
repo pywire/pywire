@@ -1,0 +1,1379 @@
+🚀 Starting pywire dev server on 
+http://127.0.0.1:8385
+[1;36mPyWire[0m: Found local certificates [1m([0m[1mlocalhost.pem[0m[1m)[0m, 
+using them.
+[1;36mPyWire[0m: Running on [1;4;36mhttps://127.0.0.1:8385[0m
+[32mINFO[0m:     Started server process [[36m13478[0m]
+[32mINFO[0m:     Waiting for application startup.
+[1;36mPyWire[0m: Watching 
+[1;35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[1;35mests/e2e/fixtures/basic_app/[0m[1;95mpages[0m for changes[33m...[0m
+[32mINFO[0m:     Application startup complete.
+[32mINFO[0m:     Uvicorn running on [1mhttps://127.0.0.1:8385[0m (Press CTRL+C to quit)
+[32mINFO[0m:     127.0.0.1:50092 - "[1mGET /form_double HTTP/1.1[0m" [91m500 Internal Server Error[0m
+[31mERROR[0m:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/debug.py", line 31, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/Users/rholmdahl/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/app.py", line 354, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/app.py", line 1063, in _handle_request
+    response = await page.render()
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/page.py", line 472, in render
+    html = await self._render_template()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire", line 1, in _render_template
+    ---py
+    
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire", line 17, in _render_region_r1
+    <p id="render-count">Renders: {self.render_count}</p>
+    ^^^^^^^^^^^^^^^^^
+AttributeError: 'FormDoublePage' object has no attribute 'self'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/debug.py", line 36, in __call__
+    await response(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/responses.py", line 157, in __call__
+    await send(
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 561, in send
+    raise RuntimeError(msg % message_type)
+RuntimeError: Unexpected ASGI message 'http.response.start' sent, after response already completed.
+[2;36m[22:13:52][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95mform_dou[0m
+[2;36m           [0m         [95mble.wire[0m: [1m[[0mErrno [1;36m2[0m[1m][0m No such    
+[2;36m           [0m         file or directory:             
+[2;36m           [0m         [32m'/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/tests/e2e/f[0m
+[2;36m           [0m         [32mixtures/basic_app/pages/form_do[0m
+[2;36m           [0m         [32muble.wire'[0m                     
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m75[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             with [1;35mopen[0m[1m([0mfile_path, [32m"r"[0m,  
+[2;36m           [0m         [33mencoding[0m=[32m"utf[0m[32m-8"[0m[1m)[0m as f:        
+[2;36m           [0m                  ^^^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^               
+[2;36m           [0m         FileNotFoundError: [1m[[0mErrno [1;36m2[0m[1m][0m No
+[2;36m           [0m         such file or directory:        
+[2;36m           [0m         [32m'/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/tests/e2e/f[0m
+[2;36m           [0m         [32mixtures/basic_app/pages/form_do[0m
+[2;36m           [0m         [32muble.wire'[0m                     
+[1;31mError[0m reloading page: [1m[[0mErrno [1;36m2[0m[1m][0m No such file or 
+directory: 
+[32m'/Users/rholmdahl/projects/pywire-workspace/pywire/[0m
+[32mtests/e2e/fixtures/basic_app/pages/form_double.wire[0m
+[32m'[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:13:55][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:14:00][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:14:02][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:14:07][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:14:28][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:16:11][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:16:45][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/special_chars.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:17:23][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/special_chars.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:17:58][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/hot_reload.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:19:02][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/input_binding.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:20:05][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/input_binding.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:20:30][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+DEBUG: FAILED TO PARSE EXPR: 'for item in items' at line 23
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95mstructur[0m
+[2;36m           [0m         [95mal.wire[0m: invalid syntax        
+[2;36m           [0m         [1m([0m[1m<[0m[1;95munknown[0m[39m>, line [0m[1;36m1[0m[1;39m)[0m            
+[2;36m           [0m         [39mTraceback [0m[1;39m([0m[39mmost recent call [0m   
+[2;36m           [0m         [39mlast[0m[1;39m)[0m[39m:[0m                         
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m334[0m[39m, in _transform_expr[0m   
+[2;36m           [0m         [39m    tree = [0m[1;35mast.parse[0m[1;39m([0m[39mexpr_str, [0m
+[2;36m           [0m         [33mmode[0m[39m=[0m[32m"eval"[0m[1;39m)[0m                   
+[2;36m           [0m         [39m           ^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^[0m                   
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/.local/share/[0m
+[2;36m           [0m         [32muv/python/cpython-3.11.14-macos[0m
+[2;36m           [0m         [32m-aarch64-none/lib/python3.11/as[0m
+[2;36m           [0m         [32mt.py"[0m[39m, line [0m[1;36m50[0m[39m, in parse[0m       
+[2;36m           [0m         [39m    return [0m[1;35mcompile[0m[1;39m([0m[39msource, [0m    
+[2;36m           [0m         [39mfilename, mode, flags,[0m         
+[2;36m           [0m         [39m           ^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^^^^^^^[0m             
+[2;36m           [0m         [39m  File [0m[32m"<unknown>"[0m[39m, line [0m[1;36m1[0m     
+[2;36m           [0m         [39m    for item in items[0m          
+[2;36m           [0m         [39m    ^^^[0m                        
+[2;36m           [0m         [39mSyntaxError: invalid syntax[0m    
+[2;36m           [0m                                        
+[2;36m           [0m         [39mDuring handling of the above [0m  
+[2;36m           [0m         [39mexception, another exception [0m  
+[2;36m           [0m         [39moccurred:[0m                      
+[2;36m           [0m                                        
+[2;36m           [0m         [39mTraceback [0m[1;39m([0m[39mmost recent call [0m   
+[2;36m           [0m         [39mlast[0m[1;39m)[0m[39m:[0m                         
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m[39m, line [0m[1;36m893[0m[39m, in [0m 
+[2;36m           [0m         [39mreload_page[0m                    
+[2;36m           [0m         [39m    new_page_class = [0m          
+[2;36m           [0m         [1;35mself.loader.load[0m[1;39m([0m              
+[2;36m           [0m         [39m                     ^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^[0m                        
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m[39m, line [0m[1;36m71[0m[39m, in[0m
+[2;36m           [0m         [39mload[0m                           
+[2;36m           [0m         [39m    module_ast = [0m              
+[2;36m           [0m         [1;35mself.codegen.generate[0m[1;39m([0m[39mparsed[0m[1;39m)[0m  
+[2;36m           [0m         [39m                 ^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^^^^[0m                
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/generator.py"[0m[39m,[0m
+[2;36m           [0m         [39m line [0m[1;36m141[0m[39m, in generate[0m         
+[2;36m           [0m         [39m    page_class = [0m              
+[2;36m           [0m         [1;35mself._generate_page_class[0m[1;39m([0m     
+[2;36m           [0m         [39m                 ^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^[0m                   
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/generator.py"[0m[39m,[0m
+[2;36m           [0m         [39m line [0m[1;36m528[0m[39m, in [0m                 
+[2;36m           [0m         [39m_generate_page_class[0m           
+[2;36m           [0m         [39m    render_func, binding_funcs [0m
+[2;36m           [0m         [39m= [0m                             
+[2;36m           [0m         [1;35mself._generate_render_template_[0m
+[2;36m           [0m         [1;35mmethod[0m[1;39m([0m                        
+[2;36m           [0m         [39m                               [0m
+[2;36m           [0m         [39m  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^[0m                      
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/generator.py"[0m[39m,[0m
+[2;36m           [0m         [39m line [0m[1;36m1801[0m[39m, in [0m                
+[2;36m           [0m         [39m_generate_render_template_metho[0m
+[2;36m           [0m         [39md[0m                              
+[2;36m           [0m         [39m    render_func, aux_funcs = [0m  
+[2;36m           [0m         [1;35mself.template_codegen.generate_[0m
+[2;36m           [0m         [1;35mrender_method[0m[1;39m([0m                 
+[2;36m           [0m         [39m                             ^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^[0m                   
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m87[0m[39m, in [0m                   
+[2;36m           [0m         [39mgenerate_render_method[0m         
+[2;36m           [0m         [39m    main_func = [0m               
+[2;36m           [0m         [1;35mself._generate_function[0m[1;39m([0m       
+[2;36m           [0m         [39m                ^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^[0m                      
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m261[0m[39m, in _generate_function[0m
+[2;36m           [0m         [39m    [0m[1;35mself._add_node[0m[1;39m([0m            
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m2678[0m[39m, in _add_node[0m        
+[2;36m           [0m         [39m    [0m[1;35mself._generate_region_metho[0m
+[2;36m           [0m         [1;35md[0m[1;39m([0m                             
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m755[0m[39m, in [0m                  
+[2;36m           [0m         [39m_generate_region_method[0m        
+[2;36m           [0m         [39m    func_def = [0m                
+[2;36m           [0m         [1;35mself._generate_function[0m[1;39m([0m       
+[2;36m           [0m         [39m               ^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^[0m                       
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m261[0m[39m, in _generate_function[0m
+[2;36m           [0m         [39m    [0m[1;35mself._add_node[0m[1;39m([0m            
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m3648[0m[39m, in _add_node[0m        
+[2;36m           [0m         [39m    [0m[1;35mself._add_node[0m[1;39m([0m            
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m3648[0m[39m, in _add_node[0m        
+[2;36m           [0m         [39m    [0m[1;35mself._add_node[0m[1;39m([0m            
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m2611[0m[39m, in _add_node[0m        
+[2;36m           [0m         [39m    expr = [0m                    
+[2;36m           [0m         [1;35mself._transform_expr[0m[1;39m([0m          
+[2;36m           [0m         [39m           ^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^[0m                              
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/codegen/template.py"[0m[39m, [0m
+[2;36m           [0m         [39mline [0m[1;36m372[0m[39m, in _transform_expr[0m   
+[2;36m           [0m         [39m    tree = [0m[1;35mast.parse[0m[1;39m([0m[39mreplaced, [0m
+[2;36m           [0m         [33mmode[0m[39m=[0m[32m"eval"[0m[1;39m)[0m                   
+[2;36m           [0m         [39m           ^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^[0m                   
+[2;36m           [0m         [39m  File [0m                        
+[2;36m           [0m         [32m"/Users/rholmdahl/.local/share/[0m
+[2;36m           [0m         [32muv/python/cpython-3.11.14-macos[0m
+[2;36m           [0m         [32m-aarch64-none/lib/python3.11/as[0m
+[2;36m           [0m         [32mt.py"[0m[39m, line [0m[1;36m50[0m[39m, in parse[0m       
+[2;36m           [0m         [39m    return [0m[1;35mcompile[0m[1;39m([0m[39msource, [0m    
+[2;36m           [0m         [39mfilename, mode, flags,[0m         
+[2;36m           [0m         [39m           ^^^^^^^^^^^^^^^^^^^^[0m
+[2;36m           [0m         [39m^^^^^^^^^^^^^^^^^^[0m             
+[2;36m           [0m         [39m  File [0m[32m"<unknown[0m[32m>[0m[32m"[0m, line [1;36m1[0m     
+[2;36m           [0m             for item in items          
+[2;36m           [0m             ^^^                        
+[2;36m           [0m         SyntaxError: invalid syntax    
+[1;31mError[0m reloading page: invalid syntax [1m([0m[1m<[0m[1;95munknown[0m[1m>[0m, 
+line [1;36m1[0m[1m)[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:20:47][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/persistent.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:21:15][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/persistent.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:21:31][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/structural.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:21:57][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/structural.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:23:51][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95merror.wi[0m
+[2;36m           [0m         [95mre[0m: Event handler for [32m'@click'[0m 
+[2;36m           [0m         must be wrapped in brackets or 
+[2;36m           [0m         quotes: @[33mclick[0m=[1m{[0mexpr[1m}[0m or       
+[2;36m           [0m         @[33mclick[0m=[32m"expr"[0m                  
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/events.py"[0m,
+[2;36m           [0m          line [1;36m40[0m, in parse             
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Event handler   
+[2;36m           [0m         for [32m'@click'[0m must be wrapped in
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[1;31mError[0m reloading page: Event handler for [32m'@click'[0m 
+must be wrapped in brackets or quotes: 
+@[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:24:30][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95merror.wi[0m
+[2;36m           [0m         [95mre[0m: Event handler for [32m'@click'[0m 
+[2;36m           [0m         must be wrapped in brackets or 
+[2;36m           [0m         quotes: @[33mclick[0m=[1m{[0mexpr[1m}[0m or       
+[2;36m           [0m         @[33mclick[0m=[32m"expr"[0m                  
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/events.py"[0m,
+[2;36m           [0m          line [1;36m40[0m, in parse             
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Event handler   
+[2;36m           [0m         for [32m'@click'[0m must be wrapped in
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[1;31mError[0m reloading page: Event handler for [32m'@click'[0m 
+must be wrapped in brackets or quotes: 
+@[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:24:38][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95merror.wi[0m
+[2;36m           [0m         [95mre[0m: Event handler for [32m'@click'[0m 
+[2;36m           [0m         must be wrapped in brackets or 
+[2;36m           [0m         quotes: @[33mclick[0m=[1m{[0mexpr[1m}[0m or       
+[2;36m           [0m         @[33mclick[0m=[32m"expr"[0m                  
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/events.py"[0m,
+[2;36m           [0m          line [1;36m40[0m, in parse             
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Event handler   
+[2;36m           [0m         for [32m'@click'[0m must be wrapped in
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[1;31mError[0m reloading page: Event handler for [32m'@click'[0m 
+must be wrapped in brackets or quotes: 
+@[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:39:44][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/input_binding.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:40:57][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95madvanced[0m
+[2;36m           [0m         [95m.wire[0m: Event handler for       
+[2;36m           [0m         [32m'@click'[0m must be wrapped in    
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/events.py"[0m,
+[2;36m           [0m          line [1;36m40[0m, in parse             
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Event handler   
+[2;36m           [0m         for [32m'@click'[0m must be wrapped in
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[1;31mError[0m reloading page: Event handler for [32m'@click'[0m 
+must be wrapped in brackets or quotes: 
+@[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:41:44][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95madvanced[0m
+[2;36m           [0m         [95m.wire[0m: Event handler for       
+[2;36m           [0m         [32m'@click'[0m must be wrapped in    
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/events.py"[0m,
+[2;36m           [0m          line [1;36m40[0m, in parse             
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Event handler   
+[2;36m           [0m         for [32m'@click'[0m must be wrapped in
+[2;36m           [0m         brackets or quotes:            
+[2;36m           [0m         @[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m 
+[1;31mError[0m reloading page: Event handler for [32m'@click'[0m 
+must be wrapped in brackets or quotes: 
+@[33mclick[0m=[1m{[0mexpr[1m}[0m or @[33mclick[0m=[32m"expr"[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:45:32][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/error.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:45:34][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95madvanced[0m
+[2;36m           [0m         [95m.wire[0m: No module named         
+[2;36m           [0m         [32m'pywire.runtime.state'[0m         
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m87[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             [1;35mexec[0m[1m([0mcode, module.__dict__[1m)[0m
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/tests/e2e/f[0m
+[2;36m           [0m         [32mixtures/basic_app/pages/advance[0m
+[2;36m           [0m         [32md.wire"[0m, line [1;36m2[0m, in [1m<[0m[1;95mmodule[0m[1m>[0m   
+[2;36m           [0m             from pydantic import       
+[2;36m           [0m         BaseModel                      
+[2;36m           [0m         ModuleNotFoundError: No module 
+[2;36m           [0m         named [32m'pywire.runtime.state'[0m   
+[1;31mError[0m reloading page: No module named 
+[32m'pywire.runtime.state'[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:46:56][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:49:28][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[22:59:55][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:00:01][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:03:33][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:05:47][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:06:21][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:06:59][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:07:25][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:08:18][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:09:24][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:09:37][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:09:54][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:11:11][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/components/form.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:11:21][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/components/form.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:11:35][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/components/form.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:11:37][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:11:39][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:11:41][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:11:43][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:12:34][0m[2;36m [0m[34mINFO    [0m [1;36m2[0m changes detected             
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:13:45][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:14:07][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:15:13][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95minput_bi[0m
+[2;36m           [0m         [95mnding.wire[0m: Event handler for  
+[2;36m           [0m         [32m'@submit.prevent'[0m must be      
+[2;36m           [0m         wrapped in brackets or quotes: 
+[2;36m           [0m         @submit.[33mprevent[0m=[1m{[0mexpr[1m}[0m or      
+[2;36m           [0m         @submit.[33mprevent[0m=[32m"expr"[0m         
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/events.py"[0m,
+[2;36m           [0m          line [1;36m40[0m, in parse             
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Event handler   
+[2;36m           [0m         for [32m'@submit.prevent'[0m must be  
+[2;36m           [0m         wrapped in brackets or quotes: 
+[2;36m           [0m         @submit.[33mprevent[0m=[1m{[0mexpr[1m}[0m or      
+[2;36m           [0m         @submit.[33mprevent[0m=[32m"expr"[0m         
+[1;31mError[0m reloading page: Event handler for 
+[32m'@submit.prevent'[0m must be wrapped in brackets or 
+quotes: @submit.[33mprevent[0m=[1m{[0mexpr[1m}[0m or 
+@submit.[33mprevent[0m=[32m"expr"[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:15:18][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:15:24][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:19:11][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/input_binding.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:20:18][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_double.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:22:01][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/structural.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:23:08][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/structural.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:24:50][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/structural.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:25:53][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:26:02][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:26:22][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/binding_reactivity.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:27:08][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[2;36m          [0m[2;36m [0m[1;31mERROR   [0m Failed to reload               
+[2;36m           [0m         [35m/Users/rholmdahl/projects/pywir[0m
+[2;36m           [0m         [35me-workspace/pywire/tests/e2e/fi[0m
+[2;36m           [0m         [35mxtures/basic_app/pages/[0m[95mbinding_[0m
+[2;36m           [0m         [95mreactivity.wire[0m: Value for     
+[2;36m           [0m         [32m'$for'[0m must be wrapped in      
+[2;36m           [0m         brackets: $[33mfor[0m=[1m{[0mitem in items[1m}[0m 
+[2;36m           [0m         Traceback [1m([0mmost recent call    
+[2;36m           [0m         last[1m)[0m:                         
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/app.py"[0m, line [1;36m893[0m, in  
+[2;36m           [0m         reload_page                    
+[2;36m           [0m             new_page_class =           
+[2;36m           [0m         [1;35mself.loader.load[0m[1m([0m              
+[2;36m           [0m                              ^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^                        
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mruntime/loader.py"[0m, line [1;36m54[0m, in
+[2;36m           [0m         load                           
+[2;36m           [0m             parsed =                   
+[2;36m           [0m         [1;35mself.parser.parse_file[0m[1m([0mpywire_f
+[2;36m           [0m         ile[1m)[0m                           
+[2;36m           [0m                      ^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^              
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m78[0m,  
+[2;36m           [0m         in parse_file                  
+[2;36m           [0m             return [1;35mself.parse[0m[1m([0mcontent, 
+[2;36m           [0m         [1;35mstr[0m[1m([0mfile_path[1m)[0m[1m)[0m                
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m95[0m,  
+[2;36m           [0m         in parse                       
+[2;36m           [0m             [1;35mtemplate_nodes.append[0m[1m([0m[1;35mself.[0m
+[2;36m           [0m         [1;35m_map_node[0m[1m([0mn[1m)[0m[1m)[0m                  
+[2;36m           [0m                                   ^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^                   
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m173[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             [1;35mnode.children.append[0m[1m([0m[1;35mself._[0m
+[2;36m           [0m         [1;35mmap_node[0m[1m([0mchild[1m)[0m[1m)[0m               
+[2;36m           [0m                                  ^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^                
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m137[0m, 
+[2;36m           [0m         in _map_node                   
+[2;36m           [0m             regular_attrs,             
+[2;36m           [0m         special_attrs =                
+[2;36m           [0m         [1;35mself._parse_attributes[0m[1m([0m        
+[2;36m           [0m                                        
+[2;36m           [0m             ^^^^^^^^^^^^^^^^^^^^^^^    
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/parser.py"[0m, line [1;36m493[0m, 
+[2;36m           [0m         in _parse_attributes           
+[2;36m           [0m             attr = [1;35mparser.parse[0m[1m([0mname,  
+[2;36m           [0m         [1;35mstr[0m[1m([0mvalue[1m)[0m, line, col[1m)[0m         
+[2;36m           [0m                    ^^^^^^^^^^^^^^^^^^^^
+[2;36m           [0m         ^^^^^^^^^^^^^^^^^^^^^          
+[2;36m           [0m           File                         
+[2;36m           [0m         [32m"/Users/rholmdahl/projects/pywi[0m
+[2;36m           [0m         [32mre-workspace/pywire/src/pywire/[0m
+[2;36m           [0m         [32mcompiler/attributes/loop.py"[0m,  
+[2;36m           [0m         line [1;36m22[0m, in parse              
+[2;36m           [0m             raise [1;35mPyWireSyntaxError[0m[1m([0m   
+[2;36m           [0m         pywire.compiler.exceptions.PyWi
+[2;36m           [0m         reSyntaxError: Value for [32m'$for'[0m
+[2;36m           [0m         must be wrapped in brackets:   
+[2;36m           [0m         $[33mfor[0m=[1m{[0mitem in items[1m}[0m           
+[1;31mError[0m reloading page: Value for [32m'$for'[0m must be 
+wrapped in brackets: $[33mfor[0m=[1m{[0mitem in items[1m}[0m
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:27:42][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/binding_reactivity.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:28:49][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:28:56][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[23:30:22][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/binding_reactivity.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:30:52][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/binding_reactivity.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:39:05][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/refs_expose.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:39:17][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/special_chars.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:39:32][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/binding_reactivity.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[23:39:51][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/form_scenarios.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[00:01:36][0m[2;36m [0m[34mINFO    [0m [1;36m3[0m changes detected             
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[00:01:55][0m[2;36m [0m[34mINFO    [0m [1;36m2[0m changes detected             
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[00:02:21][0m[2;36m [0m[34mINFO    [0m [1;36m2[0m changes detected             
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[01:21:33][0m[2;36m [0m[34mINFO    [0m [1;36m2[0m changes detected             
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:39:54][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/advanced.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[12:49:00][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:49:05][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:49:23][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:52:53][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+Reloaded: /Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/components/form.wire
+[1;32mPyWire[0m: Changes detected in 
+[35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[35mests/e2e/fixtures/basic_app/[0m[95mpages[0m, reloading 
+clients[33m...[0m
+[2;36m[12:53:19][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:57:27][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:57:39][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:58:04][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.
+[2;36m[12:58:24][0m[2;36m [0m[34mINFO    [0m [1;36m1[0m change detected              
+[1;35mPyWire[0m: Core/Config change detected. Please restart
+server manually.

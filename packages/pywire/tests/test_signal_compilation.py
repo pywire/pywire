@@ -81,7 +81,7 @@ def test_component_ref_compilation():
         ---
         modal_ref = wire()
         ---
-        <Modal ref={modal_ref} title="Hello" />
+        <Modal $ref={modal_ref} title="Hello" />
     """)
     
     parser = PyWireParser()
@@ -92,9 +92,6 @@ def test_component_ref_compilation():
     code = ast.unparse(module_ast)
     
     # Check ref assignment groundwork
-    # Should find something like: _comp_..._ref = self.modal_ref
-    # In my template.py change:
-    # comp_var = f"_comp_{node.line}_{node.column}"
-    # body.append(ast.Assign(targets=[Attribute(value=Name(id=comp_var...), attr="_ref"...)], value=ref_expr))
-    
-    assert "._ref = self.modal_ref" in code
+    # Should find something like: self.modal_ref._bind_component(_comp_X_Y, self)
+    assert "self.modal_ref._bind_component(_comp_" in code
+    assert ", self)" in code

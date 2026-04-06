@@ -50,7 +50,11 @@ def test_bundle_selection_integration(tmp_path: Path) -> None:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
     (pages_dir / "index.wire").write_text(
-        "!path { 'a': '/a', 'b': '/b' }\n# Python\n---html---\n<h1>Index</h1>"
+      """!path { 'a': '/a', 'b': '/b' }
+---
+# Python
+---
+<h1>Index</h1>"""
     )
 
     # Dev Mode
@@ -81,7 +85,12 @@ def test_no_spa_directive_disables_injection(tmp_path: Path) -> None:
     pages_dir = tmp_path / "pages"
     pages_dir.mkdir()
     (pages_dir / "no_spa.wire").write_text(
-        "!path { 'a': '/a', 'b': '/b' }\n!no_spa\n# Python\n---html---\n<h1>No SPA</h1>"
+      """!path { 'a': '/a', 'b': '/b' }
+!no_spa
+---
+# Python
+---
+<h1>No SPA</h1>"""
     )
 
     app = PyWire(pages_dir=str(pages_dir), debug=True)
@@ -92,3 +101,61 @@ def test_no_spa_directive_disables_injection(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "pywire.dev.min.js" not in response.text
     assert "_pywire_spa_meta" not in response.text
+
+
+def test_script_injection_pjax_off(tmp_path: Path) -> None:
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "index.wire").write_text(
+        "# Python\n---html---\n<html><body><h1>Index</h1></body></html>"
+    )
+    app = PyWire(pages_dir=str(pages_dir), debug=True, enable_pjax=False)
+    client = TestClient(app.app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "pywire.core.min.js" in response.text or "pywire.dev.min.js" in response.text
+    assert "_pywire_spa_meta" in response.text
+    assert '"enable_pjax": false' in response.text
+
+
+def test_script_injection_pjax_on(tmp_path: Path) -> None:
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "index.wire").write_text(
+        "# Python\n---html---\n<html><body><h1>Index</h1></body></html>"
+    )
+    app = PyWire(pages_dir=str(pages_dir), debug=True, enable_pjax=True)
+    client = TestClient(app.app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "pywire.core.min.js" in response.text or "pywire.dev.min.js" in response.text
+    assert "_pywire_spa_meta" in response.text
+    assert '"enable_pjax": true' in response.text
+
+
+def test_script_string_with_body_html_tags_is_preserved(tmp_path: Path) -> None:
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "index.wire").write_text(
+        """---
+# Python
+---
+<html><body>
+<h1>Index</h1>
+<script>
+function demo() {
+  const w = window.open('', '_blank');
+  w.document.write('</body></html>');
+}
+</script>
+</body></html>"""
+    )
+    app = PyWire(pages_dir=str(pages_dir), debug=True, enable_pjax=True)
+    client = TestClient(app.app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "w.document.write('</body></html>');" in response.text
+    assert "_pywire_spa_meta" in response.text
+    assert response.text.rfind("_pywire_spa_meta") > response.text.rfind(
+        "w.document.write('</body></html>');"
+    )

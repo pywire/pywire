@@ -1,0 +1,16 @@
+---
+from pywire import wire, expose
+
+count = wire(0)
+
+@expose
+def get_count_exposed():
+    return count.value
+
+@expose
+def increment_exposed():
+    count.value += 1
+---
+<div id="counter-comp">
+    <p id="comp-count">Count: {count}</p>
+</div>

@@ -15,9 +15,9 @@ def generate_page(name: str) -> None:
 
     template = f"""!path {{ '{name}': '/{name}' }}
 
+---
 # Page code here
-
----html---
+---
 <div>
     <h1>{name.title()} Page</h1>
     <p>Welcome to the {name} page!</p>
@@ -37,9 +37,9 @@ def generate_component(name: str) -> None:
     if component_file.exists():
         raise ValueError(f"Component {name} already exists")
 
-    template = f"""# Component code here
-
----html---
+    template = f"""---
+# Component code here
+---
 <div class="{name}">
     <!-- Component code here -->
 </div>

@@ -13,12 +13,12 @@ def test_permanent_reload_shorthand():
     # 1. Permanent div
     div = nodes[0]
     assert div.tag == "div"
-    assert div.attributes["data-pywire-permanent"] == "true"
+    assert div.attributes["data-pw-permanent"] == "true"
     
     # 2. Reload link
     a = nodes[1]
     assert a.tag == "a"
-    assert a.attributes["data-pywire-reload"] == "true"
+    assert a.attributes["data-pw-reload"] == "true"
     assert a.attributes["href"] == "/test"
     
     # 3. Mixed attributes
@@ -26,7 +26,7 @@ def test_permanent_reload_shorthand():
     assert mixed.tag == "div"
     assert mixed.attributes["id"] == "mixed"
     assert mixed.attributes["class"] == "foo"
-    assert mixed.attributes["data-pywire-permanent"] == "true"
+    assert mixed.attributes["data-pw-permanent"] == "true"
     assert mixed.attributes["data-other"] == "bar"
 
 def test_permanent_no_space():
@@ -35,10 +35,10 @@ def test_permanent_no_space():
     source = "<div $permanent></div>"
     ast = parser.parse(source)
     div = [n for n in ast.template if n.tag == "div"][0]
-    assert div.attributes["data-pywire-permanent"] == "true"
+    assert div.attributes["data-pw-permanent"] == "true"
     
     # $permanent followed by />
     source = "<div $permanent/>"
     ast = parser.parse(source)
     div = [n for n in ast.template if n.tag == "div"][0]
-    assert div.attributes["data-pywire-permanent"] == "true"
+    assert div.attributes["data-pw-permanent"] == "true"

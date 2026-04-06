@@ -6,8 +6,9 @@ description: Pass data to components using props.
 files:
   - path: pages/index.wire
     initial: |
-      !component "../components/badge.wire" as Badge
-
+      ---
+      from components.badge import Badge
+      ---
       <div>
         <h1>Passing Props</h1>
         <div class="row">
@@ -23,32 +24,39 @@ files:
         Text here
       </span>
     solution: |
-      !props(text: str, color: str = "gray")
+      ---
+      from pywire import props
 
-      <span style="background-color: {color}; color: white; padding: 4px 8px; border-radius: 4px;">
-        {text}
+      @props
+      class Props:
+          text: str
+          color: str = "gray"
+      ---
+      <span style="background-color: {props.color}; color: white; padding: 4px 8px; border-radius: 4px;">
+        {props.text}
       </span>
 successCriteria:
   - type: file_contains
-    description: "Define props using !props text, color='gray'"
-    target: components/Badge.wire
-    pattern: '!props'
+    description: "Define props using @props class"
+    target: components/badge.wire
+    pattern: '@props'
   - type: file_contains
-    description: 'Use {text} inside the span'
-    target: components/Badge.wire
-    pattern: '{text}'
+    description: 'Use {props.text} inside the span'
+    target: components/badge.wire
+    pattern: '{props.text}'
   - type: browser_route_text
     description: "Verify 'Admin' badge is visible"
     pattern: 'Admin'
 pagesDir: pages
 ---
 
-To make components flexible, you can pass data to them using props. Use the `!props` directive at the top of your component file to declare what it accepts.
+To make components flexible, you can pass data to them using props. PyWire uses a type-safe `@props` decorator to define what data a component accepts.
 
 ### Your Task
 
-1.  In `components/Badge.wire`, add `!props text, color="gray"` at the very top.
-2.  Replace "Text here" with **`{text}`**.
-3.  Check the preview to see the "Admin" and "User" badges rendered with different colors.
+1.  In `components/badge.wire`, import `props` from `pywire`.
+2.  Define a `class Props` decorated with `@props`, adding `text: str` and `color: str = "gray"`.
+3.  Replace "Text here" with **`{props.text}`** and `{color}` with **`{props.color}`**.
+4.  Check the preview to see the "Admin" and "User" badges rendered with different colors.
 
-Props can have default values, like `color="gray"` in this example.
+Props are accessed via the `props` object in your template and are fully typed.

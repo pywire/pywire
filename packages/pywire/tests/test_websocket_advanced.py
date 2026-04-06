@@ -1,3 +1,4 @@
+import pytest
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -5,8 +6,9 @@ from pywire.runtime.app import PyWire
 from pywire.runtime.websocket import WebSocketHandler
 
 
-class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+@pytest.mark.asyncio
+class TestWebSocketAdvanced:
+    def setup_method(self, method) -> None:
         self.app = MagicMock(spec=PyWire)
         # Fix: ensure app.router.match is a mock
         self.app.router = MagicMock()
@@ -46,9 +48,5 @@ class TestWebSocketAdvanced(unittest.IsolatedAsyncioTestCase):
         # ws2 has no page, so it should receive 'reload'
         # ws2.send_bytes.assert_called()
 
-        self.assertTrue(ws1.send_bytes.called)
-        self.assertTrue(ws2.send_bytes.called)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert ws1.send_bytes.called
+        assert ws2.send_bytes.called

@@ -1,6 +1,6 @@
+import pytest
 import shutil
 import tempfile
-import unittest
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,8 +10,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 
-class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+class TestNamingConventions:
+    def setup_method(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir).resolve()
         # Mock Starlette to avoid actual server setup
@@ -28,7 +28,7 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
             # Setup loader mock to avoid actual compilation
             self.app.loader = MagicMock()
 
-    def tearDown(self) -> None:
+    def teardown_method(self) -> None:
         shutil.rmtree(self.test_dir)
 
     def test_layout_ignores_legacy(self) -> None:
@@ -57,8 +57,8 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
             call for call in loader.load.call_args_list if call.args[0] == legacy_layout_path
         ]
 
-        self.assertTrue(len(layout_load_calls) > 0, "__layout__.wire MUST be loaded")
-        self.assertEqual(len(legacy_load_calls), 0, "layout.wire MUST NOT be loaded")
+        assert len(layout_load_calls) > 0, "__layout__.wire MUST be loaded"
+        assert len(legacy_load_calls) == 0, "layout.wire MUST NOT be loaded"
 
         # Verify index page was loaded with implicit layout
         index_path = self.pages_dir / "index.wire"
@@ -77,9 +77,11 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         # OR run _load_pages
 
         # Verify router add_route("/__error__", ...)
+        from unittest.mock import ANY
         router = cast(Any, self.app.router)
-        router.add_route.assert_any_call("/__error__", unittest.mock.ANY)
+        router.add_route.assert_any_call("/__error__", ANY)
 
+    @pytest.mark.asyncio
     async def test_error_code_injection(self) -> None:
         """Verify fallback to /__error__ injects error_code."""
         # Setup router.match to simulate finding /__error__
@@ -111,11 +113,7 @@ class TestNamingConventions(unittest.IsolatedAsyncioTestCase):
         response = await self.app._handle_request(request)
 
         # Verify status code
-        self.assertEqual(response.status_code, 404)
+        assert response.status_code == 404
 
         # Verify error_code was set on page instance
-        self.assertEqual(cast(Any, mock_page_instance).error_code, 404)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert cast(Any, mock_page_instance).error_code == 404

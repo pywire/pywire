@@ -6,8 +6,9 @@ description: Break your UI into reusable pieces with components.
 files:
   - path: pages/index.wire
     initial: |
-      !component "../components/my_button.wire" as MyButton
-
+      ---
+      from components.my_button import MyButton
+      ---
       <div>
         <h1>My App</h1>
         <MyButton />
@@ -38,7 +39,7 @@ successCriteria:
 pagesDir: pages
 ---
 
-Components in PyWire are just `.wire` files. Any `.wire` file in your `components/` directory (or other configured paths) can be used as a custom HTML tag.
+Components in PyWire are just `.wire` files that are compiled into Python classes. You can import them into other pages or components using standard Python import syntax.
 
 ### Your Task
 
@@ -47,4 +48,4 @@ Components in PyWire are just `.wire` files. Any `.wire` file in your `component
 3.  Add a second `<MyButton />` tag to the index page.
 4.  Observe that the button in the preview updates immediately.
 
-In PyWire, directory structure often dictates availability. Files in `components/` are automatically available to your pages.
+In PyWire, you explicitly import what you use, just like in Python. This makes it easy to know exactly where a component is coming from.

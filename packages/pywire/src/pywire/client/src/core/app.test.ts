@@ -60,7 +60,7 @@ describe('PyWireApp', () => {
     expect(navigateToSpy).toHaveBeenCalledWith('/a')
   })
 
-  it('should NOT intercept link clicks with data-pywire-reload', async () => {
+  it('should NOT intercept link clicks with data-pw-reload', async () => {
     // Setup metadata (enable pjax to make sure it would otherwise intercept)
     const meta = document.createElement('script')
     meta.id = '_pywire_spa_meta'
@@ -71,7 +71,7 @@ describe('PyWireApp', () => {
 
     const link = document.createElement('a')
     link.href = '/reload'
-    link.setAttribute('data-pywire-reload', 'true')
+    link.setAttribute('data-pw-reload', 'true')
     document.body.appendChild(link)
 
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })

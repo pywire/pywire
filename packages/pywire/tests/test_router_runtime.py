@@ -43,6 +43,15 @@ class TestRouterRuntime(unittest.TestCase):
         params = route.match("/user/1/posts/2")
         self.assertEqual(params, {"id": "1", "post_id": "2"})
 
+    def test_router_param_types_coerced(self) -> None:
+        router = Router()
+        router.add_route("/test/:id:int", MockPage)
+        match = router.match("/test/123")
+        self.assertIsNotNone(match)
+        _, params, _ = match
+        self.assertIsInstance(params["id"], int)
+        self.assertEqual(params["id"], 123)
+
     def test_url_template_format(self) -> None:
         tpl = URLTemplate("/user/:id/posts/:post_id")
         url = tpl.format(id=1, post_id=10)

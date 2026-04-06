@@ -49,6 +49,7 @@ class TemplateCodegen:
         "wbr",
         "slot",
     }
+    DOCUMENT_ROOT_ELEMENTS = {"html", "head", "body"}
 
     def __init__(self) -> None:
         self.interpolation_parser = JinjaInterpolationParser()
@@ -58,12 +59,13 @@ class TemplateCodegen:
         self._region_counter = 0
         self.region_renderers: Dict[str, str] = {}
         self._expr_id_counter = 0
+        self._wire_vars: Set[str] = set()
 
     def generate_render_method(
         self,
         template_nodes: List[TemplateNode],
         layout_id: Optional[str] = None,
-        known_methods: Optional[Set[str]] = None,
+        known_methods: Optional[Dict[str, int]] = None,
         known_globals: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
         component_map: Optional[Dict[str, str]] = None,
@@ -77,6 +79,7 @@ class TemplateCodegen:
         Returns: (main_function_ast, list_of_auxiliary_function_asts)
         """
         self._reset_state()
+        self._wire_vars = wire_vars
         # Check for explicit spread
         has_spread = self._has_spread_attribute(template_nodes)
         implicit_root_source = "attrs" if not has_spread and layout_id else None
@@ -113,6 +116,7 @@ class TemplateCodegen:
         Returns: ({slot_name: function_ast}, list_of_auxiliary_function_asts)
         """
         self._reset_state()
+        self._wire_vars = wire_vars
         slots = defaultdict(list)
 
         # Generate a short hash from file_id to make method names unique per file
@@ -164,12 +168,14 @@ class TemplateCodegen:
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
+        self._wire_vars = set()
         self._expr_id_counter = 0
         self._slot_default_counter = 0
         self.auxiliary_functions = []
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
+        self._wire_vars = set()
 
     def _generate_function(
         self,
@@ -177,7 +183,7 @@ class TemplateCodegen:
         func_name: str,
         is_async: bool = False,
         layout_id: Optional[str] = None,
-        known_methods: Optional[Set[str]] = None,
+        known_methods: Optional[Dict[str, int]] = None,
         known_globals: Optional[Set[str]] = None,
         known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
@@ -197,7 +203,7 @@ class TemplateCodegen:
             initial_locals = initial_locals.copy()
 
         if known_methods is None:
-            known_methods = set()
+            known_methods = {}
         if known_globals is None:
             known_globals = set()
         if known_imports is None:
@@ -312,28 +318,31 @@ class TemplateCodegen:
         line_offset: int = 0,
         col_offset: int = 0,
         cached: bool = False,
-        wire_vars: Set[str] = set(),
-        no_unwrap: bool = False,
-    ) -> ast.expr:
+        wire_vars: Optional[Set[str]] = None,
+        mode: str = "eval",
+    ) -> Union[ast.expr, ast.stmt]:
         """Transform expression string to AST with self. handling."""
         expr_str = expr_str.strip()
+        if wire_vars is None:
+            wire_vars = self._wire_vars
 
         try:
             from pywire.compiler.preprocessor import preprocess_python_code
 
             expr_str = preprocess_python_code(expr_str)
             try:
-                tree = ast.parse(expr_str, mode="eval")
+                tree = ast.parse(expr_str, mode=mode)
             except SyntaxError:
-                print(
-                    f"DEBUG: FAILED TO PARSE EXPR: '{expr_str}' at line {line_offset}"
-                )
-                raise
+                if mode == "eval":
+                    # Try exec mode if eval fails (e.g. for augmented assignments)
+                    try:
+                        tree = ast.parse(expr_str, mode="exec")
+                    except SyntaxError:
+                        raise
+                else:
+                    raise
+
             if line_offset > 0:
-                # ast.increment_lineno uses 1-based indexing for AST, but adds diff
-                # We want result to be line_offset.
-                # Current starts at 1.
-                # diff = line_offset - 1
                 ast.increment_lineno(tree, line_offset - 1)
         except SyntaxError:
             # Fallback for complex/invalid syntax (legacy support)
@@ -361,7 +370,7 @@ class TemplateCodegen:
                 return f"self.{word}"
 
             replaced = re.sub(r"\\b([a-zA-Z_]\w*)\\b(?!\s*[(\[])", repl, expr_str)
-            tree = ast.parse(replaced, mode="eval")
+            tree = ast.parse(replaced, mode=mode)
 
         class AddSelfTransformer(ast.NodeTransformer):
             def visit_Name(self, node: ast.Name) -> Any:
@@ -369,32 +378,14 @@ class TemplateCodegen:
 
                 # 1. If locally defined, keep as is
                 if node.id in local_vars or node.id in ("json", "escape_html"):
-                    # print(f"DEBUG: KEEP LOCAL {node.id}")
                     return node
 
                 # 2. If explicitly known as import, keep as is
                 if known_imports is not None and node.id in known_imports:
-                    # print(f"DEBUG: KEEP IMPORT {node.id}")
                     return node
 
                 # 3. If explicitly known as global/instance var, transform to self.<name>
                 if known_globals is not None and node.id in known_globals:
-                    # Check if it's a wire variable and unwrap it
-                    if node.id in wire_vars and not no_unwrap:
-                        # print(f"DEBUG: UNWRAP WIRE {node.id}")
-                        return ast.Call(
-                            func=ast.Name(id="unwrap_wire", ctx=ast.Load()),
-                            args=[
-                                ast.Attribute(
-                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                    attr=node.id,
-                                    ctx=node.ctx,
-                                )
-                            ],
-                            keywords=[],
-                        )
-
-                    # print(f"DEBUG: SELF GLOBAL {node.id}")
                     return ast.Attribute(
                         value=ast.Name(id="self", ctx=ast.Load()),
                         attr=node.id,
@@ -403,13 +394,9 @@ class TemplateCodegen:
 
                 # 3. If builtin, keep as is (unless matched by step 1/2)
                 if node.id in dir(builtins):
-                    # print(f"DEBUG: KEEP BUILTIN {node.id}")
                     return node
 
                 # 4. Otherwise, assume implicit instance attribute
-                # with open("/tmp/pywire_debug.txt", "a") as f:
-                #    f.write(f"DEBUG: OOPS IMPLICIT {node.id}\n")
-
                 return ast.Attribute(
                     value=ast.Name(id="self", ctx=ast.Load()),
                     attr=node.id,
@@ -417,19 +404,30 @@ class TemplateCodegen:
                 )
 
             def visit_NamedExpr(self, node: ast.NamedExpr) -> Any:
-                # The target of a walrus operator must be a Name node.
-                # We should NOT transform it to self.Attribute.
                 if isinstance(node.target, ast.Name):
                     local_vars.add(node.target.id)
 
-                # Visit the value (the expression on the right)
                 node.value = self.visit(node.value)
-                # Ensure the target itself is not transformed to self.Target
-                # (visit_Name would normally do that if not in local_vars)
                 node.target = self.visit(node.target)
                 return node
 
         new_tree = AddSelfTransformer().visit(tree)
+
+        # Extract body/result node
+        if isinstance(new_tree, ast.Expression):
+            result_node = new_tree.body
+        elif isinstance(new_tree, ast.Module):
+            # If it's a single expression in an exec module, extract it if mode was eval
+            if (
+                len(new_tree.body) == 1
+                and isinstance(new_tree.body[0], ast.Expr)
+                and mode == "eval"
+            ):
+                result_node = new_tree.body[0].value
+            else:
+                result_node = new_tree
+        else:
+            result_node = new_tree
 
         # Check if we should disable caching based on content
         if cached:
@@ -447,14 +445,6 @@ class TemplateCodegen:
                     self.found = True
                     self.generic_visit(node)
 
-                def visit_Yield(self, node: ast.Yield) -> None:
-                    self.found = True
-                    self.generic_visit(node)
-
-                def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
-                    self.found = True
-                    self.generic_visit(node)
-
             checker = LocalVarChecker()
             checker.visit(new_tree)
             if checker.found:
@@ -465,8 +455,9 @@ class TemplateCodegen:
             expr_id = f"expr_{self._expr_id_counter}"
             self._expr_id_counter += 1
 
-            # Extract expression body
-            expr_body = cast(ast.Expression, new_tree).body
+            # For caching, we MUST have an expression
+            if not isinstance(result_node, ast.expr):
+                return result_node
 
             lambda_node = ast.Lambda(
                 args=ast.arguments(
@@ -477,7 +468,7 @@ class TemplateCodegen:
                     kw_defaults=[],
                     defaults=[],
                 ),
-                body=expr_body,
+                body=result_node,
             )
 
             return ast.Call(
@@ -490,14 +481,14 @@ class TemplateCodegen:
                 keywords=[],
             )
 
-        # Returns the expression node
-        return cast(ast.Expression, new_tree).body
+        # Returns the expression or statement/module node
+        return result_node
 
     def _transform_reactive_expr(
         self,
         expr_str: str,
         local_vars: Set[str],
-        known_methods: Optional[Set[str]] = None,
+        known_methods: Optional[Dict[str, int]] = None,
         known_globals: Optional[Set[str]] = None,
         known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
@@ -505,7 +496,6 @@ class TemplateCodegen:
         col_offset: int = 0,
         cached: bool = True,
         wire_vars: Set[str] = set(),
-        no_unwrap: bool = False,
     ) -> ast.expr:
         """Transform reactive expression to AST, handling async calls and self."""
         # For reactive expressions (attributes), we typically prefer caching
@@ -558,7 +548,9 @@ class TemplateCodegen:
         if known_methods and stripped in known_methods:
             # Verify it's a valid identifier (sanity check)
             if stripped.isidentifier():
-                expr_str = f"{stripped}()"
+                # Only auto-call if the method takes zero arguments
+                if known_methods[stripped] == 0:
+                    expr_str = f"{stripped}()"
 
         base_expr = self._transform_expr(
             expr_str,
@@ -569,17 +561,17 @@ class TemplateCodegen:
             col_offset,
             cached=cached and not has_async_usage,
             wire_vars=wire_vars,
-            no_unwrap=no_unwrap,
         )
 
-        # Auto-call if it matches self.method
         if (
             isinstance(base_expr, ast.Attribute)
             and isinstance(base_expr.value, ast.Name)
             and base_expr.value.id == "self"
         ):
             if known_methods and base_expr.attr in known_methods:
-                base_expr = ast.Call(func=base_expr, args=[], keywords=[])
+                # Only auto-call if the method takes zero arguments
+                if known_methods[base_expr.attr] == 0:
+                    base_expr = ast.Call(func=base_expr, args=[], keywords=[])
 
         # Async handling
         if async_methods:
@@ -610,7 +602,9 @@ class TemplateCodegen:
                     return self.generic_visit(node)
 
             # Wrap in Module/Expr to visit
-            mod = ast.Module(body=[ast.Expr(value=base_expr)], type_ignores=[])
+            mod = ast.Module(
+                body=[ast.Expr(value=cast(ast.expr, base_expr))], type_ignores=[]
+            )
             AsyncAwaiter().visit(mod)
             base_expr = cast(ast.Expr, mod.body[0]).value
 
@@ -653,7 +647,7 @@ class TemplateCodegen:
                     kw_defaults=[],
                     defaults=[],
                 ),
-                body=base_expr,
+                body=cast(ast.expr, base_expr),
             )
 
             return ast.Call(
@@ -666,7 +660,7 @@ class TemplateCodegen:
                 keywords=[],
             )
 
-        return base_expr
+        return cast(ast.expr, base_expr)
 
     def _wrap_unwrap_wire(self, expr: ast.expr) -> ast.expr:
         return ast.Call(
@@ -707,7 +701,7 @@ class TemplateCodegen:
         func_name: str,
         region_id: str,
         layout_id: Optional[str],
-        known_methods: Optional[Set[str]],
+        known_methods: Optional[Dict[str, int]],
         known_globals: Optional[Set[str]],
         known_imports: Optional[Set[str]],
         async_methods: Optional[Set[str]],
@@ -788,7 +782,7 @@ class TemplateCodegen:
         catch_nodes: List[TemplateNode],
         catch_var: Optional[str],
         layout_id: Optional[str],
-        known_methods: Optional[Set[str]],
+        known_methods: Optional[Dict[str, int]],
         known_globals: Optional[Set[str]],
         known_imports: Optional[Set[str]],
         async_methods: Optional[Set[str]],
@@ -1008,6 +1002,188 @@ class TemplateCodegen:
             return elements[0]
         return None
 
+    def _extract_field_rules(
+        self,
+        nodes: List[TemplateNode],
+        local_vars: Set[str],
+        known_globals: Optional[Set[str]] = None,
+        known_imports: Optional[Set[str]] = None,
+        async_methods: Optional[Set[str]] = None,
+        known_methods: Optional[Dict[str, int]] = None,
+        wire_vars: Set[str] = set(),
+    ) -> Optional[ast.Dict]:
+        """Extract HTML5 field rules from slot nodes for server-side Form validation."""
+        html_to_rule = {
+            "required": "required",
+            "pattern": "pattern",
+            "minlength": "minlength",
+            "maxlength": "maxlength",
+            "min": "min_value",
+            "max": "max_value",
+            "step": "step",
+            "type": "input_type",
+            "title": "title",
+            "accept": "allowed_types",
+            "multiple": "multiple",
+            "data-max-size": "max_size",
+            "data-min-size": "min_size",
+            "data-max-files": "max_files",
+            "data-allowed-names": "allowed_names",
+        }
+        component_attr_to_rule = {
+            "required": "required",
+            "accept": "allowed_types",
+            "multiple": "multiple",
+            "max-size": "max_size",
+            "min-size": "min_size",
+            "max-files": "max_files",
+            "allowed-names": "allowed_names",
+            "max_size": "max_size",
+            "min_size": "min_size",
+            "max_files": "max_files",
+            "allowed_names": "allowed_names",
+        }
+        form_tags = {"input", "select", "textarea"}
+        file_component_tags = {"fileinput"}
+        field_rules: Dict[str, Dict[str, ast.expr]] = {}
+
+        def parse_static_value(attr_name: str, raw_value: str) -> ast.expr:
+            if attr_name in {"required", "multiple"}:
+                return ast.Constant(value=True)
+            if attr_name in {"minlength", "maxlength"}:
+                try:
+                    return ast.Constant(value=int(raw_value))
+                except (TypeError, ValueError):
+                    return ast.Constant(value=raw_value)
+            if attr_name in {
+                "data-max-size",
+                "data-min-size",
+                "data-max-files",
+                "max-size",
+                "min-size",
+                "max-files",
+                "max_size",
+                "min_size",
+                "max_files",
+            }:
+                try:
+                    return ast.Constant(value=int(raw_value))
+                except (TypeError, ValueError):
+                    return ast.Constant(value=raw_value)
+            if attr_name == "accept":
+                parts = [
+                    item.strip() for item in str(raw_value).split(",") if item.strip()
+                ]
+                return ast.List(
+                    elts=[ast.Constant(value=part) for part in parts], ctx=ast.Load()
+                )
+            if attr_name in {"min", "max", "step", "pattern", "type", "title"}:
+                return ast.Constant(value=raw_value)
+            if attr_name in {"data-allowed-names", "allowed-names", "allowed_names"}:
+                return ast.Constant(value=raw_value)
+            return ast.Constant(value=raw_value)
+
+        def collect(nodes_to_visit: List[TemplateNode]) -> None:
+            for child in nodes_to_visit:
+                if child.tag is None:
+                    continue
+
+                tag = child.tag.lower()
+                if tag in file_component_tags:
+                    self.has_file_inputs = True
+
+                if tag in form_tags or tag in file_component_tags:
+                    field_name = child.attributes.get("name")
+                    if tag == "input":
+                        input_type = child.attributes.get("type")
+                        if isinstance(input_type, str) and input_type.lower() == "file":
+                            self.has_file_inputs = True
+                        if any(
+                            key in child.attributes
+                            for key in (
+                                "accept",
+                                "multiple",
+                                "data-max-size",
+                                "data-min-size",
+                                "data-max-files",
+                                "data-allowed-names",
+                            )
+                        ):
+                            self.has_file_inputs = True
+                        for special_attr in child.special_attributes:
+                            if (
+                                isinstance(special_attr, ReactiveAttribute)
+                                and special_attr.name == "type"
+                                and special_attr.expr.strip().strip("'\"") == "file"
+                            ):
+                                self.has_file_inputs = True
+                    if (
+                        field_name
+                        and field_name not in field_rules
+                        and "{" not in field_name
+                        and "}" not in field_name
+                    ):
+                        rules_for_field: Dict[str, ast.expr] = {}
+
+                        attr_map = (
+                            html_to_rule if tag in form_tags else component_attr_to_rule
+                        )
+
+                        for html_attr, rule_key in attr_map.items():
+                            if html_attr not in child.attributes:
+                                continue
+                            static_raw = child.attributes[html_attr]
+                            rules_for_field[rule_key] = parse_static_value(
+                                html_attr, static_raw
+                            )
+
+                        for special_attr in child.special_attributes:
+                            if not isinstance(special_attr, ReactiveAttribute):
+                                continue
+                            if special_attr.name not in attr_map:
+                                continue
+                            rule_key = attr_map[special_attr.name]
+                            rules_for_field[rule_key] = self._transform_reactive_expr(
+                                special_attr.expr,
+                                local_vars,
+                                known_methods=known_methods,
+                                known_globals=known_globals,
+                                known_imports=known_imports,
+                                async_methods=async_methods,
+                                line_offset=child.line,
+                                col_offset=child.column,
+                                cached=False,
+                                wire_vars=wire_vars,
+                            )
+
+                        if tag in file_component_tags:
+                            rules_for_field.setdefault(
+                                "input_type", ast.Constant(value="file")
+                            )
+
+                        if rules_for_field:
+                            field_rules[field_name] = rules_for_field
+
+                if child.children:
+                    collect(child.children)
+
+        collect(nodes)
+        if not field_rules:
+            return None
+
+        outer_keys: List[Optional[ast.expr]] = []
+        outer_values: List[ast.expr] = []
+        for field_name, rules_map in field_rules.items():
+            inner_keys: List[Optional[ast.expr]] = []
+            inner_values: List[ast.expr] = []
+            for rule_name, rule_value in rules_map.items():
+                inner_keys.append(ast.Constant(value=rule_name))
+                inner_values.append(rule_value)
+            outer_keys.append(ast.Constant(value=field_name))
+            outer_values.append(ast.Dict(keys=inner_keys, values=inner_values))
+
+        return ast.Dict(keys=outer_keys, values=outer_values)
+
     def _set_line(self, node: ast.AST, template_node: TemplateNode) -> ast.AST:
         """Helper to set line number on AST node."""
         if template_node.line > 0 and hasattr(node, "lineno"):
@@ -1024,7 +1200,7 @@ class TemplateCodegen:
         local_vars: Optional[Set[str]] = None,
         bound_var: Union[str, ast.expr, None] = None,
         layout_id: Optional[str] = None,
-        known_methods: Optional[Set[str]] = None,
+        known_methods: Optional[Dict[str, int]] = None,
         known_globals: Optional[Set[str]] = None,
         known_imports: Optional[Set[str]] = None,
         async_methods: Optional[Set[str]] = None,
@@ -1168,7 +1344,7 @@ class TemplateCodegen:
             # Wrap iterable in ensure_async_iterator
             wrapped_iterable = ast.Call(
                 func=ast.Name(id="ensure_async_iterator", ctx=ast.Load()),
-                args=[iterable_expr],
+                args=[cast(ast.expr, iterable_expr)],
                 keywords=[],
             )
 
@@ -1271,13 +1447,19 @@ class TemplateCodegen:
                     current_branch_nodes = []
                     # Reset gap tracking for new branch
                     prev_child = None
-                    cond = self._transform_expr(
-                        elif_attr.condition,
-                        local_vars,
-                        known_globals,
-                        known_imports,
-                        line_offset=child.line,
-                        cached=False,
+                    cond = self._wrap_unwrap_wire(
+                        cast(
+                            ast.expr,
+                            self._transform_expr(
+                                elif_attr.condition,
+                                local_vars,
+                                known_globals,
+                                known_imports,
+                                line_offset=child.line,
+                                cached=False,
+                                wire_vars=wire_vars,
+                            ),
+                        )
                     )
                     branches.append((cond, current_branch_nodes))
                 elif else_attr:
@@ -1310,16 +1492,32 @@ class TemplateCodegen:
             # branches[1:] are elifs/else.
 
             # 1. Main IF body
-            main_cond = self._transform_expr(
-                if_attr.condition,
-                local_vars,
-                known_globals,
-                known_imports,
-                line_offset=node.line,
-                cached=False,
+            main_cond = self._wrap_unwrap_wire(
+                cast(
+                    ast.expr,
+                    self._transform_expr(
+                        if_attr.condition,
+                        local_vars,
+                        known_globals,
+                        known_imports,
+                        line_offset=node.line,
+                        cached=False,
+                        wire_vars=wire_vars,
+                    ),
+                )
             )
+
+            main_branch_nodes = branches[0][1]
+            if node.tag and node.tag != "template":
+                # Handle attribute-based $if: the tag itself is the first branch
+                new_attrs = [a for a in node.special_attributes if a is not if_attr]
+                new_node = dataclasses.replace(
+                    node, special_attributes=new_attrs, children=main_branch_nodes
+                )
+                main_branch_nodes = [new_node]
+
             main_body: List[ast.stmt] = []
-            for b_node in branches[0][1]:
+            for b_node in main_branch_nodes:
                 self._add_node(
                     b_node,
                     main_body,
@@ -1334,6 +1532,7 @@ class TemplateCodegen:
                     scope_id,
                     parts_var=parts_var,
                     enable_regions=enable_regions,
+                    wire_vars=wire_vars,
                 )
 
             # 2. Build orelse chain from back to front
@@ -1358,6 +1557,7 @@ class TemplateCodegen:
                         scope_id,
                         parts_var=parts_var,
                         enable_regions=enable_regions,
+                        wire_vars=wire_vars,
                     )
 
                 if isinstance(cond, ast.Constant) and cond.value is True:
@@ -1441,13 +1641,16 @@ class TemplateCodegen:
                     # Transform type and name if present
                     type_node = None
                     if exc_attr.exception_type:
-                        type_node = self._transform_expr(
-                            exc_attr.exception_type,
-                            local_vars,
-                            known_globals,
-                            known_imports,
-                            line_offset=child.line,
-                            cached=False,
+                        type_node = cast(
+                            ast.expr,
+                            self._transform_expr(
+                                exc_attr.exception_type,
+                                local_vars,
+                                known_globals,
+                                known_imports,
+                                line_offset=child.line,
+                                cached=False,
+                            ),
                         )
 
                     handler = ast.ExceptHandler(
@@ -1470,7 +1673,15 @@ class TemplateCodegen:
 
             # Generate AST for bodies
             try_ast_body: List[ast.stmt] = []
-            for b_node in try_block_nodes:
+            real_try_nodes = try_block_nodes
+            if node.tag and node.tag != "template":
+                new_attrs = [a for a in node.special_attributes if a is not try_attr]
+                new_node = dataclasses.replace(
+                    node, special_attributes=new_attrs, children=try_block_nodes
+                )
+                real_try_nodes = [new_node]
+
+            for b_node in real_try_nodes:
                 self._add_node(
                     b_node,
                     try_ast_body,
@@ -1484,6 +1695,7 @@ class TemplateCodegen:
                     component_map,
                     scope_id,
                     parts_var=parts_var,
+                    wire_vars=wire_vars,
                 )
 
             for h in handlers:
@@ -1628,8 +1840,24 @@ class TemplateCodegen:
             self.region_renderers[region_id] = method_name
 
             # Generate the region renderer function
+            real_await_children = node.children
+            if node.tag and node.tag != "template":
+                new_attrs = [a for a in node.special_attributes if a is not await_attr]
+                new_node = dataclasses.replace(
+                    node, special_attributes=new_attrs, children=pending_body
+                )
+                # For await on tag, we make the tag itself the pending state?
+                # Actually it's complex, let's just ensure the tag persists in pending.
+                # If the user wants the tag to wrap the whole thing, they should use <template>.
+                # But to avoid swallowing, we wrap the pending body.
+                # NOTE: then/catch bodies won't have the tag currently.
+                pending_body = [new_node]
+                real_await_children = [
+                    new_node
+                ]  # This is a bit of a hack but better than swallowing
+
             aux_func = self._generate_await_renderer(
-                node.children,
+                real_await_children,
                 method_name,
                 region_id,
                 await_attr,
@@ -1649,14 +1877,19 @@ class TemplateCodegen:
             )
             self.auxiliary_functions.append(aux_func)
 
-            awaitable_expr = self._transform_expr(
-                await_attr.expression,
-                local_vars,
-                known_globals,
-                known_imports,
-                line_offset=node.line,
-                cached=False,
-                wire_vars=wire_vars,
+            awaitable_expr = self._wrap_unwrap_wire(
+                cast(
+                    ast.expr,
+                    self._transform_expr(
+                        await_attr.expression,
+                        local_vars,
+                        known_globals,
+                        known_imports,
+                        line_offset=node.line,
+                        cached=False,
+                        wire_vars=wire_vars,
+                    ),
+                )
             )
 
             # In main render:
@@ -1863,18 +2096,6 @@ class TemplateCodegen:
             append_stmt = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
-                        value=ast.Name(id="parts", ctx=ast.Load()),
-                        attr="append",
-                        ctx=ast.Load(),
-                    ),
-                    args=[ast.Await(value=render_call)],
-                    keywords=[],
-                )
-            )
-
-            append_stmt = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
                         value=ast.Name(id=parts_var, ctx=ast.Load()),
                         attr="append",
                         ctx=ast.Load(),
@@ -1939,8 +2160,8 @@ class TemplateCodegen:
             # 2. Pass explicitly defined props (static)
             ref_expr = None
             for k, v in node.attributes.items():
-                if k == "ref":
-                    # Extract ref expression
+                if k == "$ref":
+                    # Extract $ref expression
                     if "{" in v and "}" in v:
                         v_stripped = v.strip()
                         if (
@@ -1955,7 +2176,7 @@ class TemplateCodegen:
                                 known_globals,
                                 line_offset=node.line,
                                 col_offset=node.column,
-                                no_unwrap=True,
+                                wire_vars=wire_vars,
                             )
                     continue
 
@@ -1971,12 +2192,17 @@ class TemplateCodegen:
                     ):
                         # Single expression
                         expr_code = v_stripped[1:-1]
-                        val_expr = self._transform_expr(
-                            expr_code,
-                            local_vars,
-                            known_globals,
-                            line_offset=node.line,
-                            col_offset=node.column,
+                        val_expr = self._wrap_unwrap_wire(
+                            cast(
+                                ast.expr,
+                                self._transform_expr(
+                                    expr_code,
+                                    local_vars,
+                                    known_globals,
+                                    line_offset=node.line,
+                                    col_offset=node.column,
+                                ),
+                            )
                         )
                     else:
                         # String interpolation
@@ -1992,12 +2218,17 @@ class TemplateCodegen:
                                 term = ast.Call(
                                     func=ast.Name(id="str", ctx=ast.Load()),
                                     args=[
-                                        self._transform_expr(
-                                            part.expression,
-                                            local_vars,
-                                            known_globals,
-                                            line_offset=part.line,
-                                            col_offset=part.column,
+                                        self._wrap_unwrap_wire(
+                                            cast(
+                                                ast.expr,
+                                                self._transform_expr(
+                                                    part.expression,
+                                                    local_vars,
+                                                    known_globals,
+                                                    line_offset=part.line,
+                                                    col_offset=part.column,
+                                                ),
+                                            )
                                         )
                                     ],
                                     keywords=[],
@@ -2031,7 +2262,7 @@ class TemplateCodegen:
             # Process non-event special attributes (Reactive) and Events
             for attr in node.special_attributes:
                 if isinstance(attr, ReactiveAttribute):
-                    if attr.name == "ref":
+                    if attr.name == "$ref":
                         # Groundwork for component refs
                         expr = self._transform_reactive_expr(
                             attr.expr,
@@ -2044,7 +2275,6 @@ class TemplateCodegen:
                             col_offset=node.column,
                             cached=False,  # Don't cache ref expressions? Usually they are simple wires
                             wire_vars=wire_vars,
-                            no_unwrap=True,
                         )
                         ref_expr = expr
                         continue
@@ -2059,126 +2289,31 @@ class TemplateCodegen:
                         async_methods=async_methods,
                         line_offset=node.line,
                         col_offset=node.column,
+                        cached=False,
                         wire_vars=wire_vars,
                     )
                     dict_values.append(expr)
 
-            # Compile events into data-on-* attributes to pass as props
-            # This logic mirrors the standard element event generation
+            # Compile events into callable props on component instances.
             for event_type, attrs_list in event_attrs_by_type.items():
-                if len(attrs_list) == 1:
-                    # Single handler
-                    attr = attrs_list[0]
+                attr = attrs_list[-1]
+                raw_handler = attr.handler_name.strip()
+                if raw_handler.startswith("{") and raw_handler.endswith("}"):
+                    raw_handler = raw_handler[1:-1].strip()
 
-                    # data-on-X
-                    dict_keys.append(ast.Constant(value=f"data-on-{event_type}"))
-
-                    # Resolve handler string/expr
-                    raw_handler = attr.handler_name
-                    if raw_handler.strip().startswith(
-                        "{"
-                    ) and raw_handler.strip().endswith("}"):
-                        # New syntax: {expr} -> Evaluate it?
-                        # Wait, standard event logic treats handler_name as STRING NAME usually.
-                        # If it's an expression like {print('hi')}, it evaluates to None.
-                        # We need to register it?
-                        # Actually, standard element logic (lines 880+) sets value=ast.Constant(
-                        #     value=attr.handler_name
-                        # ).
-                        # It assumes the handler_name is a STRING that refers to a method.
-                        # OR it assumes the runtime handles looking it up?
-                        # If user wrote @click={print('hi')}, the parser makes
-                        # handler_name="{print('hi')}".
-                        # The standard logic just dumps that string?
-                        # Let's check runtime/client code.
-                        # If client receives data-on-click="{print('hi')}", it likely tries to
-                        # eval/run it within context.
-                        # So we should pass it AS A STRING.
-                        # BUT, if we evaluated it in my previous attempt (`val =
-                        # transform_expr...`), we passed the RESULT (None).
-
-                        # CORRECT APPROACH: Pass the handler identifier string or expression
-                        # string AS IS.
-                        # The client side `pywire.js` parses the `data-on-click` value.
-                        # If it's a method name "onClick", it calls it.
-                        # If it's code "print('hi')", it might eval it?
-                        # Actually pywire seems to rely on named handlers mostly.
-                        # The `run_demo_test` output showed: `data-on-click="<bound method...>"`
-                        # That happened because I evaluated it.
-                        # If I pass the raw string "print('hi')", it will render as
-                        # `data-on-click="print('hi')"`.
-                        # Does the client support eval?
-                        # Looking at `attributes/events.py`, parser stores raw string.
-
-                        dict_values.append(ast.Constant(value=attr.handler_name))
-
-                    else:
-                        dict_values.append(ast.Constant(value=attr.handler_name))
-
-                    # Modifiers
-                    if attr.modifiers:
-                        dict_keys.append(
-                            ast.Constant(value=f"data-modifiers-{event_type}")
-                        )
-                        dict_values.append(ast.Constant(value=" ".join(attr.modifiers)))
-
-                    # Args
-                    for i, arg_expr in enumerate(attr.args):
-                        dict_keys.append(ast.Constant(value=f"data-arg-{i}"))
-                        # Evaluate arg expr and json dump
-                        val = self._transform_expr(
-                            arg_expr,
+                dict_keys.append(ast.Constant(value=event_type))
+                dict_values.append(
+                    cast(
+                        ast.expr,
+                        self._transform_expr(
+                            raw_handler,
                             local_vars,
                             known_globals,
                             line_offset=node.line,
                             col_offset=node.column,
-                        )
-                        dump_call = ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Name(id="json", ctx=ast.Load()),
-                                attr="dumps",
-                                ctx=ast.Load(),
-                            ),
-                            args=[val],
-                            keywords=[],
-                        )
-                        dict_values.append(dump_call)
-
-                else:
-                    # Multiple handlers -> compile to JSON structure
-                    # We need to construct the list of dicts at runtime and json dump it
-                    # This is complex to do inline in dict_values construction.
-                    # Helper var needed?
-                    # We are inside `_add_node` building `body`.
-                    # We can prepend statements to `body` to build the list, then reference it.
-                    # But here we are building `dict_values` list for the `ast.Dict`.
-                    # We can put an `ast.Call` that invokes `json.dumps` on a list comprehension?
-                    # Or simpler: Just emit the logic to build the list into a temp var, use temp
-                    # var here.
-
-                    # Generate temp var name
-                    handler_list_name = (
-                        f"_handlers_{event_type}_{node.line}_{node.column}"
+                        ),
                     )
-
-                    # ... [Code similar to lines 907+ to build the list] ...
-                    # But wait, lines 907+ append to `body`.
-                    # I can do that here! I am in `_add_node`.
-                    # I just need to interrupt the `dict` building?
-                    # No, I am building lists `dict_keys`, `dict_values`.
-                    # I can append statements to `body` *before* the final
-                    # `keywords.append(...)` call.
-
-                    # [Insert list building logic here]
-                    # Since I am replacing a block, I can add statements to body!
-                    # Wait, `body` is passed in.
-                    # `dict_keys` and `dict_values` are python lists I am building to
-                    # *eventually* make an AST node.
-
-                    # Let's support single handler first as it covers 99% cases and the
-                    # specific bug.
-                    # Complex multi-handlers need full porting.
-                    pass
+                )
 
             # Add keyword(arg=None, value=dict) for **kwargs
             keywords = []
@@ -2188,19 +2323,16 @@ class TemplateCodegen:
                 )
             )
 
-            # 4. Handle Slots (Children)
+            # 4. Handle Slots (Children) - Grouping phase
             # Group children by slot name
             slots_map: Dict[str, List[TemplateNode]] = {}
             default_slot_nodes = []
 
             for child in node.children:
                 # Check for slot="..." attribute on child
-                # Note: child is TemplateNode. attributes dict.
-                # If element:
                 child_slot_name: Optional[str] = None
                 if child.tag and "slot" in child.attributes:
                     child_slot_name = child.attributes["slot"]
-                    # Remove slot attribute? Optional but cleaner.
 
                 if child_slot_name:
                     if child_slot_name not in slots_map:
@@ -2212,101 +2344,166 @@ class TemplateCodegen:
             if default_slot_nodes:
                 slots_map["default"] = default_slot_nodes
 
-            keys: List[Optional[ast.expr]] = []
-            values: List[ast.expr] = []
+            all_slot_nodes: List[TemplateNode] = []
+            for s_nodes in slots_map.values():
+                all_slot_nodes.extend(s_nodes)
 
-            for s_name, s_nodes in slots_map.items():
-                slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace(
-                    "-", "_"
+            if cls_name == "FileInput":
+                self.has_file_inputs = True
+
+            if cls_name == "Form":
+                field_rules_expr = self._extract_field_rules(
+                    all_slot_nodes,
+                    local_vars,
+                    known_globals=known_globals,
+                    known_imports=known_imports,
+                    async_methods=async_methods,
+                    known_methods=known_methods,
+                    wire_vars=wire_vars,
                 )
-                slot_parts_var = f"{slot_var_name}_parts"
+                if field_rules_expr is not None:
+                    dict_keys.append(ast.Constant(value="_field_rules"))
+                    dict_values.append(field_rules_expr)
 
-                body.append(
-                    ast.Assign(
-                        targets=[ast.Name(id=slot_parts_var, ctx=ast.Store())],
-                        value=ast.List(elts=[], ctx=ast.Load()),
-                    )
-                )
-
-                for s_node in s_nodes:
-                    self._add_node(
-                        s_node,
-                        body,
-                        local_vars,
-                        bound_var,
-                        layout_id,
-                        known_methods,
-                        known_globals,
-                        known_imports,
-                        async_methods,
-                        component_map,
-                        scope_id,
-                        parts_var=slot_parts_var,
-                        enable_regions=enable_regions,
-                        wire_vars=wire_vars,
-                    )  # PASS slot_parts_var
-
-                # Join parts -> slot string
-                # rendered_slot = "".join(slot_parts_var)
-                body.append(
-                    ast.Assign(
-                        targets=[ast.Name(id=slot_var_name, ctx=ast.Store())],
-                        value=ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Constant(value=""),
-                                attr="join",
-                                ctx=ast.Load(),
-                            ),
-                            args=[ast.Name(id=slot_parts_var, ctx=ast.Load())],
-                            keywords=[],
-                        ),
-                    )
-                )
-
-                keys.append(ast.Constant(value=s_name))
-                values.append(ast.Name(id=slot_var_name, ctx=ast.Load()))
-
-            # Add slots=... to keywords
-            if keys:
-                keywords.append(
-                    ast.keyword(
-                        arg="slots",
-                        value=ast.Dict(
-                            keys=keys,
-                            values=values,
-                        ),
-                    )
-                )
-
-            # Instantiate component
+            # 5. Instantiate/reuse component (phase 1: resolve without slots)
             comp_var = f"_comp_{node.line}_{node.column}"
+            comp_key_var = f"_comp_key_{node.line}_{node.column}"
             body.append(
                 ast.Assign(
-                    targets=[ast.Name(id=comp_var, ctx=ast.Store())],
-                    value=ast.Call(
-                        func=ast.Name(id=cls_name, ctx=ast.Load()),
-                        args=[],
-                        keywords=keywords,
+                    targets=[ast.Name(id=comp_key_var, ctx=ast.Store())],
+                    value=ast.Constant(value=f"{cls_name}_{node.line}_{node.column}"),
+                )
+            )
+            body.append(
+                cast(
+                    ast.stmt,
+                    self._set_line(
+                        ast.Assign(
+                            targets=[ast.Name(id=comp_var, ctx=ast.Store())],
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                    attr="_resolve_component",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[
+                                    ast.Name(id=comp_key_var, ctx=ast.Load()),
+                                    ast.Name(id=cls_name, ctx=ast.Load()),
+                                ],
+                                keywords=[
+                                    ast.keyword(
+                                        arg=None,
+                                        value=ast.Dict(
+                                            keys=dict_keys, values=dict_values
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        ),
+                        node,
                     ),
                 )
             )
 
+            # 6. Bind ref (EARLY - so slots can use it!)
             if ref_expr:
-                # Groundwork for component refs
-                # comp._ref = ref_expr
                 body.append(
-                    ast.Assign(
-                        targets=[
-                            ast.Attribute(
-                                value=ast.Name(id=comp_var, ctx=ast.Load()),
-                                attr="_ref",
-                                ctx=ast.Store(),
+                    self._set_line(
+                        ast.Expr(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ref_expr,
+                                    attr="_bind_component",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[
+                                    ast.Name(id=comp_var, ctx=ast.Load()),
+                                    ast.Name(id="self", ctx=ast.Load()),
+                                ],
+                                keywords=[],
                             )
-                        ],
-                        value=ref_expr,
+                        ),
+                        node,
                     )
                 )
 
+            # 7. Render Slots (phase 2: execution)
+            if slots_map:
+                slot_keys: List[Optional[ast.expr]] = []
+                slot_values: List[ast.expr] = []
+
+                for s_name, s_nodes in slots_map.items():
+                    slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace(
+                        "-", "_"
+                    )
+                    slot_parts_var = f"{slot_var_name}_parts"
+
+                    body.append(
+                        ast.Assign(
+                            targets=[ast.Name(id=slot_parts_var, ctx=ast.Store())],
+                            value=ast.List(elts=[], ctx=ast.Load()),
+                        )
+                    )
+
+                    for s_node in s_nodes:
+                        self._add_node(
+                            s_node,
+                            body,
+                            local_vars,
+                            bound_var,
+                            layout_id,
+                            known_methods,
+                            known_globals,
+                            known_imports,
+                            async_methods,
+                            component_map,
+                            scope_id,
+                            parts_var=slot_parts_var,
+                            enable_regions=enable_regions,
+                            wire_vars=wire_vars,
+                        )
+
+                    body.append(
+                        ast.Assign(
+                            targets=[ast.Name(id=slot_var_name, ctx=ast.Store())],
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Constant(value=""),
+                                    attr="join",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[ast.Name(id=slot_parts_var, ctx=ast.Load())],
+                                keywords=[],
+                            ),
+                        )
+                    )
+
+                    slot_keys.append(ast.Constant(value=s_name))
+                    slot_values.append(ast.Name(id=slot_var_name, ctx=ast.Load()))
+
+                # 8. Update component with rendered slots
+                body.append(
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=comp_var, ctx=ast.Load()),
+                                attr="_update_props",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Dict(
+                                    keys=[ast.Constant(value="slots")],
+                                    values=[
+                                        ast.Dict(keys=slot_keys, values=slot_values)
+                                    ],
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    )
+                )
+
+            # 9. Finally, render the component template
             render_call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id=comp_var, ctx=ast.Load()),
@@ -2317,8 +2514,6 @@ class TemplateCodegen:
                 keywords=[],
             )
 
-            # Append result
-            # parts.append(await ...)
             append_stmt = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
@@ -2382,14 +2577,14 @@ class TemplateCodegen:
                                 # Raw HTML - no escaping
                                 term = ast.Call(
                                     func=ast.Name(id="str", ctx=ast.Load()),
-                                    args=[self._wrap_unwrap_wire(expr)],
+                                    args=[self._wrap_unwrap_wire(cast(ast.expr, expr))],
                                     keywords=[],
                                 )
                             else:
                                 # Default: escape HTML for XSS prevention
                                 term = ast.Call(
                                     func=ast.Name(id="escape_html", ctx=ast.Load()),
-                                    args=[self._wrap_unwrap_wire(expr)],
+                                    args=[self._wrap_unwrap_wire(cast(ast.expr, expr))],
                                     keywords=[],
                                 )
 
@@ -2432,14 +2627,14 @@ class TemplateCodegen:
                     # Raw HTML - no escaping
                     term = ast.Call(
                         func=ast.Name(id="str", ctx=ast.Load()),
-                        args=[self._wrap_unwrap_wire(expr)],
+                        args=[self._wrap_unwrap_wire(cast(ast.expr, expr))],
                         keywords=[],
                     )
                 else:
                     # Default: escape HTML for XSS prevention
                     term = ast.Call(
                         func=ast.Name(id="escape_html", ctx=ast.Load()),
-                        args=[self._wrap_unwrap_wire(expr)],
+                        args=[self._wrap_unwrap_wire(cast(ast.expr, expr))],
                         keywords=[],
                     )
                 append_stmt = ast.Expr(
@@ -2480,6 +2675,7 @@ class TemplateCodegen:
                 enable_regions
                 and not local_vars
                 and self._node_is_dynamic(node, known_globals)
+                and (node.tag or "").lower() not in self.DOCUMENT_ROOT_ELEMENTS
             ):
                 region_id = self._next_region_id()
                 method_name = f"_render_region_{region_id}"
@@ -2529,6 +2725,101 @@ class TemplateCodegen:
 
             bindings: Dict[str, ast.expr] = {}
             new_bound_var = bound_var
+
+            # --- Handle $ref for Elements ---
+            ref_expr = None
+            ref_id = None
+
+            # Check static attributes for $ref
+            if "$ref" in node.attributes:
+                v = node.attributes["$ref"]
+                if "{" in v and "}" in v:
+                    v_stripped = v.strip()
+                    if (
+                        v_stripped.startswith("{")
+                        and v_stripped.endswith("}")
+                        and v_stripped.count("{") == 1
+                    ):
+                        expr_code = v_stripped[1:-1]
+                        ref_expr = self._transform_expr(
+                            expr_code,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                            wire_vars=wire_vars,
+                        )
+                # Remove from attributes so it doesn't render as-is
+                del node.attributes["$ref"]
+
+            # Check special attributes for $ref
+            ref_attr = None
+            for attr in node.special_attributes:
+                if isinstance(attr, ReactiveAttribute) and attr.name == "$ref":
+                    ref_attr = attr
+                    ref_expr = self._transform_reactive_expr(
+                        attr.expr,
+                        local_vars,
+                        known_methods=known_methods,
+                        known_globals=known_globals,
+                        known_imports=known_imports,
+                        async_methods=async_methods,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                        cached=False,
+                        wire_vars=wire_vars,
+                    )
+                    break
+
+            if ref_attr:
+                node.special_attributes.remove(ref_attr)
+
+            if ref_expr:
+                ref_id = f"pw-ref-{node.line}-{node.column}"
+                prefixed_ref_id = ast.BinOp(
+                    left=ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr="_handler_prefix",
+                        ctx=ast.Load(),
+                    ),
+                    op=ast.Add(),
+                    right=ast.Constant(value=ref_id),
+                )
+                bindings["data-pw-ref"] = prefixed_ref_id
+
+                # Determine bound type
+                tag_lower = node.tag.lower()
+                bound_type = "element"
+                if tag_lower == "form":
+                    bound_type = "form"
+                elif tag_lower in ("input", "select", "textarea"):
+                    bound_type = "input"
+
+                # body.append(ref_expr._bind(bound_type, ref_id, self))
+                body.append(
+                    cast(
+                        ast.stmt,
+                        self._set_line(
+                            ast.Expr(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=cast(ast.expr, ref_expr),
+                                        attr="_bind",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[
+                                        ast.Constant(value=bound_type),
+                                        prefixed_ref_id,
+                                        ast.Name(id="self", ctx=ast.Load()),
+                                    ],
+                                    keywords=[],
+                                )
+                            ),
+                            node,
+                        ),
+                    )
+                )
+
             if region_id:
                 bindings["data-pw-region"] = ast.Constant(value=region_id)
 
@@ -2545,13 +2836,16 @@ class TemplateCodegen:
                 bindings["id"] = ast.Call(
                     func=ast.Name(id="str", ctx=ast.Load()),
                     args=[
-                        self._transform_expr(
-                            key_attr.expr,
-                            local_vars,
-                            known_globals,
-                            line_offset=node.line,
-                            col_offset=node.column,
-                            cached=False,
+                        cast(
+                            ast.expr,
+                            self._transform_expr(
+                                key_attr.expr,
+                                local_vars,
+                                known_globals,
+                                line_offset=node.line,
+                                col_offset=node.column,
+                                cached=False,
+                            ),
                         )
                     ],
                     keywords=[],
@@ -2667,8 +2961,15 @@ class TemplateCodegen:
                             term = ast.Call(
                                 func=ast.Name(id="str", ctx=ast.Load()),
                                 args=[
-                                    self._transform_expr(
-                                        part.expression, local_vars, known_globals
+                                    self._wrap_unwrap_wire(
+                                        cast(
+                                            ast.expr,
+                                            self._transform_expr(
+                                                part.expression,
+                                                local_vars,
+                                                known_globals,
+                                            ),
+                                        )
                                     )
                                 ],
                                 keywords=[],
@@ -2731,7 +3032,7 @@ class TemplateCodegen:
                     if not isinstance(binding_expr, ast.Constant):
                         wrapper = ast.Call(
                             func=ast.Name(id="str", ctx=ast.Load()),
-                            args=[self._wrap_unwrap_wire(binding_expr)],
+                            args=[self._wrap_unwrap_wire(cast(ast.expr, binding_expr))],
                             keywords=[],
                         )
 
@@ -2759,6 +3060,15 @@ class TemplateCodegen:
                     # Single handler
                     attr = attrs_list[0]
                     # attrs["data-on-X"] = "handler"
+                    handler_value = ast.BinOp(
+                        left=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_handler_prefix",
+                            ctx=ast.Load(),
+                        ),
+                        op=ast.Add(),
+                        right=ast.Constant(value=attr.handler_name),
+                    )
                     body.append(
                         ast.Assign(
                             targets=[
@@ -2768,7 +3078,7 @@ class TemplateCodegen:
                                     ctx=ast.Store(),
                                 )
                             ],
-                            value=ast.Constant(value=attr.handler_name),
+                            value=handler_value,
                         )
                     )
 
@@ -2792,12 +3102,17 @@ class TemplateCodegen:
 
                     # Add args
                     for i, arg_expr in enumerate(attr.args):
-                        val = self._transform_expr(
-                            arg_expr,
-                            local_vars,
-                            known_globals,
-                            line_offset=node.line,
-                            col_offset=node.column,
+                        val = self._wrap_unwrap_wire(
+                            cast(
+                                ast.expr,
+                                self._transform_expr(
+                                    arg_expr,
+                                    local_vars,
+                                    known_globals,
+                                    line_offset=node.line,
+                                    col_offset=node.column,
+                                ),
+                            )
                         )
                         dump_call = ast.Call(
                             func=ast.Attribute(
@@ -2843,7 +3158,15 @@ class TemplateCodegen:
                                 ast.Constant(value="modifiers"),
                             ],
                             values=[
-                                ast.Constant(value=attr.handler_name),
+                                ast.BinOp(
+                                    left=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="_handler_prefix",
+                                        ctx=ast.Load(),
+                                    ),
+                                    op=ast.Add(),
+                                    right=ast.Constant(value=attr.handler_name),
+                                ),
                                 ast.List(
                                     elts=[ast.Constant(value=m) for m in modifiers],
                                     ctx=ast.Load(),
@@ -2861,12 +3184,17 @@ class TemplateCodegen:
                             # _args = [...]
                             args_list = []
                             for arg_expr in attr.args:
-                                val = self._transform_expr(
-                                    arg_expr,
-                                    local_vars,
-                                    known_globals,
-                                    line_offset=node.line,
-                                    col_offset=node.column,
+                                val = self._wrap_unwrap_wire(
+                                    cast(
+                                        ast.expr,
+                                        self._transform_expr(
+                                            arg_expr,
+                                            local_vars,
+                                            known_globals,
+                                            line_offset=node.line,
+                                            col_offset=node.column,
+                                        ),
+                                    )
                                 )
                                 args_list.append(val)
                             body.append(
@@ -2952,6 +3280,7 @@ class TemplateCodegen:
                         async_methods=async_methods,
                         line_offset=node.line,
                         col_offset=node.column,
+                        cached=False,
                     )
                     val_expr = self._wrap_unwrap_wire(val_expr)
 
@@ -3144,13 +3473,18 @@ class TemplateCodegen:
                         )
 
             if show_attr:
-                cond = self._transform_expr(
-                    show_attr.condition,
-                    local_vars,
-                    known_globals,
-                    line_offset=node.line,
-                    col_offset=node.column,
-                    cached=False,
+                cond = self._wrap_unwrap_wire(
+                    cast(
+                        ast.expr,
+                        self._transform_expr(
+                            show_attr.condition,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                            cached=False,
+                        ),
+                    )
                 )
                 # if not cond: attrs['style'] = ...
                 body.append(
@@ -3264,13 +3598,18 @@ class TemplateCodegen:
             if explicit_spread:
                 # expr is likely 'attrs' or similar
                 # transform it to AST load
-                spread_expr = self._transform_expr(
-                    explicit_spread.expr,
-                    local_vars,
-                    known_globals,
-                    line_offset=node.line,
-                    col_offset=node.column,
-                    wire_vars=wire_vars,
+                spread_expr = self._wrap_unwrap_wire(
+                    cast(
+                        ast.expr,
+                        self._transform_expr(
+                            explicit_spread.expr,
+                            local_vars,
+                            known_globals,
+                            line_offset=node.line,
+                            col_offset=node.column,
+                            wire_vars=wire_vars,
+                        ),
+                    )
                 )
 
             # 2. Implicit root injection

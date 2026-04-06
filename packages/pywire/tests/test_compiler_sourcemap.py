@@ -7,7 +7,8 @@ from pywire.runtime.loader import PageLoader
 
 
 class TestCompilerSourceMap:
-    def test_traceback_line_numbers_script_runtime(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_traceback_line_numbers_script_runtime(self, tmp_path: Path) -> None:
         """Verify runtime errors in python blocks point to correct lines."""
         loader = PageLoader()
 
@@ -26,9 +27,8 @@ raise ValueError("Boom")
         try:
             page_cls = loader.load(pywire_file)
             page = page_cls(cast(Any, None), {}, {}, {}, None)
-            import asyncio
 
-            asyncio.run(page.render())
+            await page.render()
             pytest.fail("Should have raised ValueError")
         except ValueError as e:
             tb = traceback.extract_tb(e.__traceback__)
@@ -41,7 +41,8 @@ raise ValueError("Boom")
             # raise on line 1
             assert error_frame.lineno == 1, f"Raise should be on line 1, got {error_frame.lineno}"
 
-    def test_traceback_line_numbers_embedded_expr(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_traceback_line_numbers_embedded_expr(self, tmp_path: Path) -> None:
         """Verify errors in { expression } point to correct lines."""
         loader = PageLoader()
 
@@ -66,9 +67,7 @@ raise ValueError("Boom")
             page = page_cls(cast(Any, None), {}, {}, {}, None)
 
             # Render needs to be awaited? BasePage.render is async
-            import asyncio
-
-            asyncio.run(page.render())
+            await page.render()
 
             pytest.fail("Should have raised ZeroDivisionError")
         except ZeroDivisionError as e:

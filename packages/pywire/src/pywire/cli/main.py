@@ -142,7 +142,7 @@ def panel_init(self, *args, **kwargs):
     original_panel_init(self, *args, **kwargs)
 
 
-rich.panel.Panel.__init__ = panel_init  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
+rich.panel.Panel.__init__ = panel_init  # type: ignore[method-assign]
 
 
 def _find_available_port(host: str, port: int, max_attempts: int = 100) -> int:

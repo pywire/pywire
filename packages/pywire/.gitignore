@@ -10,7 +10,9 @@ __pycache__/
 
 src/pywire/client/node_modules/
 src/pywire/client/dist/
-src/pywire/static/
+# src/pywire/static/ must be un-ignored for maturin to include it in WASM wheels
+!src/pywire/static/
+!src/pywire/static/**
 .pywire/
 src/pywire/_version.py
 dist/

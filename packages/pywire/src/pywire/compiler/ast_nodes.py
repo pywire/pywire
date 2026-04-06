@@ -50,17 +50,6 @@ class LayoutDirective(Directive):
 
 
 @dataclass
-class ComponentDirective(Directive):
-    """!component 'path/to/component' as Name"""
-
-    path: str
-    component_name: str  # PascalCase name (e.g. 'Badge')
-
-    def __str__(self) -> str:
-        return f"ComponentDirective(name={self.component_name}, path={self.path})"
-
-
-@dataclass
 class PropsDirective(Directive):
     """!props(name: type, arg=default)"""
 
@@ -218,53 +207,6 @@ class CatchAttribute(SpecialAttribute):
 
 
 @dataclass
-class FieldValidationRules:
-    """Validation rules for a single form field."""
-
-    name: str
-    required: bool = False
-    required_expr: Optional[str] = None  # For required={condition}
-    pattern: Optional[str] = None
-    minlength: Optional[int] = None
-    maxlength: Optional[int] = None
-    min_value: Optional[str] = None  # String to support dates
-    min_expr: Optional[str] = None  # For min={expr}
-    max_value: Optional[str] = None
-    max_expr: Optional[str] = None  # For max={expr}
-    step: Optional[str] = None
-    input_type: str = "text"  # email, url, number, date, etc.
-    title: Optional[str] = None  # Custom error message
-    max_size: Optional[int] = None  # Max file size in bytes
-    allowed_types: Optional[List[str]] = None  # Allowed MIME types or extensions
-
-    def __str__(self) -> str:
-        return f"FieldValidationRules(name={self.name}, required={self.required})"
-
-
-@dataclass
-class FormValidationSchema:
-    """Schema containing all validation rules for a form."""
-
-    fields: Dict[str, FieldValidationRules] = field(default_factory=dict)
-    model_name: Optional[str] = None  # For $model={ClassName}
-
-    def __str__(self) -> str:
-        return (
-            f"FormValidationSchema(fields={len(self.fields)}, model={self.model_name})"
-        )
-
-
-@dataclass
-class ModelAttribute(SpecialAttribute):
-    """$model={ModelClassName} - Pydantic model binding."""
-
-    model_name: str
-
-    def __str__(self) -> str:
-        return f"ModelAttribute(model={self.model_name})"
-
-
-@dataclass
 class EventAttribute(SpecialAttribute):
     """@click={handler_name} or @click={handler(arg1)}."""
 
@@ -276,8 +218,7 @@ class EventAttribute(SpecialAttribute):
     modifiers: List[str] = field(
         default_factory=list
     )  # List of modifiers (e.g. ['prevent', 'stop'])
-    # Form-specific fields
-    validation_schema: Optional[FormValidationSchema] = None  # Set for @submit handlers
+    # Form-specific fields removed
 
     def __str__(self) -> str:
         return (
@@ -356,7 +297,7 @@ class ParsedPyWire:
 
     directives: List[Directive] = field(default_factory=list)
     template: List[TemplateNode] = field(default_factory=list)
-    python_code: str = ""  # Raw Python section (above ---html---)
+    python_code: str = ""  # Raw Python section (between --- fences)
     python_ast: Optional[ast.Module] = None  # Parsed Python AST
     file_path: str = ""
 

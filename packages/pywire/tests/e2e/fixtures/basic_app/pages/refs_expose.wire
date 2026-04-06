@@ -1,0 +1,27 @@
+---
+from components.Counter import Counter
+from pywire import wire, ref
+
+child_ref = ref()
+log = wire([])
+
+def call_child_increment():
+    child_ref.increment_exposed()
+    log.append(f"Called increment, new count: {child_ref.get_count_exposed()}")
+
+def call_child_invalid():
+    try:
+        child_ref.non_existent_method()
+    except AttributeError as e:
+        log.append(f"Caught expected error: {str(e)}")
+---
+<div id="parent">
+    <Counter $ref={child_ref} />
+
+    <button id="btn-increment" @click={call_child_increment}>Increment Child</button>
+    <button id="btn-invalid" @click={call_child_invalid}>Call Invalid</button>
+
+    <ul id="log">
+        <li $for={entry in log}>{entry}</li>
+    </ul>
+</div>

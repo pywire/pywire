@@ -24,6 +24,14 @@ describe('UnifiedEventHandler', () => {
     // Check for some common events
     expect(addEventListenerSpy).toHaveBeenCalledWith('click', expect.any(Function), undefined)
     expect(addEventListenerSpy).toHaveBeenCalledWith('submit', expect.any(Function), undefined)
+    expect(addEventListenerSpy).toHaveBeenCalledWith('input', expect.any(Function), undefined)
+    expect(addEventListenerSpy).toHaveBeenCalledWith('change', expect.any(Function), undefined)
+  })
+
+  it('should register specific listeners if present in DOM', () => {
+    document.body.innerHTML = '<input data-on-focus="handleFocus">'
+    const addEventListenerSpy = vi.spyOn(document, 'addEventListener')
+    handler.init()
     expect(addEventListenerSpy).toHaveBeenCalledWith('focus', expect.any(Function), {
       capture: true,
     })
@@ -175,6 +183,147 @@ describe('UnifiedEventHandler', () => {
     )
   })
 
+  it('wraps single upload id as list for multiple file inputs', async () => {
+    document.body.innerHTML = `
+            <meta name="pywire-upload-token" content="tok">
+            <form id="form" data-on-submit="send">
+                <input id="docs" type="file" name="attachments" multiple>
+            </form>
+        `
+    const form = document.getElementById('form') as HTMLFormElement
+    const fileData = new FormData()
+    fileData.append('attachments', new Blob(['abc']), 'doc_one.pdf')
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ attachments: 'u1' }),
+    })
+    vi.stubGlobal('fetch', fetchMock as any)
+
+    const result = await (handler as any).uploadFiles(fileData, form)
+
+    expect(result).toEqual({ attachments: [{ _upload_id: 'u1' }] })
+    vi.unstubAllGlobals()
+  })
+
+  it('blocks submit when filename does not match data-allowed-names', () => {
+    document.body.innerHTML = `
+            <form id="form" data-on-submit="send">
+                <input id="avatar" type="file" name="avatar" data-allowed-names="^avatar_.*\\.(png|jpg)$">
+            </form>
+        `
+    const form = document.getElementById('form') as HTMLFormElement
+    const avatar = document.getElementById('avatar') as HTMLInputElement
+    const badFile = new File(['x'], 'evil.png', { type: 'image/png' })
+    Object.defineProperty(avatar, 'files', { value: [badFile], configurable: true })
+
+    const reportSpy = vi.spyOn(avatar, 'reportValidity').mockReturnValue(false)
+    handler.init()
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    expect(avatar.validationMessage).toBe('Filename is not allowed')
+    expect(reportSpy).toHaveBeenCalled()
+    expect(appMock.sendEvent).not.toHaveBeenCalled()
+  })
+
+  it('accepts escaped backslash patterns in data-allowed-names', () => {
+    document.body.innerHTML = `
+            <form id="form" data-on-submit="send">
+                <input id="avatar" type="file" name="avatar">
+            </form>
+        `
+    const form = document.getElementById('form') as HTMLFormElement
+    const avatar = document.getElementById('avatar') as HTMLInputElement
+    avatar.setAttribute('data-allowed-names', '^avatar_.*\\\\.(png|jpg)$')
+
+    const goodFile = new File(['x'], 'avatar_ok.png', { type: 'image/png' })
+    Object.defineProperty(avatar, 'files', { value: [goodFile], configurable: true })
+
+    handler.init()
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    expect(appMock.sendEvent).toHaveBeenCalledWith(
+      'send',
+      expect.objectContaining({ type: 'submit' })
+    )
+  })
+
+  it('skips html5 custom validity flow for FileInput component fields', () => {
+    document.body.innerHTML = `
+            <form id="form" data-on-submit="send">
+                <input id="avatar" type="file" name="avatar" data-pw-file-input="1" data-allowed-names="^avatar_.*\\.(png|jpg)$">
+            </form>
+        `
+    const form = document.getElementById('form') as HTMLFormElement
+    const avatar = document.getElementById('avatar') as HTMLInputElement
+    const badFile = new File(['x'], 'evil.png', { type: 'image/png' })
+    Object.defineProperty(avatar, 'files', { value: [badFile], configurable: true })
+
+    const reportSpy = vi.spyOn(avatar, 'reportValidity').mockReturnValue(false)
+    handler.init()
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    expect(reportSpy).not.toHaveBeenCalled()
+    expect(appMock.sendEvent).toHaveBeenCalledWith(
+      'send',
+      expect.objectContaining({ type: 'submit' })
+    )
+  })
+
+  it('blocks submit when file exceeds data-max-size', () => {
+    document.body.innerHTML = `
+            <form id="form" data-on-submit="send">
+                <input id="avatar" type="file" name="avatar" data-max-size="2">
+            </form>
+        `
+    const form = document.getElementById('form') as HTMLFormElement
+    const avatar = document.getElementById('avatar') as HTMLInputElement
+    const bigFile = new File(['abc'], 'avatar_ok.png', { type: 'image/png' })
+    Object.defineProperty(avatar, 'files', { value: [bigFile], configurable: true })
+
+    const reportSpy = vi.spyOn(avatar, 'reportValidity').mockReturnValue(false)
+    handler.init()
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    expect(avatar.validationMessage).toContain('File is too large')
+    expect(reportSpy).toHaveBeenCalled()
+    expect(appMock.sendEvent).not.toHaveBeenCalled()
+  })
+
+  it('clears stale custom validity on file change', () => {
+    document.body.innerHTML = `
+            <form id="form" data-on-submit="send">
+                <input id="avatar" type="file" name="avatar" data-on-change="changed">
+            </form>
+        `
+    const avatar = document.getElementById('avatar') as HTMLInputElement
+    const goodFile = new File(['x'], 'avatar_ok.png', { type: 'image/png' })
+    Object.defineProperty(avatar, 'files', { value: [goodFile], configurable: true })
+    avatar.setCustomValidity('Filename is not allowed')
+
+    handler.init()
+    avatar.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(avatar.validationMessage).toBe('')
+  })
+
+  it('clears stale custom validity on file change without data-on-change handler', () => {
+    document.body.innerHTML = `
+            <form id="form" data-on-submit="send">
+                <input id="avatar" type="file" name="avatar">
+            </form>
+        `
+    const avatar = document.getElementById('avatar') as HTMLInputElement
+    const goodFile = new File(['x'], 'avatar_ok.png', { type: 'image/png' })
+    Object.defineProperty(avatar, 'files', { value: [goodFile], configurable: true })
+    avatar.setCustomValidity('Filename is not allowed')
+
+    handler.init()
+    avatar.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(avatar.validationMessage).toBe('')
+  })
+
   it('should handle .throttle modifier', async () => {
     vi.useFakeTimers()
     document.body.innerHTML =
@@ -260,6 +409,23 @@ describe('UnifiedEventHandler', () => {
     btn.click()
 
     expect(appMock.sendEvent).toHaveBeenCalledWith('dynamic', expect.anything())
+  })
+
+  it('should handle custom events', () => {
+    document.body.innerHTML = '<div id="custom-el" data-on-my-event="handleCustom"></div>'
+    const el = document.getElementById('custom-el')!
+
+    // Initialize handler to scan for my-event
+    handler.init()
+
+    el.dispatchEvent(new CustomEvent('my-event', { bubbles: true, detail: { some: 'data' } }))
+
+    expect(appMock.sendEvent).toHaveBeenCalledWith(
+      'handleCustom',
+      expect.objectContaining({
+        type: 'my-event',
+      })
+    )
   })
 
   it('should support multiple handlers via JSON', () => {

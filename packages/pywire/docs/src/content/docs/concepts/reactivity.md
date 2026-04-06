@@ -43,26 +43,85 @@ count.value = 5  # Triggers UI update
 user.age = 31    # Triggers UI update
 ```
 
-## The `$` Syntax Sugar
+## Automatic Unwrapping
 
-To make your Python logic cleaner and more concise, `.wire` files support a special preprocessor syntax: the `$` prefix.
+PyWire wires are designed to feel like standard Python variables. In most cases, you don't need to manually access `.value` because wires **automatically unwrap** when used in common operations:
 
-When you use `$` before a variable name inside the Python block of a `.wire` file, it automatically compiles to `.value`.
+- **Interpolation**: `{count}` in a template works directly.
+- **Comparisons**: `if count > 10:` or `$if={count > 10}`.
+- **Iteration**: `for item in items:` or `$for={item in items}`.
+- **Standard Ops**: `len(items)`, `str(name)`, `bool(is_active)`.
+- **List/Dict Access**: `items[0]` or `user['name']`.
+
+### When to use `.value` (or `.val`)
+
+You only need to use the `.value` accessor in two specific scenarios:
+
+1. **Reassignment**: When replacing the entire value of a wire.
+2. **Primitive Mutation**: When using in-place operators on primitives (int, str, float).
 
 ```python
-# Your code in .wire file
-def increment():
-    $count += 1
-    print(f"New count is {$count}")
+count = wire(0)
 
-# Compiled code
-def increment(self):
-    self.count.value += 1
-    print(f"New count is {self.count.value}")
+def reset():
+    count.value = 0  # Reassignment requires .value
+
+def increment():
+    count.value += 1 # In-place mutation of primitive requires .value
 ```
 
 > [!TIP]
-> Use `$` for read/write operations inside your functions to keep your logic readable.
+> Discourage unnecessary `.value` wrapping in your templates and logic to keep your code clean and reduce potential bugs.
+
+## Derived State
+
+Often, you have state that depends entirely on other state. PyWire provides `derived` to handle this efficiently. Derived values update automatically when their dependencies change.
+
+### As a Decorator (`@derived`)
+
+Use the `@derived` decorator for complex logic. The function name becomes the reactive variable.
+
+```python
+from pywire import wire, derived
+
+count = wire(1)
+
+@derived
+def double_count():
+    # Automatic unwrapping works here too!
+    return count * 2
+
+# Usage
+print(double_count) # 2
+count.value = 5
+print(double_count) # 10
+```
+
+### As a Lambda
+
+For simple expressions, you can pass a lambda to `derived()`.
+
+```python
+count = wire(1)
+is_even = derived(lambda: count % 2 == 0)
+```
+
+## Side Effects (`@effect`)
+
+If you need to run code *in response* to state changes (like logging, saving to local storage, or fetching data), use the `@effect` decorator.
+
+```python
+from pywire import wire, effect
+
+count = wire(0)
+
+@effect
+def log_changes():
+    # This runs immediately, and then again whenever count changes
+    print(f"Count changed to: {count}")
+```
+
+PyWire automatically tracks dependencies inside the effect function. If you access a reactive variable, the effect re-runs when that variable updates.
 
 ## Scope & Persistence
 

@@ -1,7 +1,9 @@
 import unittest
-from typing import cast
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
+from pywire.core.wire import wire
+from pywire.runtime.files import FileUpload
 from pywire.runtime.pydantic_integration import validate_with_model
 from pywire.runtime.validation import FieldRules, form_validator
 
@@ -153,14 +155,16 @@ class TestValidationExhaustive(unittest.TestCase):
         # 2. Too large
         mock_file.size = 2000
         error = form_validator.validate_field("avatar", mock_file, fields["avatar"])
-        self.assertIn("too large", cast(str, error))
+        self.assertIsNotNone(error)
+        self.assertIn("too large", cast(Any, error).message)
 
         # 3. Wrong type
         mock_file.size = 500
         mock_file.content_type = "text/plain"
         mock_file.filename = "test.txt"
         error = form_validator.validate_field("avatar", mock_file, fields["avatar"])
-        self.assertIn("not allowed", cast(str, error))
+        self.assertIsNotNone(error)
+        self.assertIn("not allowed", cast(Any, error).message)
 
         # 4. Extension allowed
         mock_file.filename = "document.pdf"
@@ -194,7 +198,8 @@ class TestValidationExhaustive(unittest.TestCase):
     def test_custom_title_error(self) -> None:
         fields = {"name": FieldRules(required=True, title="NAME_REQUIRED")}
         _, errors = validate_form({"name": ""}, fields, lambda x: None)
-        self.assertEqual(errors["name"], "NAME_REQUIRED is required.")
+        self.assertEqual(errors["name"].rule, "required")
+        self.assertEqual(errors["name"].message, "name is required.")
 
     def test_pydantic_prefix_removal(self) -> None:
         # Trigger a pydantic error that might have "Value error, " prefix
@@ -213,8 +218,8 @@ class TestValidationExhaustive(unittest.TestCase):
 
         instance, errors = validate_with_model({"val": -1}, PrefixModel)
         # It should just be "Must be positive" or similar, not "Value error, Must be positive"
-        self.assertIn("Must be positive", errors["val"])
-        self.assertNotIn("Value error, ", errors["val"])
+        self.assertIn("Must be positive", errors["val"].message)
+        self.assertNotIn("Value error, ", errors["val"].message)
 
     def test_pydantic_v1_fallback(self) -> None:
         # Mocking a model that only has parse_obj but not model_validate
@@ -236,7 +241,7 @@ class TestValidationExhaustive(unittest.TestCase):
 
         instance, errors = validate_with_model({"x": 1}, BreakingModel)
         self.assertIn("__all__", errors)
-        self.assertIn("Unexpected failure", errors["__all__"])
+        self.assertIn("Unexpected failure", errors["__all__"].message)
 
     def test_upload_id_resolution(self) -> None:
         from unittest.mock import patch
@@ -250,8 +255,200 @@ class TestValidationExhaustive(unittest.TestCase):
             mock_get.assert_called_with("123")
 
             mock_get.return_value = None
-            val = form_validator._convert_value({"_upload_id": "missing"}, "file")
-            self.assertIsNone(val)
+            with self.assertRaises(ValueError):
+                form_validator._convert_value({"_upload_id": "missing"}, "file")
+
+    def test_validate_form_upload_missing_error(self) -> None:
+        from unittest.mock import patch
+
+        from pywire.runtime.upload_manager import upload_manager
+
+        with patch.object(upload_manager, "get") as mock_get:
+            mock_get.return_value = None
+            _, errors = validate_form(
+                {"avatar": {"_upload_id": "missing"}},
+                {"avatar": FieldRules(input_type="file", required=True)},
+                lambda x: None,
+            )
+            self.assertIn("avatar", errors)
+            self.assertEqual(errors["avatar"].rule, "upload_missing")
+
+    def test_file_validation_full_rules(self) -> None:
+        from unittest.mock import MagicMock
+
+        fields = {
+            "documents": FieldRules(
+                input_type="file",
+                multiple=True,
+                max_files=2,
+                max_size=1024,
+                min_size=16,
+                allowed_types=["application/pdf", ".txt"],
+                allowed_names="^doc_.*\\.(pdf|txt)$",
+            )
+        }
+
+        file1 = MagicMock(spec=FileUpload)
+        file1.size = 128
+        file1.content_type = "application/pdf"
+        file1.filename = "doc_alpha.pdf"
+        file2 = MagicMock(spec=FileUpload)
+        file2.size = 256
+        file2.content_type = "text/plain"
+        file2.filename = "doc_beta.txt"
+
+        err = form_validator.validate_field("documents", [file1, file2], fields["documents"])
+        self.assertIsNone(err)
+
+        too_many = form_validator.validate_field(
+            "documents", [file1, file2, file1], fields["documents"]
+        )
+        self.assertIsNotNone(too_many)
+        self.assertEqual(cast(Any, too_many).rule, "file_count_mismatch")
+
+        bad_name = MagicMock(spec=FileUpload)
+        bad_name.size = 128
+        bad_name.content_type = "application/pdf"
+        bad_name.filename = "invoice.pdf"
+        name_err = form_validator.validate_field("documents", [bad_name], fields["documents"])
+        self.assertIsNotNone(name_err)
+        self.assertEqual(cast(Any, name_err).rule, "file_name_mismatch")
+
+        tiny = MagicMock(spec=FileUpload)
+        tiny.size = 1
+        tiny.content_type = "application/pdf"
+        tiny.filename = "doc_small.pdf"
+        size_err = form_validator.validate_field("documents", [tiny], fields["documents"])
+        self.assertIsNotNone(size_err)
+        self.assertEqual(cast(Any, size_err).rule, "file_too_small")
+
+    def test_file_validation_allowed_types_wire_primitive(self) -> None:
+        from unittest.mock import MagicMock
+
+        file_value = MagicMock(spec=FileUpload)
+        file_value.size = 128
+        file_value.content_type = "image/png"
+        file_value.filename = "avatar.png"
+
+        rules = FieldRules(input_type="file", allowed_types=cast(Any, wire("image/*,.png")))
+        err = form_validator.validate_field("avatar", file_value, rules)
+        self.assertIsNone(err)
+
+        rules = FieldRules(
+            input_type="file",
+            allowed_types=cast(Any, wire(["application/pdf", ".txt"])),
+        )
+        bad_type_err = form_validator.validate_field("avatar", file_value, rules)
+        self.assertIsNotNone(bad_type_err)
+        self.assertEqual(cast(Any, bad_type_err).rule, "file_type_mismatch")
+
+    def test_file_validation_allowed_names_escaped_pattern(self) -> None:
+        from unittest.mock import MagicMock
+
+        file_value = MagicMock(spec=FileUpload)
+        file_value.size = 2048
+        file_value.content_type = "image/jpeg"
+        file_value.filename = "avatar_reece.jpeg"
+
+        rules = FieldRules(
+            input_type="file",
+            allowed_names=r"^avatar_.*\\.(png|jpg|jpeg)$",
+        )
+        err = form_validator.validate_field("avatar", file_value, rules)
+        self.assertIsNone(err)
+
+    def test_upload_id_resolution_multiple(self) -> None:
+        from unittest.mock import patch
+
+        from pywire.runtime.upload_manager import upload_manager
+
+        with patch.object(upload_manager, "get") as mock_get:
+            file_a = FileUpload("a.txt", "text/plain", 3, b"abc")
+            file_b = FileUpload("b.txt", "text/plain", 3, b"def")
+            mock_get.side_effect = [file_a, file_b]
+            val = form_validator._convert_value(
+                [{"_upload_id": "a"}, {"_upload_id": "b"}], "file"
+            )
+            self.assertEqual(len(val), 2)
+            self.assertEqual(val[0].filename, "a.txt")
+
+    def test_validate_form_file_multiple_wraps_single_file(self) -> None:
+        from unittest.mock import patch
+
+        from pywire.runtime.upload_manager import upload_manager
+
+        with patch.object(upload_manager, "get") as mock_get:
+            mock_get.return_value = FileUpload("doc_one.pdf", "application/pdf", 3, b"one")
+            cleaned, errors = validate_form(
+                {"attachments": {"_upload_id": "u1"}},
+                {"attachments": FieldRules(input_type="file", multiple=True, max_files=3)},
+                lambda x: None,
+            )
+            self.assertEqual(errors, {})
+            self.assertIsInstance(cleaned["attachments"], list)
+            self.assertEqual(len(cleaned["attachments"]), 1)
+
+
+    def test_upload_id_resolution_from_json_string(self) -> None:
+        from unittest.mock import patch
+
+        from pywire.runtime.upload_manager import upload_manager
+
+        with patch.object(upload_manager, "get") as mock_get:
+            file_a = FileUpload("a.txt", "text/plain", 3, b"abc")
+            mock_get.return_value = file_a
+            val = form_validator._convert_value('{"_upload_id":"a"}', "file")
+            self.assertEqual(val.filename, "a.txt")
+
+            mock_get.side_effect = [file_a, file_a]
+            val_list = form_validator._convert_value(
+                ['{"_upload_id":"a"}', '{"_upload_id":"a"}'], "file"
+            )
+            self.assertEqual(len(val_list), 2)
+
+    def test_validate_with_model_file_upload_ids(self) -> None:
+        from unittest.mock import patch
+
+        class UploadModel(BaseModel):
+            avatar: FileUpload
+            docs: list[FileUpload] = Field(default_factory=list)
+
+        from pywire.runtime.upload_manager import upload_manager
+
+        with patch.object(upload_manager, "get") as mock_get:
+            mock_get.side_effect = [
+                FileUpload("avatar.png", "image/png", 4, b"data"),
+                FileUpload("doc_one.pdf", "application/pdf", 3, b"one"),
+                FileUpload("doc_two.txt", "text/plain", 3, b"two"),
+            ]
+            instance, errors = validate_with_model(
+                {
+                    "avatar": {"_upload_id": "u1"},
+                    "docs": [{"_upload_id": "u2"}, {"_upload_id": "u3"}],
+                },
+                UploadModel,
+            )
+            self.assertEqual(errors, {})
+            self.assertEqual(cast(Any, instance).avatar.filename, "avatar.png")
+            self.assertEqual(len(cast(Any, instance).docs), 2)
+
+    def test_validate_with_model_missing_upload_id(self) -> None:
+        from unittest.mock import patch
+
+        class UploadModel(BaseModel):
+            avatar: FileUpload
+
+        from pywire.runtime.upload_manager import upload_manager
+
+        with patch.object(upload_manager, "get") as mock_get:
+            mock_get.return_value = None
+            instance, errors = validate_with_model(
+                {"avatar": {"_upload_id": "missing"}},
+                UploadModel,
+            )
+            self.assertIsNone(instance)
+            self.assertIn("avatar", errors)
+            self.assertEqual(errors["avatar"].rule, "upload_missing")
 
     def test_float_fallback(self) -> None:
         # number conversion that requires float

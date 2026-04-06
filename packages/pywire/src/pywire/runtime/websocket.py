@@ -10,9 +10,12 @@ import msgpack
 from starlette.responses import Response
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
 from pywire import __version__
+
+logger = logging.getLogger(__name__)
 
 
 class WebSocketHandler:
@@ -85,6 +88,8 @@ class WebSocketHandler:
             await self._handle_init(websocket, data)
         elif msg_type == "relocate":
             await self._handle_relocate(websocket, data)
+        elif msg_type == "ref_sync":
+            await self._handle_ref_sync(websocket, data)
         else:
             print(f"Unknown message type: {msg_type}")
             await self._send_console_message(
@@ -108,10 +113,7 @@ class WebSocketHandler:
         """Send a structured error trace to the client."""
         # Gate on debug mode + dev mode
         # If not in dev mode, send generic error message only
-        if not (
-            getattr(self.app, "debug", False)
-            and getattr(self.app, "_is_dev_mode", False)
-        ):
+        if not (getattr(self.app, "_is_dev_mode", False)):
             await websocket.send_bytes(
                 msgpack.packb(
                     {
@@ -189,17 +191,17 @@ class WebSocketHandler:
 
         if isinstance(update, dict):
             if update.get("type") == "regions":
-                await websocket.send_bytes(
-                    msgpack.packb(
-                        {"type": "update", "regions": update.get("regions", [])}
-                    )
-                )
+                payload = {"type": "update", "regions": update.get("regions", [])}
+                if "commands" in update:
+                    payload["commands"] = update["commands"]
+                await websocket.send_bytes(msgpack.packb(payload))
                 return
             if update.get("type") == "full":
                 html = update.get("html", "")
-                await websocket.send_bytes(
-                    msgpack.packb({"type": "update", "html": html})
-                )
+                payload = {"type": "update", "html": html}
+                if "commands" in update:
+                    payload["commands"] = update["commands"]
+                await websocket.send_bytes(msgpack.packb(payload))
                 return
 
         # Fallback: force full reload
@@ -298,8 +300,8 @@ class WebSocketHandler:
             page._on_update = broadcast_update
             page._on_update = broadcast_update
             if getattr(self.app, "debug", False):
-                print(
-                    f"DEBUG: [{page._instance_id}] Setting _on_update in _handle_init"
+                logger.debug(
+                    f"[{page._instance_id}] Setting _on_update in _handle_init"
                 )
 
             # Render initial state to register dependencies
@@ -308,14 +310,24 @@ class WebSocketHandler:
             # We don't send the HTML back because client already has it (static load)
             # We don't send the HTML back because client already has it (static load)
             if getattr(self.app, "debug", False):
-                print(
-                    f"DEBUG: [{page._instance_id}] Calling page.render(init=True) in _handle_init"
+                logger.debug(
+                    f"[{page._instance_id}] Calling page.render(init=True) in _handle_init"
                 )
             await page.render(init=True)
             if getattr(self.app, "debug", False):
-                print(
-                    f"DEBUG: [{page._instance_id}] Done with page.render(init=True) in _handle_init"
+                logger.debug(
+                    f"[{page._instance_id}] Done with page.render(init=True) in _handle_init"
                 )
+
+            # Check for pending navigation
+            if page._pending_navigation:
+                await websocket.send_bytes(
+                    msgpack.packb(
+                        {"type": "navigate", "path": page._pending_navigation}
+                    )
+                )
+                page._pending_navigation = None
+                return
 
             # Send ack
             await websocket.send_bytes(msgpack.packb({"type": "init_ack"}))
@@ -456,6 +468,16 @@ class WebSocketHandler:
                     update = await page.render_update(init=False)
             except Exception as e:
                 raise e
+
+            # Check for pending navigation
+            if page._pending_navigation:
+                await websocket.send_bytes(
+                    msgpack.packb(
+                        {"type": "navigate", "path": page._pending_navigation}
+                    )
+                )
+                page._pending_navigation = None
+                return
 
             await self._send_update_payload(websocket, update)
 
@@ -714,6 +736,16 @@ class WebSocketHandler:
                 response = await new_page.render()
                 html = cast(bytes, response.body).decode("utf-8")
 
+                # Check for pending navigation
+                if new_page._pending_navigation:
+                    await websocket.send_bytes(
+                        msgpack.packb(
+                            {"type": "navigate", "path": new_page._pending_navigation}
+                        )
+                    )
+                    new_page._pending_navigation = None
+                    return
+
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
                 )
@@ -786,6 +818,30 @@ class WebSocketHandler:
                         # Preserve user
                         new_page.user = old_page.user
 
+                        # Preserve component local state by key.
+                        component_snapshots: Dict[str, Dict[str, Any]] = {}
+                        old_components = getattr(old_page, "_components", {})
+                        for comp_key, old_component in old_components.items():
+                            snapshot: Dict[str, Any] = {}
+                            for attr, value in old_component.__dict__.items():
+                                if attr.startswith("_"):
+                                    continue
+                                if attr in {
+                                    "request",
+                                    "params",
+                                    "query",
+                                    "path",
+                                    "url",
+                                }:
+                                    continue
+                                snapshot[attr] = value
+                            if snapshot:
+                                component_snapshots[comp_key] = snapshot
+                        if component_snapshots:
+                            new_page._component_state_snapshots.update(
+                                component_snapshots
+                            )
+
                         # Update our reference
                         self.connection_pages[connection] = new_page
 
@@ -819,3 +875,25 @@ class WebSocketHandler:
             self.active_connections.discard(conn)
             if conn in self.connection_pages:
                 del self.connection_pages[conn]
+
+    async def _handle_ref_sync(
+        self, websocket: WebSocket, data: Dict[str, Any]
+    ) -> None:
+        """Handle ref value synchronization."""
+        ref_id = data.get("refId")
+        value = data.get("value")
+
+        if not ref_id or websocket not in self.connection_pages:
+            return
+
+        page = self.connection_pages[websocket]
+        ref = page._refs_by_id.get(ref_id)
+
+        if ref:
+            try:
+                # Update value directly
+                if hasattr(ref, "_update_value"):
+                    ref._update_value(value)
+            except Exception as e:
+                if getattr(self.app, "debug", False):
+                    print(f"Ref sync error for {ref_id}: {e}")

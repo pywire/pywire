@@ -1,5 +1,6 @@
 """Server-side form validation matching HTML5 constraints."""
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -8,7 +9,12 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from pywire.runtime.files import FileUpload
+from pywire.runtime.form_errors import FieldError
 from pywire.runtime.upload_manager import upload_manager
+
+
+class UploadResolutionError(ValueError):
+    """Raised when an upload ID cannot be resolved."""
 
 
 @dataclass
@@ -28,7 +34,11 @@ class FieldRules:
     input_type: str = "text"
     title: Optional[str] = None  # Custom error message
     max_size: Optional[int] = None  # Max file size in bytes
+    min_size: Optional[int] = None  # Min file size in bytes
+    multiple: bool = False  # Allow multiple files
+    max_files: Optional[int] = None  # Max number of files when multiple
     allowed_types: Optional[List[str]] = None  # Allowed MIME types or extensions
+    allowed_names: Optional[str] = None  # Regex pattern for allowed filenames
 
 
 @dataclass
@@ -48,13 +58,72 @@ class FormValidator:
     # URL regex (simplified)
     URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
 
+    @staticmethod
+    def _unwrap_rule_value(value: Any) -> Any:
+        current = value
+        while True:
+            if current is None:
+                return None
+            if isinstance(current, (str, bytes, list, tuple, set, dict)):
+                return current
+            if not hasattr(current, "value"):
+                return current
+            next_value = getattr(current, "value")
+            if next_value is current:
+                return current
+            current = next_value
+
+    def _normalize_allowed_types(self, value: Any) -> List[str]:
+        normalized: List[str] = []
+        unwrapped = self._unwrap_rule_value(value)
+        if unwrapped is None:
+            return normalized
+
+        items: List[Any] = []
+        if isinstance(unwrapped, str):
+            items = [unwrapped]
+        elif isinstance(unwrapped, (list, tuple, set)):
+            items = list(unwrapped)
+        else:
+            items = [unwrapped]
+
+        for item in items:
+            item_value = self._unwrap_rule_value(item)
+            if item_value is None:
+                continue
+            if not isinstance(item_value, str):
+                item_value = str(item_value)
+            parts = [part.strip() for part in item_value.split(",")]
+            for part in parts:
+                if not part:
+                    continue
+                normalized.append(part)
+        return normalized
+
+    @staticmethod
+    def _field_error(
+        field: str,
+        rule: str,
+        message: str,
+        params: Optional[Dict[str, Any]] = None,
+        native_type: Optional[str] = None,
+    ) -> FieldError:
+        return FieldError(
+            field=field,
+            rule=rule,
+            message=message,
+            source="html5",
+            params=params or {},
+            native_type=native_type,
+        )
+
     def validate_field(
         self,
         name: str,
         value: Any,
         rules: FieldRules,
         state_getter: Optional[Callable[[str], Any]] = None,
-    ) -> Optional[str]:
+    ) -> Optional[FieldError]:
         """
         Validate a single field against rules.
 
@@ -77,11 +146,20 @@ class FormValidator:
 
         # Check required
         if is_required:
-            if value is None or (isinstance(value, str) and value.strip() == ""):
-                return rules.title or "This field is required"
+            is_missing = value is None or (
+                isinstance(value, str) and value.strip() == ""
+            )
+            if isinstance(value, list) and len(value) == 0:
+                is_missing = True
+            if is_missing:
+                return self._field_error(
+                    name, "required", "This field is required", {"required": True}
+                )
 
         # If empty and not required, skip other validations
         if value is None or (isinstance(value, str) and value.strip() == ""):
+            return None
+        if isinstance(value, list) and len(value) == 0:
             return None
 
         str_value = str(value).strip()
@@ -90,71 +168,87 @@ class FormValidator:
         if rules.pattern:
             try:
                 if not re.fullmatch(rules.pattern, str_value):
-                    return rules.title or "Value does not match the required pattern"
+                    return self._field_error(
+                        name,
+                        "pattern",
+                        rules.title or "Value does not match the required pattern",
+                        {"pattern": rules.pattern},
+                    )
             except re.error:
                 pass  # Invalid regex, skip
 
         # Length validations
         if rules.minlength is not None:
             if len(str_value) < rules.minlength:
-                return rules.title or f"Must be at least {rules.minlength} characters"
+                return self._field_error(
+                    name,
+                    "minlength",
+                    f"Must be at least {rules.minlength} characters",
+                    {"minlength": rules.minlength},
+                )
 
         if rules.maxlength is not None:
             if len(str_value) > rules.maxlength:
-                return rules.title or f"Must be at most {rules.maxlength} characters"
+                return self._field_error(
+                    name,
+                    "maxlength",
+                    f"Must be at most {rules.maxlength} characters",
+                    {"maxlength": rules.maxlength},
+                )
 
         # Type-based validation
         if rules.input_type == "email":
             if not self.EMAIL_PATTERN.match(str_value):
-                return rules.title or "Please enter a valid email address"
+                return self._field_error(
+                    name, "type_mismatch", "Please enter a valid email address"
+                )
 
         elif rules.input_type == "url":
             if not self.URL_PATTERN.match(str_value):
-                return rules.title or "Please enter a valid URL"
+                return self._field_error(
+                    name, "type_mismatch", "Please enter a valid URL"
+                )
 
         elif rules.input_type == "number":
-            return self._validate_number(str_value, rules, state_getter)
+            return self._validate_number(name, str_value, rules, state_getter)
 
         elif rules.input_type == "date":
-            return self._validate_date(str_value, rules, state_getter)
+            return self._validate_date(name, str_value, rules, state_getter)
 
         elif rules.input_type == "file":
-            # File validation
+            files: List[FileUpload] = []
             if isinstance(value, FileUpload):
-                # Check size
-                if rules.max_size is not None and value.size > rules.max_size:
-                    size_mb = rules.max_size / (1024 * 1024)
-                    return rules.title or f"File is too large (max {size_mb:.1f}MB)"
+                files = [value]
+            elif isinstance(value, list):
+                files = [item for item in value if isinstance(item, FileUpload)]
 
-                # Check type
-                if rules.allowed_types:
-                    # Simple MIME type check
-                    # rules.allowed_types is list like ['image/*', 'application/pdf', '.jpg']
-                    allowed = False
-                    for pattern in rules.allowed_types:
-                        pattern = pattern.strip()
-                        if pattern.startswith("."):
-                            # Extension check
-                            if value.filename.lower().endswith(pattern.lower()):
-                                allowed = True
-                                break
-                        elif pattern.endswith("/*"):
-                            # Wildcard MIME check (e.g. image/*)
-                            base_type = pattern[:-2]  # remove /*
-                            if value.content_type.startswith(base_type):
-                                allowed = True
-                                break
-                        else:
-                            # Exact MIME check
-                            if value.content_type == pattern:
-                                allowed = True
-                                break
+            if len(files) == 0:
+                return self._field_error(
+                    name,
+                    "file_missing",
+                    rules.title or "Please upload a valid file",
+                )
 
-                    if not allowed:
-                        return (
-                            rules.title
-                            or f"File type not allowed. Accepted: {', '.join(rules.allowed_types)}"
-                        )
+            if not rules.multiple and len(files) > 1:
+                return self._field_error(
+                    name,
+                    "file_count_mismatch",
+                    rules.title or "Only one file is allowed",
+                    {"max_files": 1},
+                )
+
+            if rules.max_files is not None and len(files) > rules.max_files:
+                return self._field_error(
+                    name,
+                    "file_count_mismatch",
+                    rules.title or f"At most {rules.max_files} files are allowed",
+                    {"max_files": rules.max_files},
+                )
+
+            for file_value in files:
+                file_error = self._validate_file_value(name, file_value, rules)
+                if file_error:
+                    return file_error
 
         # Range validation for non-typed fields
         if rules.input_type == "text":
@@ -162,32 +256,103 @@ class FormValidator:
             if rules.min_value or rules.max_value or rules.min_expr or rules.max_expr:
                 try:
                     num_value = Decimal(str_value)
-                    return self._validate_numeric_range(num_value, rules, state_getter)
+                    return self._validate_numeric_range(
+                        name, num_value, rules, state_getter
+                    )
                 except InvalidOperation:
                     pass  # Not a number, skip range validation
 
         return None
 
+    def _validate_file_value(
+        self, name: str, value: FileUpload, rules: FieldRules
+    ) -> Optional[FieldError]:
+        filename = value.filename or ""
+        content_type = value.content_type or ""
+
+        if rules.max_size is not None and value.size > rules.max_size:
+            size_mb = rules.max_size / (1024 * 1024)
+            return self._field_error(
+                name,
+                "file_too_large",
+                rules.title or f"File is too large (max {size_mb:.1f}MB)",
+                {"max_size": rules.max_size},
+            )
+
+        if rules.min_size is not None and value.size < rules.min_size:
+            return self._field_error(
+                name,
+                "file_too_small",
+                rules.title or f"File is too small (min {rules.min_size} bytes)",
+                {"min_size": rules.min_size},
+            )
+
+        allowed_types = self._normalize_allowed_types(rules.allowed_types)
+        if allowed_types:
+            allowed = False
+            for pattern in allowed_types:
+                candidate = pattern.strip()
+                if candidate.startswith("."):
+                    if filename.lower().endswith(candidate.lower()):
+                        allowed = True
+                        break
+                    continue
+                if candidate.endswith("/*"):
+                    base_type = candidate[:-2]
+                    if content_type.startswith(base_type):
+                        allowed = True
+                        break
+                    continue
+                if content_type == candidate:
+                    allowed = True
+                    break
+
+            if not allowed:
+                return self._field_error(
+                    name,
+                    "file_type_mismatch",
+                    rules.title
+                    or f"File type not allowed. Accepted: {', '.join(allowed_types)}",
+                    {"allowed_types": allowed_types},
+                )
+
+        if rules.allowed_names:
+            normalized_allowed_names = rules.allowed_names.replace("\\\\", "\\")
+            try:
+                if not re.fullmatch(normalized_allowed_names, value.filename):
+                    return self._field_error(
+                        name,
+                        "file_name_mismatch",
+                        rules.title or "Filename is not allowed",
+                        {"allowed_names": normalized_allowed_names},
+                    )
+            except re.error:
+                pass
+
+        return None
+
     def _validate_number(
         self,
+        name: str,
         str_value: str,
         rules: FieldRules,
         state_getter: Optional[Callable[[str], Any]] = None,
-    ) -> Optional[str]:
+    ) -> Optional[FieldError]:
         """Validate a number input."""
         try:
             num_value = Decimal(str_value)
         except InvalidOperation:
-            return rules.title or "Please enter a valid number"
+            return self._field_error(name, "bad_number", "Please enter a valid number")
 
-        return self._validate_numeric_range(num_value, rules, state_getter)
+        return self._validate_numeric_range(name, num_value, rules, state_getter)
 
     def _validate_numeric_range(
         self,
+        name: str,
         num_value: Decimal,
         rules: FieldRules,
         state_getter: Optional[Callable[[str], Any]] = None,
-    ) -> Optional[str]:
+    ) -> Optional[FieldError]:
         """Validate numeric range constraints."""
         # Get min value (static or dynamic)
         min_val = None
@@ -203,7 +368,12 @@ class FormValidator:
                 pass
 
         if min_val is not None and num_value < min_val:
-            return rules.title or f"Value must be at least {min_val}"
+            return self._field_error(
+                name,
+                "range_underflow",
+                f"Value must be at least {min_val}",
+                {"min": str(min_val)},
+            )
 
         # Get max value (static or dynamic)
         max_val = None
@@ -219,7 +389,12 @@ class FormValidator:
                 pass
 
         if max_val is not None and num_value > max_val:
-            return rules.title or f"Value must be at most {max_val}"
+            return self._field_error(
+                name,
+                "range_overflow",
+                f"Value must be at most {max_val}",
+                {"max": str(max_val)},
+            )
 
         # Step validation
         if rules.step:
@@ -229,7 +404,12 @@ class FormValidator:
                     base = min_val if min_val is not None else Decimal("0")
                     diff = num_value - base
                     if diff % step != 0:
-                        return rules.title or f"Value must be a multiple of {step}"
+                        return self._field_error(
+                            name,
+                            "step_mismatch",
+                            f"Value must be a multiple of {step}",
+                            {"step": str(step)},
+                        )
             except InvalidOperation:
                 pass
 
@@ -237,15 +417,18 @@ class FormValidator:
 
     def _validate_date(
         self,
+        name: str,
         str_value: str,
         rules: FieldRules,
         state_getter: Optional[Callable[[str], Any]] = None,
-    ) -> Optional[str]:
+    ) -> Optional[FieldError]:
         """Validate a date input."""
         try:
             date_value = date.fromisoformat(str_value)
         except ValueError:
-            return rules.title or "Please enter a valid date (YYYY-MM-DD)"
+            return self._field_error(
+                name, "bad_date", "Please enter a valid date (YYYY-MM-DD)"
+            )
 
         # Get min date (static or dynamic)
         min_date = None
@@ -262,7 +445,12 @@ class FormValidator:
                 pass
 
         if min_date is not None and date_value < min_date:
-            return rules.title or f"Date must be on or after {min_date.isoformat()}"
+            return self._field_error(
+                name,
+                "range_underflow",
+                f"Date must be on or after {min_date.isoformat()}",
+                {"min": min_date.isoformat()},
+            )
 
         # Get max date (static or dynamic)
         max_date = None
@@ -279,7 +467,12 @@ class FormValidator:
                 pass
 
         if max_date is not None and date_value > max_date:
-            return rules.title or f"Date must be on or before {max_date.isoformat()}"
+            return self._field_error(
+                name,
+                "range_overflow",
+                f"Date must be on or before {max_date.isoformat()}",
+                {"max": max_date.isoformat()},
+            )
 
         return None
 
@@ -287,14 +480,17 @@ class FormValidator:
         self,
         data: Dict[str, Any],
         schema: Dict[str, FieldRules],
-        state_getter: Callable[[str], Any],
-    ) -> Tuple[Dict[str, Any], Dict[str, str]]:
+        state_getter: Optional[Callable[[str], Any]] = None,
+    ) -> Tuple[Dict[str, Any], Dict[str, FieldError]]:
         """
         Validate data against schema.
         Returns: (cleaned_data, errors)
         """
-        errors: Dict[str, str] = {}
+        errors: Dict[str, FieldError] = {}
         cleaned_data: Dict[str, Any] = {}
+
+        # 0. Parse nested data (dots in keys) to ensure schema lookups find their fields
+        data = self.parse_nested_data(data)
 
         # 1. Validate fields present in schema
         for field_name, rules in schema.items():
@@ -303,31 +499,53 @@ class FormValidator:
             # Helper to evaluate rules against state
             def eval_rule(attr_name: str) -> Any:
                 expr = getattr(rules, f"{attr_name}_expr")
-                if expr:
+                if expr and state_getter:
                     return state_getter(expr)
                 return getattr(rules, attr_name)
 
             # Check required
             is_required = eval_rule("required")
-            if is_required and (value is None or value == ""):
-                errors[field_name] = f"{rules.title or field_name} is required."
+            is_missing = value is None or value == ""
+            if isinstance(value, list) and len(value) == 0:
+                is_missing = True
+            if is_required and is_missing:
+                errors[field_name] = self._field_error(
+                    field_name, "required", f"{field_name} is required."
+                )
                 continue
 
             # If empty and not required, skip other validations
             if value is None or value == "":
                 if rules.input_type == "checkbox":
                     cleaned_data[field_name] = False
-                else:
+                elif field_name in data:
                     cleaned_data[field_name] = None
                 continue
 
             # Type conversion (strings to int/float/bool)
             try:
                 converted_value = self._convert_value(value, rules.input_type)
+                if (
+                    rules.input_type == "file"
+                    and rules.multiple
+                    and isinstance(converted_value, FileUpload)
+                ):
+                    converted_value = [converted_value]
                 cleaned_data[field_name] = converted_value
+            except UploadResolutionError:
+                errors[field_name] = self._field_error(
+                    field_name,
+                    "upload_missing",
+                    f"{field_name} upload is missing or expired.",
+                    {"input_type": rules.input_type},
+                )
+                continue
             except ValueError:
-                errors[field_name] = (
-                    f"{rules.title or field_name} must be a valid {rules.input_type}."
+                errors[field_name] = self._field_error(
+                    field_name,
+                    "type_mismatch",
+                    f"{field_name} must be a valid {rules.input_type}.",
+                    {"input_type": rules.input_type},
                 )
                 continue
 
@@ -376,14 +594,30 @@ class FormValidator:
             # File uploads come as dicts from client.
             # If it has _upload_id, resolve it via UploadManager.
             # If it has content (old way), use from_dict.
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("{") or stripped.startswith("["):
+                    try:
+                        parsed = json.loads(stripped)
+                        return self._convert_value(parsed, "file")
+                    except Exception:
+                        pass
+
             if isinstance(value, dict):
                 if "_upload_id" in value:
                     file = upload_manager.get(value["_upload_id"])
                     if file:
                         return file
-                    return None  # Pending or expired?
+                    raise UploadResolutionError("Upload missing or expired")
                 elif "content" in value:
                     return FileUpload.from_dict(value)
+            if isinstance(value, list):
+                resolved: List[FileUpload] = []
+                for item in value:
+                    converted = self._convert_value(item, "file")
+                    if isinstance(converted, FileUpload):
+                        resolved.append(converted)
+                return resolved
             return value
 
         return value
@@ -414,8 +648,6 @@ class FormValidator:
 
             # Return original if generic match fails, likely invalid
             return value
-
-        return value
 
         return value
 

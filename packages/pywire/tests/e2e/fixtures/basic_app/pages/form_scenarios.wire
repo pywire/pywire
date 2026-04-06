@@ -1,0 +1,58 @@
+---
+from pywire import wire, ref
+from pydantic import BaseModel, Field
+from pywire.components.form import Form
+
+print("\nDEBUG: form_scenarios.wire executed")
+
+# Native Form state
+native_captured = wire(None)
+
+def on_native_submit(event):
+    # event is EventData, it has formData
+    data = event.formData
+    native_captured.value = f"Captured: {data.get('username')} - {data.get('email')}"
+
+# Component Form state
+class UserSchema(BaseModel):
+    username: str = Field(..., min_length=3)
+    age: int = Field(..., gt=0)
+
+comp_captured = wire(None)
+form_comp = ref()
+
+def on_comp_submit(user_instance):
+    comp_captured.value = f"User: {user_instance.username} (Age: {user_instance.age})"
+
+async def trigger_manual_submit():
+    await form_comp.submit()
+---
+<div id="form-tests">
+    <section id="native-form">
+        <h2>Native Form (@submit.prevent)</h2>
+        <form @submit.prevent={on_native_submit}>
+            <input name="username" id="native-user" type="text" placeholder="Username" />
+            <input name="email" id="native-email" type="email" placeholder="Email" />
+            <button type="submit" id="btn-native-submit">Submit Native</button>
+        </form>
+        <p id="native-result">{native_captured}</p>
+    </section>
+
+    <section id="comp-form">
+        <h2>Component Form (form.wire)</h2>
+        <Form model={UserSchema} on_submit={on_comp_submit} $ref={form_comp}>
+            <div>
+                <label>Username: <input name="username" id="comp-user" /></label>
+                <p id="err-user" $show={form_comp.errors.username}>{form_comp.errors.username}</p>
+            </div>
+            <div>
+                <label>Age: <input name="age" type="number" id="comp-age" /></label>
+                <p id="err-age" $show={form_comp.errors.age}>{form_comp.errors.age}</p>
+            </div>
+            <button type="submit" id="btn-comp-submit">Submit Component</button>
+        </Form>
+        
+        <button id="btn-manual-submit" @click={trigger_manual_submit}>Manual Submit via Ref</button>
+        <p id="comp-result">{comp_captured}</p>
+    </section>
+</div>

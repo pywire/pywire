@@ -13,10 +13,8 @@ from pywire.compiler.ast_nodes import (
     ElifAttribute,
     ElseAttribute,
     ExceptAttribute,
-    FieldValidationRules,
     FinallyAttribute,
     ForAttribute,
-    FormValidationSchema,
     IfAttribute,
     InterpolationNode,
     ParsedPyWire,
@@ -30,7 +28,7 @@ from pywire.compiler.ast_nodes import (
 from pywire.compiler.attributes.base import AttributeParser
 from pywire.compiler.attributes.conditional import ConditionalAttributeParser
 from pywire.compiler.attributes.events import EventAttributeParser
-from pywire.compiler.attributes.form import ModelAttributeParser
+
 from pywire.compiler.attributes.loop import KeyAttributeParser, LoopAttributeParser
 from pywire.compiler.directives.base import DirectiveParser
 from pywire.compiler.directives.layout import LayoutDirectiveParser
@@ -66,7 +64,6 @@ class PyWireParser:
             ConditionalAttributeParser(),
             LoopAttributeParser(),
             KeyAttributeParser(),
-            ModelAttributeParser(),
         ]
 
         # Interpolation parser (pluggable)
@@ -136,7 +133,9 @@ class PyWireParser:
     def _map_node(self, rn: Any) -> TemplateNode:
         """Map a Rust ParsedNode to a PyWire TemplateNode."""
         # Clean attributes
-        regular_attrs, special_attrs = self._parse_attributes(rn.attributes)
+        regular_attrs, special_attrs = self._parse_attributes(
+            rn.attributes, line=rn.line, col=rn.column
+        )
 
         node = TemplateNode(
             tag=rn.tag,
@@ -177,25 +176,6 @@ class PyWireParser:
             node.children = self._structure_hierarchy(node.children)
 
         # === Form Validation Schema Extraction ===
-        # If this is a <form> with @submit, extract validation rules from child inputs
-        if rn.tag and rn.tag.lower() == "form":
-            submit_attr = None
-            model_attr = None
-            for attr in node.special_attributes:
-                from pywire.compiler.ast_nodes import EventAttribute, ModelAttribute
-
-                if isinstance(attr, EventAttribute) and attr.event_type == "submit":
-                    submit_attr = attr
-                elif isinstance(attr, ModelAttribute):
-                    model_attr = attr
-
-            if submit_attr:
-                # Build validation schema from form inputs
-                schema = self._extract_form_validation_schema(node)
-                if model_attr:
-                    # model_attr is a ModelAttribute, its model_name is what we need
-                    schema.model_name = model_attr.model_name
-                submit_attr.validation_schema = schema
 
         return node
 
@@ -431,124 +411,8 @@ class PyWireParser:
                         line=node.line,
                     )
 
-    def _extract_form_validation_schema(
-        self, form_node: TemplateNode
-    ) -> FormValidationSchema:
-        """Extract validation rules from form inputs."""
-        schema = FormValidationSchema()
-
-        def visit_node(node: TemplateNode) -> None:
-            if not node.tag:
-                return
-
-            tag_lower = node.tag.lower()
-
-            # Check for input, textarea, select with name attribute
-            if tag_lower in ("input", "textarea", "select"):
-                name = node.attributes.get("name")
-                if name:
-                    rules = self._extract_field_rules(node, name)
-                    schema.fields[name] = rules
-
-            # Recurse into children
-            for child in node.children:
-                visit_node(child)
-
-        for child in form_node.children:
-            visit_node(child)
-
-        return schema
-
-    def _extract_field_rules(
-        self, node: TemplateNode, field_name: str
-    ) -> FieldValidationRules:
-        """Extract validation rules from a single input node."""
-        attrs = node.attributes
-        special_attrs = node.special_attributes
-
-        rules = FieldValidationRules(name=field_name)
-
-        # Required - static or reactive
-        if "required" in attrs:
-            rules.required = True
-
-        # Pattern
-        if "pattern" in attrs:
-            rules.pattern = attrs["pattern"]
-
-        # Length constraints
-        if "minlength" in attrs:
-            try:
-                rules.minlength = int(attrs["minlength"])
-            except ValueError:
-                pass
-        if "maxlength" in attrs:
-            try:
-                rules.maxlength = int(attrs["maxlength"])
-            except ValueError:
-                pass
-
-        # Min/max (for number, date, etc.)
-        if "min" in attrs:
-            rules.min_value = attrs["min"]
-        if "max" in attrs:
-            rules.max_value = attrs["max"]
-
-        # Step
-        if "step" in attrs:
-            rules.step = attrs["step"]
-
-        # Input type
-        if "type" in attrs:
-            rules.input_type = attrs["type"].lower()
-        elif node.tag and node.tag.lower() == "textarea":
-            rules.input_type = "textarea"
-        elif node.tag and node.tag.lower() == "select":
-            rules.input_type = "select"
-
-        # Title (custom error message)
-        if "title" in attrs:
-            rules.title = attrs["title"]
-
-        # File validation
-        if "accept" in attrs:
-            # Split by comma
-            rules.allowed_types = [t.strip() for t in attrs["accept"].split(",")]
-
-        if "max-size" in attrs:
-            val = attrs["max-size"].lower().strip()
-            multiplier = 1
-            if val.endswith("kb") or val.endswith("k"):
-                multiplier = 1024
-                val = val.rstrip("kb")
-            elif val.endswith("mb") or val.endswith("m"):
-                multiplier = 1024 * 1024
-                val = val.rstrip("mb")
-            elif val.endswith("gb") or val.endswith("g"):
-                multiplier = 1024 * 1024 * 1024
-                val = val.rstrip("gb")
-
-            try:
-                rules.max_size = int(float(val) * multiplier)
-            except ValueError:
-                pass
-
-        # Check for reactive validation attributes (:required, :min, :max)
-        from pywire.compiler.ast_nodes import ReactiveAttribute
-
-        for attr in special_attrs:
-            if isinstance(attr, ReactiveAttribute):
-                if attr.name == "required":
-                    rules.required_expr = attr.expr
-                elif attr.name == "min":
-                    rules.min_expr = attr.expr
-                elif attr.name == "max":
-                    rules.max_expr = attr.expr
-
-        return rules
-
     def _parse_text(
-        self, text: str, start_line: int = 0, raw_text: bool = False
+        self, text: str, start_line: int = 0, raw_text: bool = False, start_col: int = 0
     ) -> List[TemplateNode]:
         """Helper to parse text string into list of text/interpolation nodes."""
         if not text:
@@ -558,11 +422,15 @@ class PyWireParser:
             # Bypass interpolation for raw text elements (script, style)
             return [
                 TemplateNode(
-                    tag=None, text_content=text, line=start_line, column=0, is_raw=True
+                    tag=None,
+                    text_content=text,
+                    line=start_line,
+                    column=start_col,
+                    is_raw=True,
                 )
             ]
 
-        parts = self.interpolation_parser.parse(text, line=start_line, col=0)
+        parts = self.interpolation_parser.parse(text, line=start_line, col=start_col)
         nodes = []
         for part in parts:
             if isinstance(part, str):
@@ -585,7 +453,7 @@ class PyWireParser:
         return nodes
 
     def _parse_attributes(
-        self, attrs: Dict[str, Any]
+        self, attrs: Dict[str, Any], line: int = 0, col: int = 0
     ) -> Tuple[dict, List[Union[SpecialAttribute, InterpolationNode]]]:
         """Separate regular attrs from special ones."""
         regular = {}
@@ -612,10 +480,10 @@ class PyWireParser:
                 continue
 
             elif name == "$permanent":
-                regular["data-pywire-permanent"] = "true"
+                regular["data-pw-permanent"] = "true"
                 continue
             elif name == "$reload":
-                regular["data-pywire-reload"] = "true"
+                regular["data-pw-reload"] = "true"
                 continue
 
             if value is None:
@@ -624,7 +492,7 @@ class PyWireParser:
             parsed = False
             for parser in self.attribute_parsers:
                 if parser.can_parse(name):
-                    attr = parser.parse(name, str(value), 0, 0)
+                    attr = parser.parse(name, str(value), line, col)
                     if attr:
                         special.append(attr)
                     parsed = True
@@ -646,8 +514,8 @@ class PyWireParser:
                                 name=name,
                                 value=val_str,
                                 expr=val_str[3:-1].strip(),  # Strip {** and }
-                                line=0,
-                                column=0,
+                                line=line,
+                                column=col,
                             )
                         )
                     elif name.startswith("__pw_sh_"):
@@ -658,8 +526,8 @@ class PyWireParser:
                                 name=real_name,
                                 value=val_str,
                                 expr=val_str[1:-1].strip(),  # Strip { and }
-                                line=0,
-                                column=0,
+                                line=line,
+                                column=col,
                             )
                         )
                     else:
@@ -668,8 +536,8 @@ class PyWireParser:
                                 name=name,
                                 value=val_str,
                                 expr=val_str[1:-1],
-                                line=0,
-                                column=0,
+                                line=line,
+                                column=col,
                             )
                         )
                 else:

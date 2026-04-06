@@ -25,7 +25,8 @@ def mock_app() -> MagicMock:
     return app
 
 
-def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test basic layout with default and named slots."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -66,7 +67,7 @@ def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             assert '<div id="layout">' in html
             assert "Custom Header" in html
@@ -78,7 +79,8 @@ def test_simple_layout(loader: PageLoader, mock_app: MagicMock) -> None:
             os.chdir(original_cwd)
 
 
-def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None:
     """Test that <head> content from child pages is appended to $head slot."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -131,7 +133,7 @@ def test_head_slot_accumulation(loader: PageLoader, mock_app: MagicMock) -> None
             request = MagicMock()
             request.app = mock_app
             page = page_class(request, {}, {}, {}, None)
-            html = asyncio.run(page._render_template())
+            html = await page._render_template()
 
             # Verify head content is accumulated
             assert '<meta charset="utf-8">' in html

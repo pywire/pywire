@@ -1,5 +1,7 @@
+import pytest
 import asyncio
 import json
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -17,35 +19,32 @@ class MockPage(BasePage):
         return Response("<html><body></body></html>", media_type="text/html")
 
 
-class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+class TestAppExhaustive:
+    def setup_method(self, method) -> None:
         self.temp_dir = TemporaryDirectory()
         self.pages_dir = Path(self.temp_dir.name).resolve()
 
         # Mock dependencies to avoid side effects during init
-        self.loader_patcher = patch("pywire.runtime.loader.get_loader")
-        self.mock_loader = self.loader_patcher.start().return_value
+        self.loader_mock = patch("pywire.runtime.loader.get_loader").start()
+        self.mock_loader = self.loader_mock.return_value
 
-        self.ws_patcher = patch("pywire.runtime.app.WebSocketHandler")
-        self.mock_ws = self.ws_patcher.start()
+        self.ws_mock = patch("pywire.runtime.app.WebSocketHandler").start()
+        self.mock_ws = self.ws_mock
 
-        self.http_patcher = patch("pywire.runtime.app.HTTPTransportHandler")
-        self.mock_http = self.http_patcher.start()
+        self.http_mock = patch("pywire.runtime.app.HTTPTransportHandler").start()
+        self.mock_http = self.http_mock
 
-        self.wt_patcher = patch("pywire.runtime.webtransport_handler.WebTransportHandler")
-        self.mock_wt = self.wt_patcher.start()
+        self.wt_mock = patch("pywire.runtime.webtransport_handler.WebTransportHandler").start()
+        self.mock_wt = self.wt_mock
 
-    def tearDown(self) -> None:
-        self.wt_patcher.stop()
-        self.http_patcher.stop()
-        self.ws_patcher.stop()
-        self.loader_patcher.stop()
+    def teardown_method(self, method) -> None:
+        patch.stopall()
         self.temp_dir.cleanup()
 
     def test_app_init(self) -> None:
         app = PyWire(str(self.pages_dir))
-        self.assertEqual(app.pages_dir, self.pages_dir)
-        self.assertIsNotNone(app.router)
+        assert app.pages_dir == self.pages_dir
+        assert app.router is not None
         self.mock_ws.assert_called_once_with(app)
         self.mock_http.assert_called_once_with(app)
         self.mock_wt.assert_called_once_with(app)
@@ -64,40 +63,35 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
         app = PyWire(str(self.pages_dir))
 
-        # Check if routes were registered correctly
-        # We can't easily check app.router.routes because they are internal,
-        # but we can try matching.
-
         # /
         match = app.router.match("/")
         assert match is not None
-        self.assertEqual(match[0], MockPage)
+        assert match[0] == MockPage
 
         # /about
         match = app.router.match("/about")
-        self.assertIsNotNone(match)
+        assert match is not None
 
         # /sub/contact
         match = app.router.match("/sub/contact")
-        self.assertIsNotNone(match)
+        assert match is not None
 
         # /sub/123 (param)
         match = app.router.match("/sub/123")
         assert match is not None
-        self.assertEqual(match[1], {"id": "123"})
+        assert match[1] == {"id": "123"}
 
-    def test_handle_capabilities(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_capabilities(self) -> None:
         app = PyWire(str(self.pages_dir))
         request = MagicMock(spec=Request)
 
-        # Run async method
-        loop = asyncio.get_event_loop()
-        response = loop.run_until_complete(app._handle_capabilities(request))
+        response = await app._handle_capabilities(request)
 
-        self.assertIsInstance(response, JSONResponse)
+        assert isinstance(response, JSONResponse)
         data = json.loads(response.body)
-        self.assertIn("transports", data)
-        self.assertIn("websocket", data["transports"])
+        assert "transports" in data
+        assert "websocket" in data["transports"]
 
     async def _async_test_upload(
         self,
@@ -112,18 +106,18 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         request.url = MagicMock()
         return await app._handle_upload(request)
 
-    def test_handle_upload_exception(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_upload_exception(self) -> None:
         app = PyWire(str(self.pages_dir))
         app.upload_tokens.add("tok")
-        loop = asyncio.get_event_loop()
 
         # Trigger an exception during await request.form()
         request = AsyncMock(spec=Request)
         request.headers = {"X-Upload-Token": "tok"}
         request.form.side_effect = Exception("Upload error")
 
-        response = loop.run_until_complete(app._handle_upload(request))
-        self.assertEqual(response.status_code, 500)
+        response = await app._handle_upload(request)
+        assert response.status_code == 500
 
     def test_scan_directory_complex(self) -> None:
         # 1. Hidden file
@@ -150,11 +144,11 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
         # Verify custom path
         match = app.router.match("/my-custom-path")
-        self.assertIsNotNone(match)
+        assert match is not None
 
         # Verify trailing slash removal logic (internal check)
         match = app.router.match("/about")
-        self.assertIsNotNone(match)
+        assert match is not None
 
     def test_scan_directory_load_fail(self) -> None:
         (self.pages_dir / "broken.wire").touch()
@@ -165,7 +159,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             PyWire(str(self.pages_dir))
             mock_reg.assert_called()
 
-    def test_handle_request_injection_no_body_tag(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_request_injection_no_body_tag(self) -> None:
         app = PyWire(str(self.pages_dir))
         cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
@@ -179,13 +174,13 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             request.app.state.webtransport_cert_hash = [1]
             request.query_params = {}
 
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(app._handle_request(request))
+            response = await app._handle_request(request)
             body = bytes(response.body).decode()
-            self.assertIn("window.PYWIRE_CERT_HASH", body)
-            self.assertTrue(body.endswith("</script>"))
+            assert "window.PYWIRE_CERT_HASH" in body
+            assert body.endswith("</script>")
 
-    def test_handle_request_event_exception(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_request_event_exception(self) -> None:
         app = PyWire(str(self.pages_dir))
         cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
@@ -193,33 +188,29 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             mock_handle.side_effect = Exception("Event failure")
 
             headers = {"X-PyWire-Event": "click"}
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(
-                self._async_test_request(app, method="POST", headers=headers)
-            )
-            self.assertEqual(response.status_code, 500)
+            response = await self._async_test_request(app, method="POST", headers=headers)
+            assert response.status_code == 500
 
-    def test_handle_upload_security(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_upload_security(self) -> None:
         app = PyWire(str(self.pages_dir))
-        loop = asyncio.get_event_loop()
 
         # 1. No token
-        response = loop.run_until_complete(self._async_test_upload(app, ""))
-        self.assertEqual(response.status_code, 403)
+        response = await self._async_test_upload(app, "")
+        assert response.status_code == 403
 
         # 2. Invalid token
-        response = loop.run_until_complete(self._async_test_upload(app, "invalid"))
-        self.assertEqual(response.status_code, 403)
+        response = await self._async_test_upload(app, "invalid")
+        assert response.status_code == 403
 
         # 3. Valid token but too large
         app.upload_tokens.add("valid_token")
-        response = loop.run_until_complete(
-            self._async_test_upload(app, "valid_token", content_length=20 * 1024 * 1024)
-        )
-        self.assertEqual(response.status_code, 413)
+        response = await self._async_test_upload(app, "valid_token", content_length=20 * 1024 * 1024)
+        assert response.status_code == 413
 
     @patch("pywire.runtime.app.upload_manager")
-    def test_handle_upload_success(self, mock_um: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_upload_success(self, mock_um: MagicMock) -> None:
         app = PyWire(str(self.pages_dir))
         app.upload_tokens.add("tok")
         mock_um.save.return_value = "upload_123"
@@ -229,13 +220,31 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
 
         files = {"avatar": mock_file}
 
-        loop = asyncio.get_event_loop()
-        response = loop.run_until_complete(self._async_test_upload(app, "tok", files=files))
+        response = await self._async_test_upload(app, "tok", files=files)
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = json.loads(response.body)
-        self.assertEqual(data["avatar"], "upload_123")
-        mock_um.save.assert_called_with(mock_file)
+        assert data["avatar"] == "upload_123"
+        mock_um.save.assert_called_with(mock_file, max_size=app.max_upload_size)
+
+    @patch("pywire.runtime.app.upload_manager")
+    @pytest.mark.asyncio
+    async def test_handle_upload_token_shared_between_app_instances(
+        self, mock_um: MagicMock
+    ) -> None:
+        app_a = PyWire(str(self.pages_dir))
+        app_b = PyWire(str(self.pages_dir))
+        app_a._store_upload_token("shared_tok", None, time.time())
+        mock_um.save.return_value = "upload_cross_worker"
+
+        mock_file = MagicMock()
+        mock_file.filename = "cross.png"
+        files = {"avatar": mock_file}
+
+        response = await self._async_test_upload(app_b, "shared_tok", files=files)
+        assert response.status_code == 200
+        data = json.loads(response.body)
+        assert data["avatar"] == "upload_cross_worker"
 
     def test_reload_page(self) -> None:
         app = PyWire(str(self.pages_dir))
@@ -265,9 +274,9 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             # Should have registered at /fail
             mock_add_route.assert_called()
             args, _ = mock_add_route.call_args
-            self.assertEqual(args[0], "/fail")
+            assert args[0] == "/fail"
             # The second arg is a BoundErrorPage class
-            self.assertTrue(issubclass(args[1], BasePage))
+            assert issubclass(args[1], BasePage)
 
     async def _async_test_request(
         self,
@@ -286,7 +295,8 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         request.app.state = MagicMock()
         return await app._handle_request(request)
 
-    def test_handle_request_event(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_request_event(self) -> None:
         app = PyWire(str(self.pages_dir))
 
         # Mock match
@@ -299,15 +309,13 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             headers = {"X-PyWire-Event": "click"}
             json_data = {"handler": "do_something", "data": {"val": 1}}
 
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(
-                self._async_test_request(app, method="POST", headers=headers, json_data=json_data)
-            )
+            response = await self._async_test_request(app, method="POST", headers=headers, json_data=json_data)
 
-            self.assertEqual(response.status_code, 200)
+            assert response.status_code == 200
             mock_handle.assert_called_with("do_something", json_data)
 
-    def test_handle_request_injection(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_request_injection(self) -> None:
         app = PyWire(str(self.pages_dir))
         cast(Any, app.router).match = MagicMock(return_value=(MockPage, {}, "main"))
 
@@ -319,7 +327,6 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             original_init(self, *args, **kwargs)
 
         with patch.object(MockPage, "__init__", mocked_init):
-            loop = asyncio.get_event_loop()
             # Mock app state for cert hash
             request = AsyncMock(spec=Request)
             request.method = "GET"
@@ -327,14 +334,15 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
             request.app.state.webtransport_cert_hash = [10, 20]
             request.query_params = {}
 
-            response = loop.run_until_complete(app._handle_request(request))
+            response = await app._handle_request(request)
 
             body = bytes(response.body).decode()
-            self.assertIn("window.PYWIRE_CERT_HASH = [10, 20]", body)
-            self.assertIn('name="pywire-upload-token"', body)
-            self.assertTrue(len(app.upload_tokens) > 0)
+            assert "window.PYWIRE_CERT_HASH = [10, 20]" in body
+            assert 'name="pywire-upload-token"' in body
+            assert len(app.upload_tokens) > 0
 
-    def test_asgi_call(self) -> None:
+    @pytest.mark.asyncio
+    async def test_asgi_call(self) -> None:
         app = PyWire(str(self.pages_dir))
 
         scope_wt = {"type": "webtransport"}
@@ -343,36 +351,30 @@ class TestAppExhaustive(unittest.IsolatedAsyncioTestCase):
         mock_send = AsyncMock()
         mock_receive = AsyncMock()
 
-        loop = asyncio.get_event_loop()
-
         # 1. WebTransport
         with patch.object(
             app.web_transport_handler, "handle", new_callable=AsyncMock
         ) as mock_wt_handle:
-            loop.run_until_complete(app(scope_wt, mock_receive, mock_send))
+            await app(scope_wt, mock_receive, mock_send)
             mock_wt_handle.assert_called_once()
 
         # 2. Standard (Starlette)
         with patch.object(app, "app", new_callable=AsyncMock) as mock_starlette:
-            loop.run_until_complete(app(scope_http, mock_receive, mock_send))
+            await app(scope_http, mock_receive, mock_send)
             mock_starlette.assert_called_once()
 
-    def test_extensible_hooks(self) -> None:
+    @pytest.mark.asyncio
+    async def test_extensible_hooks(self) -> None:
         app = PyWire(str(self.pages_dir))
-        loop = asyncio.get_event_loop()
 
         # WS connect hook
-        self.assertTrue(loop.run_until_complete(app.on_ws_connect(None)))
+        assert await app.on_ws_connect(None)
 
         # Get user hook
         mock_request = MagicMock()
         mock_request.scope = {"user": "alice"}
         mock_request.user = "alice"
-        self.assertEqual(app.get_user(mock_request), "alice")
+        assert app.get_user(mock_request) == "alice"
 
         mock_request.scope = {}
-        self.assertIsNone(app.get_user(mock_request))
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert app.get_user(mock_request) is None

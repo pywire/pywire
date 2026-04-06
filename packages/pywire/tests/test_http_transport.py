@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 import unittest
 from typing import Any, Dict, Optional, cast
 from unittest.mock import MagicMock
@@ -47,17 +48,13 @@ class MockPage(BasePage):
         return await self.render()
 
 
-class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        import msgpack
-        import pywire.runtime.http_transport as ht
-
-        print(f"\nDEBUG: ht module: {ht.__file__}")
-        print(f"DEBUG: msgpack module: {msgpack.__file__}")
+class TestHTTPTransportHandler:
+    def setup_method(self, method) -> None:
         self.app = MagicMock()
         self.app.router = MagicMock()
         self.handler = HTTPTransportHandler(self.app)
 
+    @pytest.mark.asyncio
     async def test_create_session(self) -> None:
         self.app.router.match.return_value = (MockPage, {}, "main")
         request = MockRequest.create(body_data={"path": "/test"})
@@ -65,12 +62,13 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         response = await self.handler.create_session(request)
         data = msgpack.unpackb(response.body, raw=False)
 
-        self.assertIn("sessionId", data)
+        assert "sessionId" in data
         session_id = data["sessionId"]
-        self.assertIn(session_id, self.handler.sessions)
-        self.assertEqual(self.handler.sessions[session_id].path, "/test")
-        self.assertIsInstance(self.handler.sessions[session_id].page, MockPage)
+        assert session_id in self.handler.sessions
+        assert self.handler.sessions[session_id].path == "/test"
+        assert isinstance(self.handler.sessions[session_id].page, MockPage)
 
+    @pytest.mark.asyncio
     async def test_poll_timeout(self) -> None:
         session_id = "test-session"
         session = HTTPSession(session_id=session_id, path="/")
@@ -86,8 +84,9 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         with unittest.mock.patch("asyncio.wait_for", side_effect=timeout_side_effect):
             response = await self.handler.poll(request)
             data = msgpack.unpackb(response.body, raw=False)
-            self.assertEqual(data, [])
+            assert data == []
 
+    @pytest.mark.asyncio
     async def test_poll_with_updates(self) -> None:
         session_id = "test-session"
         session = HTTPSession(session_id=session_id, path="/")
@@ -100,10 +99,11 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         response = await self.handler.poll(request)
         data = msgpack.unpackb(response.body, raw=False)
 
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["type"], "update")
-        self.assertEqual(data[0]["html"], "foo")
+        assert len(data) == 1
+        assert data[0]["type"] == "update"
+        assert data[0]["html"] == "foo"
 
+    @pytest.mark.asyncio
     async def test_handle_event(self) -> None:
         session_id = "test-session"
         session = HTTPSession(session_id=session_id, path="/")
@@ -119,9 +119,5 @@ class TestHTTPTransportHandler(unittest.IsolatedAsyncioTestCase):
         response = await self.handler.handle_event(request)
         data = msgpack.unpackb(response.body, raw=False)
 
-        self.assertEqual(data["type"], "update")
-        self.assertEqual(data["html"], "<div>HTTP Page</div>")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert data["type"] == "update"
+        assert data["html"] == "<div>HTTP Page</div>"

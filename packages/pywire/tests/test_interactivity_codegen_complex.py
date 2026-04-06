@@ -23,16 +23,15 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         module_ast = self.generator.generate(parsed)
         code = ast.unparse(module_ast)
 
-        # Verify handler method generation
-        # Since it's an async method in the python block, it should be awaited
-        self.assertIn("async def _handler_0(self, arg0):", code)
-        self.assertIn("await self.delete_item(arg0.id, 'confirmed')", code)
+        # Verify handler method generation - whole-arg lifting passes both args
+        self.assertIn("async def _handler_0(self, arg0, arg1, *, event=None):", code)
+        self.assertIn("await self.delete_item(arg0, arg1)", code)
 
-        # Verify render template call
-        # It should pass the arguments to the generator
+        # Verify render template - serializes expr results for each arg
         self.assertIn("data-arg-0", code)
-        self.assertIn("json.dumps(self.item)", code)
-        self.assertNotIn("data-arg-1", code)  # 'confirmed' is a literal, not lifted
+        self.assertIn("json.dumps(unwrap_wire(self.item.id))", code)
+        self.assertIn("data-arg-1", code)
+        self.assertIn("json.dumps(unwrap_wire('confirmed'))", code)
 
     def test_multiple_handlers_complex(self) -> None:
         """Verify behavior with multiple handlers having arguments and modifiers."""
@@ -47,8 +46,8 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
 
         # AST codegen produces wrapper call: wrapper(self.id1)
         # _h['args'] = [self.key]
-        self.assertIn("_h['args'] = [self.id1]", code)
-        self.assertIn("_h['args'] = [self.id2]", code)
+        self.assertIn("_h['args'] = [unwrap_wire(self.id1)]", code)
+        self.assertIn("_h['args'] = [unwrap_wire(self.id2)]", code)
         # Verify modifiers are collected (order is unstable because of set())
         modifiers_line = [
             line for line in code.split("\n") if "attrs['data-modifiers-click'] =" in line
@@ -56,30 +55,27 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.assertIn("stop", modifiers_line)
         self.assertIn("prevent", modifiers_line)
 
-    def test_form_validation_wrapper(self) -> None:
-        """Test that @submit on a form with validation schema generates a wrapper."""
-        # This requires more setup (mocking a validation schema in the AST)
-        # For now, let's verify if the generator handles EventAttribute with validation_schema
-        from pywire.compiler.ast_nodes import FieldValidationRules, FormValidationSchema
-
-        template = '<form @submit={save}><input name="user"></form>'
-        parsed = self.parser.parse(template)
-
-        # Manually inject a validation schema for the test
-        for attr in parsed.template[0].special_attributes:
-            if isinstance(attr, EventAttribute) and attr.event_type == "submit":
-                attr.validation_schema = FormValidationSchema(
-                    fields={"user": FieldValidationRules(name="user", required=True, minlength=3)}
-                )
+    def test_loop_click_handler_id_based(self) -> None:
+        """Regression: @click={handler(item.get('id',''))} inside $for serializes id expr, not full item."""
+        template = """
+        <div $for={item in items} $key={item.get('id','')}>
+            <button @click={delete_by_id(item.get('id', ''))}>Delete</button>
+        </div>
+        """
+        python_code = "items = []\ndef delete_by_id(rid): pass"
+        content = f"---\n{python_code}\n---\n{template}"
+        parsed = self.parser.parse(content)
 
         module_ast = self.generator.generate(parsed)
         code = ast.unparse(module_ast)
 
-        # Verify wrapper generation
-        self.assertIn("async def _form_submit_0(self, **kwargs):", code)
-        self.assertIn("form_validator.validate_form", code)
-        self.assertIn("self._form_schema_0.fields", code)
-        self.assertIn("await self.save(cleaned_data)", code)
+        # Handler receives arg0 (the serialized expr result = id string)
+        self.assertIn("async def _handler_0(self, arg0, *, event=None):", code)
+        self.assertIn("self.delete_by_id(arg0)", code)
+        # data-arg-0 serializes item.get('id','') result (string), not full item
+        self.assertIn("data-arg-0", code)
+        self.assertIn("item.get('id', '')", code)
+        self.assertNotIn("json.dumps(item)", code)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+---
+show_element = wire(True)
+items = wire(["Apple", "Banana"])
+
+def toggle_element():
+    show_element.value = not show_element.value
+
+import logging
+logger = logging.getLogger(__name__)
+
+def add_item():
+    items.append("Cherry")
+---
+<h1 id="structural-title">Structural Directives Test</h1>
+
+<div>
+    <button id="btn-toggle" @click={toggle_element}>Toggle Visibility</button>
+    <p id="if-element" $if={show_element}>This is conditionally rendered using $if.</p>
+    <p id="show-element" $show={show_element}>This is visually hidden using $show.</p>
+</div>
+
+<div>
+    <button id="btn-add" @click={add_item}>Add Item</button>
+    <ul id="item-list">
+        <li class="list-item" $for="{item in items}">{item}</li>
+    </ul>
+</div>

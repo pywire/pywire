@@ -129,7 +129,7 @@ class TestControlFlowV017(unittest.TestCase):
         ast.fix_missing_locations(func_def)
         code = ast.unparse(func_def)
         
-        self.assertIn("if self.cond:", code)
+        self.assertIn("if unwrap_wire(self.cond):", code)
         self.assertIn("A", code)
         self.assertIn("else:", code)
         self.assertIn("B", code)

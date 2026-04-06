@@ -7,6 +7,8 @@ export {
   RelocateMessage,
   EventData,
   StackFrame,
+  Command,
+  RefSyncMessage,
 } from './base'
 export { WebSocketTransport } from './websocket'
 export { WebTransportTransport } from './webtransport'

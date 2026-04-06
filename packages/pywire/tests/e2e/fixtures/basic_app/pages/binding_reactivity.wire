@@ -1,0 +1,71 @@
+---
+from pywire import wire, derived, effect
+
+# Primitive reactivity
+count = wire(0)
+doubled = derived(lambda: count.value * 2)
+
+# List reactivity (WireList)
+items = wire(["Initial"])
+item_count = derived(lambda: len(items))
+
+# Namespace/Nested reactivity (WireNamespace)
+user = wire(id=1, profile={"name": "Admin"}, role="Superuser")
+
+# Effects log
+effects_log = wire([])
+
+@effect
+def log_count_change():
+    effects_log.append(f"Count changed to: {count.value}")
+
+def add_item():
+    items.append(f"Item {len(items)}")
+
+def update_profile():
+    # This will likely fail with AttributeError due to Issue #21
+    user.profile.name = "Updated Admin"
+
+def update_role():
+    # This might work if dot access handles flat keys
+    user.role = "User"
+
+def reset_all():
+    effects_log.value = []
+    count.value = 0
+    items.value = ["Initial"]
+    user.profile.name = "Admin"
+---
+<div id="reactivity-test">
+    <section id="primitive">
+        <h2>Primitives</h2>
+        <p id="count-val">Count: {count}</p>
+        <p id="doubled-val">Doubled: {doubled}</p>
+        <button id="btn-inc" @click={count.value += 1}>Increment</button>
+    </section>
+
+    <section id="list">
+        <h2>Lists</h2>
+        <p id="list-len">Length: {item_count}</p>
+        <ul id="items-list">
+            <li $for={item in items}>{item}</li>
+        </ul>
+        <button id="btn-add-item" @click={add_item}>Add Item</button>
+    </section>
+
+    <section id="nested">
+        <h2>Nested Reactivity</h2>
+        <p id="user-name">User: {user.profile.name}</p>
+        <p id="user-role">Role: {user.role}</p>
+        <button id="btn-update-profile" @click={update_profile}>Update Profile</button>
+        <button id="btn-update-role" @click={update_role}>Update Role</button>
+    </section>
+
+    <section id="effects">
+        <h2>Effects Log</h2>
+        <ul id="log">
+            <li $for={entry in effects_log}>{entry}</li>
+        </ul>
+        <button id="btn-reset" @click={reset_all}>Reset</button>
+    </section>
+</div>

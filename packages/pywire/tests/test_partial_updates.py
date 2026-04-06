@@ -1,5 +1,5 @@
 import pytest
-from pywire.core.wire import wire, set_render_context, reset_render_context
+from pywire.core.wire import wire, set_render_context, reset_render_context, unwrap_wire
 from pywire.runtime.page import BasePage
 from pywire.core.wire import wire
 from pywire.runtime.page import BasePage
@@ -108,4 +108,27 @@ async def test_loop_static_cache():
     # Verify unique entries
     assert "loop_expr:0" in page._static_cache
     assert "loop_expr:1" in page._static_cache
+
+
+def test_wire_and_wire_value_bind_same_dependency():
+    page = PartialUpdatePage()
+    page._dirty_regions.clear()
+
+    token_raw = set_render_context(page, "region_raw")
+    try:
+        _ = page._render_expr("expr_raw", lambda: unwrap_wire(page.count))
+    finally:
+        reset_render_context(token_raw)
+
+    token_value = set_render_context(page, "region_value")
+    try:
+        _ = page._render_expr("expr_value", lambda: page.count.value)
+    finally:
+        reset_render_context(token_value)
+
+    page._dirty_regions.clear()
+    page.count.value = 5
+
+    assert "region_raw" in page._dirty_regions
+    assert "region_value" in page._dirty_regions
 

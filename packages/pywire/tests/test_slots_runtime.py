@@ -1,17 +1,10 @@
-import asyncio
-import unittest
+import pytest
 from unittest.mock import MagicMock
 from pywire.runtime.page import BasePage
 
-class TestSlotRuntime(unittest.TestCase):
-    def setUp(self):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        
-    def tearDown(self):
-        self.loop.close()
-
-    def test_named_slots_rendering(self):
+class TestSlotRuntime:
+    @pytest.mark.asyncio
+    async def test_named_slots_rendering(self):
         # 1. Component with named slots
         class Card(BasePage):
             LAYOUT_ID = "CARD"
@@ -54,10 +47,11 @@ class TestSlotRuntime(unittest.TestCase):
         page = Page(request, {}, {})
         page._init_slots()
         
-        content = self.loop.run_until_complete(page._render_template())
-        self.assertEqual(content, "<card><header>My Header</header><body>My Body</body></card>")
+        content = await page._render_template()
+        assert content == "<card><header>My Header</header><body>My Body</body></card>"
 
-    def test_slot_fallback(self):
+    @pytest.mark.asyncio
+    async def test_slot_fallback(self):
         # Test fallback content when slot is missing
         class Card(BasePage):
             LAYOUT_ID = "CARD_FB"
@@ -75,10 +69,11 @@ class TestSlotRuntime(unittest.TestCase):
         request = MagicMock()
         page = Page(request, {}, {})
         page._init_slots()
-        content = self.loop.run_until_complete(page._render_template())
-        self.assertEqual(content, "<div>Fallback</div>")
+        content = await page._render_template()
+        assert content == "<div>Fallback</div>"
 
-    def test_head_slot_runtime(self):
+    @pytest.mark.asyncio
+    async def test_head_slot_runtime(self):
          # Validates <head> -> register_head_slot -> rendering
          # CodeGen generates: self.register_head_slot(layout_id, renderer)
          # Layout renders: self.render_slot("$head", ..., append=True)
@@ -102,8 +97,5 @@ class TestSlotRuntime(unittest.TestCase):
          request = MagicMock()
          page = Page(request, {}, {})
          page._init_slots()
-         content = self.loop.run_until_complete(page._render_template())
-         self.assertEqual(content, "<head><meta foo></head>")
-
-if __name__ == "__main__":
-    unittest.main()
+         content = await page._render_template()
+         assert content == "<head><meta foo></head>"

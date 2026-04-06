@@ -10,7 +10,7 @@ files:
       # 1. Create a reactive variable 'count' with initial value 0
 
       def increment():
-        # 2. Use $count to increment the value
+        # 2. Use count.value to increment the value
         pass
       ---
       <div>
@@ -25,7 +25,7 @@ files:
       count = wire(0)
 
       def increment():
-        $count += 1
+        count.value += 1
       ---
       <div>
         <h1>Reactivity</h1>
@@ -40,9 +40,9 @@ successCriteria:
     target: pages/index.wire
     pattern: 'count = wire(0)'
   - type: file_contains
-    description: 'Mutate count using $count += 1'
+    description: 'Mutate count using count.value += 1'
     target: pages/index.wire
-    pattern: '$count +='
+    pattern: 'count.value +='
   - type: browser_route_text
     route: '/'
     description: 'Increment the count to 5'
@@ -50,12 +50,12 @@ successCriteria:
 pagesDir: pages
 ---
 
-Reactivity in PyWire centers around the `wire()` primitive and the `$` shorthand for mutation.
+Reactivity in PyWire centers around the `wire()` primitive and the `.value` property for mutation.
 
 ### Your Task
 
 1.  Initialize a reactive variable named `count` with a value of `0` using `wire(0)`.
-2.  Inside the `increment` function, use the magic **`$count`** syntax to add 1 to the count.
+2.  Inside the `increment` function, use **`count.value`** to add 1 to the count.
 3.  Click the button until the count reaches **5**.
 
-In PyWire, whenever you use `$name = value` or `$name += value`, it doesn't just change the local variable – it updates the reactive state and triggers a UI patch!
+In PyWire, whenever you update `wire.value`, it triggers a UI patch! Note that in the template, you don't need `.value` for interpolation—`{count}` just works.

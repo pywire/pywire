@@ -1,22 +1,14 @@
-import asyncio
-import unittest
+import pytest
 from unittest.mock import AsyncMock
 
 from starlette.websockets import WebSocketDisconnect
 
 
-class TestDebug(unittest.TestCase):
-    def test_async_mock(self) -> None:
+class TestDebug:
+    @pytest.mark.asyncio
+    async def test_async_mock(self) -> None:
         ws = AsyncMock()
         ws.receive_bytes.side_effect = WebSocketDisconnect()
 
-        async def run() -> None:
+        with pytest.raises(WebSocketDisconnect):
             await ws.receive_bytes()
-
-        loop = asyncio.new_event_loop()
-        with self.assertRaises(WebSocketDisconnect):
-            loop.run_until_complete(run())
-
-
-if __name__ == "__main__":
-    unittest.main()

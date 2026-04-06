@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from pywire.compiler.ast_nodes import (
-    ComponentDirective,
     LayoutDirective,
     ParsedPyWire,
     PathDirective,
@@ -218,9 +217,6 @@ class ArtifactBuilder:
             if isinstance(directive, LayoutDirective):
                 path = self._resolve_path(directive.layout_path, base_path)
                 deps[str(path)] = "layout"
-            elif isinstance(directive, ComponentDirective):
-                path = self._resolve_path(directive.path, base_path)
-                deps[str(path)] = "component"
 
         # Scan Python imports for component dependencies
         if parsed.python_ast:

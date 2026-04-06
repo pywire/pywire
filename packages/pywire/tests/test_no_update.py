@@ -1,8 +1,10 @@
+import pytest
 import unittest
 from unittest.mock import Mock, AsyncMock
 from pywire.runtime.page import BasePage
 
-class TestNoUpdate(unittest.IsolatedAsyncioTestCase):
+@pytest.mark.asyncio
+class TestNoUpdate:
     async def test_no_update_when_clean(self):
         # Setup page with region support
         request = Mock()
@@ -19,8 +21,8 @@ class TestNoUpdate(unittest.IsolatedAsyncioTestCase):
         result = await page.render_update(init=False)
         
         # Expect empty regions update, NOT full update
-        self.assertEqual(result["type"], "regions")
-        self.assertEqual(result["regions"], [])
+        assert result["type"] == "regions"
+        assert result["regions"] == []
         
     async def test_update_when_dirty(self):
         request = Mock()
@@ -33,10 +35,7 @@ class TestNoUpdate(unittest.IsolatedAsyncioTestCase):
         
         result = await page.render_update(init=False)
         
-        self.assertEqual(result["type"], "regions")
-        self.assertEqual(len(result["regions"]), 1)
-        self.assertEqual(result["regions"][0]["region"], "r1")
-        self.assertEqual(result["regions"][0]["html"], "<div>New Content</div>")
-
-if __name__ == "__main__":
-    unittest.main()
+        assert result["type"] == "regions"
+        assert len(result["regions"]) == 1
+        assert result["regions"][0]["region"] == "r1"
+        assert result["regions"][0]["html"] == "<div>New Content</div>"

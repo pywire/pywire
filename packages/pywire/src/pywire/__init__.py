@@ -16,6 +16,9 @@ from pywire.core.signals import (
 )
 from pywire.core.props import props
 from pywire.core.expose import expose
+from pywire.core.event_handler import EventHandler
+from pywire.core.refs import ref, Ref
+from pywire.core.wire import WireDict
 from pywire.runtime.importer import install_import_hook
 
 install_import_hook()
@@ -24,10 +27,14 @@ __all__ = [
     "PyWire",
     "BasePage",
     "wire",
+    "WireDict",
     "derived",
     "effect",
     "props",
     "expose",
+    "EventHandler",
     "CircularDependencyError",
     "ReactivityError",
+    "ref",
+    "Ref",
 ]

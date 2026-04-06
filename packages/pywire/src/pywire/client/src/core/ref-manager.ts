@@ -1,0 +1,259 @@
+import { Command } from './transports'
+import { logger } from './logger'
+
+function debounce(func: (...args: any[]) => any, wait: number) {
+  let timeout: any
+  return function (this: any, ...args: any[]) {
+    clearTimeout(timeout)
+    timeout = setTimeout(() => func.apply(this, args), wait)
+  }
+}
+
+/**
+ * Manages element references and executes imperative commands from the server.
+ */
+export class RefManager {
+  private pendingRectRequests = new Set<string>()
+  private onSync?: (refId: string, value: any) => void
+  private observer: MutationObserver
+  private observedElements = new WeakSet<HTMLElement>()
+
+  constructor(onSync?: (refId: string, value: any) => void) {
+    this.onSync = onSync
+    this.observer = new MutationObserver(this.handleMutations.bind(this))
+  }
+
+  init() {
+    // Initial scan
+    document
+      .querySelectorAll('[data-pw-ref]')
+      .forEach((el) => this.attachListeners(el as HTMLElement))
+
+    // Observe DOM for new refs
+    this.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-pw-ref'],
+    })
+  }
+
+  private handleMutations(mutations: MutationRecord[]) {
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((node) => {
+          if (node instanceof HTMLElement) {
+            if (node.hasAttribute('data-pw-ref')) {
+              this.attachListeners(node)
+            }
+            // Check children
+            node
+              .querySelectorAll('[data-pw-ref]')
+              .forEach((el) => this.attachListeners(el as HTMLElement))
+          }
+        })
+      } else if (mutation.type === 'attributes' && mutation.attributeName === 'data-pw-ref') {
+        if (mutation.target instanceof HTMLElement) {
+          this.attachListeners(mutation.target)
+        }
+      }
+    }
+  }
+
+  private attachListeners(element: HTMLElement) {
+    if (this.observedElements.has(element)) return
+    this.observedElements.add(element)
+
+    const refId = element.getAttribute('data-pw-ref')
+    if (!refId || !this.onSync) return
+
+    // Only attach to input-like elements
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    ) {
+      const handler = debounce(() => {
+        const val = this.getElementValue(element)
+        if (this.onSync && refId) {
+          this.onSync(refId, val)
+        }
+      }, 250)
+
+      element.addEventListener('input', handler)
+      element.addEventListener('change', handler)
+    }
+  }
+
+  /**
+   * Find an element by its ref ID.
+   */
+  findElement(refId: string): HTMLElement | null {
+    return document.querySelector(`[data-pw-ref="${refId}"]`)
+  }
+
+  /**
+   * Execute a command on a ref.
+   */
+  executeCommand(command: Command): void {
+    const { cmd, refId, args = {} } = command
+    const element = this.findElement(refId)
+
+    if (!element) {
+      logger.warn(`PyWire: Command '${cmd}' failed - Ref '${refId}' not found in DOM`)
+      return
+    }
+
+    try {
+      switch (cmd) {
+        case 'focus':
+          element.focus()
+          break
+        case 'blur':
+          element.blur()
+          break
+        case 'reset':
+          if (element instanceof HTMLFormElement) {
+            element.reset()
+          } else {
+            logger.warn(`PyWire: 'reset' command only supported for <form> elements`)
+          }
+          break
+        case 'submit':
+          if (element instanceof HTMLFormElement) {
+            element.requestSubmit()
+          } else {
+            logger.warn(`PyWire: 'submit' command only supported for <form> elements`)
+          }
+          break
+        case 'scrollTo':
+          element.scrollIntoView(args)
+          break
+        case 'addClass':
+          if (args.name) element.classList.add(args.name)
+          break
+        case 'removeClass':
+          if (args.name) element.classList.remove(args.name)
+          break
+        case 'toggleClass':
+          if (args.name) element.classList.toggle(args.name)
+          break
+        case 'setAttribute':
+          if (args.name) element.setAttribute(args.name, String(args.value))
+          break
+        case 'removeAttribute':
+          if (args.name) element.removeAttribute(args.name)
+          break
+        case 'requestRect':
+          this.pendingRectRequests.add(refId)
+          break
+        case 'clearFileInput':
+          if (element instanceof HTMLInputElement && element.type === 'file') {
+            element.value = ''
+          } else {
+            logger.warn(
+              'PyWire: \'clearFileInput\' only supported for <input type="file"> elements'
+            )
+          }
+          break
+        default:
+          logger.warn(`PyWire: Unknown command '${cmd}'`)
+      }
+    } catch (e) {
+      logger.error(`PyWire: Error executing command '${cmd}' on ref '${refId}':`, e)
+    }
+  }
+
+  /**
+   * Extract data from a ref (form or input).
+   */
+  getRefData(refId: string): { value?: any; formData?: Record<string, any>; rect?: any } {
+    const element = this.findElement(refId)
+    if (!element) return {}
+
+    const data: any = {}
+
+    if (this.pendingRectRequests.has(refId)) {
+      const rect = element.getBoundingClientRect()
+      data.rect = {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+      }
+      this.pendingRectRequests.delete(refId)
+    }
+
+    if (element instanceof HTMLFormElement) {
+      data.formData = this.serializeForm(element)
+    } else if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLSelectElement ||
+      element instanceof HTMLTextAreaElement
+    ) {
+      data.value = this.getElementValue(element)
+    }
+
+    return data
+  }
+
+  /**
+   * Serialize a form into a JSON-friendly object.
+   */
+  private serializeForm(form: HTMLFormElement): Record<string, any> {
+    const formData = new FormData(form)
+    const data: Record<string, any> = {}
+
+    formData.forEach((value, key) => {
+      if (value instanceof File) {
+        const fileMeta = {
+          name: value.name,
+          size: value.size,
+          type: value.type,
+        }
+        if (key in data) {
+          if (!Array.isArray(data[key])) {
+            data[key] = [data[key]]
+          }
+          data[key].push(fileMeta)
+        } else {
+          data[key] = fileMeta
+        }
+        return
+      }
+      if (key in data) {
+        if (!Array.isArray(data[key])) {
+          data[key] = [data[key]]
+        }
+        data[key].push(value)
+      } else {
+        data[key] = value
+      }
+    })
+
+    return data
+  }
+
+  /**
+   * Get value from an input element.
+   */
+  private getElementValue(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): any {
+    if (el instanceof HTMLInputElement) {
+      if (el.type === 'checkbox') return el.checked
+      if (el.type === 'number' || el.type === 'range') return el.valueAsNumber
+      if (el.type === 'file') {
+        const files = Array.from(el.files ?? [])
+        return files.map((file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        }))
+      }
+    }
+    return el.value
+  }
+}

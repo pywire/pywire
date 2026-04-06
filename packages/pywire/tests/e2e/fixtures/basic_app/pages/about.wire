@@ -1,0 +1,8 @@
+---
+---
+<h1 id="about-title">About Page</h1>
+<script>
+    window.aboutScriptRunCount = (window.aboutScriptRunCount || 0) + 1;
+    document.body.setAttribute('data-script-runs', window.aboutScriptRunCount);
+</script>
+<a href="/" data-reload="pjax" id="link-home">Go Home</a>

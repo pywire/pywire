@@ -1,0 +1,5 @@
+---
+from components.child import Child
+---
+<h1 id="hot-reload-title">Hot Reloading Test</h1>
+<Child />

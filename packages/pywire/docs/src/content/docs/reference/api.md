@@ -41,10 +41,54 @@ count.value += 1    # Write (Trigger)
 # 2. Namespace State (Object-like)
 user = wire(name="Alice", age=30)
 print(user.name)    # Read attribute
-user.age = 31       # Write attribute (Trigger)
+user_age = 31       # Write attribute (Trigger)
 ```
 
-**Note:** Inside a `.wire` file's Python block, you can use the `$` prefix sugar (e.g., `$count`, `$user.age`) which compiles to `.value`.
+---
+
+### `props`
+
+Accesses properties passed to a component from its parent.
+
+```py
+@props
+class Props:
+    name: str
+    count: int = 0
+```
+
+**Description:** Used to define a schema for incoming properties. Decorated classes are automatically instantiated and exposed to the template as the `props` object.
+
+---
+
+### `derived`
+
+Creates reactive state that depends on other reactive variables.
+
+```py
+@derived
+def my_computed(): ...
+
+# or
+my_computed = derived(lambda: ...)
+```
+
+**Description:** Automatically tracks reactive dependencies accessed within its function body. When any dependency changes, the derived value is recalculated.
+
+---
+
+### `effect`
+
+Runs side effects in response to reactive state changes.
+
+```py
+@effect
+def my_effect(): ...
+```
+
+**Description:** Re-runs whenever any reactive dependency accessed within the function body updates. Ideal for logging, analytics, or manual DOM interactions via `ref`.
+
+---
 
 ## Application Class
 
@@ -105,9 +149,9 @@ user_data = wire({})
 
 @mount
 def fetch_data(params):
-    $user_id = params.get("id")
+    user_id.value = params.get("id")
     # Fetch data from database synchronously or asynchronously
-    $user_data = db.get_user($user_id)
+    user_data.value = db.get_user(user_id)
 ```
 
 ## Runtime Helpers

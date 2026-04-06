@@ -54,7 +54,7 @@ echo "Bundling mode: $MODE"
 case "$MODE" in
     publish)
         PYWIRE_LS_REF="$(get_latest_tag "$PYWIRE_LS_REPO")"
-        DEPS="pygls git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
+        DEPS="pygls pywire git+$PYWIRE_LS_REPO@$PYWIRE_LS_REF"
         ;;
     ci)
         DEPS="pygls"
@@ -64,6 +64,13 @@ case "$MODE" in
              DEPS="$DEPS $pywire_ls_path"
         else
              DEPS="$DEPS git+$PYWIRE_LS_REPO@main"
+        fi
+
+        if [ -n "$PYWIRE_SRC" ]; then
+             pywire_path="$(resolve_local_src "$PYWIRE_SRC")"
+             DEPS="$DEPS $pywire_path"
+        else
+             DEPS="$DEPS pywire"
         fi
         ;;
     *)

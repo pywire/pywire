@@ -1,0 +1,7 @@
+---
+count = wire(0)
+---
+<h1 id="title">Hello PyWire</h1>
+<p id="count">{count}</p>
+<button id="increment" @click={count.value += 1}>Increment</button>
+<a href="/about" data-reload="pjax" id="link-about">Go to About</a>

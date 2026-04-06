@@ -5,6 +5,7 @@ from typing import Any, List, Union, cast
 from pywire.compiler.ast_nodes import (
     EventAttribute,
     InterpolationNode,
+    ReactiveAttribute,
     SpecialAttribute,
     TemplateNode,
 )
@@ -62,7 +63,7 @@ class TestCodegenTemplate(unittest.TestCase):
         # Parameterless method should be auto-called
         expr = "my_method"
         transformed = self.codegen._transform_reactive_expr(
-            expr, local_vars=set(), known_methods={"my_method"}, cached=False
+            expr, local_vars=set(), known_methods={"my_method": 0}, cached=False
         )
         self.assert_ast_equal(transformed, "self.my_method()")
 
@@ -91,6 +92,36 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("import json", code)
         self.assertIn("parts.append(await self._render_region_r1())", code)
         self.assertIn("return ''.join(parts)", code)
+
+    def test_document_root_elements_do_not_become_regions(self) -> None:
+        interp_node = InterpolationNode(line=1, column=0, expression="msg")
+        text_wrapper = TemplateNode(
+            tag=None, special_attributes=[cast(SpecialAttribute, interp_node)], line=1, column=0
+        )
+        dynamic_div = TemplateNode(tag="div", children=[text_wrapper], line=1, column=0)
+        body = TemplateNode(tag="body", children=[dynamic_div], line=1, column=0)
+        head = TemplateNode(
+            tag="head",
+            children=[TemplateNode(tag="meta", attributes={"charset": "utf-8"}, line=1, column=0)],
+            line=1,
+            column=0,
+        )
+        html = TemplateNode(tag="html", children=[head, body], line=1, column=0)
+
+        func_def, aux = self.codegen.generate_render_method([html])
+        self.normalize_ast(func_def)
+        self.normalize_ast(aux)
+        main_code = ast.unparse(func_def)
+        aux_code = "\n".join(ast.unparse(fn) for fn in aux)
+
+        # Ensure document-level tags are rendered inline (not as the region target).
+        self.assertIn("parts.append('<html')", main_code)
+        self.assertIn("parts.append('<head')", main_code)
+        self.assertIn("parts.append('<body')", main_code)
+
+        # Dynamic child inside body should still get a region.
+        self.assertIn("parts.append(await self._render_region_r1())", main_code)
+        self.assertIn("attrs['data-pw-region'] = 'r1'", aux_code)
 
     def test_generate_slot_methods(self) -> None:
         # Node with slot filler: <slot name="header">...</slot>
@@ -136,7 +167,7 @@ class TestCodegenTemplate(unittest.TestCase):
         func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
-        self.assertIn("slots={'header':", code)
+        self.assertIn("'slots': {'header':", code)
         self.assertIn("'default':", code)
 
     def test_codegen_component_events(self) -> None:
@@ -158,7 +189,139 @@ class TestCodegenTemplate(unittest.TestCase):
         func_def, _ = self.codegen.generate_render_method([node], component_map=comp_map)
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
-        self.assertIn("'data-on-click': 'handleClick'", code)
+        self.assertIn("'click': self.handleClick", code)
+        self.assertIn("self._resolve_component(", code)
+
+    def test_codegen_form_extracts_field_rules(self) -> None:
+        referral_required = ReactiveAttribute(
+            line=1,
+            column=0,
+            name="required",
+            value="{has_referral}",
+            expr="has_referral",
+        )
+        input_node = TemplateNode(
+            tag="input",
+            attributes={
+                "name": "age",
+                "type": "number",
+                "min": "18",
+                "max": "100",
+                "step": "1",
+                "required": "",
+            },
+            line=1,
+            column=0,
+        )
+        referral_node = TemplateNode(
+            tag="input",
+            attributes={
+                "name": "referral_code",
+                "pattern": "^[A-Z0-9]{6,12}$",
+            },
+            special_attributes=[referral_required],
+            line=2,
+            column=0,
+        )
+        form_node = TemplateNode(
+            tag="Form",
+            attributes={},
+            children=[input_node, referral_node],
+            line=1,
+            column=0,
+        )
+
+        func_def, _ = self.codegen.generate_render_method(
+            [form_node], known_globals={"has_referral"}
+        )
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+
+        self.assertIn("'_field_rules':", code)
+        self.assertIn(
+            "'age': {'required': True, 'min_value': '18', 'max_value': '100', 'step': '1', 'input_type': 'number'}",
+            code,
+        )
+        self.assertIn(
+            "'referral_code': {'pattern': '^[A-Z0-9]{6,12}$', 'required': self.has_referral}",
+            code,
+        )
+
+    def test_codegen_form_extracts_file_field_rules(self) -> None:
+        file_node = TemplateNode(
+            tag="input",
+            attributes={
+                "name": "avatar",
+                "type": "file",
+                "accept": "image/*,.png,.jpg",
+                "multiple": "",
+                "data-max-size": "2097152",
+                "data-min-size": "1024",
+                "data-max-files": "3",
+                "data-allowed-names": "^avatar_.*\\.(png|jpg)$",
+            },
+            line=1,
+            column=0,
+        )
+        form_node = TemplateNode(
+            tag="Form",
+            attributes={},
+            children=[file_node],
+            line=1,
+            column=0,
+        )
+
+        func_def, _ = self.codegen.generate_render_method([form_node])
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+
+        self.assertIn("'_field_rules':", code)
+        self.assertIn("'avatar':", code)
+        self.assertIn("'input_type': 'file'", code)
+        self.assertIn("'allowed_types': ['image/*', '.png', '.jpg']", code)
+        self.assertIn("'multiple': True", code)
+        self.assertIn("'max_size': 2097152", code)
+        self.assertIn("'min_size': 1024", code)
+        self.assertIn("'max_files': 3", code)
+        self.assertIn("'allowed_names': '^avatar_.*\\\\.(png|jpg)$'", code)
+
+
+    def test_codegen_form_extracts_file_input_component_rules(self) -> None:
+        file_component_node = TemplateNode(
+            tag="FileInput",
+            attributes={
+                "name": "avatar",
+                "accept": "image/*,.png",
+                "multiple": "",
+                "max_size": "2097152",
+                "min_size": "1024",
+                "max_files": "3",
+                "allowed_names": "^avatar_.*\\.(png)$",
+            },
+            line=1,
+            column=0,
+        )
+        form_node = TemplateNode(
+            tag="Form",
+            attributes={},
+            children=[file_component_node],
+            line=1,
+            column=0,
+        )
+
+        func_def, _ = self.codegen.generate_render_method([form_node])
+        self.normalize_ast(func_def)
+        code = ast.unparse(func_def)
+
+        self.assertIn("'_field_rules':", code)
+        self.assertIn("'avatar':", code)
+        self.assertIn("'input_type': 'file'", code)
+        self.assertIn("'allowed_types': ['image/*', '.png']", code)
+        self.assertIn("'multiple': True", code)
+        self.assertIn("'max_size': 2097152", code)
+        self.assertIn("'min_size': 1024", code)
+        self.assertIn("'max_files': 3", code)
+        self.assertIn("'allowed_names': '^avatar_.*\\\\.(png)$'", code)
 
     def test_element_attribute_injection(self) -> None:
         node = TemplateNode(tag="div", attributes={}, line=1, column=0)

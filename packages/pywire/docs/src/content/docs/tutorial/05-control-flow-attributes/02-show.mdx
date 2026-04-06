@@ -12,7 +12,7 @@ files:
       <div>
         <h1>Visibility</h1>
         
-        <button @click={$visible = not visible}>
+        <button @click={visible.value = not visible}>
           Toggle Visibility
         </button>
 
@@ -20,10 +20,6 @@ files:
           I am hiding in plain sight!
         </div>
       </div>
-
-      <style scoped>
-      /* TODO ADD STYLE TO FADE */
-      </style>
     solution: |
       ---
       visible = wire(True)
@@ -31,7 +27,7 @@ files:
       <div>
         <h1>Visibility</h1>
         
-        <button @click={$visible = not visible}>
+        <button @click={visible.value = not visible}>
           Toggle Visibility
         </button>
 
@@ -39,10 +35,6 @@ files:
           I am hiding in plain sight!
         </div>
       </div>
-
-      <style scoped>
-      /* TODO ADD STYLE TO FADE */
-      </style>
 successCriteria:
   - type: file_contains
     description: 'Add $show={visible} to the div'

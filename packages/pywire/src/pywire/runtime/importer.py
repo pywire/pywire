@@ -22,12 +22,11 @@ class PyWireLoader(importlib.abc.Loader):
 
         # Inject the page class into the module
         # Convention: The class name is PascalCase of the filename
-        class_name = Path(self.path).stem
-        # If it's a valid identifier, use it, otherwise use 'Component'
-        if not class_name.isidentifier():
-            # Basic transformation for common cases like 'my-button' -> 'MyButton'
-            parts = class_name.replace("-", "_").split("_")
-            class_name = "".join(p.capitalize() for p in parts)
+        # Convention: The class name is PascalCase of the filename
+        stem = Path(self.path).stem
+        # Always convert to PascalCase
+        parts = stem.replace("-", "_").split("_")
+        class_name = "".join(p.capitalize() for p in parts)
 
         setattr(module, class_name, page_class)
         # Also store it as __page_class__ for loader consistency

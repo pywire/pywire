@@ -10,15 +10,14 @@ PyWire allows you to handle standard browser events (like clicks, inputs, and fo
 Use the `@` prefix followed by the event name to bind a Python function to a browser event.
 
 ```pywire
-
+---
 count = wire(0)
 
 def handle_click():
-    $count += 1
-
----html---
+    count.value += 1
+---
 <button @click={handle_click}>
-    Clicked {count.value} times
+    Clicked {count} times
 </button>
 ```
 
@@ -27,15 +26,14 @@ def handle_click():
 You can pass data from the browser to your Python handlers.
 
 ```pywire
-
+---
 items = wire([{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}])
 
 def delete_item(item_id):
-    $items = [i for i in $items if i['id'] != item_id]
-
----html---
+    items.value = [i for i in items if i['id'] != item_id]
+---
 <ul>
-    <li $for={item in items.value}>
+    <li $for={item in items}>
         {item['name']}
         <button @click={delete_item(item['id'])}>Delete</button>
     </li>
@@ -47,14 +45,13 @@ def delete_item(item_id):
 For input fields, you can use `@input` or `@change`.
 
 ```pywire
-
+---
 search_query = wire("")
 
 def on_search(value):
-    $search_query = value
+    search_query.value = value
     print(f"Searching for: {value}")
-
----html---
+---
 <input type="text"
        placeholder="Search..."
        @input={on_search(event.value)}>

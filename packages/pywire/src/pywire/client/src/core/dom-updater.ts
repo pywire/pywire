@@ -41,12 +41,9 @@ export class DOMUpdater {
   private getNodeKey(node: Node): string | undefined {
     if (!(node instanceof HTMLElement)) return undefined
 
-    // 1. Use data-on-* handler as key FIRST (stable across renders)
-    for (const attr of node.attributes) {
-      if (attr.name.startsWith('data-on-')) {
-        const key = `${node.tagName}-${attr.name}-${attr.value}`
-        return key
-      }
+    // 1. Use data-pw-key as key FIRST (explicitly stable across renders)
+    if (node.hasAttribute('data-pw-key')) {
+      return node.getAttribute('data-pw-key') || undefined
     }
 
     // 2. Use explicit ID (but skip client-generated pywire-uid-* IDs)
@@ -148,7 +145,9 @@ export class DOMUpdater {
       state.selectionEnd = active.selectionEnd
       state.scrollTop = active.scrollTop
       state.scrollLeft = active.scrollLeft
-      state.value = active.value
+      if (!(active instanceof HTMLInputElement && active.type === 'file')) {
+        state.value = active.value
+      }
     }
 
     return state
@@ -179,7 +178,11 @@ export class DOMUpdater {
     // Restore selection/caret position
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
       // Restore value if it matches what we captured
-      if (state.value && el.value !== state.value) {
+      if (
+        !(el instanceof HTMLInputElement && el.type === 'file') &&
+        state.value &&
+        el.value !== state.value
+      ) {
         el.value = state.value
       }
 
@@ -195,22 +198,88 @@ export class DOMUpdater {
     }
   }
 
-  private applyUpdate(target: Element, newContent: string | Element): void {
+  private executeScripts(container: ParentNode): void {
+    const scripts = container.querySelectorAll('script')
+    scripts.forEach((oldScript) => {
+      if (oldScript.src) {
+        const newScript = document.createElement('script')
+        // Copy all attributes
+        Array.from(oldScript.attributes).forEach((attr) => {
+          newScript.setAttribute(attr.name, attr.value)
+        })
+        document.head.appendChild(newScript)
+      } else {
+        // For inline scripts, use indirect eval to ensure global execution
+        // This is more reliable in some test environments than appendChild
+        const code = oldScript.textContent || ''
+        if (code) {
+          try {
+            // Indirect eval runs in global scope
+            const globalEval = eval
+            globalEval(code)
+          } catch (e) {
+            logger.error('[DOMUpdater] Inline script execution failed:', e)
+          }
+        }
+      }
+    })
+  }
+
+  /**
+   * Apply a DOM update using morphdom.
+   */
+  applyUpdate(target: Node, newContent: string | Node, childrenOnly: boolean = false): void {
     // Set flag to suppress focus/blur events during update
     DOMUpdater.isUpdating = true
     if (this.debug) {
-      logger.log('[DOMUpdater] Starting update on', target.tagName)
+      logger.log('[DOMUpdater] Starting update on', target.nodeName)
     }
 
     try {
+      // Dispatch pre-update event on target
+      target.dispatchEvent(
+        new CustomEvent('pywire:preupdate', { bubbles: true, detail: { target } })
+      )
+
       // Capture focus before morphdom runs
       const focusState = this.captureFocusState()
 
+      let contentToMorph: Node = newContent as Node
+      if (typeof newContent === 'string') {
+        if (target.nodeName === 'HTML') {
+          const parser = new DOMParser()
+          const parsedDoc = parser.parseFromString(newContent, 'text/html')
+          this.executeScripts(parsedDoc)
+          contentToMorph = parsedDoc.documentElement
+        } else {
+          const tempContainer = document.createElement(target.nodeName === 'BODY' ? 'body' : 'div')
+          tempContainer.innerHTML = newContent.trim()
+          this.executeScripts(tempContainer)
+          if (childrenOnly) {
+            // If morphing children only, the container itself is passed to morphdom.
+            // morphdom will then diff target's children against tempContainer's children.
+            contentToMorph = tempContainer
+          } else {
+            // Normal morph: take the first element from the fragment.
+            // If the fragment is empty or just text, fallback to the container.
+            contentToMorph = tempContainer.firstElementChild || tempContainer
+          }
+        }
+      } else {
+        // If newContent is already a Node, execute scripts within it.
+        this.executeScripts(newContent as Element)
+      }
+
       if (morphdom) {
         try {
-          morphdom(target, newContent, {
+          morphdom(target, contentToMorph as any, {
+            childrenOnly,
             // Custom key function for stable element matching
             getNodeKey: (node: Node) => this.getNodeKey(node),
+
+            onElUpdated: (el) => {
+              el.dispatchEvent(new CustomEvent('pywire:update', { bubbles: true, detail: { el } }))
+            },
 
             onBeforeElUpdated: (fromEl, toEl) => {
               // Transfer ALL relevant state from old element to new element
@@ -219,6 +288,22 @@ export class DOMUpdater {
               // (e.g. user is still typing or deleted a few chars).
               // If the server sends a completely different value, let it win.
               if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+                if (fromEl.type === 'file' || toEl.type === 'file') {
+                  // Keep the existing file input node to avoid clearing selected files.
+                  // morphdom's default property sync can assign fromEl.value = toEl.value ("")
+                  // which clears browser file selections.
+                  for (const attr of Array.from(toEl.attributes)) {
+                    if (fromEl.getAttribute(attr.name) !== attr.value) {
+                      fromEl.setAttribute(attr.name, attr.value)
+                    }
+                  }
+                  for (const attr of Array.from(fromEl.attributes)) {
+                    if (!toEl.hasAttribute(attr.name)) {
+                      fromEl.removeAttribute(attr.name)
+                    }
+                  }
+                  return false
+                }
                 if (fromEl.type === 'checkbox' || fromEl.type === 'radio') {
                   toEl.checked = fromEl.checked
                 } else {
@@ -264,7 +349,7 @@ export class DOMUpdater {
 
             onBeforeElChildrenUpdated: (fromEl, _toEl) => {
               // If element is marked as permanent, skip updating its children
-              if (fromEl instanceof HTMLElement && fromEl.hasAttribute('data-pywire-permanent')) {
+              if (fromEl instanceof HTMLElement && fromEl.hasAttribute('data-pw-permanent')) {
                 if (this.debug) {
                   logger.log('[DOMUpdater] Permanent element detected, skipping children:', fromEl)
                 }
@@ -274,14 +359,19 @@ export class DOMUpdater {
             },
 
             onBeforeNodeDiscarded: (node) => {
-              // Preserve structural/functional elements that might not be in the partial update
-              if (
-                node.nodeName === 'SCRIPT' ||
-                node.nodeName === 'STYLE' ||
-                node.nodeName === 'LINK' ||
-                (node instanceof Element && node.hasAttribute('data-pywire-permanent'))
-              ) {
+              // Preserve explicitly marked permanent elements
+              if (node instanceof Element && node.hasAttribute('data-pw-permanent')) {
                 return false
+              }
+
+              // Only preserve PyWire core scripts automatically. Let app-level SCRIPT, STYLE, LINK
+              // be discarded if they aren't in the new HTML, to avoid accumulating old tags.
+              if (node.nodeName === 'SCRIPT') {
+                const id = (node as Element).id
+                const src = (node as HTMLScriptElement).src
+                if (id === '_pywire_spa_meta' || (src && src.includes('pywire.core'))) {
+                  return false
+                }
               }
               return true
             },
@@ -297,6 +387,11 @@ export class DOMUpdater {
 
         // Restore focus after morphdom completes
         this.restoreFocusState(focusState)
+
+        // Dispatch post-update event on target
+        target.dispatchEvent(
+          new CustomEvent('pywire:postupdate', { bubbles: true, detail: { target } })
+        )
       } else if (target === document.documentElement && typeof newContent === 'string') {
         document.open()
         document.write(newContent)
@@ -322,28 +417,15 @@ export class DOMUpdater {
       return
     }
 
-    // Fragment update: target body
-    // Ensure document.body exists (it can be destroyed by prior bad morphdom runs)
+    // Check if it's a raw un-wrapped list of elements representing body contents
     let body = document.body
     if (!body) {
       body = document.createElement('body')
       document.documentElement.appendChild(body)
     }
-
-    // Check if the fragment already has a <body> wrapper
-    const hasBodyRoot = /<body[\s>]/i.test(newHtml)
-    if (hasBodyRoot) {
-      this.applyUpdate(body, newHtml)
-      return
-    }
-
-    // Create a real BODY DOM element instead of wrapping in <body> string tags.
-    // String wrapping fails because morphdom's internal HTML parser (which uses
-    // a <div> container) strips <body> tags, causing a tag mismatch that replaces
-    // the BODY element with a DIV and destroys document.body.
-    const tempBody = document.createElement('body')
-    tempBody.innerHTML = newHtml
-    this.applyUpdate(body, tempBody)
+    // Morph body's children Only to prevent duplicating the body element itself
+    // or disrupting attributes/scripts that are not managed by PyWire.
+    this.applyUpdate(body, newHtml, true)
   }
 
   /**

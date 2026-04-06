@@ -12,33 +12,34 @@ When you use the `@submit` event on a `<form>`, PyWire automatically scans the f
 You don't need to define a Pydantic model manually (though you can). The HTML _is_ the schema.
 
 ```pywire
-
-errors = wire({})
+---
+from pywire import ref
+from pywire.components import Form
+form_ref = ref()
 
 def handle_submit(data):
     # data is a dictionary of the form inputs
     print("Form valid:", data)
-
----html---
-<form @submit={handle_submit}>
+---
+<Form @submit={handle_submit} $ref={form_ref}>
     <div>
         <label>Username</label>
         <input name="username" required minlength="3">
-        <span class="error" $if={errors.get('username')}>
-            {errors.get('username')}
+        <span class="error" $if={form_ref.errors.username}>
+            {form_ref.errors.username.message}
         </span>
     </div>
 
     <div>
         <label>Age</label>
         <input name="age" type="number" min="18">
-        <span class="error" $if={errors.get('age')}>
-            {errors.get('age')}
+        <span class="error" $if={form_ref.errors.age}>
+            {form_ref.errors.age.message}
         </span>
     </div>
 
     <button type="submit">Register</button>
-</form>
+</Form>
 ```
 
 ### How it Works
@@ -49,7 +50,7 @@ def handle_submit(data):
 4. **Validation**: Before calling `handle_submit`, PyWire validates the incoming data against the extracted rules.
 5. **Routing**:
    - **Valid**: Calls `handle_submit(data)`.
-   - **Invalid**: Intercepted before calling `handle_submit` and populates `errors` dict.
+  - **Invalid**: Intercepted before calling `handle_submit` and populates `form_ref.errors`.
 
 ## Reactive Validation Attributes
 

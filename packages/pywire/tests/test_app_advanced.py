@@ -1,3 +1,4 @@
+import pytest
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -8,8 +9,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 
-class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+@pytest.mark.asyncio
+class TestAppAdvanced:
+    def setup_method(self, method) -> None:
         self.pages_dir = Path("/tmp/empty_pages").resolve()
         self.pages_dir.mkdir(exist_ok=True)
         with (
@@ -39,7 +41,7 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
         page_class.return_value = page_inst
 
         response = await self.app._handle_request(request)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         page_inst.handle_event.assert_called_once_with("save", {"handler": "save", "data": {}})
 
     async def test_handle_request_injection(self) -> None:
@@ -62,9 +64,5 @@ class TestAppAdvanced(unittest.IsolatedAsyncioTestCase):
 
         response = await self.app._handle_request(request)
         body = bytes(response.body).decode()
-        self.assertIn("window.PYWIRE_CERT_HASH", body)
-        self.assertIn('name="pywire-upload-token"', body)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert "window.PYWIRE_CERT_HASH" in body
+        assert 'name="pywire-upload-token"' in body

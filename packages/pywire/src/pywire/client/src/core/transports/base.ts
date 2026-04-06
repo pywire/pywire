@@ -35,8 +35,14 @@ export interface StackFrame {
   end_colno?: number // Python 3.11+ column end
 }
 
+export interface Command {
+  cmd: string
+  refId: string
+  args?: Record<string, any>
+}
+
 export interface ServerMessage {
-  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace' | 'init'
+  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace' | 'init' | 'navigate' | 'init_ack'
   html?: string
   regions?: Array<{ region: string; html: string }>
   error?: string
@@ -44,6 +50,13 @@ export interface ServerMessage {
   lines?: string[]
   trace?: StackFrame[]
   version?: string
+  path?: string
+  commands?: Command[]
+}
+
+export interface NavigateMessage {
+  type: 'navigate'
+  path: string
 }
 
 export interface InitMessage {
@@ -57,7 +70,7 @@ export interface ConsoleMessage {
   lines: string[]
 }
 
-export type ClientMessage = EventMessage | RelocateMessage
+export type ClientMessage = EventMessage | RelocateMessage | RefSyncMessage
 
 export interface EventMessage {
   type: 'event'
@@ -71,11 +84,42 @@ export interface RelocateMessage {
   path: string
 }
 
+export interface RefSyncMessage {
+  type: 'ref_sync'
+  refId: string
+  value: any
+}
+
 export interface EventData {
   type: string
   id?: string
-  value?: string
+  name?: string
+  tagName?: string
+  value?: unknown
+  checked?: boolean
+  inputType?: string
+  formData?: Record<string, any>
   args?: Record<string, unknown>
+  // Keyboard
+  key?: string
+  code?: string
+  keyCode?: number
+  // Mouse/Pointer
+  clientX?: number
+  clientY?: number
+  offsetX?: number
+  offsetY?: number
+  pageX?: number
+  pageY?: number
+  screenX?: number
+  screenY?: number
+  button?: number
+  buttons?: number
+  // Modifiers
+  altKey?: boolean
+  ctrlKey?: boolean
+  metaKey?: boolean
+  shiftKey?: boolean
   [key: string]: unknown
 }
 

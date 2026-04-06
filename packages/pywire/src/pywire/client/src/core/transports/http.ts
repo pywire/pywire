@@ -41,6 +41,7 @@ export class HTTPTransport extends BaseTransport {
       const buffer = await response.arrayBuffer()
       const data = decode(buffer) as { sessionId: string; version?: string }
       this.sessionId = data.sessionId
+      ;(window as any).__PYWIRE_HTTP_SESSION = this.sessionId
 
       if (data.version) {
         this.notifyHandlers({ type: 'init', version: data.version })
@@ -142,6 +143,7 @@ export class HTTPTransport extends BaseTransport {
     }
 
     this.sessionId = null
+    ;(window as any).__PYWIRE_HTTP_SESSION = null
   }
 
   private sleep(ms: number): Promise<void> {

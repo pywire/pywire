@@ -1,3 +1,4 @@
+import pytest
 import shutil
 import tempfile
 import unittest
@@ -10,8 +11,8 @@ from pywire.runtime.page import BasePage
 from starlette.requests import Request
 
 
-class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+class TestAppRuntime:
+    def setup_method(self, method) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir).resolve()
         # Mock Starlette to avoid actual server setup
@@ -24,17 +25,18 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         ):
             self.app = PyWire(str(self.pages_dir))
 
-    def tearDown(self) -> None:
+    def teardown_method(self, method) -> None:
         shutil.rmtree(self.test_dir)
 
+    @pytest.mark.asyncio
     async def test_handle_capabilities(self) -> None:
         request = MagicMock(spec=Request)
         response = await self.app._handle_capabilities(request)
         import json
 
         data = json.loads(response.body)
-        self.assertIn("transports", data)
-        self.assertEqual(data["version"], __version__)
+        assert "transports" in data
+        assert data["version"] == __version__
 
     def test_scan_directory_routing(self) -> None:
         # Create a nested structure
@@ -51,16 +53,19 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         # Verify routes were added
         # index -> /
         # users/[id].wire -> /users/{id}
-        self.app.router.add_route.assert_any_call("/", unittest.mock.ANY)
-        self.app.router.add_route.assert_any_call("/users/{id}", unittest.mock.ANY)
+        from unittest.mock import ANY
+        self.app.router.add_route.assert_any_call("/", ANY)
+        self.app.router.add_route.assert_any_call("/users/{id}", ANY)
 
+    @pytest.mark.asyncio
     @patch("pywire.runtime.app.upload_manager")
     async def test_handle_upload_invalid_token(self, mock_upload: MagicMock) -> None:
         request = MagicMock(spec=Request)
         request.headers = {"X-Upload-Token": "invalid"}
         response = await self.app._handle_upload(request)
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
+    @pytest.mark.asyncio
     @patch("pywire.runtime.app.upload_manager")
     async def test_handle_upload_success(self, mock_upload: MagicMock) -> None:
         self.app.upload_tokens.add("valid-token")
@@ -76,11 +81,11 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         request.form = AsyncMock(return_value={"file": mock_file})
 
         response = await self.app._handle_upload(request)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         import json
 
         data = json.loads(response.body)
-        self.assertEqual(data["file"], "upload-123")
+        assert data["file"] == "upload-123"
 
     def test_register_error_page(self) -> None:
         self.app.router = MagicMock()
@@ -90,7 +95,8 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         self.app._register_error_page(file_path, Exception("Parse error"))
 
         # Should register the custom route if found via regex
-        self.app.router.add_route.assert_any_call("/broken", unittest.mock.ANY)
+        from unittest.mock import ANY
+        self.app.router.add_route.assert_any_call("/broken", ANY)
 
     def test_reload_page_implicit_routing(self) -> None:
         # Create a page that relies on implicit routing
@@ -118,7 +124,3 @@ class TestAppRuntime(unittest.IsolatedAsyncioTestCase):
         # Verify that add_route was called with the implicit path
         # /implicit.wire -> /implicit
         self.app.router.add_route.assert_called_with("/implicit", page_class)
-
-
-if __name__ == "__main__":
-    unittest.main()

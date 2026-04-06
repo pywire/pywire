@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 import unittest
 from typing import Any, Dict, Optional, cast
 from unittest.mock import MagicMock
@@ -64,12 +65,13 @@ class MockPage(BasePage):
         return "<div>Test Page</div>"
 
 
-class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+class TestWebSocketHandler:
+    def setup_method(self, method) -> None:
         self.app = MagicMock()
         self.app.router = MagicMock()
         self.handler = WebSocketHandler(self.app)
 
+    @pytest.mark.asyncio
     async def test_process_message_event(self) -> None:
         ws = MockWebSocket()
         # Mock request object with correct HTTP type
@@ -87,16 +89,16 @@ class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
 
         await self.handler._process_message(cast(WebSocket, ws), data)
 
-        print(f"\nDEBUG sent_messages: {ws.sent_messages}")
-        self.assertTrue(page.event_called)
-        self.assertEqual(page.last_event_data, {"key": "value"})
+        assert page.event_called
+        assert page.last_event_data == {"key": "value"}
 
         # We might have captured console output from the print(f"DEBUG EVENT...")
         # so we check if the last message is update
         update_msg = next((m for m in ws.sent_messages if m["type"] == "update"), None)
-        self.assertIsNotNone(update_msg)
-        self.assertEqual(cast(Dict[str, Any], update_msg)["type"], "update")
+        assert update_msg is not None
+        assert cast(Dict[str, Any], update_msg)["type"] == "update"
 
+    @pytest.mark.asyncio
     async def test_handle_relocate(self) -> None:
         ws = MockWebSocket()
 
@@ -108,25 +110,22 @@ class TestWebSocketHandler(unittest.IsolatedAsyncioTestCase):
 
         await self.handler._handle_relocate(cast(WebSocket, ws), data)
 
-        self.assertIn(ws, self.handler.connection_pages)
+        assert cast(WebSocket, ws) in self.handler.connection_pages
         page = self.handler.connection_pages[cast(WebSocket, ws)]
-        self.assertIsInstance(page, MockPage)
-        self.assertEqual(page.params, {"id": "123"})
-        self.assertEqual(ws.sent_messages[0]["type"], "update")
+        assert isinstance(page, MockPage)
+        assert page.params == {"id": "123"}
+        assert ws.sent_messages[0]["type"] == "update"
 
+    @pytest.mark.asyncio
     async def test_send_console_message(self) -> None:
         ws = MockWebSocket()
         await self.handler._send_console_message(cast(WebSocket, ws), "Hello Stdout")
         await self.handler._send_console_message(cast(WebSocket, ws), "Hello Stderr", level="error")
 
-        self.assertEqual(len(ws.sent_messages), 2)
-        self.assertEqual(ws.sent_messages[0]["type"], "console")
-        self.assertEqual(ws.sent_messages[0]["level"], "info")
-        self.assertEqual(ws.sent_messages[0]["lines"], ["Hello Stdout"])
+        assert len(ws.sent_messages) == 2
+        assert ws.sent_messages[0]["type"] == "console"
+        assert ws.sent_messages[0]["level"] == "info"
+        assert ws.sent_messages[0]["lines"] == ["Hello Stdout"]
 
-        self.assertEqual(ws.sent_messages[1]["level"], "error")
-        self.assertEqual(ws.sent_messages[1]["lines"], ["Hello Stderr"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert ws.sent_messages[1]["level"] == "error"
+        assert ws.sent_messages[1]["lines"] == ["Hello Stderr"]

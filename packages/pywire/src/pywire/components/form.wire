@@ -1,0 +1,193 @@
+---
+from typing import Type, Any, Optional, Dict
+import inspect
+from pydantic import BaseModel
+from pywire import ref, props, expose, EventHandler
+from pywire.core.wire import WirePrimitive, unwrap_wire
+from pywire.runtime.pydantic_integration import validate_with_model, extract_field_rules
+from pywire.runtime.validation import FieldRules, form_validator
+from pywire.runtime.form_errors import ErrorNamespace, build_error_namespace
+
+@props
+class Props:
+    model: Optional[Type[BaseModel]] = None
+    on_submit: Optional[EventHandler] = None
+    _field_rules: Optional[Dict[str, Dict[str, Any]]] = None
+
+form_ref = ref()
+html5_rules = {}
+# Ensure component refs can access `errors` even if property exposure metadata
+# gets lost when a setter is attached.
+
+def _errors_wire_for():
+    if not hasattr(self, "_errors_wire"):
+        self._errors_wire = WirePrimitive(ErrorNamespace())
+    w = self._errors_wire
+    print(f"ERRORS-WIRE-FOR: self={id(self)} wire={id(w)}", flush=True)
+    return w
+
+def _clear_errors():
+    _errors_wire_for().value = ErrorNamespace()
+
+def _set_errors(errs):
+    from pywire.runtime.form_errors import build_error_namespace
+    wire = _errors_wire_for()
+    ns = build_error_namespace(errs)
+    print(f"SET-ERRORS: wire={id(wire)} ns={ns} ns_type={type(ns)} username={getattr(ns, 'username', 'N/A')}", flush=True)
+    wire.value = ns
+
+def _build_runtime_schema():
+    schema = {}
+    if not _field_rules:
+        return schema
+
+    for field_name, rule_map in _field_rules.items():
+        if not isinstance(rule_map, dict):
+            continue
+        try:
+            schema[field_name] = FieldRules(**rule_map)
+        except TypeError:
+            continue
+    return schema
+
+def _build_schema_from_rules(rule_map):
+    schema = {}
+    if not isinstance(rule_map, dict):
+        return schema
+    for field_name, field_rules in rule_map.items():
+        if not isinstance(field_rules, dict):
+            continue
+        try:
+            schema[field_name] = FieldRules(**field_rules)
+        except TypeError:
+            continue
+    return schema
+
+async def handle_submit(event):
+    raw_data = form_ref.data
+    payload: Any = raw_data
+
+    if model is not None:
+        model_rules = extract_field_rules(model)
+        runtime_schema = _build_schema_from_rules(model_rules)
+        if runtime_schema:
+            payload, html_errs = form_validator.validate_form(raw_data, runtime_schema)
+            if html_errs:
+                _set_errors(html_errs)
+                return
+            _clear_errors()
+        else:
+            _clear_errors()
+
+        instance, errs = validate_with_model(payload, model)
+        if errs:
+            _set_errors(errs)
+            return
+        _clear_errors()
+        payload = instance
+    elif _field_rules:
+        schema = _build_runtime_schema()
+        payload, errs = form_validator.validate_form(raw_data, schema)
+        if errs:
+            _set_errors(errs)
+            return
+        _clear_errors()
+    else:
+        _clear_errors()
+
+    if on_submit:
+        res = on_submit(payload)
+        if inspect.isawaitable(res):
+            await res
+
+@expose
+async def submit():
+    await form_ref.submit()
+
+@expose
+@property
+def errors():
+    return _errors_wire_for().value
+
+@errors.setter
+def errors(value):
+    if isinstance(value, ErrorNamespace):
+        _errors_wire_for().value = value
+        return
+    if isinstance(value, dict):
+        _errors_wire_for().value = build_error_namespace(value)
+        return
+    _errors_wire_for().value = ErrorNamespace()
+
+@expose
+def schema_fields(exclude: Any = None) -> list[dict]:
+    """
+    Returns a list of dictionaries representing the fields of the bound Pydantic model.
+    Useful for iterating over fields in a template.
+    """
+    if model is None:
+        return []
+
+    actual_exclude = unwrap_wire(exclude)
+    exclude_set = set()
+    if isinstance(actual_exclude, str):
+        exclude_set = {e.strip() for e in actual_exclude.split(",")}
+    elif isinstance(actual_exclude, (list, set, tuple)):
+        exclude_set = set(actual_exclude)
+
+    fields = getattr(model, "model_fields", getattr(model, "__fields__", {}))
+    rules = extract_field_rules(model)
+
+    result_fields = []
+
+    for f_name, field in fields.items():
+        if f_name in exclude_set:
+            continue
+
+        field_rules = rules.get(f_name, {})
+        input_type = field_rules.get("input_type", "text")
+
+        anno = getattr(field, "annotation", None)
+        if input_type == "text":
+            if anno is int or anno is float:
+                input_type = "number"
+            elif anno is bool:
+                input_type = "checkbox"
+
+        title = getattr(field, "title", None) or f_name.replace("_", " ").title()
+
+        field_data = {
+            "name": f_name,
+            "title": title,
+            "input_type": input_type,
+            "required": field_rules.get("required", False),
+            **{k: v for k, v in field_rules.items() if k not in ("input_type", "required")}
+        }
+
+        result_fields.append(field_data)
+
+    return result_fields
+
+
+@expose
+def set_errors(errs):
+    _set_errors(errs)
+
+@expose
+@property
+def validation_rules():
+    return html5_rules
+
+def on_after_render():
+    global html5_rules
+    if model is not None:
+        html5_rules = extract_field_rules(model)
+        return
+    if _field_rules:
+        html5_rules = dict(_field_rules)
+        return
+    html5_rules = {}
+---
+<form $ref={form_ref} @submit={handle_submit}>
+    <slot />
+</form>

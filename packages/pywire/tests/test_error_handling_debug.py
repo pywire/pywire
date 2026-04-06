@@ -10,8 +10,11 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 
-class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+import pytest
+
+@pytest.mark.asyncio
+class TestErrorHandlingDebug:
+    def setup_method(self, method) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.pages_dir = Path(self.test_dir).resolve()
         with (
@@ -26,7 +29,7 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
             self.app.router = MagicMock()
             self.app.loader = MagicMock()
 
-    def tearDown(self) -> None:
+    def teardown_method(self, method) -> None:
         shutil.rmtree(self.test_dir)
 
     async def test_500_custom_page_debug(self) -> None:
@@ -49,13 +52,13 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
 
         response = await self.app._handle_500(request, exc)
 
-        self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.body, b"Custom Error")
+        assert response.status_code == 500
+        assert response.body == b"Custom Error"
 
         # Verify details injected
-        self.assertEqual(mock_page_instance.error_code, 500)
-        self.assertEqual(mock_page_instance.error_detail, "Test Exception")
-        self.assertTrue(hasattr(mock_page_instance, "error_trace"))
+        assert mock_page_instance.error_code == 500
+        assert mock_page_instance.error_detail == "Test Exception"
+        assert hasattr(mock_page_instance, "error_trace")
 
     async def test_500_fallback_debug(self) -> None:
         """Verify 500 re-raises in debug mode if no custom page."""
@@ -64,7 +67,7 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
         request = MagicMock(spec=Request)
         exc = ValueError("Test Exception")
 
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             await self.app._handle_500(request, exc)
 
     async def test_websocket_custom_404(self) -> None:
@@ -74,7 +77,3 @@ class TestErrorHandlingDebug(unittest.IsolatedAsyncioTestCase):
         # if we extracted `_resolve_match`.
         # Given constraints, we trust the implementation mirroring app.py logic.
         pass
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -2,10 +2,11 @@ import json
 import os
 import sys
 import time
+import site
 
 # Add bundled libs to path
 BUNDLED_LIBS = os.path.join(os.path.dirname(__file__), "..", "bundled", "libs")
-sys.path.insert(0, BUNDLED_LIBS)
+site.addsitedir(BUNDLED_LIBS)
 
 # Add bundled libs/bin to PATH so ty and other binaries can be found
 BUNDLED_BIN = os.path.join(BUNDLED_LIBS, "bin")
@@ -32,7 +33,7 @@ if os.path.exists(venv_dir):
             if item.startswith("python"):
                 site_packages = os.path.join(lib_dir, item, "site-packages")
                 if os.path.exists(site_packages):
-                    sys.path.insert(0, site_packages)
+                    site.addsitedir(site_packages)
                     # Also add bin path for potential executable lookup helpers involving PATH
                     bin_dir = os.path.join(venv_dir, "bin")
                     os.environ["PATH"] = (

@@ -14,7 +14,7 @@ files:
         <p>Count: {count}</p>
         
         <div class="stack">
-          <button @click={$count += 1}>
+          <button @click={count.value += 1}>
             Click Many Times
           </button>
 
@@ -32,11 +32,11 @@ files:
         <p>Count: {count}</p>
         
         <div class="stack">
-          <button @click={$count += 1}>
+          <button @click={count.value += 1}>
             Click Many Times
           </button>
 
-          <button @click.once={$count += 1}>
+          <button @click.once={count.value += 1}>
             Click Only Once
           </button>
         </div>
@@ -57,7 +57,7 @@ PyWire supports event modifiers to handle common patterns without writing extra 
 
 ### Your Task
 
-1.  Add `@click.once={$count += 1}` to the "Click Only Once" button.
+1.  Add `@click.once={count.value += 1}` to the "Click Only Once" button.
 2.  Click that button multiple times and notice that the count only increments once.
 
 Other common modifiers include `.prevent` (to prevent default), `.stop` (to stop propagation), and `.enter` (for keyup events).

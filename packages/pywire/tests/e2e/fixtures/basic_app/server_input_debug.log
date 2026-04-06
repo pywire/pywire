@@ -1,0 +1,102 @@
+🚀 Starting pywire dev server on 
+http://127.0.0.1:8388
+[1;36mPyWire[0m: Found local certificates [1m([0m[1mlocalhost.pem[0m[1m)[0m, 
+using them.
+[1;36mPyWire[0m: Running on [1;4;36mhttps://127.0.0.1:8388[0m
+[32mINFO[0m:     Started server process [[36m16356[0m]
+[32mINFO[0m:     Waiting for application startup.
+[1;36mPyWire[0m: Watching 
+[1;35m/Users/rholmdahl/projects/pywire-workspace/pywire/t[0m
+[1;35mests/e2e/fixtures/basic_app/[0m[1;95mpages[0m for changes[33m...[0m
+[32mINFO[0m:     Application startup complete.
+[32mINFO[0m:     Uvicorn running on [1mhttps://127.0.0.1:8388[0m (Press CTRL+C to quit)
+[32mINFO[0m:     127.0.0.1:50645 - "[1mGET /input_binding HTTP/1.1[0m" [91m500 Internal Server Error[0m
+[31mERROR[0m:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/debug.py", line 31, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/Users/rholmdahl/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/app.py", line 354, in dispatch
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/app.py", line 1063, in _handle_request
+    response = await page.render()
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/page.py", line 472, in render
+    html = await self._render_template()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/input_binding.wire", line 1, in _render_template
+    ---
+    
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/tests/e2e/fixtures/basic_app/pages/input_binding.wire", line 8, in _render_region_r1
+    <p id="display-text">{self.my_text}</p>
+    ^^^^^^^^^^^^
+AttributeError: 'InputBindingPage' object has no attribute 'self'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rholmdahl/projects/pywire-workspace/pywire/src/pywire/runtime/debug.py", line 36, in __call__
+    await response(scope, receive, send)
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/starlette/responses.py", line 157, in __call__
+    await send(
+  File "/Users/rholmdahl/projects/pywire-workspace/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 561, in send
+    raise RuntimeError(msg % message_type)
+RuntimeError: Unexpected ASGI message 'http.response.start' sent, after response already completed.
+
+[1mPyWire: Shutting down[0m[1;33m...[0m
+
+[1mPyWire: Shutting down[0m[1;33m...[0m
+[32mINFO[0m:     Shutting down
+[32mINFO[0m:     Waiting for application shutdown.
+[32mINFO[0m:     Application shutdown complete.
+[32mINFO[0m:     Finished server process [[36m16356[0m]
+
+[1mPyWire: Shutting down[0m[1;33m...[0m
+
+[1mPyWire: Shutting down[0m[1;33m...[0m

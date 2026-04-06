@@ -8,19 +8,19 @@ Building a component in PyWire is as simple as writing HTML and adding a bit of 
 Let's look at a classic counter example.
 
 ```pywire
+---
 count = wire(0)
 
 def increment():
-    $count += 1
-
----html---
+    count.value += 1
+---
 <button @click={increment}>
     Increment
 </button>
 
-<h1>Current Count: {count.value}</h1>
+<h1>Current Count: {count}</h1>
 
-<div $if={count.value > 10}>
+<div $if={count > 10}>
     Wow, you're clicking fast!
 </div>
 ```
@@ -29,13 +29,17 @@ def increment():
 
 You can use standard HTML attributes and even add conditional styling.
 
-```html
-count = wire(0) def increment(): $count += 1 ---html---
-<h1>Count: {count.value}</h1>
+```pywire
+---
+count = wire(0)
+def increment():
+    count.value += 1
+---
+<h1>Count: {count}</h1>
 
-<button @click="{increment}" $disabled="{count.value">= 10}> Increment (Max 10)</button>
+<button @click="{increment}" $disabled="{count >= 10}"> Increment (Max 10)</button>
 
-<p $show="{count.value">5} style="color: red;"> High count alert!</p>
+<p $show="{count > 5}" style="color: red;"> High count alert!</p>
 ```
 
 In the next sections, we'll dive deeper into the `.wire` file format and how reactivity works.

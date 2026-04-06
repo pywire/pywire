@@ -3,6 +3,7 @@ import sys
 import unittest
 from typing import Any, cast
 from unittest.mock import MagicMock
+import pytest
 
 BasePage: Any = None
 
@@ -25,8 +26,8 @@ def restore_modules(original_modules: dict, mapping: dict) -> None:
             del sys.modules[name]
 
 
-class TestPageRendering(unittest.TestCase):
-    def setUp(self) -> None:
+class TestPageRendering:
+    def setup_method(self, method) -> None:
         self.mock_starlette = MagicMock()
         self.mocks = {
             "starlette": self.mock_starlette,
@@ -58,7 +59,7 @@ class TestPageRendering(unittest.TestCase):
         importlib.reload(loader_mod)
         BasePage = page_mod.BasePage
 
-    def tearDown(self) -> None:
+    def teardown_method(self, method) -> None:
         import importlib
 
         import pywire.runtime.loader as loader_mod
@@ -75,11 +76,12 @@ class TestPageRendering(unittest.TestCase):
 
         page = BasePage(request, params=params, query={})
 
-        self.assertTrue(hasattr(page, "id"))
-        self.assertEqual(page.id, "42")
-        self.assertEqual(page.slug, "test-post")
+        assert hasattr(page, "id")
+        assert page.id == "42"
+        assert page.slug == "test-post"
 
-    def test_recursive_slot_logic(self) -> None:
+    @pytest.mark.asyncio
+    async def test_recursive_slot_logic(self) -> None:
         """Verify slot registration logic manually."""
 
         # 1. Root Layout (LAYOUT_ID="ROOT")
@@ -134,21 +136,16 @@ class TestPageRendering(unittest.TestCase):
         # Generated code would call this in __init__
         page._init_slots()
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            # BasePage.render() calls self._render_template().
-            content = loop.run_until_complete(page._render_template())
-            self.assertEqual(content, "ROOT_START|SUB_START|LEAF_CONTENT|SUB_END|ROOT_END")
-        finally:
-            loop.close()
+        # BasePage.render() calls self._render_template().
+        content = await page._render_template()
+        assert content == "ROOT_START|SUB_START|LEAF_CONTENT|SUB_END|ROOT_END"
 
     def test_page_style_initialization(self) -> None:
         from pywire.runtime.style_collector import StyleCollector
 
         request = MagicMock()
         page = BasePage(request, {}, {})
-        self.assertIsInstance(page._style_collector, StyleCollector)
+        assert isinstance(page._style_collector, StyleCollector)
 
     def test_page_shared_style_collector(self) -> None:
         from pywire.runtime.style_collector import StyleCollector
@@ -156,9 +153,10 @@ class TestPageRendering(unittest.TestCase):
         collector = StyleCollector()
         request = MagicMock()
         page = BasePage(request, {}, {}, _style_collector=collector)
-        self.assertIs(page._style_collector, collector)
+        assert page._style_collector is collector
 
-    def test_page_injects_styles_into_head(self) -> None:
+    @pytest.mark.asyncio
+    async def test_page_injects_styles_into_head(self) -> None:
         class StylePage(BasePage):
             async def _render_template(self) -> str:
                 return "<html><head></head><body></body></html>"
@@ -169,37 +167,29 @@ class TestPageRendering(unittest.TestCase):
         page = StylePage(request, {}, {})
         page._style_collector.add("s1", ".test { color: red; }")
 
-        loop = asyncio.new_event_loop()
-        try:
-            # Response is a mock from self.mocks['starlette.responses'].Response
-            # page.render() returns a mock response object
-            loop.run_until_complete(page.render())
+        # Response is a mock from self.mocks['starlette.responses'].Response
+        # page.render() returns a mock response object
+        await page.render()
 
-            # The HTML is passed to the Response constructor
-            from starlette.responses import Response
+        # The HTML is passed to the Response constructor
+        from starlette.responses import Response
 
-            html_passed = cast(Any, Response).call_args[0][0]
-            self.assertIn("<style>.test { color: red; }</style></head>", html_passed)
-        finally:
-            loop.close()
+        html_passed = cast(Any, Response).call_args[0][0]
+        assert "<style>.test { color: red; }</style></head>" in html_passed
 
-    def test_render_head_slot_append(self) -> None:
+    @pytest.mark.asyncio
+    async def test_render_head_slot_append(self) -> None:
         request = MagicMock()
         page = BasePage(request, {}, {})
         page.register_head_slot("main", lambda: "<meta 1>")
         page.register_head_slot("main", lambda: "<meta 2>")
 
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(
-                page.render_slot("$head", layout_id="main", append=True)
-            )
-            self.assertIn("<meta 1>", result)
-            self.assertIn("<meta 2>", result)
-        finally:
-            loop.close()
+        result = await page.render_slot("$head", layout_id="main", append=True)
+        assert "<meta 1>" in result
+        assert "<meta 2>" in result
 
-    def test_handle_event_arg_normalization(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handle_event_arg_normalization(self) -> None:
         # We need Response to be available for the class definition
         from starlette.responses import Response
 
@@ -213,13 +203,9 @@ class TestPageRendering(unittest.TestCase):
         request = MagicMock()
         page = HandlerPage(request, {}, {})
 
-        loop = asyncio.new_event_loop()
-        try:
-            # handle_event calls render() but we don't need to check its return value here
-            loop.run_until_complete(page.handle_event("on_click", {"args": {"arg-0": 42}}))
-            self.assertEqual(page.last_arg0, 42)
-        finally:
-            loop.close()
+        # handle_event calls render() but we don't need to check its return value here
+        await page.handle_event("on_click", {"args": {"arg-0": 42}})
+        assert page.last_arg0 == 42
 
 
 if __name__ == "__main__":

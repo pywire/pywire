@@ -16,7 +16,7 @@ export const changelogData: ChangeLogEntry[] = [
     description:
       'A focused update improving the development server, expanding directive support, and fixing cross-platform issues.',
     features: [
-      "Introduced the `$permanent` directive (alias for `data-pywire-permanent`). Elements marked with this tag are preserved during Morphdom updates, making them ideal for integrating third-party libraries (maps, video players) that shouldn't be re-initialized on every server roundtrip.",
+      "Introduced the `$permanent` directive (alias for `data-pw-permanent`). Elements marked with this tag are preserved during Morphdom updates, making them ideal for integrating third-party libraries (maps, video players) that shouldn't be re-initialized on every server roundtrip.",
       'Added the `$reload` directive. Links decorated with this attribute will bypass the Single Page Application (SPA) routing and force a full browser page reload, useful for auth resets or escaping the app shell.',
       'Smart port selection: The development server now automatically hunts for an available port if the default is occupied, preventing startup failures when running multiple instances.',
     ],

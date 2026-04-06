@@ -1,3 +1,4 @@
+import pytest
 import asyncio
 import unittest
 from datetime import datetime, timedelta
@@ -56,53 +57,54 @@ class MockRequest:
         return Request(scope, receive=receive)
 
 
-class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+class TestTransportExhaustive:
+    def setup_method(self, method) -> None:
         self.app = MagicMock()
         self.app.router = MagicMock()
         self.handler = HTTPTransportHandler(self.app)
 
     def test_session_expiry(self) -> None:
         session = HTTPSession(session_id="1", path="/")
-        self.assertFalse(session.is_expired())
+        assert not session.is_expired()
 
         session.last_poll = datetime.now() - timedelta(seconds=400)
-        self.assertTrue(session.is_expired(timeout_seconds=300))
+        assert session.is_expired(timeout_seconds=300)
 
+    @pytest.mark.asyncio
     async def test_create_session_msgpack(self) -> None:
         self.app.router.match.return_value = (MockPage, {}, "main")
         request = MockRequest.create(body_data={"path": "/test"})
 
         response = await self.handler.create_session(request)
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         resp_data = msgpack.unpackb(response.body, raw=False)
-        self.assertIn("sessionId", resp_data)
+        assert "sessionId" in resp_data
 
         sid = resp_data["sessionId"]
-        self.assertIn(sid, self.handler.sessions)
-        self.assertEqual(self.handler.sessions[sid].path, "/test")
-        self.assertIsInstance(self.handler.sessions[sid].page, MockPage)
-        self.assertTrue(cast(Any, self.handler.sessions[sid].page).load_called)
+        assert sid in self.handler.sessions
+        assert self.handler.sessions[sid].path == "/test"
+        assert isinstance(self.handler.sessions[sid].page, MockPage)
+        assert cast(Any, self.handler.sessions[sid].page).load_called
 
+    @pytest.mark.asyncio
     async def test_create_session_json_fallback(self) -> None:
         self.app.router.match.return_value = (MockPage, {}, "main")
-        # For JSON fallback, we'd need to mock Request.body to return JSON
-        # but the handler expects msgpack by default unless content-type is json.
-        # This test used to pass so let's keep it simple.
         data = {"path": "/json"}
-        request = MockRequest.create(body_data=data)  # MockRequest uses msgpack
+        request = MockRequest.create(body_data=data)
 
         response = await self.handler.create_session(request)
         resp_data = msgpack.unpackb(response.body, raw=False)
         sid = resp_data["sessionId"]
-        self.assertEqual(self.handler.sessions[sid].path, "/json")
+        assert self.handler.sessions[sid].path == "/json"
 
+    @pytest.mark.asyncio
     async def test_poll_not_found(self) -> None:
         request = MockRequest.create(query_params={"session": "missing"})
         response = await self.handler.poll(request)
-        self.assertEqual(response.status_code, 404)
+        assert response.status_code == 404
 
+    @pytest.mark.asyncio
     async def test_poll_pending_updates(self) -> None:
         session = HTTPSession(session_id="s1", path="/")
         session.pending_updates.append({"type": "test"})
@@ -111,11 +113,12 @@ class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
         request = MockRequest.create(query_params={"session": "s1"})
         response = await self.handler.poll(request)
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = msgpack.unpackb(response.body, raw=False)
-        self.assertEqual(data[0]["type"], "test")
-        self.assertEqual(len(session.pending_updates), 0)
+        assert data[0]["type"] == "test"
+        assert len(session.pending_updates) == 0
 
+    @pytest.mark.asyncio
     async def test_poll_timeout(self) -> None:
         session = HTTPSession(session_id="s1", path="/")
         self.handler.sessions["s1"] = session
@@ -128,10 +131,11 @@ class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
 
         with patch("asyncio.wait_for", side_effect=timeout_side_effect):
             response = await self.handler.poll(request)
-            self.assertEqual(response.status_code, 200)
+            assert response.status_code == 200
             data = msgpack.unpackb(response.body, raw=False)
-            self.assertEqual(data, [])
+            assert data == []
 
+    @pytest.mark.asyncio
     async def test_handle_event_success(self) -> None:
         session = HTTPSession(session_id="s1", path="/")
         request_init = MockRequest.create()
@@ -143,11 +147,12 @@ class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
         )
 
         response = await self.handler.handle_event(request)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = msgpack.unpackb(response.body, raw=False)
-        self.assertEqual(data["type"], "update")
-        self.assertIn("success", data["html"])
+        assert data["type"] == "update"
+        assert "success" in data["html"]
 
+    @pytest.mark.asyncio
     async def test_handle_event_recreate_page(self) -> None:
         session = HTTPSession(session_id="s1", path="/recreate")
         session.page = None
@@ -160,9 +165,10 @@ class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
         )
 
         response = await self.handler.handle_event(request)
-        self.assertEqual(response.status_code, 200)
-        self.assertIsInstance(session.page, MockPage)
+        assert response.status_code == 200
+        assert isinstance(session.page, MockPage)
 
+    @pytest.mark.asyncio
     async def test_handle_event_error(self) -> None:
         session = HTTPSession(session_id="s1", path="/")
         request_init = MockRequest.create()
@@ -175,22 +181,23 @@ class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
         request.body.side_effect = Exception("Body error")
 
         response = await self.handler.handle_event(request)
-        self.assertEqual(response.status_code, 500)
+        assert response.status_code == 500
         data = msgpack.unpackb(response.body, raw=False)
-        self.assertEqual(data["type"], "error")
+        assert data["type"] == "error"
 
     def test_queue_update_and_broadcast(self) -> None:
         session = HTTPSession(session_id="s1", path="/")
         self.handler.sessions["s1"] = session
 
         self.handler.queue_update("s1", {"type": "msg"})
-        self.assertEqual(len(session.pending_updates), 1)
-        self.assertTrue(session.update_event.is_set())
+        assert len(session.pending_updates) == 1
+        assert session.update_event.is_set()
 
         self.handler.broadcast_reload()
-        self.assertEqual(len(session.pending_updates), 2)
-        self.assertEqual(session.pending_updates[-1]["type"], "reload")
+        assert len(session.pending_updates) == 2
+        assert session.pending_updates[-1]["type"] == "reload"
 
+    @pytest.mark.asyncio
     async def test_cleanup_loop(self) -> None:
         session1 = HTTPSession(session_id="s1", path="/")
         session2 = HTTPSession(session_id="s2", path="/")
@@ -208,9 +215,5 @@ class TestTransportExhaustive(unittest.IsolatedAsyncioTestCase):
             except asyncio.CancelledError:
                 pass
 
-        self.assertIn("s1", self.handler.sessions)
-        self.assertNotIn("s2", self.handler.sessions)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert "s1" in self.handler.sessions
+        assert "s2" not in self.handler.sessions

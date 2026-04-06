@@ -4,9 +4,12 @@ Handles 'webtransport' scope type from Hypercorn.
 """
 
 import json
+import logging
 from typing import Any, Dict, Set, cast
 
 from pywire.runtime.page import BasePage
+
+logger = logging.getLogger(__name__)
 
 
 class WebTransportHandler:
@@ -24,7 +27,7 @@ class WebTransportHandler:
     async def handle(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         """Handle ASGI webtransport scope."""
         if self.app.debug:
-            print("DEBUG: WebTransport handler started")
+            logger.debug("WebTransport handler started")
         # Active streams buffer: stream_id -> bytes
         streams: Dict[int, bytearray] = {}
 
@@ -32,21 +35,20 @@ class WebTransportHandler:
         try:
             message = await receive()
             if self.app.debug:
-                print(
-                    f"DEBUG: WebTransport received initial message: {message['type']}"
+                logger.debug(
+                    f"WebTransport received initial message: {message['type']}"
                 )
             if message["type"] != "webtransport.connect":
-                if self.app.debug:
-                    print(f"DEBUG: Unexpected message type: {message['type']}")
+                logger.debug(f"Unexpected message type: {message['type']}")
                 return
         except Exception as e:
-            print(f"DEBUG: Error receiving connect message: {e}")
+            logger.debug(f"Error receiving connect message: {e}")
             return
 
         # 2. Accept connection
         await send({"type": "webtransport.accept"})
         if self.app.debug:
-            print("DEBUG: WebTransport connection accepted")
+            logger.debug("WebTransport connection accepted")
 
         # Register connection (using the receive channel as ID or scope object)
         # Since scope is mutable dictionary, we use its id() or just the object if stable
@@ -91,13 +93,13 @@ class WebTransportHandler:
                                 json_data, scope, send, stream_id
                             )
                         except Exception as e:
-                            print(f"WebTransport message error: {e}")
+                            logger.error(f"WebTransport message error: {e}")
 
                 elif msg_type == "webtransport.disconnect":
                     break
 
         except Exception as e:
-            print(f"WebTransport handler error: {e}")
+            logger.error(f"WebTransport handler error: {e}")
         finally:
             self.active_connections.discard(connection_id)
             if connection_id in self.connection_pages:

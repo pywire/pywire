@@ -13,6 +13,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "starlette>=0.35.0",
+    "python-multipart>=0.0.6",
     "uvicorn[standard]>=0.27.0",
     "watchfiles>=0.21.0",
     "jinja2>=3.1.0",
@@ -35,6 +36,7 @@ dev = [
     "msgpack-types",
     "nox",
     "build>=1.0.0",
+    "pytest-playwright",
 ]
 http3 = [
     "aioquic>=0.9.0",
@@ -50,8 +52,8 @@ python-source = "src"
 module-name = "pywire._pywire_parser"
 features = ["pyo3/extension-module"]
 include = [
-    { path = "src/pywire/static/**", format = "sdist" },
-    { path = "src/pywire/templates/**", format = "sdist" },
+    "src/pywire/static/**",
+    "src/pywire/templates/**",
 ]
 
 [tool.ty.environment]
@@ -81,3 +83,8 @@ testpaths = ["tests"]
 norecursedirs = ["emsdk", "docs", "src/pywire/client"]
 addopts = "--cov=pywire"
 asyncio_mode = "strict"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+]

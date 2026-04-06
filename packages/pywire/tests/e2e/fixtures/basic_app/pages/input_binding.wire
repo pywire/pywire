@@ -1,0 +1,12 @@
+---
+my_text = wire("Hello")
+
+def update_text(event):
+    my_text.value = event.formData.get("my_text", "")
+---
+<h1 id="title">Input Binding</h1>
+<div id="name-display">Hello, {my_text}!</div>
+<form @submit.prevent={update_text}>
+    <input id="name-input" name="my_text" type="text" value={my_text} />
+    <button id="native-submit" type="submit">Submit</button>
+</form>

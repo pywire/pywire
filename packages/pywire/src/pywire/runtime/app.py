@@ -5,8 +5,12 @@ import os
 import re
 import traceback
 import inspect
+import hashlib
+import json
+import tempfile
+import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, cast
+from typing import Any, Dict, Optional, Set, Tuple, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -22,6 +26,22 @@ from pywire.runtime.upload_manager import upload_manager
 from pywire.runtime.websocket import WebSocketHandler
 
 logger = logging.getLogger(__name__)
+
+
+async def RequestContextMiddleware(scope, receive, send, app):
+    if scope["type"] != "http":
+        await app(scope, receive, send)
+        return
+
+    from pywire.shell import _request_ctx
+    from starlette.requests import Request
+
+    request = Request(scope, receive, send)
+    token = _request_ctx.set(request)
+    try:
+        await app(scope, receive, send)
+    finally:
+        _request_ctx.reset(token)
 
 
 class PyWire:
@@ -100,6 +120,8 @@ class PyWire:
         enable_webtransport: bool = False,
         static_dir: Optional[str] = None,
         static_path: str = "/static",
+        max_upload_size: int = 10 * 1024 * 1024,
+        upload_token_ttl_seconds: int = 600,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -182,6 +204,17 @@ class PyWire:
             self.debug = debug
 
         self.enable_webtransport = enable_webtransport
+        self.max_upload_size = max(1, int(max_upload_size))
+        self.upload_token_ttl_seconds = max(30, int(upload_token_ttl_seconds))
+        runtime_key = hashlib.sha256(str(self.pages_dir).encode("utf-8")).hexdigest()[
+            :16
+        ]
+        self._runtime_dir = (
+            Path(tempfile.gettempdir()) / "pywire_runtime" / runtime_key
+        ).resolve()
+        self._runtime_dir.mkdir(parents=True, exist_ok=True)
+        self._upload_token_dir = self._runtime_dir / "upload_tokens"
+        self._upload_token_dir.mkdir(parents=True, exist_ok=True)
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
@@ -199,8 +232,12 @@ class PyWire:
 
         self.web_transport_handler = WebTransportHandler(self)
 
-        # Valid upload tokens
+        # Backward-compatible token allowlist
         self.upload_tokens: Set[str] = set()
+        # Token metadata: token -> (bound_session_id, issued_ts)
+        self._upload_token_meta: Dict[str, Tuple[Optional[str], float]] = {}
+        upload_manager.configure_storage(self._runtime_dir / "uploads")
+        upload_manager.max_upload_size = self.max_upload_size
 
         # Compile and register all pages
         self._load_pages()
@@ -307,6 +344,21 @@ class PyWire:
         self.app.state.debug = self.debug
         self.app.state.pywire = self
 
+        # Add Middleware to set request context for shell API
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        class _RequestContextMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                from pywire.shell import _request_ctx
+
+                token = _request_ctx.set(request)
+                try:
+                    return await call_next(request)
+                finally:
+                    _request_ctx.reset(token)
+
+        self.app.add_middleware(cast(Any, _RequestContextMiddleware))
+
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
         return JSONResponse(
@@ -330,25 +382,48 @@ class PyWire:
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""
         if self.debug:
-            print(f"DEBUG: Handling upload request for {request.url}")
+            logger.debug(f"Handling upload request for {request.url}")
         try:
             # Check for upload token
             token = request.headers.get("X-Upload-Token")
-            if not token or token not in self.upload_tokens:
+            if not token:
                 return JSONResponse(
                     {"error": "Invalid or expired upload token"}, status_code=403
                 )
+            self._cleanup_upload_tokens()
+            token_binding = self._load_upload_token(token)
+            if token_binding is None:
+                if token in self.upload_tokens:
+                    token_binding = (None, time.time())
+                    self._store_upload_token(token, None, token_binding[1])
+                else:
+                    return JSONResponse(
+                        {"error": "Invalid or expired upload token"}, status_code=403
+                    )
+            bound_session_id, issued_ts = token_binding
+            if (time.time() - issued_ts) > self.upload_token_ttl_seconds:
+                self._delete_upload_token(token)
+                return JSONResponse({"error": "Upload token expired"}, status_code=403)
+
+            session_id = request.headers.get("X-PyWire-Session")
+            if bound_session_id is not None and session_id != bound_session_id:
+                return JSONResponse(
+                    {"error": "Upload token not valid for this session"},
+                    status_code=403,
+                )
+            if bound_session_id is None and session_id:
+                self._store_upload_token(token, session_id, issued_ts)
 
             # Fail-fast: Check Content-Length header
             content_length = request.headers.get("content-length")
             if content_length:
                 try:
                     length = int(content_length)
-                    # Global safety limit: 10MB (allows for 5MB file + overhead)
-                    # Real app might configure this or inspect specific field limits after streaming
-                    if length > 10 * 1024 * 1024:
+                    if length > self.max_upload_size:
                         logger.warning(
-                            f"Upload rejected. Content-Length {length} exceeds 10MB limit."
+                            "Upload rejected. Content-Length %s exceeds configured limit %s.",
+                            length,
+                            self.max_upload_size,
                         )
                         return JSONResponse(
                             {"error": "Payload Too Large"}, status_code=413
@@ -357,39 +432,51 @@ class PyWire:
                     pass
 
             form = await request.form()
-            response_data = {}
-            for field_name, file in form.items():
-                if hasattr(file, "filename"):  # It's an UploadFile
-                    # We don't really need the ID if we are just testing upload for now?
-                    # Wait, saving returns the ID!
-                    from starlette.datastructures import UploadFile
+            response_data: Dict[str, Any] = {}
+            upload_errors: Dict[str, str] = {}
+            items_iter = (
+                form.multi_items() if hasattr(form, "multi_items") else form.items()
+            )
+            for field_name, file in items_iter:
+                if not hasattr(file, "filename"):
+                    continue
+                from starlette.datastructures import UploadFile
 
-                    upload_id = upload_manager.save(cast(UploadFile, file))
+                try:
+                    upload_id = upload_manager.save(
+                        cast(UploadFile, file), max_size=self.max_upload_size
+                    )
+                except ValueError:
+                    upload_errors[field_name] = "Payload Too Large"
+                    continue
+
+                existing = response_data.get(field_name)
+                if existing is None:
                     response_data[field_name] = upload_id
+                    continue
+                if isinstance(existing, list):
+                    existing.append(upload_id)
+                    continue
+                response_data[field_name] = [existing, upload_id]
 
             logger.debug(f"Upload successful. Returning: {response_data}")
+            if upload_errors:
+                return JSONResponse(
+                    {"uploads": response_data, "errors": upload_errors}, status_code=400
+                )
             return JSONResponse(response_data)
         except Exception as e:
             logger.error(f"Upload failed: {e}", exc_info=True)
             return JSONResponse({"error": str(e)}, status_code=500)
 
     async def _handle_source(self, request: Request) -> Response:
-        """Serve source code for debugging."""
-        if self.debug:
-            print(f"DEBUG: _handle_source called, debug={self.debug}")
-        if not self.debug:
-            if self.debug:
-                print("DEBUG: _handle_source returning 404 because debug=False")
-            return Response("Not Found", status_code=404)
-
-        if not self._is_dev_mode:
-            if self.debug:
-                print("DEBUG: _handle_source returning 404 because _is_dev_mode=False")
+        """Serve source code for debugging. Requires both debug=True AND _is_dev_mode=True."""
+        if not (self._is_dev_mode and self.debug):
             return Response("Not Found", status_code=404)
 
         path_str = request.query_params.get("path")
         if self.debug:
-            print(f"DEBUG: _handle_source path={path_str}")
+            print(f"\nDEBUG: _handle_source path={path_str}")
         if not path_str:
             return Response("Missing path", status_code=400)
 
@@ -397,27 +484,22 @@ class PyWire:
             path = Path(path_str).resolve()
             if self.debug:
                 print(
-                    f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}, "
-                    f"is_file={path.is_file()}"
+                    f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}"
                 )
-            # Security check: Ensure we are only serving files from allowed directories?
-            # For a dev tool, we might want to allow viewing any file in the
-            # traceback which might include library files.
-            # But normally we want to restrict to project and maybe venv.
-            # Let's just check it exists and is a file for now.
-            if not path.is_file():
+            # Path existence check
+            if not path.exists():
                 return Response("File not found", status_code=404)
 
             content = path.read_text(encoding="utf-8")
             return Response(content, media_type="text/plain")
         except Exception as e:
             if self.debug:
-                print(f"DEBUG: _handle_source exception: {e}")
+                logger.debug(f"_handle_source exception: {e}")
             return Response(str(e), status_code=500)
 
     async def _handle_file(self, request: Request) -> Response:
         """Serve source file by base64-encoded path (for DevTools source mapping)."""
-        if not self.debug or not self._is_dev_mode:
+        if not (self._is_dev_mode and self.debug):
             return Response("Not Found", status_code=404)
 
         import base64
@@ -451,12 +533,12 @@ class PyWire:
             return Response(content, media_type="text/plain")
         except Exception as e:
             if self.debug:
-                print(f"DEBUG: _handle_file exception: {e}")
+                logger.debug(f"_handle_file exception: {e}")
             return Response(str(e), status_code=500)
 
     async def _handle_devtools_json(self, request: Request) -> JSONResponse:
         """Serve Chrome DevTools project settings for automatic workspace folders."""
-        if not self.debug or not self._is_dev_mode:
+        if not (self._is_dev_mode and self.debug):
             return JSONResponse({}, status_code=404)
 
         import hashlib
@@ -767,9 +849,7 @@ class PyWire:
 
             # Safety check: stop at root
             if current_dir == current_dir.parent:
-                break
-
-        return None
+                break  # Original line
 
     def reload_page(self, path: Path) -> bool:
         """Reload and recompile a specific page and its dependents."""
@@ -988,7 +1068,7 @@ class PyWire:
                 import secrets
 
                 token = secrets.token_urlsafe(32)
-                self.upload_tokens.add(token)
+                self._store_upload_token(token, None, time.time())
                 # Token meta tag
                 injections.append(
                     f'<meta name="pywire-upload-token" content="{token}">'
@@ -997,12 +1077,69 @@ class PyWire:
             if injections:
                 injection_str = "\n".join(injections)
                 if "</body>" in body:
-                    body = body.replace("</body>", injection_str + "</body>")
+                    parts = body.rsplit("</body>", 1)
+                    body = parts[0] + injection_str + "</body>" + parts[1]
                 else:
                     body += injection_str
                 response = Response(body, media_type="text/html")
 
         return response
+
+    def _cleanup_upload_tokens(self) -> None:
+        cutoff = time.time() - self.upload_token_ttl_seconds
+        stale = [
+            token
+            for token, (_, issued_ts) in self._upload_token_meta.items()
+            if issued_ts < cutoff
+        ]
+        for token in stale:
+            self._delete_upload_token(token)
+
+        for token_file in self._upload_token_dir.glob("*.json"):
+            token = token_file.stem
+            meta = self._load_upload_token(token)
+            if meta is None:
+                continue
+            if meta[1] < cutoff:
+                self._delete_upload_token(token)
+
+    def _token_file_path(self, token: str) -> Path:
+        return self._upload_token_dir / f"{token}.json"
+
+    def _store_upload_token(
+        self, token: str, session_id: Optional[str], issued_ts: float
+    ) -> None:
+        self.upload_tokens.add(token)
+        self._upload_token_meta[token] = (session_id, issued_ts)
+        token_file = self._token_file_path(token)
+        temp_file = token_file.with_suffix(".tmp")
+        payload = {"session_id": session_id, "issued_ts": issued_ts}
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        temp_file.replace(token_file)
+
+    def _load_upload_token(self, token: str) -> Optional[Tuple[Optional[str], float]]:
+        if token in self._upload_token_meta:
+            return self._upload_token_meta[token]
+
+        token_file = self._token_file_path(token)
+        if not token_file.exists():
+            return None
+        try:
+            with open(token_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            session_id = payload.get("session_id")
+            issued_ts = float(payload.get("issued_ts", 0))
+            self.upload_tokens.add(token)
+            self._upload_token_meta[token] = (session_id, issued_ts)
+            return (session_id, issued_ts)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _delete_upload_token(self, token: str) -> None:
+        self.upload_tokens.discard(token)
+        self._upload_token_meta.pop(token, None)
+        self._token_file_path(token).unlink(missing_ok=True)
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""

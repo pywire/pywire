@@ -11,20 +11,8 @@ export class UnifiedEventHandler {
   private debouncers = new Map<string, number>()
   private throttlers = new Map<string, number>()
 
-  private supportedEvents = [
-    'click',
-    'submit',
-    'input',
-    'change',
-    'keydown',
-    'keyup',
-    'focus',
-    'blur',
-    'mouseenter',
-    'mouseleave',
-    'scroll',
-    'contextmenu',
-  ]
+  private defaultEvents = ['click', 'submit', 'input', 'change']
+  private attachedEvents = new Set<string>()
 
   // Events that should be suppressed during DOM updates to prevent loops
   private suppressDuringUpdate = ['focus', 'blur', 'mouseenter', 'mouseleave']
@@ -46,7 +34,37 @@ export class UnifiedEventHandler {
    * Uses event delegation on document body.
    */
   init(): void {
-    this.supportedEvents.forEach((eventType) => {
+    this.attachListeners(this.defaultEvents)
+    this.refreshListeners()
+  }
+
+  /**
+   * Scan DOM for data-on-* attributes and attach missing listeners.
+   */
+  refreshListeners(): void {
+    const eventTypes = new Set<string>()
+    // Scan all elements for data-on-* attributes
+    // Optimization: only scan elements with at least one attribute
+    const elements = document.querySelectorAll('*')
+    elements.forEach((el) => {
+      for (let i = 0; i < el.attributes.length; i++) {
+        const attr = el.attributes[i]
+        if (attr.name.startsWith('data-on-')) {
+          eventTypes.add(attr.name.replace('data-on-', ''))
+        }
+      }
+    })
+
+    this.attachListeners(Array.from(eventTypes))
+  }
+
+  /**
+   * Attach listeners for a list of event types if not already attached.
+   */
+  private attachListeners(eventTypes: string[]): void {
+    eventTypes.forEach((eventType) => {
+      if (this.attachedEvents.has(eventType)) return
+
       const options =
         eventType === 'mouseenter' ||
         eventType === 'mouseleave' ||
@@ -57,6 +75,8 @@ export class UnifiedEventHandler {
           : undefined
 
       document.addEventListener(eventType, (e) => this.handleEvent(e), options)
+      this.attachedEvents.add(eventType)
+      this.debugLog('[Handler] Attached listener for:', eventType)
     })
   }
 
@@ -108,6 +128,16 @@ export class UnifiedEventHandler {
    */
   private async handleEvent(e: Event): Promise<void> {
     const eventType = e.type
+
+    // File inputs can retain a prior custom validity error unless we clear it
+    // immediately when the user re-selects a file, even without data-on-change.
+    if (
+      eventType === 'change' &&
+      e.target instanceof HTMLInputElement &&
+      e.target.type === 'file'
+    ) {
+      e.target.setCustomValidity('')
+    }
 
     // Skip focus/blur/mouseenter/mouseleave events during DOM updates to prevent loops
     if (DOMUpdater.isUpdating && this.suppressDuringUpdate.includes(eventType)) {
@@ -326,7 +356,7 @@ export class UnifiedEventHandler {
 
       const timer = window.setTimeout(() => {
         this.debouncers.delete(eventKey)
-        this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+        void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
       }, duration)
 
       this.debouncers.set(eventKey, timer)
@@ -339,7 +369,7 @@ export class UnifiedEventHandler {
 
       this.throttlers.set(eventKey, Date.now())
       // Execute immediately
-      this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+      void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
 
       window.setTimeout(() => {
         this.throttlers.delete(eventKey)
@@ -348,19 +378,19 @@ export class UnifiedEventHandler {
     }
 
     // Direct dispatch
-    this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+    void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
   }
 
   /**
    * Extract data and send event.
    */
-  private dispatchEvent(
+  private async dispatchEvent(
     element: HTMLElement,
     eventType: string,
     handler: string,
     e: Event,
     explicitArgs?: unknown[]
-  ): void {
+  ): Promise<void> {
     // Merge explicit args (from JSON) into args payload
     let args: Record<string, unknown> = {}
     if (explicitArgs && explicitArgs.length > 0) {
@@ -373,13 +403,32 @@ export class UnifiedEventHandler {
 
     const eventData: EventData = {
       type: eventType,
-      id: element.id,
+      id: element.id || undefined,
+      name: (element as any).name || undefined,
+      tagName: element.tagName,
       args: args,
+    }
+
+    // Attach ref info if present
+    const refId = element.getAttribute('data-pw-ref')
+    if (refId) {
+      eventData.refId = refId
+      const refData = this.app.getRefManager().getRefData(refId)
+      Object.assign(eventData, refData)
     }
 
     // Extract specific data based on element type
     if (element instanceof HTMLInputElement) {
-      eventData.value = element.value
+      if (element.type === 'file') {
+        eventData.value = Array.from(element.files ?? []).map((file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        }))
+      } else {
+        eventData.value = element.value
+      }
+      eventData.inputType = element.type
       if (element.type === 'checkbox' || element.type === 'radio') {
         eventData.checked = element.checked
       }
@@ -390,22 +439,203 @@ export class UnifiedEventHandler {
     // Extract Key data
     if (e instanceof KeyboardEvent) {
       eventData.key = e.key
+      eventData.code = e.code
       eventData.keyCode = e.keyCode
+      eventData.altKey = e.altKey
+      eventData.ctrlKey = e.ctrlKey
+      eventData.metaKey = e.metaKey
+      eventData.shiftKey = e.shiftKey
+    }
+
+    // Extract Mouse/Pointer data
+    if (e instanceof MouseEvent || (window.PointerEvent && e instanceof PointerEvent)) {
+      const me = e as MouseEvent
+      eventData.clientX = me.clientX
+      eventData.clientY = me.clientY
+      eventData.offsetX = me.offsetX
+      eventData.offsetY = me.offsetY
+      eventData.pageX = me.pageX
+      eventData.pageY = me.pageY
+      eventData.screenX = me.screenX
+      eventData.screenY = me.screenY
+      eventData.button = me.button
+      eventData.buttons = me.buttons
+      eventData.altKey = me.altKey
+      eventData.ctrlKey = me.ctrlKey
+      eventData.metaKey = me.metaKey
+      eventData.shiftKey = me.shiftKey
     }
 
     // Extract Form Data for submit
     if (eventType === 'submit' && element instanceof HTMLFormElement) {
+      if (!this.validateFileInputs(element)) {
+        return
+      }
+
       const formData = new FormData(element)
-      const data: Record<string, string> = {}
+      const data: Record<string, any> = {}
+      const uploadFormData = new FormData()
+      let hasFileUploads = false
       formData.forEach((value, key) => {
-        if (!(value instanceof File)) {
-          data[key] = value.toString()
+        if (value instanceof File) {
+          if (value.size > 0) {
+            uploadFormData.append(key, value)
+            hasFileUploads = true
+          }
+          return
+        }
+
+        const strVal = value.toString()
+        // Handle multiple values for same key
+        if (data[key] !== undefined) {
+          if (Array.isArray(data[key])) {
+            data[key].push(strVal)
+          } else {
+            data[key] = [data[key], strVal]
+          }
+        } else {
+          data[key] = strVal
         }
       })
+
+      if (hasFileUploads) {
+        const uploadMap = await this.uploadFiles(uploadFormData, element)
+        for (const [field, uploadValue] of Object.entries(uploadMap)) {
+          data[field] = uploadValue
+        }
+      }
       eventData.formData = data
     }
 
     this.app.sendEvent(handler, eventData)
+  }
+
+  private validateFileInputs(form: HTMLFormElement): boolean {
+    const fileInputs = form.querySelectorAll('input[type="file"]')
+    for (const input of fileInputs) {
+      if (!(input instanceof HTMLInputElement)) {
+        continue
+      }
+      if (input.dataset.pwFileInput === '1') {
+        continue
+      }
+
+      input.setCustomValidity('')
+      const files = input.files ? Array.from(input.files) : []
+
+      const maxFilesRaw = input.dataset.maxFiles
+      if (maxFilesRaw) {
+        const maxFiles = Number.parseInt(maxFilesRaw, 10)
+        if (!Number.isNaN(maxFiles) && maxFiles > 0 && files.length > maxFiles) {
+          input.setCustomValidity(`At most ${maxFiles} files are allowed`)
+          input.reportValidity()
+          return false
+        }
+      }
+
+      const minSizeRaw = input.dataset.minSize
+      const maxSizeRaw = input.dataset.maxSize
+      const minSize = minSizeRaw ? Number.parseInt(minSizeRaw, 10) : null
+      const maxSize = maxSizeRaw ? Number.parseInt(maxSizeRaw, 10) : null
+      if (
+        (minSize !== null && Number.isNaN(minSize)) ||
+        (maxSize !== null && Number.isNaN(maxSize))
+      ) {
+        continue
+      }
+
+      for (const file of files) {
+        if (minSize !== null && minSize > 0 && file.size < minSize) {
+          input.setCustomValidity(`File is too small (min ${minSize} bytes)`)
+          input.reportValidity()
+          return false
+        }
+        if (maxSize !== null && maxSize > 0 && file.size > maxSize) {
+          const sizeMb = maxSize / (1024 * 1024)
+          input.setCustomValidity(`File is too large (max ${sizeMb.toFixed(1)}MB)`)
+          input.reportValidity()
+          return false
+        }
+      }
+
+      const allowedNames = input.dataset.allowedNames
+      if (allowedNames) {
+        let allowedRegex: RegExp | null = null
+        try {
+          allowedRegex = new RegExp(allowedNames.replace(/\\\\/g, '\\'))
+        } catch {
+          allowedRegex = null
+        }
+
+        if (allowedRegex) {
+          for (const file of files) {
+            if (allowedRegex.test(file.name)) {
+              continue
+            }
+            input.setCustomValidity('Filename is not allowed')
+            input.reportValidity()
+            return false
+          }
+        }
+      }
+    }
+    return true
+  }
+
+  private async uploadFiles(
+    fileData: FormData,
+    form?: HTMLFormElement
+  ): Promise<Record<string, any>> {
+    const token = (
+      document.querySelector('meta[name="pywire-upload-token"]') as HTMLMetaElement | null
+    )?.content
+    if (!token) {
+      throw new Error('Missing upload token. File uploads are not enabled for this page.')
+    }
+
+    const headers: Record<string, string> = {
+      'X-Upload-Token': token,
+    }
+    const httpSession = (window as any).__PYWIRE_HTTP_SESSION
+    if (typeof httpSession === 'string' && httpSession.length > 0) {
+      headers['X-PyWire-Session'] = httpSession
+    }
+
+    const response = await fetch('/_pywire/upload', {
+      method: 'POST',
+      headers,
+      body: fileData,
+      credentials: 'same-origin',
+    })
+    const payload = (await response.json()) as Record<string, any>
+    if (!response.ok) {
+      const uploadError = payload?.error || 'File upload failed'
+      throw new Error(uploadError)
+    }
+
+    const uploadIds = (payload.uploads ?? payload) as Record<string, any>
+    const result: Record<string, any> = {}
+    const multipleFieldNames = new Set<string>()
+    if (form) {
+      form.querySelectorAll('input[type="file"][multiple][name]').forEach((input) => {
+        if (input instanceof HTMLInputElement && input.name) {
+          multipleFieldNames.add(input.name)
+        }
+      })
+    }
+    for (const [field, raw] of Object.entries(uploadIds)) {
+      const isMultipleField = multipleFieldNames.has(field)
+      if (Array.isArray(raw)) {
+        result[field] = raw.map((uploadId) => ({ _upload_id: uploadId }))
+        continue
+      }
+      if (isMultipleField) {
+        result[field] = [{ _upload_id: raw }]
+        continue
+      }
+      result[field] = { _upload_id: raw }
+    }
+    return result
   }
 
   private parseDuration(modifiers: string[], defaultDuration: number): number {

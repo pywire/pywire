@@ -1,0 +1,30 @@
+import pytest
+from playwright.sync_api import Page, expect
+
+@pytest.fixture(autouse=True)
+def capture_console(page: Page):
+    def handle_console(msg):
+        print(f"\n[BROWSER CONSOLE] {msg.type}: {msg.text}")
+    page.on("console", handle_console)
+    page.on("pageerror", lambda exc: print(f"\n[BROWSER ERROR] {exc}"))
+
+@pytest.mark.xfail(reason="Issue #8: Reconnecting indicator not showing up or reconnects too fast")
+def test_websocket_disconnect_issue_8(page: Page, pywire_server: str):
+    page.goto(f"{pywire_server}")
+    expect(page.locator("#title")).to_have_text("Hello PyWire")
+    
+    # Verify indicator is not visible initially
+    # According to Issue #8 and framework convention, it's usually #pywire-connection-status
+    # or similar. We will just look for text "Reconnecting" or "Connection lost"
+    expect(page.locator("body")).not_to_have_text("Connection lost", use_inner_text=True)
+    
+    # Easiest way to drop the connection is to close PyWire's internal socket directly
+    # This triggers the onclose handler which attempts reconnection and shows the indicator.
+    page.evaluate('''
+        if (window.pywire && window.pywire.transport && window.pywire.transport.transport && window.pywire.transport.transport.socket) {
+            window.pywire.transport.transport.socket.close();
+        }
+    ''')
+    
+    # PyWire should show the overlay with specific text
+    expect(page.locator("body")).to_contain_text("Connection Lost - Reconnecting...", timeout=2000)

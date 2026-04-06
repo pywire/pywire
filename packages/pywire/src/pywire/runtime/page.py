@@ -1,8 +1,9 @@
 """Base page class with lifecycle system."""
 
-import asyncio
 import inspect
+import asyncio
 from collections import defaultdict
+from .events import create_event_data
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -42,23 +43,7 @@ class DotDict(dict):
         self[name] = value
 
 
-class EventData(dict):
-    """Dict that allows dot-access to keys for Alpine.js compatibility."""
-
-    def __getattr__(self, name: str) -> Any:
-        try:
-            return self[name]
-        except KeyError:
-            # Check for camelCase version of name
-            import re
-
-            camel = re.sub(r"(?!^)_([a-z])", lambda x: x.group(1).upper(), name)
-            if camel in self:
-                return self[camel]
-            return None
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        self[name] = value
+# EventData moved to .events
 
 
 class BasePage:
@@ -67,6 +52,19 @@ class BasePage:
     # Layout ID (overridden by generator)
     LAYOUT_ID: Optional[str] = None
     __file_path__: ClassVar[str]
+    _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
+        "request",
+        "params",
+        "query",
+        "path",
+        "url",
+        "slots",
+        "__is_component__",
+        "_style_collector",
+        "_context",
+        "_parent_page",
+        "_component_key",
+    }
 
     # Lifecycle hooks registry (extensible!)
     INIT_HOOKS = [
@@ -129,7 +127,7 @@ class BasePage:
             self.path["main"] = self.path.get("main", False)
 
         # Framework-managed state
-        self.errors: Dict[str, str] = {}
+        self.errors: Dict[str, Any] = {}
         self.loading: Dict[str, bool] = {}
 
         # Slot registry: layout_id -> slot_name -> renderer (replacement semantics)
@@ -141,6 +139,13 @@ class BasePage:
 
         # Component flag (internal)
         self.__is_component__ = kwargs.pop("__is_component__", False)
+        self._parent_page: Optional["BasePage"] = kwargs.pop("_parent_page", None)
+        self._component_key: Optional[str] = kwargs.pop("_component_key", None)
+        self._handler_prefix: str = ""
+        if self.__is_component__ and self._parent_page and self._component_key:
+            self._handler_prefix = (
+                f"{self._parent_page._handler_prefix}_comp:{self._component_key}:"
+            )
 
         # Store remaining kwargs as fallthrough attributes
         self.attrs = {k: v for k, v in kwargs.items() if k != "slots"}
@@ -174,16 +179,223 @@ class BasePage:
         self._await_states: Dict[str, Dict[str, Any]] = {}
         self._background_tasks: Set["asyncio.Task[Any]"] = set()
 
-        # Component ref support (groundwork)
-        self._ref: Optional[Any] = None  # wire passed via ref={my_ref}
+        # Component ref support
+        self._ref: Optional[Any] = None  # wire passed via $ref={my_ref}
+        self._refs_by_id: Dict[str, Any] = {}  # registry for ref instances
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
+        self._pending_navigation: Optional[str] = None
+        self._components: Dict[str, "BasePage"] = {}
+        self._active_component_keys: Set[str] = set()
+        self._component_state_snapshots: Dict[str, Dict[str, Any]] = {}
 
     @property
+    def navigate(self) -> Callable[[str], None]:
+        """Return a callable that sets the pending navigation path."""
+
+        def _navigate(path: str) -> None:
+            self._pending_navigation = path
+
+        return _navigate
+
     def _is_debug(self) -> bool:
         try:
             return getattr(self.request.app.state, "debug", False)
         except Exception:
             return False
+
+    @classmethod
+    def _is_framework_prop_key(cls, key: str) -> bool:
+        return key in cls._FRAMEWORK_PROP_KEYS
+
+    def _update_props(self, new_kwargs: Dict[str, Any]) -> None:
+        if "request" in new_kwargs:
+            self.request = new_kwargs["request"]
+        if "params" in new_kwargs:
+            self.params = DotDict(new_kwargs["params"] or {})
+        if "query" in new_kwargs:
+            self.query = DotDict(new_kwargs["query"] or {})
+        if "path" in new_kwargs:
+            self.path = DotDict(new_kwargs["path"] or {})
+        if "url" in new_kwargs:
+            self.url = new_kwargs["url"]
+        if "_style_collector" in new_kwargs:
+            self._style_collector = new_kwargs["_style_collector"]
+        if "_context" in new_kwargs:
+            self.context = new_kwargs["_context"].copy()
+
+        fallback_attrs: Dict[str, Any] = {}
+        for key, value in new_kwargs.items():
+            if self._is_framework_prop_key(key):
+                continue
+
+            # Prop reconciliation:
+            # - existing attributes on the component instance are treated as props/state
+            # - unknown keys are fallthrough HTML attrs
+            if hasattr(self, key):
+                setattr(self, key, value)
+                continue
+            fallback_attrs[key] = value
+
+        if "slots" in new_kwargs and self.LAYOUT_ID:
+            self.slots[self.LAYOUT_ID].update(new_kwargs["slots"])
+
+        self.attrs = fallback_attrs
+
+    def _resolve_component(
+        self, key: str, cls: type["BasePage"], **kwargs: Any
+    ) -> "BasePage":
+        self._active_component_keys.add(key)
+
+        component = self._components.get(key)
+        if component is not None and isinstance(component, cls):
+            component._update_props(kwargs)
+            return component
+
+        kwargs["_parent_page"] = self
+        kwargs["_component_key"] = key
+        instance = cls(**kwargs)
+
+        snapshot = self._component_state_snapshots.pop(key, None)
+        if snapshot:
+            for attr, value in snapshot.items():
+                try:
+                    setattr(instance, attr, value)
+                except AttributeError:
+                    continue
+
+        self._components[key] = instance
+        return instance
+
+    def _collect_all_commands(self) -> List[Dict[str, Any]]:
+        """Collect commands from all internal refs and recursive child components."""
+        commands = []
+        # 1. Collect from own refs
+        for rid, r in self._refs_by_id.items():
+            cmds = r._collect_commands()
+            if cmds:
+                commands.extend(cmds)
+
+        # 2. Collect from all child components
+        for key, comp in self._components.items():
+            cmds = comp._collect_all_commands()
+            if cmds:
+                commands.extend(cmds)
+        return commands
+
+    def _cleanup_components(self) -> None:
+        stale_keys = [
+            key
+            for key in self._components.keys()
+            if key not in self._active_component_keys
+        ]
+        for key in stale_keys:
+            self._components.pop(key, None)
+        self._active_component_keys.clear()
+
+    def _sync_ref_data(self, event_data: Dict[str, Any]) -> None:
+        ref_id = event_data.get("refId")
+        if not ref_id:
+            return
+
+        ref_obj = self._refs_by_id.get(ref_id)
+        if ref_obj is None:
+            return
+
+        if "formData" in event_data:
+            ref_obj._update_data(event_data["formData"])
+        if "value" in event_data:
+            ref_obj._update_value(event_data["value"])
+        if "rect" in event_data:
+            ref_obj._update_rect(event_data["rect"])
+
+    @staticmethod
+    def _parse_component_event(event_name: str) -> Optional[Tuple[str, str]]:
+        if not event_name.startswith("_comp:"):
+            return None
+
+        payload = event_name[len("_comp:") :]
+        comp_key, sep, remainder = payload.partition(":")
+        if not sep or not comp_key or not remainder:
+            raise ValueError(f"Malformed component event '{event_name}'")
+        return comp_key, remainder
+
+    async def _dispatch_handler(
+        self, event_name: str, event_data: Dict[str, Any]
+    ) -> None:
+        self._sync_ref_data(event_data)
+
+        # Framework-generated handlers are always allowed (form wrappers, bindings)
+        is_framework_handler = event_name.startswith(
+            "_handle_bind_"
+        ) or event_name.startswith("_handler_")
+        if not is_framework_handler and event_name.startswith("_"):
+            raise ValueError(f"Handler '{event_name}' not allowed")
+
+        handler = getattr(self, event_name, None)
+        if not handler:
+            raise ValueError(f"Handler {event_name} not found")
+
+        if event_name.startswith("_handle_bind_"):
+            if inspect.iscoroutinefunction(handler):
+                await handler(event_data)
+            else:
+                handler(event_data)
+            return
+
+        args = event_data.get("args", {})
+        normalized_args = {}
+        for key, value in args.items():
+            if key.startswith("arg"):
+                normalized_args[key.replace("-", "")] = value
+                continue
+            normalized_args[key] = value
+
+        call_kwargs = {k: v for k, v in event_data.items() if k != "args"}
+        call_kwargs.update(normalized_args)
+
+        sig = inspect.signature(handler)
+        bound_kwargs = {}
+
+        has_var_kw = False
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                has_var_kw = True
+                break
+
+        if has_var_kw:
+            bound_kwargs = call_kwargs
+        else:
+            for name in sig.parameters:
+                if name == "event_data" or name == "event":
+                    bound_kwargs[name] = create_event_data(call_kwargs)
+                    continue
+                if name in call_kwargs:
+                    bound_kwargs[name] = call_kwargs[name]
+
+        from pywire.shell import _request_ctx
+
+        token = _request_ctx.set(self.request)
+        try:
+            if inspect.iscoroutinefunction(handler):
+                await handler(**bound_kwargs)
+            else:
+                handler(**bound_kwargs)
+        finally:
+            _request_ctx.reset(token)
+
+    async def _handle_component_event(
+        self, event_name: str, event_data: Dict[str, Any]
+    ) -> None:
+        parsed = self._parse_component_event(event_name)
+        if parsed:
+            comp_key, remainder = parsed
+            component = self._components.get(comp_key)
+            if component is None:
+                raise ValueError(f"Component '{comp_key}' not found")
+            await component._handle_component_event(remainder, event_data)
+            return
+
+        await self._dispatch_handler(event_name, event_data)
 
     def register_slot(
         self, layout_id: str, slot_name: str, renderer: Callable[..., Any]
@@ -229,11 +441,11 @@ class BasePage:
         # Normal replacement semantics
         if target_id and slot_name in self.slots[target_id]:
             renderer: Union[Callable[..., Any], str] = self.slots[target_id][slot_name]
-            if not callable(renderer):
-                return str(renderer)
-            if inspect.iscoroutinefunction(renderer):
-                return str(await renderer())
-            return str(renderer())  # ty: ignore[call-top-callable]
+            if callable(renderer):
+                if inspect.iscoroutinefunction(renderer):
+                    return str(await renderer())
+                return str(renderer())
+            return str(renderer)
 
         # Fallback to default content if provided
         if default_renderer:
@@ -279,7 +491,9 @@ class BasePage:
 
         token = set_render_context(self, None)
         try:
+            self._active_component_keys.clear()
             html = await self._render_template()
+            self._cleanup_components()
         finally:
             reset_render_context(token)
 
@@ -290,7 +504,7 @@ class BasePage:
 
             # Try to match body content
             body_match = re.search(
-                r"<body[^>]*>(.*?)</body>", html, re.IGNORECASE | re.DOTALL
+                r"<body[^>]*>(.*)</body>", html, re.IGNORECASE | re.DOTALL
             )
             if body_match:
                 html = body_match.group(1)
@@ -304,7 +518,8 @@ class BasePage:
         styles = self._style_collector.render()
         if styles:
             if "</head>" in html:
-                html = html.replace("</head>", f"{styles}</head>", 1)
+                parts = html.rsplit("</head>", 1)
+                html = parts[0] + f"{styles}</head>" + parts[1]
             else:
                 html = f"{styles}{html}"
 
@@ -350,7 +565,8 @@ class BasePage:
                 injection = f"{meta_script}{client_script}"
 
                 if "</body>" in html:
-                    html = html.replace("</body>", f"{injection}</body>", 1)
+                    parts = html.rsplit("</body>", 1)
+                    html = parts[0] + f"{injection}</body>" + parts[1]
                 else:
                     html += injection
 
@@ -434,8 +650,9 @@ class BasePage:
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
 
-        logger.debug(
-            f"invalidate_wire: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}"
+        print(
+            f"INVALIDATE: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}",
+            flush=True,
         )
 
         if regions:
@@ -445,103 +662,36 @@ class BasePage:
         self, event_name: str, event_data: dict[str, Any]
     ) -> Dict[str, Any]:
         """Handle client event (from @click, etc.)."""
-
-        # Security: Validate handler is allowed (prevents arbitrary method invocation)
-        allowed = getattr(self, "__allowed_handlers__", None)
-
-        # Framework-generated handlers are always allowed (form wrappers, bindings)
-        is_framework_handler = (
-            event_name.startswith("_handle_bind_")
-            or event_name.startswith("_handler_")
-            or event_name.startswith("_form_submit_")
-        )
-
-        if not is_framework_handler:
-            # Block private methods (leading underscore) unless in allowlist
-            if event_name.startswith("_"):
-                raise ValueError(f"Handler '{event_name}' not allowed")
-
-            # Check explicit allowlist if defined
-            if allowed is not None and event_name not in allowed:
-                raise ValueError(f"Handler '{event_name}' not allowed")
-
-        # Retrieve handler
-        handler = getattr(self, event_name, None)
-        if not handler:
-            raise ValueError(f"Handler {event_name} not found")
-
-        # Call handler
-        if event_name.startswith("_handle_bind_"):
-            # Binding handlers expect raw event_data
-            if inspect.iscoroutinefunction(handler):
-                await handler(event_data)
-            else:
-                handler(event_data)
+        parsed = self._parse_component_event(event_name)
+        if parsed:
+            comp_key, remainder = parsed
+            component = self._components.get(comp_key)
+            if component is None:
+                raise ValueError(f"Component '{comp_key}' not found")
+            await component._handle_component_event(remainder, event_data)
         else:
-            # Regular handlers: intelligent argument mapping
-            args = event_data.get("args", {})
-
-            # Normalize args keys (arg-0 -> arg0) because dataset keys preserve hyphens
-            # before digits
-            normalized_args = {}
-            for k, v in args.items():
-                if k.startswith("arg"):
-                    normalized_args[k.replace("-", "")] = v
-                else:
-                    normalized_args[k] = v
-
-            call_kwargs = {k: v for k, v in event_data.items() if k != "args"}
-            call_kwargs.update(normalized_args)
-
-            # Check signature to see what arguments the handler accepts
-            sig = inspect.signature(handler)
-            bound_kwargs = {}
-
-            has_var_kw = False
-            for param in sig.parameters.values():
-                if param.kind == inspect.Parameter.VAR_KEYWORD:
-                    has_var_kw = True
-                    break
-
-            if has_var_kw:
-                # If accepts **kwargs, pass everything
-                bound_kwargs = call_kwargs
-            else:
-                # Only pass arguments that match parameters
-                for name in sig.parameters:
-                    if name == "event_data" or name == "event":
-                        bound_kwargs[name] = EventData(call_kwargs)
-                    elif name in call_kwargs:
-                        bound_kwargs[name] = call_kwargs[name]
-
-            try:
-                if inspect.iscoroutinefunction(handler):
-                    await handler(**bound_kwargs)
-                else:
-                    handler(**bound_kwargs)
-            except Exception as e:
-                # Let the runtime handle logging and reporting
-                raise e
+            await self._dispatch_handler(event_name, event_data)
 
         # Re-render without re-initializing
-        return await self.render_update(init=False)
+        from pywire.shell import _request_ctx
+
+        token = _request_ctx.set(self.request)
+        try:
+            return await self.render_update(init=False)
+        finally:
+            _request_ctx.reset(token)
 
     async def render_update(self, init: bool = False) -> Dict[str, Any]:
-        # DEBUG: Trace region state
-        has_regions = hasattr(self, "__region_renderers__")
-        region_map = getattr(self, "__region_renderers__", {})
-        dirty = getattr(self, "_dirty_regions", set())
-        logger.debug(
-            f"render_update: init={init}, has_regions={has_regions}, region_map={region_map}, dirty_regions={dirty}"
-        )
-
         # Optimization: If we have region renderers (compiled page) and this is a partial update (init=False),
         # check if we really need to update anything.
         if hasattr(self, "__region_renderers__") and (self._dirty_regions or not init):
             # If no dirty regions (and init=False), return empty update
             if not self._dirty_regions:
-                # print("DEBUG render_update: No dirty regions, returning empty regions list")
-                return {"type": "regions", "regions": []}
+                result: Dict[str, Any] = {"type": "regions", "regions": []}
+                commands = self._collect_all_commands()
+                if commands:
+                    result["commands"] = commands
+                return result
 
             logger.debug(f"render_update: dirty_regions={self._dirty_regions}")
 
@@ -575,19 +725,42 @@ class BasePage:
                     finally:
                         reset_render_context(token)
 
+                    stripped_html = region_html.lstrip()
+                    if stripped_html.startswith(
+                        ("<!DOCTYPE", "<!doctype", "<html", "<HTML")
+                    ):
+                        logger.debug(
+                            "render_update: falling back to FULL update, "
+                            f"region {region_id} rendered full-document HTML"
+                        )
+                        has_root_dirty = True
+                        break
+
                     updates.append({"region": region_id, "html": region_html})
 
-                self._dirty_regions.clear()
+                if not has_root_dirty:
+                    self._dirty_regions.clear()
 
-                # If we successfully generated partial updates, return them
-                if updates:
-                    # print(f"DEBUG render_update: returning regions update with {len(updates)} regions")
-                    return {"type": "regions", "regions": updates}
+                    # If we successfully generated partial updates, return them
+                    result = {"type": "regions", "regions": updates}
+                    print(f"RENDER-UPDATE-REGIONS: {updates}", flush=True)
+
+                    # 2. Collect commands from all refs (recursively)
+                    commands = self._collect_all_commands()
+                    if commands:
+                        result["commands"] = commands
+
+                    return result
 
         response = await self.render(init=init)
         html = bytes(response.body).decode("utf-8")
         logger.debug(f"render_update: returning FULL update (len={len(html)})")
-        return {"type": "full", "html": html}
+
+        result = {"type": "full", "html": html}
+        commands = self._collect_all_commands()
+        if commands:
+            result["commands"] = commands
+        return result
 
     async def push_state(self) -> None:
         """Force a UI update with current state (useful for streaming progress)."""

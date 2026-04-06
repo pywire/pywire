@@ -1,0 +1,13 @@
+---
+import time
+
+click_count = wire(0)
+---
+<h1 id="persistent-title">Persistent Elements Test</h1>
+<p id="click-count">Clicks: {click_count}</p>
+<button id="btn-click" @click={click_count.value += 1}>Update State</button>
+
+<!-- Persistent element -->
+<div id="persistent-container">
+    <input type="text" id="persistent-input" value="will-be-overwritten" $permanent />
+</div>

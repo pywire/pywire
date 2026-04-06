@@ -1,0 +1,55 @@
+---
+from pydantic import BaseModel
+from pywire.components.form import Form
+
+my_form = ref()
+
+class User(BaseModel):
+    name: str = "Alice"
+    age: int = 30
+
+prim = wire(0)
+lst = wire([1, 2, 3])
+ns = wire({"a": "alpha", "b": "beta"})
+eff_count = wire(0)
+
+@effect
+def _side_effect():
+    # Write to eff_count based purely on prim.value so we only read prim
+    eff_count.value = prim.value * 10
+
+def update_all():
+    prim.value += 1
+    lst.append(4) # using .append
+    # for dicts, assigning a new dict triggers updates
+    ns.value = {"a": "gamma", "b": "beta"}
+
+submitted_data = wire(None)
+
+def handle_form_submit(data):
+    submitted_data.value = data
+
+---
+<div>
+    <h1>Advanced Reactivity</h1>
+    <button id="btn-update-all" @click={update_all}>Update All</button>
+
+    <div id="prim-val">{prim}</div>
+    <div id="eff-val">{eff_count}</div>
+    <div id="lst-len">{len(lst)}</div>
+    <div id="ns-val">{ns['a']}</div>
+
+    <!-- Exposed refs test -->
+    <h2>Dynamic Form Component</h2>
+    <div id="submitted-data">{json.dumps(submitted_data.value.model_dump()) if submitted_data else "None"}</div>
+    <Form model={User} $ref={my_form} on_submit={handle_form_submit}>
+        <div id="form-fields">
+            <div $for={field in my_form.schema_fields()} reactive="exclude" class="dyn-field" data-name={field['name']}>
+                <label>{field['title']}</label>
+                <input type={field['input_type']} name={field['name']} />
+                <span class="error-msg" data-for={field['name']}>{my_form.errors[field['name']] if field['name'] in my_form.errors else ""}</span>
+            </div>
+        </div>
+        <button type="submit" id="btn-submit-form">Submit</button>
+    </Form>
+</div>

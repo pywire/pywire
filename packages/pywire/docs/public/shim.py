@@ -15,25 +15,34 @@ current_pages_dir = "/app" # Default
 import re
 
 # Helper to escape @ and $ attributes for lxml compatibility in Pyodide
-def escape_pywire_content(content: str) -> str:
-    if "---html---" not in content.lower():
-        return content
-        
-    parts = re.split(r"(---html---)", content, flags=re.IGNORECASE, maxsplit=1)
-    if len(parts) < 3:
-        return content
-        
-    python_part = parts[0]
-    separator = parts[1]
-    html_part = parts[2]
-    
+def _escape_html_part(html_part: str) -> str:
     # Escape @click -> __pw_on_click and $model -> __pw_dir_model
     # We look for @ or $ followed by word characters, dots, or dashes, followed by = or {
     # but only if preceded by whitespace or <
     html_part = re.sub(r'(?<=[\s<])@([a-zA-Z0-9._-]+)(?==|\{)', r'__pw_on_\1', html_part)
     html_part = re.sub(r'(?<=[\s<])\$([a-zA-Z0-9._-]+)(?==|\{)', r'__pw_dir_\1', html_part)
+    return html_part
+
+def escape_pywire_content(content: str) -> str:
+    # 1. Handle New Grammar: Directives? --- Python --- HTML
+    # We look for the python block wrapped in --- fences.
+    # The HTML template is everything after the second fence.
+    # If no fences, the whole file is treated as template (plus directives at top which are safe).
     
-    return python_part + separator + html_part
+    matches = list(re.finditer(r"^---\s*$", content, flags=re.MULTILINE))
+    
+    if len(matches) >= 2:
+        # Found at least two fences.
+        # Directives are before matches[0]
+        # Python is between matches[0] and matches[1]
+        # HTML is after matches[1]
+        second_fence_end = matches[1].end()
+        pre_html = content[:second_fence_end]
+        html_part = content[second_fence_end:]
+        return pre_html + _escape_html_part(html_part)
+        
+    # No python block found, escape everything
+    return _escape_html_part(content)
 
 def get_app():
     global app_instance, current_pages_dir
@@ -70,7 +79,18 @@ async def run_asgi(scope, receive_queue, send_callback):
     async def receive():
         return await receive_queue.get()
 
+    accumulated_http_body = b""
+
     async def send(message):
+        nonlocal accumulated_http_body
+        
+        # For HTTP, accumulate bodies to avoid multiple doc.write calls in JS
+        if scope["type"] == "http" and message.get("type") == "http.response.body":
+            accumulated_http_body += message.get("body", b"")
+            if message.get("more_body", False):
+                return
+            message["body"] = accumulated_http_body
+
         # Convert bytes to list/str for JS transfer
         if "body" in message and isinstance(message["body"], bytes):
             # Convert body to string (assuming text for tutorial)

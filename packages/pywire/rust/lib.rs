@@ -198,37 +198,39 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
             let mut is_raw_tag = false;
             if node.kind() == "script_tag" || node.kind() == "style_tag" {
                 is_raw_tag = true;
-                let mut start_byte = 0;
-                let mut end_byte = 0;
-                let mut found_start = false;
+                let node_start = node.start_byte();
+                let node_end = node.end_byte();
+                let node_source = &source[node_start..node_end];
+                let lower = node_source.to_ascii_lowercase();
 
-                let mut cursor = node.walk();
-                for child in node.children(&mut cursor) {
-                    let k = child.kind();
-                    if k == ">" {
-                        start_byte = child.end_byte();
-                        found_start = true;
-                    } else if k == "</script>" || k == "</style>" {
-                        end_byte = child.start_byte();
-                    }
-                }
+                let closing_tag = if node.kind() == "script_tag" {
+                    "</script>"
+                } else {
+                    "</style>"
+                };
 
-                if found_start && end_byte >= start_byte {
-                    let raw_text = source[start_byte..end_byte].to_string();
-                    if !raw_text.is_empty() {
-                        let text_node = ParsedNode {
-                            tag: None,
-                            is_block: false,
-                            block_keyword: None,
-                            text_content: Some(raw_text),
-                            expression: None,
-                            attributes: HashMap::new(),
-                            children: Vec::new(),
-                            line,
-                            column,
-                            is_raw: true,
-                        };
-                        children.push(Py::new(py, text_node)?);
+                let open_end_rel = node_source.find('>');
+                let close_start_rel = lower.rfind(closing_tag);
+
+                if let (Some(open_end_rel), Some(close_start_rel)) = (open_end_rel, close_start_rel) {
+                    let start_rel = open_end_rel + 1;
+                    if close_start_rel >= start_rel {
+                        let raw_text = node_source[start_rel..close_start_rel].to_string();
+                        if !raw_text.is_empty() {
+                            let text_node = ParsedNode {
+                                tag: None,
+                                is_block: false,
+                                block_keyword: None,
+                                text_content: Some(raw_text),
+                                expression: None,
+                                attributes: HashMap::new(),
+                                children: Vec::new(),
+                                line,
+                                column,
+                                is_raw: true,
+                            };
+                            children.push(Py::new(py, text_node)?);
+                        }
                     }
                 }
             }
@@ -297,34 +299,18 @@ fn map_node(py: Python<'_>, source: &str, node: Node) -> PyResult<ParsedNode> {
         }
         "brace_block" => {
             is_block = true;
-            // brace_block is now a single token: "{$keyword expr}"
-            // Parse the text to extract keyword and expression
-            let text = get_node_text(source, node);
-            // Strip {$ prefix and } suffix
-            let inner = text.trim_start_matches("{$").trim_end_matches('}');
-
-            // Find the keyword (first word)
-            let keywords = [
-                "if", "for", "try", "await", "elif", "else", "finally", "except", "then", "catch",
-                "html",
-            ];
-            for kw in keywords {
-                if let Some(stripped) = inner.strip_prefix(kw) {
-                    block_keyword = Some(kw.to_string());
-                    let rest = stripped.trim();
-                    if !rest.is_empty() {
-                        expression = Some(rest.to_string());
-                    }
-                    break;
-                }
+            if let Some(kw_node) = node.child_by_field_name("keyword") {
+                block_keyword = Some(get_node_text(source, kw_node));
+            }
+            if let Some(expr_node) = node.child_by_field_name("expression") {
+                expression = Some(get_node_text(source, expr_node));
             }
         }
         "end_brace_block" => {
             is_block = true;
-            // end_brace_block is now a single token: "{/keyword}"
-            let text = get_node_text(source, node);
-            let inner = text.trim_start_matches("{/").trim_end_matches('}');
-            block_keyword = Some(format!("/{}", inner));
+            if let Some(name_node) = node.child_by_field_name("name") {
+                block_keyword = Some(format!("/{}", get_node_text(source, name_node)));
+            }
         }
         "interpolation" => {
             is_block = true;

@@ -1,8 +1,16 @@
 import { TransportManager, TransportConfig } from './transport-manager'
 import { version as clientVersion } from '../../package.json'
 import { DOMUpdater } from './dom-updater'
-import { ServerMessage, ClientMessage, EventData, RelocateMessage } from './transports'
+import {
+  ServerMessage,
+  ClientMessage,
+  EventData,
+  RelocateMessage,
+  Command,
+  RefSyncMessage,
+} from './transports'
 import { UnifiedEventHandler } from '../events/handler'
+import { RefManager } from './ref-manager'
 import { logger } from './logger'
 
 export interface PyWireConfig extends TransportConfig {
@@ -29,6 +37,7 @@ export class PyWireApp {
   protected transport: TransportManager
   protected updater: DOMUpdater
   protected eventHandler: UnifiedEventHandler
+  protected refManager: RefManager
   protected initialized = false
   protected config: PyWireConfig
   protected siblingPaths: string[] = []
@@ -42,10 +51,24 @@ export class PyWireApp {
     this.transport = new TransportManager(this.config)
     this.updater = new DOMUpdater(this.config.debug)
     this.eventHandler = new UnifiedEventHandler(this)
+    this.refManager = new RefManager((refId, value) => {
+      if (this.isConnected) {
+        const msg: RefSyncMessage = {
+          type: 'ref_sync',
+          refId,
+          value,
+        }
+        this.transport.send(msg)
+      }
+    })
   }
 
   getConfig(): PyWireConfig {
     return this.config
+  }
+
+  getRefManager(): RefManager {
+    return this.refManager
   }
 
   /**
@@ -72,6 +95,7 @@ export class PyWireApp {
 
     // Setup event interception via UnifiedEventHandler
     this.eventHandler.init()
+    this.refManager.init()
 
     logger.log(
       `PyWire: Initialized (transport: ${this.transport.getActiveTransport()}, spa_paths: ${this.siblingPaths.length}, pjax: ${this.pjaxEnabled})`
@@ -105,6 +129,7 @@ export class PyWireApp {
         this.pjaxEnabled = !!meta.enable_pjax
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
+          logger.setDebug(this.config.debug)
         }
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
@@ -165,8 +190,8 @@ export class PyWireApp {
         shouldIntercept = true
       }
 
-      // NO-SPA: Check for data-pywire-reload attribute
-      if (link.hasAttribute('data-pywire-reload')) {
+      // NO-SPA: Check for data-pw-reload attribute
+      if (link.hasAttribute('data-pw-reload')) {
         shouldIntercept = false
       }
 
@@ -220,12 +245,17 @@ export class PyWireApp {
   protected async handleMessage(msg: ServerMessage): Promise<void> {
     switch (msg.type) {
       case 'update':
+        if (msg.commands && msg.commands.length > 0) {
+          msg.commands.forEach((cmd: Command) => this.refManager.executeCommand(cmd))
+        }
         if (msg.regions && msg.regions.length > 0) {
-          msg.regions.forEach((update) => {
+          msg.regions.forEach((update: { region: string; html: string }) => {
             this.updater.updateRegion(update.region, update.html)
           })
+          this.eventHandler.refreshListeners()
         } else if (msg.html) {
           this.updater.update(msg.html)
+          this.eventHandler.refreshListeners()
         }
         break
 
@@ -257,8 +287,19 @@ export class PyWireApp {
         }
         break
 
+      case 'init_ack':
+        logger.log('PyWire: Application ready')
+        break
+
       case 'init':
         logger.log(`PyWire Client v${clientVersion} • Server v${msg.version}`)
+        break
+
+      case 'navigate':
+        if (msg.path) {
+          logger.log('PyWire: Navigating to', msg.path)
+          this.navigateTo(msg.path)
+        }
         break
 
       default:

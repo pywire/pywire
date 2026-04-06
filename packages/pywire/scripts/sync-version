@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+import argparse
+import re
+import sys
+from pathlib import Path
+
+# Files relative to the script location (pywire/scripts/)
+FILES = [
+    "../pyproject.toml",
+    "../Cargo.toml",
+    "../src/pywire/client/package.json",
+]
+
+def update_version(new_version):
+    script_dir = Path(__file__).resolve().parent
+    
+    for relative_path in FILES:
+        file_path = (script_dir / relative_path).resolve()
+        
+        if not file_path.exists():
+            print(f"Warning: {file_path} not found.")
+            continue
+
+        content = file_path.read_text()
+        
+        # Regex to match version="x.y.z" or "version": "x.y.z"
+        if file_path.name == "package.json":
+            pattern = r'("version":\s*")([^"]+)(")'
+        else:
+            # TOML files (pyproject.toml, Cargo.toml)
+            # Matches version = "x.y.z" at the start of a line
+            pattern = r'(^version\s*=\s*")([^"]+)(")'
+
+        # Check if version exists and update
+        match = re.search(pattern, content, re.MULTILINE)
+        if match:
+            current_version = match.group(2)
+            if current_version == new_version:
+                 print(f"Skipping {file_path.name}: already at {new_version}")
+                 continue
+                 
+            print(f"Updating {file_path.name}: {current_version} -> {new_version}")
+            new_content = re.sub(pattern, f"\g<1>{new_version}\g<3>", content, count=1, flags=re.MULTILINE)
+            file_path.write_text(new_content)
+        else:
+            print(f"Warning: Could not find version pattern in {file_path}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Sync version across pywire files.")
+    parser.add_argument("version", help="The new version string (e.g., 0.2.0)")
+    args = parser.parse_args()
+    
+    update_version(args.version)
+    print("Version sync complete.")
+
+if __name__ == "__main__":
+    main()

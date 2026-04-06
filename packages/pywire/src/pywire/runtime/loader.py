@@ -196,6 +196,13 @@ class PageLoader:
     def _hash_file(self, path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def _evict_modules_for_file(self, file_path: str) -> None:
+        for module_name, module in list(sys.modules.items()):
+            module_file = getattr(module, "__file__", None)
+            if module_file != file_path:
+                continue
+            sys.modules.pop(module_name, None)
+
     def invalidate_cache(self, path: Optional[Path] = None) -> Set[str]:
         """Clear cached classes. If path given, only clear that entry and its dependents.
         Returns set of invalidated paths (strings).
@@ -206,6 +213,7 @@ class PageLoader:
             if key in self._cache:
                 self._cache.pop(key, None)
                 invalidated.add(key)
+            self._evict_modules_for_file(key)
 
             # Recursively invalidate dependents
             dependents = self._reverse_deps.get(key, set())

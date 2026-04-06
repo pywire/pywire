@@ -1,0 +1,18 @@
+---
+from pywire import wire
+
+msg1 = "Closing body: </body>"
+msg2 = "Closing html: </html>"
+
+def get_combined():
+    return f"Both: </body> and </html>"
+---
+<div id="special-chars">
+    <p id="p1">{msg1}</p>
+    <p id="p2">{msg2}</p>
+    <p id="p3">{get_combined()}</p>
+    
+    <script>
+        console.log("End tag in script: </body>");
+    </script>
+</div>
