@@ -1,0 +1,55 @@
+---
+import Logo from './Logo.astro'
+import { Heading, Link } from 'accessible-astro-components'
+
+/**
+ * Footer Component
+ *
+ * @description A component that displays the footer of the website
+ */
+const currentYear = new Date().getFullYear()
+---
+
+<footer>
+  <section class="py-20">
+    <Heading level="h2" class="sr-only">Footer</Heading>
+    <div class="container grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+      <div class="flex flex-col gap-4">
+        <Heading level="h3" size="h6">Resources</Heading>
+        <ul class="flex flex-col gap-2">
+          <li><Link isExternal href="/docs/guides/quickstart/">Documentation</Link></li>
+          <li><Link isExternal href="/docs/reference/api/">API Reference</Link></li>
+          <li><Link isExternal href="https://github.com/pywire/pywire">GitHub Repository</Link></li>
+        </ul>
+      </div>
+      <div class="flex flex-col gap-4">
+        <Heading level="h3" size="h6">Community</Heading>
+        <ul class="flex flex-col gap-2">
+          <li><Link isExternal href="https://github.com/pywire/pywire/discussions">Discussions</Link></li>
+          <li><Link isExternal href="#">Discord (TBA)</Link></li>
+        </ul>
+      </div>
+      <div class="flex flex-col gap-4">
+        <Logo loading="lazy" />
+        <p class="leading-[1.75]">
+          pywire: The Live Conduit for Python. <br />
+          Built for speed, developer experience, and the "Always On" web.
+        </p>
+      </div>
+    </div>
+  </section>
+  <section class="py-8">
+    <div class="container flex flex-col gap-4 md:flex-row md:justify-between">
+      <p>
+        &copy; {currentYear} pywire. All rights reserved.
+      </p>
+      <p>Made with ❤️ for the Python community.</p>
+    </div>
+  </section>
+</footer>
+
+<style>
+  section {
+    border-top: 1px solid var(--border-color-subtle);
+  }
+</style>

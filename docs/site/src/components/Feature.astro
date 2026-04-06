@@ -1,0 +1,71 @@
+---
+import { Heading } from 'accessible-astro-components'
+import { Icon } from 'astro-icon/components'
+
+/**
+ * Feature Component
+ *
+ * @description A component that displays a feature with an icon, title, and description
+ */
+interface Props {
+  /**
+   * The icon to display
+   */
+  icon: string
+  /**
+   * The title to display
+   */
+  title: string
+}
+
+const { icon = 'mdi:rocket', title = 'Title' }: Props = Astro.props
+---
+
+<div class="hud-card flex flex-col gap-4">
+  <Icon aria-hidden="true" name={icon} />
+  <div class="content">
+    <Heading level="h3" size="h6" class="mb-2">{title}</Heading>
+    <p>
+      <slot>Lorem ipsum dolor sit amet consectetur adipisicing elit. Hic, corporis.</slot>
+    </p>
+  </div>
+</div>
+
+<style lang="scss">
+  .hud-card {
+    position: relative;
+    backdrop-filter: blur(8px);
+    transition: all var(--animation-speed-fast) var(--cubic-bezier);
+    border: 1px solid var(--border-color-subtle);
+    border-left: 4px solid var(--color-wire-glow);
+    border-radius: var(--radius-small);
+    background: var(--surface-color);
+    padding: var(--space-l);
+
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 10px 30px -10px rgba(0, 240, 255, 0.2);
+      border-color: var(--color-wire-glow);
+
+      :global([data-icon]) {
+        filter: drop-shadow(0 0 8px var(--color-wire-glow));
+      }
+    }
+
+    :global([data-icon]) {
+      transition: all var(--animation-speed-fast) var(--cubic-bezier);
+      inline-size: 3rem;
+      block-size: auto;
+      color: var(--color-wire-glow);
+    }
+
+    .content {
+      p {
+        opacity: 0.8;
+        color: var(--foreground-color);
+        font-size: 0.95rem;
+        line-height: 1.6;
+      }
+    }
+  }
+</style>

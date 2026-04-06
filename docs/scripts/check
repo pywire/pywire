@@ -1,0 +1,10 @@
+#!/bin/sh -e
+
+echo "-> Formatting check..."
+(cd site && pnpm format:check)
+
+echo "-> Linting..."
+(cd site && pnpm lint)
+
+echo "-> Type checking..."
+(cd site && pnpm typecheck)
