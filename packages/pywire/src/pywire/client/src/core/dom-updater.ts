@@ -1,0 +1,366 @@
+/**
+ * DOM Updater using morphdom for efficient DOM diffing.
+ */
+import morphdom from 'morphdom'
+import { logger } from './logger'
+
+interface FocusState {
+  /** CSS selector to find the element */
+  selector: string
+  /** Element ID if available */
+  id: string | null
+  tagName: string
+  selectionStart: number | null
+  selectionEnd: number | null
+  scrollTop: number
+  scrollLeft: number
+  value: string
+}
+
+export class DOMUpdater {
+  /**
+   * Flag to indicate DOM is being updated.
+   * Event handlers should check this to avoid triggering events during updates.
+   */
+  static isUpdating = false
+
+  private debug: boolean
+
+  constructor(debug: boolean = false) {
+    this.debug = debug
+  }
+
+  setDebug(debug: boolean): void {
+    this.debug = debug
+  }
+
+  /**
+   * Generate a stable key for an element.
+   * Used by morphdom to match elements between old and new DOM.
+   */
+  private getNodeKey(node: Node): string | undefined {
+    if (!(node instanceof HTMLElement)) return undefined
+
+    // 1. Use data-on-* handler as key FIRST (stable across renders)
+    for (const attr of node.attributes) {
+      if (attr.name.startsWith('data-on-')) {
+        const key = `${node.tagName}-${attr.name}-${attr.value}`
+        return key
+      }
+    }
+
+    // 2. Use explicit ID (but skip client-generated pywire-uid-* IDs)
+    if (node.id && !node.id.startsWith('pywire-uid-')) {
+      return node.id
+    }
+
+    // 3. Use name attribute for form elements
+    if (
+      node instanceof HTMLInputElement ||
+      node instanceof HTMLSelectElement ||
+      node instanceof HTMLTextAreaElement
+    ) {
+      if (node.name) {
+        return `${node.tagName}-name-${node.name}`
+      }
+    }
+
+    // 4. For other elements, no key (morphdom will use position-based matching)
+    return undefined
+  }
+
+  /**
+   * Generate a selector to find an element
+   */
+  private getElementSelector(el: Element): string {
+    if (el.id) return `#${el.id}`
+
+    // Build a path-based selector
+    const path: string[] = []
+    let current: Element | null = el
+
+    while (current && current !== document.body && path.length < 5) {
+      let selector = current.tagName.toLowerCase()
+
+      // Add distinguishing attributes
+      if (current.id) {
+        selector = `#${current.id}`
+        path.unshift(selector)
+        break // ID is unique enough
+      }
+
+      // Use name for form elements
+      if (
+        current instanceof HTMLInputElement ||
+        current instanceof HTMLSelectElement ||
+        current instanceof HTMLTextAreaElement
+      ) {
+        if (current.name) {
+          selector += `[name="${current.name}"]`
+        }
+      }
+
+      // Use data-on-* for event elements
+      for (const attr of current.attributes) {
+        if (attr.name.startsWith('data-on-')) {
+          selector += `[${attr.name}="${attr.value}"]`
+          break
+        }
+      }
+
+      // Add nth-child for disambiguation
+      if (current.parentElement) {
+        const sibs = Array.from(current.parentElement.children)
+        const sameTags = sibs.filter((s) => s.tagName === current!.tagName)
+        if (sameTags.length > 1) {
+          const idx = sameTags.indexOf(current) + 1
+          selector += `:nth-of-type(${idx})`
+        }
+      }
+
+      path.unshift(selector)
+      current = current.parentElement
+    }
+
+    return path.join(' > ')
+  }
+
+  /**
+   * Capture the current focus state before updating.
+   */
+  private captureFocusState(): FocusState | null {
+    const active = document.activeElement
+    if (!active || active === document.body || active === document.documentElement) return null
+
+    const state: FocusState = {
+      selector: this.getElementSelector(active),
+      id: active.id || null,
+      tagName: active.tagName,
+      selectionStart: null,
+      selectionEnd: null,
+      scrollTop: 0,
+      scrollLeft: 0,
+      value: '',
+    }
+
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      state.selectionStart = active.selectionStart
+      state.selectionEnd = active.selectionEnd
+      state.scrollTop = active.scrollTop
+      state.scrollLeft = active.scrollLeft
+      state.value = active.value
+    }
+
+    return state
+  }
+
+  /**
+   * Restore focus state after updating.
+   */
+  private restoreFocusState(state: FocusState | null): void {
+    if (!state) return
+
+    // Try to find by ID first, then by selector
+    let el: Element | null = null
+    if (state.id) {
+      el = document.getElementById(state.id)
+    }
+    if (!el && state.selector) {
+      try {
+        el = document.querySelector(state.selector)
+      } catch {
+        // Invalid selector, skip
+      }
+    }
+
+    if (!el) return // Restore focus
+    ;(el as HTMLElement).focus()
+
+    // Restore selection/caret position
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      // Restore value if it matches what we captured
+      if (state.value && el.value !== state.value) {
+        el.value = state.value
+      }
+
+      if (state.selectionStart !== null && state.selectionEnd !== null) {
+        try {
+          el.setSelectionRange(state.selectionStart, state.selectionEnd)
+        } catch {
+          // Some input types (date, number) don't support setSelectionRange
+        }
+      }
+      el.scrollTop = state.scrollTop
+      el.scrollLeft = state.scrollLeft
+    }
+  }
+
+  private applyUpdate(target: Element, newContent: string | Element): void {
+    // Set flag to suppress focus/blur events during update
+    DOMUpdater.isUpdating = true
+    if (this.debug) {
+      logger.log('[DOMUpdater] Starting update on', target.tagName)
+    }
+
+    try {
+      // Capture focus before morphdom runs
+      const focusState = this.captureFocusState()
+
+      if (morphdom) {
+        try {
+          morphdom(target, newContent, {
+            // Custom key function for stable element matching
+            getNodeKey: (node: Node) => this.getNodeKey(node),
+
+            onBeforeElUpdated: (fromEl, toEl) => {
+              // Transfer ALL relevant state from old element to new element
+
+              // Input/Textarea: preserve value ONLY if they are broadly similar
+              // (e.g. user is still typing or deleted a few chars).
+              // If the server sends a completely different value, let it win.
+              if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+                if (fromEl.type === 'checkbox' || fromEl.type === 'radio') {
+                  toEl.checked = fromEl.checked
+                } else {
+                  const s = toEl.value || ''
+                  const c = fromEl.value || ''
+                  if (c.startsWith(s) || s.startsWith(c)) {
+                    toEl.value = c
+                  }
+                }
+              }
+
+              if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+                const s = toEl.value || ''
+                const c = fromEl.value || ''
+                if (c.startsWith(s) || s.startsWith(c)) {
+                  toEl.value = c
+                }
+              }
+
+              // Select: preserve selected option
+              if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement) {
+                // Preserve by value (more robust than index)
+                if (
+                  fromEl.value &&
+                  Array.from(toEl.options).some((o: any) => o.value === fromEl.value)
+                ) {
+                  toEl.value = fromEl.value
+                } else if (
+                  fromEl.selectedIndex >= 0 &&
+                  fromEl.selectedIndex < toEl.options.length
+                ) {
+                  toEl.selectedIndex = fromEl.selectedIndex
+                }
+              }
+
+              // Preserve client-generated IDs (vital for debouncers/throttlers that key off ID)
+              if (fromEl.id && fromEl.id.startsWith('pywire-uid-') && !toEl.id) {
+                toEl.id = fromEl.id
+              }
+
+              return true
+            },
+
+            onBeforeElChildrenUpdated: (fromEl, _toEl) => {
+              // If element is marked as permanent, skip updating its children
+              if (fromEl instanceof HTMLElement && fromEl.hasAttribute('data-pywire-permanent')) {
+                if (this.debug) {
+                  logger.log('[DOMUpdater] Permanent element detected, skipping children:', fromEl)
+                }
+                return false
+              }
+              return true
+            },
+
+            onBeforeNodeDiscarded: (node) => {
+              // Preserve structural/functional elements that might not be in the partial update
+              if (
+                node.nodeName === 'SCRIPT' ||
+                node.nodeName === 'STYLE' ||
+                node.nodeName === 'LINK' ||
+                (node instanceof Element && node.hasAttribute('data-pywire-permanent'))
+              ) {
+                return false
+              }
+              return true
+            },
+          })
+        } catch (e) {
+          logger.error('Morphdom failed:', e)
+          if (target === document.documentElement && typeof newContent === 'string') {
+            document.open()
+            document.write(newContent)
+            document.close()
+          }
+        }
+
+        // Restore focus after morphdom completes
+        this.restoreFocusState(focusState)
+      } else if (target === document.documentElement && typeof newContent === 'string') {
+        document.open()
+        document.write(newContent)
+        document.close()
+      }
+    } finally {
+      // Clear flag after a microtask to ensure all focus events are suppressed
+      setTimeout(() => {
+        DOMUpdater.isUpdating = false
+      }, 0)
+    }
+  }
+
+  /**
+   * Update the DOM with new HTML content.
+   */
+  update(newHtml: string): void {
+    // Full document: starts with <!DOCTYPE or <html
+    const hasHtmlRoot = /^\s*(<!DOCTYPE|<html)/i.test(newHtml)
+
+    if (hasHtmlRoot) {
+      this.applyUpdate(document.documentElement, newHtml)
+      return
+    }
+
+    // Fragment update: target body
+    // Ensure document.body exists (it can be destroyed by prior bad morphdom runs)
+    let body = document.body
+    if (!body) {
+      body = document.createElement('body')
+      document.documentElement.appendChild(body)
+    }
+
+    // Check if the fragment already has a <body> wrapper
+    const hasBodyRoot = /<body[\s>]/i.test(newHtml)
+    if (hasBodyRoot) {
+      this.applyUpdate(body, newHtml)
+      return
+    }
+
+    // Create a real BODY DOM element instead of wrapping in <body> string tags.
+    // String wrapping fails because morphdom's internal HTML parser (which uses
+    // a <div> container) strips <body> tags, causing a tag mismatch that replaces
+    // the BODY element with a DIV and destroys document.body.
+    const tempBody = document.createElement('body')
+    tempBody.innerHTML = newHtml
+    this.applyUpdate(body, tempBody)
+  }
+
+  /**
+   * Update a specific region by its region id.
+   */
+  updateRegion(regionId: string, regionHtml: string): void {
+    const target = document.querySelector(`[data-pw-region="${regionId}"]`)
+    if (!target) {
+      if (this.debug) {
+        logger.warn('[DOMUpdater] Region not found:', regionId)
+      }
+      return
+    }
+    this.applyUpdate(target, regionHtml)
+    // Ensure the region anchor remains even if the server HTML omitted it.
+    if (!target.getAttribute('data-pw-region')) {
+      target.setAttribute('data-pw-region', regionId)
+    }
+  }
+}

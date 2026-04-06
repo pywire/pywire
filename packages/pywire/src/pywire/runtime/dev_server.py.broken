@@ -1,0 +1,268 @@
+"""Development server with hot reload."""
+from pathlib import Path
+
+import uvicorn
+
+
+
+def _generate_cert():
+    """Generate self-signed certificate for localhost."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    import datetime
+    import tempfile
+    import os
+
+    # Use ECDSA P-256 (More standard for QUIC/TLS 1.3 than RSA)
+    key = ec.generate_private_key(ec.SECP256R1())
+
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, u"localhost"),
+    ])
+
+    import ipaddress
+
+    cert = x509.CertificateBuilder().subject_name(
+        subject
+    ).issuer_name(
+        issuer
+    ).public_key(
+        key.public_key()
+    ).serial_number(
+        x509.random_serial_number()
+    ).not_valid_before(
+        # Backdate by 1 hour to handle minor clock skew
+        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    ).not_valid_after(
+        # Valid for 10 days (Required for WebTransport serverCertificateHashes)
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=10)
+    ).add_extension(
+        x509.SubjectAlternativeName([
+            x509.DNSName(u"localhost"),
+            x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+            x509.IPAddress(ipaddress.IPv6Address("::1")),
+        ]),
+        critical=False,
+    ).sign(key, hashes.SHA256())
+
+    cert_dir = tempfile.mkdtemp()
+    cert_path = os.path.join(cert_dir, "cert.pem")
+    key_path = os.path.join(cert_dir, "key.pem")
+
+    with open(key_path, "wb") as f:
+        f.write(key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ))
+
+    with open(cert_path, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+    fingerprint = cert.fingerprint(hashes.SHA256())
+    
+    return cert_path, key_path, fingerprint
+
+
+async def run_dev_server(host: str, port: int, reload: bool, pages_dir: Path):
+    """Run development server with hot reload."""
+    from pywire.runtime.server import create_app
+    import asyncio
+    import signal
+    import logging
+    from watchfiles import awatch
+    
+    # Configure logging to see Hypercorn/aioquic debug output
+    logging.basicConfig(level=logging.DEBUG)
+    logging.getLogger("hypercorn.error").setLevel(logging.DEBUG)
+    logging.getLogger("hypercorn.access").setLevel(logging.DEBUG)
+    logging.getLogger("aioquic").setLevel(logging.DEBUG)
+    
+    # Import aioquic server for native WebTransport support
+    try:
+        from pywire.runtime.aioquic_server import run_aioquic_server
+        import aioquic
+        HAS_HTTP3 = True
+        print("PyWire: aioquic detected, HTTP/3 + WebTransport enabled", flush=True)
+    except ImportError:
+        HAS_HTTP3 = False
+        print("PyWire: HTTP/3 (WebTransport) disabled. Install 'aioquic' to enable.")
+
+    # Create shutdown event
+    shutdown_event = asyncio.Event()
+
+    async def _handle_signal():
+        print("\nPyWire: Shutting down...")
+        shutdown_event.set()
+
+    # Register signal handlers
+    try:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(_handle_signal()))
+    except NotImplementedError:
+        pass
+
+    # Create app instance
+    app = create_app(pages_dir, reload=reload)
+    
+    # Watcher task
+    async def watch_changes():
+        try:
+            async for changes in awatch(pages_dir, stop_event=shutdown_event):
+                # First, recompile changed pages
+                should_reload = False
+                for change_type, file_path in changes:
+                    if file_path.endswith('.pywire'):
+                        should_reload = True
+                        if hasattr(app.state, 'pywire_app'):
+                           try:
+                               app.state.pywire_app.reload_page(Path(file_path))
+                           except Exception as e:
+                               print(f"Error reloading page: {e}")
+
+                # Then broadcast reload if needed
+                if should_reload:
+                    print(f"PyWire: Changes detected in {pages_dir}, reloading clients...")
+                    
+                    # Broadcast reload to WebSocket clients
+                    if hasattr(app.state, 'ws_handler'):
+                        await app.state.ws_handler.broadcast_reload()
+                    
+                    # Broadcast reload to HTTP polling clients
+                    if hasattr(app.state, 'http_handler'):
+                        app.state.http_handler.broadcast_reload()
+                    
+                    # Broadcast to WebTransport clients
+                    if hasattr(app.state, 'web_transport_handler'):
+                        await app.state.web_transport_handler.broadcast_reload()
+                        
+        except Exception as e:
+            if not shutdown_event.is_set():
+                print(f"Watcher error: {e}")
+                import traceback
+                traceback.print_exc()
+
+    async with asyncio.TaskGroup() as tg:
+        if HAS_HTTP3:
+            try:
+                # Check for existing trusted certificates (e.g. from mkcert)
+                # mkcert localhost -> localhost.pem, localhost-key.pem
+                # Check for existing trusted certificates (e.g. from mkcert)
+                # mkcert localhost -> localhost.pem, localhost-key.pem
+                potential_certs = [
+                    (Path("localhost+2.pem"), Path("localhost+2-key.pem")),
+                    (Path("localhost.pem"), Path("localhost-key.pem")),
+                    (Path("cert.pem"), Path("key.pem")),
+                ]
+                
+                cert_path, key_path = None, None
+                for c_file, k_file in potential_certs:
+                    if c_file.exists() and k_file.exists():
+                        print(f"PyWire: Found local certificates ({c_file}), using them.")
+                        
+                        # For QUIC/HTTP3, we need the full certificate chain
+                        # mkcert stores its CA at ~/Library/Application Support/mkcert/rootCA.pem (macOS)
+                        # or ~/.local/share/mkcert/rootCA.pem (Linux)
+                        import os
+                        import tempfile
+                        
+                        mkcert_ca_paths = [
+                            Path.home() / "Library" / "Application Support" / "mkcert" / "rootCA.pem",  # macOS
+                            Path.home() / ".local" / "share" / "mkcert" / "rootCA.pem",  # Linux
+                        ]
+                        
+                        ca_cert = None
+                        for ca_path in mkcert_ca_paths:
+                            if ca_path.exists():
+                                ca_cert = ca_path.read_text()
+                                print(f"PyWire: Found mkcert CA, creating certificate chain for QUIC...")
+                                break
+                        
+                        if ca_cert:
+                            # Create a chain file: leaf cert + CA cert
+                            leaf_cert = c_file.read_text()
+                            chain_content = leaf_cert + "\n" + ca_cert
+                            
+                            # Write to temp file
+                            chain_dir = tempfile.mkdtemp()
+                            chain_path = os.path.join(chain_dir, "chain.pem")
+                            with open(chain_path, "w") as f:
+                                f.write(chain_content)
+                            
+                            cert_path = chain_path
+                        else:
+                            cert_path = str(c_file)
+                        
+                        key_path = str(k_file)
+                        # Don't inject hash if using trusted certs (expected validity > 14 days)
+                        if hasattr(app.state, 'webtransport_cert_hash'):
+                             del app.state.webtransport_cert_hash
+                        break
+                
+                if not cert_path:
+                    # Generate ephemeral self-signed certs
+                    cert_path, key_path, fingerprint = _generate_cert()
+                    app.state.webtransport_cert_hash = fingerprint
+                
+                # Factory function for creating app instances
+                def app_factory():
+                    return app
+                
+                display_host = "localhost" if host == "127.0.0.1" else host
+                print(f"PyWire: Running with aioquic (HTTP/3 + WebTransport) on https://{display_host}:{port}", flush=True)
+                
+                # Run aioquic server as background task
+                server_task = asyncio.create_task(run_aioquic_server(
+                    app_factory=app_factory,
+                    host="::" if host in ["127.0.0.1", "localhost"] else host,  # Bind to IPv6 for localhost  
+                    port=port,
+                    certfile=cert_path,
+                    keyfile=key_path,
+                ))
+                
+                # Wait for shutdown or server error
+                done, pending = await asyncio.wait(
+                    [server_task, asyncio.create_task(shutdown_event.wait())],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                
+                # Cancel remaining tasks
+                for task in pending:
+                    task.cancel()
+            except Exception as e:
+                print(f"PyWire: Failed to start aioquic server: {e}")
+                import traceback
+                traceback.print_exc()
+                print("PyWire: Falling back to Uvicorn (no WebTransport)")
+                HAS_HTTP3 = False
+                
+        if not HAS_HTTP3:
+            # Fallback to Uvicorn
+            import uvicorn
+            config = uvicorn.Config(
+                app,
+                host=host,
+                port=port,
+                reload=False,
+                log_level="info"
+            )
+            server = uvicorn.Server(config)
+            
+            # Disable Uvicorn's signal handlers so we can manage it
+            server.install_signal_handlers = lambda: None
+            
+            async def stop_uvicorn():
+                await shutdown_event.wait()
+                server.should_exit = True
+            
+            print(f"PyWire: Running with Uvicorn on http://{host}:{port}")
+            tg.create_task(server.serve())
+            tg.create_task(stop_uvicorn())
+
+        if reload:
+            tg.create_task(watch_changes())

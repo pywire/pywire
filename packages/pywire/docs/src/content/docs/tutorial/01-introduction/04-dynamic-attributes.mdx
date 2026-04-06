@@ -1,0 +1,45 @@
+---
+title: Dynamic attributes
+tutorial: Basic PyWire
+section: Introduction
+description: Bind attributes to Python expressions using curly braces.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      website_name = "PyWire"
+      src = "https://avatars.githubusercontent.com/u/256868786"
+      ---
+      <div>
+        <h1>Dynamic Attributes</h1>
+        <img src="" alt="" />
+      </div>
+    solution: |
+      ---
+      website_name = "PyWire"
+      src = "https://avatars.githubusercontent.com/u/256868786"
+      ---
+      <div>
+        <h1>Dynamic Attributes</h1>
+        <img {src} alt={f"{website_name} Logo"} />
+      </div>
+successCriteria:
+  - type: browser_element
+    description: 'Use attribute binding to make the img alt "`website_name` Logo"'
+    target: "img[alt='PyWire Logo']"
+  - type: file_contains
+    description: 'Use attribute shorthand {src} for the image source'
+    target: pages/index.wire
+    pattern: '{src}'
+pagesDir: pages
+---
+
+Just like content interpolation, you can use curly braces to make HTML attributes dynamic.
+
+### Your Task
+
+1.  Update the `<img>` tag to use the `src` variable. You can use the attribute binding shorthand syntax: `<img {src} />`.
+2.  Update the `<img>` tag to make the alt text: "`website_name` Logo"
+3.  Verify that the PyWire logo appears in the preview.
+
+If the attribute name and the variable name are the same, `{src}` is equivalent to `src={src}`.

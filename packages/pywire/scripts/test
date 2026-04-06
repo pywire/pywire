@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -ex
+
+# Run Python tests
+uv run --extra dev pytest --cov=pywire $@
+
+# Run client tests
+cd src/pywire/client && pnpm test
+cd -
+
+if [ -z $GITHUB_ACTIONS ]; then
+    scripts/coverage
+fi

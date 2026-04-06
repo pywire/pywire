@@ -1,0 +1,41 @@
+#!/bin/sh -e
+
+export SOURCE_FILES="src/pywire"
+
+set -x
+
+uv run --with ruff ruff format --check --diff $SOURCE_FILES
+uv run --with ty ty check $SOURCE_FILES
+uv run --with ruff ruff check $SOURCE_FILES
+
+echo "=== Checking PyWire Client (TS) ==="
+if [ -d "src/pywire/client" ]; then
+    (
+        cd src/pywire/client
+        if [ ! -x node_modules/.bin/eslint ]; then
+            pnpm install
+        fi
+        pnpm format:check
+        pnpm lint
+        pnpm typecheck
+        pnpm build
+        pnpm test
+    )
+fi
+
+echo "=== Checking PyWire Docs ==="
+if [ -d "docs" ]; then
+    (
+        cd docs
+        if [ ! -x node_modules/.bin/prettier ]; then
+            pnpm install --prefer-frozen-lockfile
+        fi
+        pnpm format:check
+        pnpm lint
+        pnpm typecheck
+    )
+fi
+
+echo "-> Testing (Multi-version)..."
+# Use uv run to execute nox from dev dependencies
+uv run --extra dev nox

@@ -1,0 +1,102 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+      - "docs-*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'nightly'
+        type: choice
+        options:
+          - nightly
+          - production
+
+jobs:
+  deploy-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    name: Deploy Documentation
+    steps:
+      - name: Checkout pywire
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Repair Git metadata for act
+        if: ${{ env.ACT }}
+        run: |
+          echo "Skipping destructive Git metadata repair to protect local workspace."
+
+      - name: Update tree-sitter-pywire submodule (Latest Tag)
+        working-directory: tree-sitter-pywire
+        run: |
+          if [ "${{ env.ACT }}" = "true" ]; then
+            echo "Running in Act: Skipping submodule git update. Using local state."
+            exit 0
+          fi
+          git fetch --tags
+          # Get latest tag (v*) sorted by version
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          echo "Checking out $LATEST_TAG"
+          git checkout $LATEST_TAG
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-emscripten
+
+      - name: Setup Emscripten 4.0.9
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.9
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          cd docs
+          pnpm install
+
+      - name: Build
+        env:
+          PYWIRE_WASM_BUILD: "1"
+          EMCC_SKIP_WASM_OPT: "1"
+        run: |
+          cd docs
+          pnpm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: pywire-docs
+          directory: docs/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ (github.event.inputs.environment == 'production' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/docs-')) && 'main' || 'nightly' }}
+

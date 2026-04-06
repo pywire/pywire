@@ -1,0 +1,14 @@
+#!/bin/sh -e
+
+set -x
+
+# Sync Python environment
+uv sync --all-extras --frozen
+
+# Install Client dependencies
+cd src/pywire/client && pnpm install && pnpm build
+cd -
+
+# Install Docs dependencies
+cd docs && pnpm install
+cd -

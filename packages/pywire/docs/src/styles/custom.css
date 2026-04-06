@@ -1,0 +1,67 @@
+@tailwind components;
+@tailwind utilities;
+
+/* Apply to Starlight's Dark Mode */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #003336; /* Deep cyan background for active items */
+  --sl-color-accent: #00f0ff; /* The Electric Cyan text --color-wire-glow */
+  --sl-color-accent-high: #b3fcff; /* Hover states */
+
+  --sl-color-bg: #090a11; /* Match pywire.dev Void --theme-dark-bg */
+  --sl-color-bg-nav: rgba(19, 21, 32, 0.8); /* Match pywire.dev Surface + Transparency */
+  --sl-color-bg-sidebar: #090a11;
+  --sl-color-border: #2a2d3d; /* --theme-dark-border */
+  --sl-color-text-accent: var(--sl-color-accent);
+
+  /* New: Invert text for dark mode primary buttons */
+  --sl-color-text-invert: #000000;
+}
+
+/* Apply to Starlight's Light Mode */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e0faff;
+  --sl-color-accent: #008c94; /* Darker cyan for readability on white */
+  --sl-color-accent-high: #005c61;
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: rgba(243, 244, 246, 0.8);
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-text-accent: var(--sl-color-accent);
+
+  /* New: Invert text for light mode primary buttons */
+  --sl-color-text-invert: #ffffff;
+}
+
+body {
+  background-color: var(--sl-color-bg);
+  /* Grid removed as requested */
+}
+
+/* Specifically style primary buttons in the hero/sidebar to ensure readability */
+.sl-link-button.primary {
+  color: var(--sl-color-text-invert) !important;
+}
+
+/* Fix link color collision - use a slightly more muted color for inline links
+   to distinguish them from primary actions while keeping brand feel */
+a:not(.sl-link-button) {
+  color: var(--sl-color-text-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+a:not(.sl-link-button):hover {
+  color: var(--sl-color-accent-high);
+}
+
+/* Improve sidebar active item contrast */
+[aria-current='page'],
+[aria-current='page']:hover {
+  color: var(--sl-color-accent) !important;
+  background-color: var(--sl-color-accent-low) !important;
+  font-weight: 600;
+}
+
+/* Monospace for code */
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
