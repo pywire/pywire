@@ -5,10 +5,6 @@ set -x
 # Sync Python environment
 uv sync --all-extras --frozen
 
-# Install Client dependencies
-cd src/pywire/client && pnpm install && pnpm build
-cd -
-
-# Install Docs dependencies
-cd docs && pnpm install
+# Build Client assets (deps already installed by workspace root)
+cd src/pywire/client && pnpm build
 cd -

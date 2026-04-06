@@ -89,11 +89,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Install Workspace
-        run: scripts/install
+      - name: Sync Dependencies
+        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-language-server && ./scripts/check
 
@@ -109,7 +106,7 @@ jobs:
         with:
           version: 9
       - name: Run Checks
-        run: cd packages/vscode-pywire && pnpm install && ./scripts/check
+        run: cd packages/vscode-pywire && ./scripts/check
 
   # Prettier Plugin: lint, build
   check-prettier:
@@ -123,7 +120,7 @@ jobs:
         with:
           version: 9
       - name: Run Checks
-        run: cd packages/prettier-plugin-pywire && pnpm install && ./scripts/check
+        run: cd packages/prettier-plugin-pywire && ./scripts/check
 
   # Tree-sitter Grammar: build, test
   check-treesitter:
@@ -151,11 +148,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Install Workspace
-        run: scripts/install
+      - name: Sync Dependencies
+        run: uv sync
       - name: Run Checks
         run: cd packages/create-pywire-app && ./scripts/check
 
@@ -170,11 +164,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Install Workspace
-        run: scripts/install
+      - name: Sync Dependencies
+        run: uv sync
       - name: Run Checks
         run: cd examples && ./scripts/check
 
@@ -189,6 +180,8 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
+      - name: Install Dependencies
+        run: pnpm install
       - name: Run Checks
         run: cd docs && ./scripts/check
 
