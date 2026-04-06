@@ -1,0 +1,63 @@
+---
+from pywire import props
+
+@props
+class Props:
+    label: str = ''
+    variant: str = 'primary'
+    type: str = 'button'
+---
+
+<style scoped>
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.2s, opacity 0.2s;
+    font-family: inherit;
+    text-decoration: none;
+}
+
+.btn:hover {
+    opacity: 0.9;
+}
+
+.btn:active {
+    transform: translateY(1px);
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 1px solid currentColor;
+}
+</style>
+<div style="display: flex; align-items: center; justify-content: center; width: 200px; height: 150px; background-color: red;">
+<button class="btn btn-{variant}" type={type} {**attrs}>
+    <slot>{label}</slot>
+</button>
+</div>

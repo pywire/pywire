@@ -1,0 +1,75 @@
+!path {
+    'weather': '/basic/weather',
+    'id': '/basic/weather/:id'
+}
+!layout "__layout__.wire"
+
+---
+
+import datetime
+import random
+import asyncio
+
+forecasts = wire([])
+is_loading = wire(False)
+
+async def on_load():
+    # Auto-fetch on initial load
+    await refresh_data()
+
+async def refresh_data():
+
+    
+    # Simulate API delay
+    await asyncio.sleep(1.0)
+    
+    start_date = datetime.date.today()
+    summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"]
+    
+    new_forecasts = []
+    for i in range(5):
+        date = start_date + datetime.timedelta(days=i)
+        temp_c = random.randint(-20, 55)
+        new_forecasts.append({
+            'date': date.strftime("%Y-%m-%d"),
+            'temperatureC': temp_c,
+            'temperatureF': 32 + int(temp_c / 0.5556),
+            'summary': random.choice(summaries)
+        })
+    
+    forecasts.value = new_forecasts
+---
+
+<slot name="title">Weather Forecast</slot>
+
+<h1>Weather</h1>
+<p>This component demonstrates fetching data from the server.</p>
+
+<div style="margin-bottom: 20px;">
+    <button @click={refresh_data} aria-busy={is_loading}>
+        { "Loading..." if is_loading else "Refresh Data" }
+    </button>
+</div>
+
+<h1 $show={path.id}>Weather</h1>
+
+<figure>
+    <table role="grid">
+        <thead>
+            <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Temp. (C)</th>
+                <th scope="col">Temp. (F)</th>
+                <th scope="col">Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr $for={forecast in forecasts}>
+                <td>{forecast['date']}</td>
+                <td>{forecast['temperatureC']}</td>
+                <td>{forecast['temperatureF']}</td>
+                <td>{forecast['summary']}</td>
+            </tr>
+        </tbody>
+    </table>
+</figure>

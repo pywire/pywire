@@ -1,0 +1,23 @@
+#!/bin/sh -e
+
+echo "--- Checking Examples ---"
+# Check demo-app (if it has checks)
+if [ -d "demo-app" ]; then
+    echo "-> demo-app: Basic Import Check"
+    # Basic check: can we verify the dependencies are resolvable?
+    # We can try running a trivial command or check if pyproject valid
+    if [ -n "$VIRTUAL_ENV" ]; then
+        (cd demo-app && uv run --active python -c "import pywire; print('pywire accessible')")
+    else
+        (cd demo-app && uv run python -c "import pywire; print('pywire accessible')")
+    fi
+fi
+
+if [ -d "demo-components" ]; then
+    echo "-> demo-components: Basic Import Check"
+    if [ -n "$VIRTUAL_ENV" ]; then
+        (cd demo-components && uv run --active python -c "import pywire; print('pywire accessible')")
+    else
+        (cd demo-components && uv run python -c "import pywire; print('pywire accessible')")
+    fi
+fi

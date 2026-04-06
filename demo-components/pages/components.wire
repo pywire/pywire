@@ -1,0 +1,98 @@
+---
+from components.Badge import Badge
+from components.Card import Card
+from components.Button import Button
+from components.Alert import Alert
+
+test_var = "helllo"
+---
+
+<style scoped>
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+    font-family: -apple-system, system-ui, sans-serif;
+}
+
+.section {
+    margin-bottom: 2rem;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #f0f0f0;
+    padding-bottom: 0.5rem;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    align-items: center;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+</style>
+
+<div class="container">
+    <h1>Component Library</h1>
+    <p>Showcase of available PyWire components.</p>
+
+    <div class="section">
+        <h2 class="section-title">Buttons</h2>
+        <div class="grid">
+            <Button>Default</Button>
+            <Button variant="primary" @click={print('Primary')}>Primary</Button>
+            <Button variant="secondary">Secondary</Button>
+            <Button variant="success">Success</Button>
+            <Button variant="danger">Danger</Button>
+            <Button variant="outline">Outline</Button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2 class="section-title">Badges</h2>
+        <div class="grid">
+            <div><Badge label="New" type="primary" /> Primary</div>
+            <div><Badge label="Draft" type="secondary" /> Secondary</div>
+            <div><Badge label="Offer" type="primary">Special</Badge> Custom Slot</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2 class="section-title">Alerts</h2>
+        <div class="stack">
+            <Alert title="Information">This is an informational alert.</Alert>
+            <Alert variant="success" title="Success">Operation completed successfully!</Alert>
+            <Alert variant="warning" title="Warning">Please check your input.</Alert>
+            <Alert variant="error" title="Error">Something went wrong.</Alert>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2 class="section-title">Cards</h2>
+        <div class="stack">
+            <Card>
+                <div slot="header">Product Details</div>
+                <p>This is a card component with a named header slot.</p>
+                <div style="margin-top: 1rem;">
+                    <Button variant="primary">Add to Cart</Button>
+                </div>
+            </Card>
+            
+            <Card>
+                Simple card without {test_var} header. 
+            </Card>
+        </div>
+    </div>
+</div>

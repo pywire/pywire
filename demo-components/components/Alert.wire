@@ -1,0 +1,53 @@
+---
+from pywire import props
+
+@props
+class Props:
+    variant: str = 'info'
+    title: str = ''
+---
+<style scoped>
+.alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.alert-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: block;
+}
+
+.alert-info {
+    background-color: #e3f2fd;
+    color: #0d47a1;
+    border-color: #bbdefb;
+}
+
+.alert-success {
+    background-color: #e8f5e9;
+    color: #1b5e20;
+    border-color: #c8e6c9;
+}
+
+.alert-warning {
+    background-color: #fff3e0;
+    color: #e65100;
+    border-color: #ffe0b2;
+}
+
+.alert-error {
+    background-color: #ffebee;
+    color: #b71c1c;
+    border-color: #ffcdd2;
+}
+</style>
+
+<div class="alert alert-{variant}">
+    <div $if={title} class="alert-title">{title}</div>
+    <slot></slot>
+</div>

@@ -1,0 +1,5 @@
+#!/bin/sh -e
+
+echo "=== Linting Example Apps ==="
+# Add specific linting for examples if needed, otherwise just check
+./scripts/check

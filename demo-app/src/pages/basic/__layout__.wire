@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <title><slot name="title">PyWire Basic</slot></title>
+    <slot $head />
+</head>
+<body>
+    <main class="container">
+        <slot />
+
+        <nav>
+            <ul>
+                <li><a href="/basic">Home</a></li>
+                <li><a href="/basic/counter">Counter</a></li>
+                <li><a href="/basic/weather">Fetch data</a></li>
+            </ul>
+        </nav>
+    </main>
+</body>
+</html>

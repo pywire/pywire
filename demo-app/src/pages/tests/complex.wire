@@ -1,0 +1,84 @@
+!path "/tests/blocks/complex"
+
+---
+# Python Logic
+categories = wire([
+    {
+        "id": "c1", 
+        "name": "Electronics", 
+        "active": True,
+        "products": [
+            {"id": "p1", "name": "Laptop", "stock": 5},
+            {"id": "p2", "name": "Mouse", "stock": 0}
+        ]
+    },
+    {
+        "id": "c2", 
+        "name": "Books", 
+        "active": False, 
+        "products": []
+    }
+])
+
+async def fetch_meta(cat_id):
+    await asyncio.sleep(2.0)
+    if cat_id == "c1": return {"tags": ["tech", "gadget"]}
+    raise ValueError("Meta not found")
+---
+
+<div class="test-container">
+    <h1>Complex Nesting Tests</h1>
+
+    <!-- 1. For Loop inside If -->
+    <section>
+        <h2>Catalog</h2>
+        {$for cat in categories.value, key=cat['id']}
+            <div class="category">
+                <h3>{cat['name']}</h3>
+                
+                {$if cat['active']}
+                    <ul>
+                        {$for prod in cat['products'], key=prod['id']}
+                            <li class={'out-of-stock' if prod['stock'] == 0 else ''}>
+                                {prod['name']}
+                                {$if prod['stock'] > 0}
+                                    <span class="badge">{prod['stock']} in stock</span>
+                                {$else}
+                                    <span class="badge red">Sold Out</span>
+                                {/if}
+                            </li>
+                        {$else}
+                            <li>No products in this category.</li>
+                        {/for}
+                    </ul>
+                    
+                    <!-- Await inside Loop -->
+                    <div class="meta">
+                        {$await fetch_meta(cat['id'])}
+                            <small>Loading meta...</small>
+                        {$then meta}
+                            <small>Tags: {", ".join(meta['tags'])}</small>
+                        {$catch}
+                            <small>Meta unavailable</small>
+                        {/await}
+                    </div>
+                    
+                {$else}
+                    <p class="muted">Category is archived.</p>
+                {/if}
+            </div>
+        {/for}
+    </section>
+    
+    <!-- 2. Try inside If -->
+    <section>
+        <h2>Safe Rendering</h2>
+        {$if True}
+            {$try}
+                <span>{1 / 0}</span>
+            {$except ZeroDivisionError}
+                <span>Math Error (Caught safely inside If)</span>
+            {/try}
+        {/if}
+    </section>
+</div>

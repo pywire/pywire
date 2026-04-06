@@ -1,0 +1,5 @@
+<article>
+    <h3>User List</h3>
+    <p>This page is located at <code>/users</code> (handled by <code>users/index.wire</code>).</p>
+    <p>Select a user from the sidebar to see dynamic parameter routing in action.</p>
+</article>

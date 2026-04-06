@@ -1,0 +1,190 @@
+!path '/new-attributes'
+
+---
+import random
+
+# State
+show_if = True
+show_vis = True
+user_input = "Initial Value"
+selected_option = "B"
+is_checked = False
+new_item_text = ""
+
+# Demo data
+items = [
+    {'id': 1, 'text': 'Buy groceries'},
+    {'id': 2, 'text': 'Walk the dog'},
+    {'id': 3, 'text': 'Write code'},
+]
+
+def update_show_if(event_data):
+    self.show_if = bool(event_data.checked)
+
+def update_show_vis(event_data):
+    self.show_vis = bool(event_data.checked)
+
+def update_new_item_text(event_data):
+    self.new_item_text = event_data.value
+
+def update_user_input(event_data):
+    self.user_input = event_data.value
+
+def update_selected_option(event_data):
+    self.selected_option = event_data.value
+
+def update_is_checked(event_data):
+    self.is_checked = bool(event_data.checked)
+
+def trigger_error():
+    raise ValueError("This is a test error from the server!")
+
+def trigger_print():
+    print("Hello from the server! This should appear in your browser console.")
+
+def add_item():
+
+    if new_item_text.strip():
+        new_id = max([i['id'] for i in items] or [0]) + 1
+        items.append({'id': new_id, 'text': new_item_text})
+        new_item_text = ""
+
+def remove_item(item_id):
+
+    print(f"type of item_id({item_id}): {type(item_id)}")
+    items = [i for i in items if i['id'] != item_id]
+
+async def remove_item_handler(value):
+    print(f"type of value({value}): {type(value)}")
+    remove_item(int(value))
+
+def reset_form():
+
+    user_input = "Reset Value"
+    selected_option = "A"
+    is_checked = False
+---
+
+<div style="font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+    <h1>Attribute Tests</h1>
+    
+    <!-- Navigation -->
+    <div style="margin-bottom: 20px;">
+        <a href="/">back to home</a>
+    </div>
+
+    <!-- 1. $if Test -->
+    <section style="border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 8px;">
+        <h2>1. Conditional Rendering ($if)</h2>
+        <div style="margin-bottom: 10px;">
+            <label>
+                <input type="checkbox" checked={show_if} @change={update_show_if}>
+                Toggle content (DOM removal)
+            </label>
+        </div>
+        
+        <div $if={show_if} style="background: #dcfce7; padding: 10px; border-radius: 4px; color: #166534;">
+            <strong>$if content:</strong> I am present in the DOM only when checked.
+        </div>
+        
+        <div $if={not show_if} style="background: #fee2e2; padding: 10px; border-radius: 4px; color: #991b1b;">
+            <strong>$if content:</strong> I am shown when NOT checked.
+        </div>
+    </section>
+
+    <!-- 2. $show Test -->
+    <section style="border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 8px;">
+        <h2>2. Conditional Visibility ($show)</h2>
+        <div style="margin-bottom: 10px;">
+            <label>
+                <input type="checkbox" checked={show_vis} @change={update_show_vis}>
+                Toggle visibility (CSS display)
+            </label>
+        </div>
+        
+        <div $show={show_vis} style="background: #e0f2fe; padding: 10px; border-radius: 4px; color: #075985;">
+            <strong>$show content:</strong> I am always in the DOM, but my display is toggled.
+        </div>
+        
+        <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
+            (Inspect element to verify I'm still here when hidden)
+        </p>
+    </section>
+
+    <!-- 3. $for Loop Test -->
+    <section style="border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 8px;">
+        <h2>3. Loops ($for & $key)</h2>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" value={new_item_text} @input={update_new_item_text} placeholder="New item name">
+            <button @click={add_item}>Add Item</button>
+        </div>
+
+        <ul style="list-style: none; padding: 0;">
+            <li $for={idx, item in enumerate(items)} $key={item['id']} 
+                style="display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #eee; align-items: center;">
+                
+                <span>
+                    <strong>#{idx + 1}:</strong> {item['text']}
+                    <span style="color: #999; font-size: 0.8em; margin-left: 5px;">(ID: {item['id']})</span>
+                </span>
+                
+                    <button 
+                    style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;"
+                    @click={remove_item(item['id'])}>
+                    Remove
+                </button>
+            </li>
+        </ul>
+        
+        <div $if={not items} style="text-align: center; color: #888; padding: 20px;">
+            No items in list. Add one!
+        </div>
+    </section>
+
+    <!-- 4. Input Handling Test -->
+    <section style="border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 8px;">
+        <h2>4. Input Handling</h2>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <button @click={trigger_error}>Trigger Error</button>
+    <button @click={trigger_print}>Trigger Print</button>
+    
+    <h3>Inputs</h3>
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 5px;">Text Input:</label>
+                    <input type="text" value={user_input} @input={update_user_input} style="width: 100%; padding: 5px;">
+                </div>
+                
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 5px;">Select:</label>
+                    <select @change={update_selected_option} style="width: 100%; padding: 5px;">
+                        <option value="A" selected={selected_option == 'A'}>Option A</option>
+                        <option value="B" selected={selected_option == 'B'}>Option B</option>
+                        <option value="C" selected={selected_option == 'C'}>Option C</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 10px;">
+                     <label>
+                        <input type="checkbox" checked={is_checked} @change={update_is_checked}>
+                        Is Checked?
+                     </label>
+                </div>
+            </div>
+            
+            <div style="background: #f8fafc; padding: 15px; border-radius: 4px;">
+                <h3>State Value</h3>
+                <p><strong>user_input:</strong> {user_input}</p>
+                <p><strong>selected_option:</strong> {selected_option}</p>
+                <p><strong>is_checked:</strong> {is_checked}</p>
+            </div>
+        </div>
+        
+        <div style="margin-top: 15px;">
+            <button @click={reset_form()}>Reset Form</button>
+        </div>
+    </section>
+
+</div>

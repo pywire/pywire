@@ -1,0 +1,95 @@
+!path "/tests/blocks/for"
+
+---
+# Python Logic
+simple_list = wire(["Apple", "Banana", "Cherry"])
+users = wire([
+    {"id": 1, "name": "Alice", "role": "admin"},
+    {"id": 2, "name": "Bob", "role": "user"},
+    {"id": 3, "name": "Charlie", "role": "user"}
+])
+empty_list = wire([])
+settings = wire({"theme": "dark", "notifications": "true"})
+
+def add_user():
+    new_id = len(users.value) + 1
+    users.value.append({"id": new_id, "name": f"User {new_id}", "role": "user"})
+---
+
+<div class="test-container">
+    <h1>For Block Tests</h1>
+
+    <!-- 1. Basic Iteration -->
+    <section id="basic-list">
+        <h2>Basic List</h2>
+        <ul>
+            {$for fruit in simple_list.value, key=fruit}
+                <li>{fruit}</li>
+            {/for}
+        </ul>
+    </section>
+
+    <!-- 2. Object Iteration with Key -->
+    <section id="object-list">
+        <h2>Users List</h2>
+        <button @click={add_user}>Add User</button>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>Name</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+                {$for user in users.value, key=user['id']}
+                    <tr class={user['role']}>
+                        <td>{user['id']}</td>
+                        <td>{user['name']}</td>
+                        <td>{user['role']}</td>
+                    </tr>
+                {/for}
+            </tbody>
+        </table>
+    </section>
+
+    <!-- 3. For-Else (Empty State) -->
+    <section id="for-else">
+        <h2>Empty List Handling</h2>
+        <ul>
+            {$for item in empty_list.value, key=item}
+                <li>{item}</li>
+            {$else}
+                <li class="empty-state">No items found in list.</li>
+            {/for}
+        </ul>
+    </section>
+
+    <!-- 4. Dictionary Iteration (Unpacking) -->
+    <section id="dict-unpacking">
+        <h2>Settings (Dictionary)</h2>
+        <dl>
+            {$for key, val in settings.value.items(), key=key}
+                <dt>{key}</dt>
+                <dd>{val}</dd>
+            {/for}
+        </dl>
+    </section>
+
+    <!-- 5. Range and Index -->
+    <section id="range">
+        <h2>Range(5)</h2>
+        <div class="grid">
+            {$for i in range(5), key=i}
+                <div class="cell">Cell #{i}</div>
+            {/for}
+        </div>
+    </section>
+    
+    <!-- 6. Multiple Roots (Fragments) -->
+    <section id="fragments">
+        <h2>Fragments (Description List)</h2>
+        <dl>
+            {$for user in users.value, key=user['id']}
+                <dt>{user['name']}</dt>
+                <dd>{user['role']}</dd>
+            {/for}
+        </dl>
+    </section>
+</div>

@@ -1,0 +1,18 @@
+!path {
+    'counter': '/basic/counter'
+}
+!layout "__layout__.wire"
+---
+count = wire(0)
+
+def increment_count():
+    """Increment the counter"""
+
+    count.value += 1
+
+---
+<slot name="title">Counter Example</slot>
+
+<h1>Counter</h1>
+<p>Current count: {count}</p>
+<button @click={increment_count()}>Click me</button>

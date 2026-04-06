@@ -1,0 +1,44 @@
+!path "/dx_demo"
+
+---
+log_count = 0
+
+def trigger_log():
+    """Send a log message to the server console, which is streamed to the client."""
+    print(f"Hello from Server! Count: {log_count + 1}")
+    log_count += 1
+
+def trigger_error():
+    """Trigger a server-side exception."""
+    result = 1 / 0
+---
+
+<div>
+    <h1>Developer Experience Demo</h1>
+    <p>This page demonstrates the new debugging and error handling features.</p>
+    
+    <div style="border: 1px solid #ccc; padding: 20px; margin: 10px 0; border-radius: 8px;">
+        <h2>1. Log Streaming</h2>
+        <p>Open your browser console. Clicking the button below will stream a log message from the server directly to your console via WebSockets.</p>
+        <button @click={trigger_log()}>Log "Hello from Server"</button>
+        <p>Log count: {log_count}</p>
+    </div>
+
+    <div style="border: 1px solid #ccc; padding: 20px; margin: 10px 0; border-radius: 8px;">
+        <h2>2. Source Mapping & Error Handling</h2>
+        <p>Clicking the button below will trigger a <code>ZeroDivisionError</code> on the server.</p>
+        <p><strong>Observe:</strong> The new 500 debug page should appear, showing the exact line in this file (line 45) where the error occurred, thanks to source mapping.</p>
+        <button @click={trigger_error()} style="background-color: #ef4444; color: white;">Trigger 500 Error</button>
+    </div>
+
+    <div style="border: 1px solid #ccc; padding: 20px; margin: 10px 0; border-radius: 8px;">
+        <h2>3. Custom Error Pages</h2>
+        <p>We've added custom 404 and 500 pages for production (when <code>debug=False</code>).</p>
+        <ul>
+            <li><a href="/this-path-does-not-exist">Test Custom 404 Page</a></li>
+        </ul>
+        <p>To see the Custom 500 page, you would need to run the server with <code>debug=False</code> and trigger an error.</p>
+    </div>
+
+    <a href="/">Back to Home</a>
+</div>

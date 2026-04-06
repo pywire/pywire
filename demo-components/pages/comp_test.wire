@@ -1,0 +1,33 @@
+---
+from components.Badge import Badge
+from components.Card import Card
+from components.Button import Button
+from components.Alert import Alert
+from components.test_inject import TestInject
+
+count = 0
+---
+
+<div>
+    <h1>Component Test</h1>
+    
+    <Badge label="New" type="primary" />
+    <Badge label="Old" type="secondary">
+        (Refurbished)
+    </Badge>
+
+    <Button @click={count += 1}>Count: {count}</Button>
+    <hr />
+    <TestInject></TestInject>
+    
+    <hr />
+
+    <Alert title="Information">This is an informational alert.</Alert>
+
+    <hr />
+    
+    <Card>
+        <slot name="header">Card Header</slot>
+        Card Body Content
+    </Card>
+</div>

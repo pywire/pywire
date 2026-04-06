@@ -1,0 +1,453 @@
+!path '/interactivity'
+
+---
+import datetime
+
+my_input = ""
+logs = []
+
+def log_event(message):
+    """Add a message to the event log with a timestamp"""
+    time_str = datetime.datetime.now().strftime("%H:%M:%S")
+    # Keep last 15 logs
+    logs.insert(0, {"time": time_str, "message": message})
+    if len(logs) > 15:
+        logs.pop()
+
+def clear_logs():
+    """Clear the event logs"""
+    logs.clear()
+
+def on_input(event):
+    print(my_input)
+    log_event(f"Input: {event.value}")
+
+def on_select(event):
+    log_event(f"Selected: {event.value}")
+
+def on_input_debounce(event):
+    log_event(f"Debounced: {event.value}")
+
+def on_input_debounce_long(event):
+    log_event(f"Debounced 500ms: {event.value}")
+---
+
+<div class="container">
+    <header>
+        <h1>🎮 Interactivity Playground</h1>
+        <p>Explore the power of pywire event handlers and Alpine-style modifiers.</p>
+    </header>
+
+    <div class="grid">
+        <!-- Left Column: Interactive Elements -->
+        <div class="controls">
+            <!-- Section 1: Basic Events & Delegation -->
+            <section class="card">
+                <h2>✨ Basic Events</h2>
+                <div class="button-group">
+                    <button class="btn primary" @click={log_event("Click triggered")}>Click Me</button>
+                    <button class="btn secondary" @mouseenter={log_event("Mouse Entered")} @mouseleave={log_event("Mouse Left")}>Hover Me</button>
+                    <input type="text" class="btn accent" placeholder="Focus/Blur me" @focus={log_event("Focus Gained")} @blur={log_event("Focus Lost")} style="width: 120px;">
+                </div>
+                <div class="input-group">
+                    <label>Input Event (Immediate):</label>
+                    <input type="text" placeholder="Type something..." @input={on_input}>
+                </div>
+                <div class="input-group">
+                    <label>Change Event:</label>
+                    <select @change={on_select}>
+                        <option value="One">One</option>
+                        <option value="Two">Two</option>
+                        <option value="Three">Three</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- Section 2: Logic Modifiers -->
+            <section class="card">
+                <h2>🛠 Logic Modifiers</h2>
+                <div class="item">
+                    <p><strong>.prevent</strong>: Stops default browser behavior.</p>
+                    <a href="https://google.com" target="_blank" class="link-btn" @click.prevent={log_event("Navigation prevented!")}>Try to go to Google</a>
+                </div>
+                
+                <div class="item" @click={log_event("Parent clicked")}>
+                    <p><strong>.stop</strong>: Prevents event bubbling.</p>
+                    <div class="bubble-box">
+                        <button class="btn small" @click.stop={log_event("Child clicked (bubbling stopped)")}>Stop Bubble</button>
+                        <button class="btn small outline" @click={log_event("Child clicked (bubbling allowed)")}>Allow Bubble</button>
+                    </div>
+                </div>
+
+                <div class="item">
+                    <p><strong>.self</strong>: Only triggers if the element itself is the target.</p>
+                    <div class="self-box" @click.self={log_event('Self-box clicked!')}>
+                        <span class="badge">Click background, not me</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3: Performance Modifiers -->
+            <section class="card performance">
+                <h2>⚡ Performance Modifiers</h2>
+                <div class="input-group">
+                    <label><strong>.debounce (250ms default)</strong>: Great for search-as-you-type.</label>
+                    <input type="text" placeholder="Start typing fast..." @input.debounce={on_input_debounce}>
+                </div>
+
+                <div class="input-group">
+                    <label><strong>.debounce.500ms</strong>: Longer delay.</label>
+                    <input type="text" placeholder="Type with 500ms delay..." @input.debounce.500ms={on_input_debounce_long}>
+                </div>
+
+                <div class="input-group">
+                    <label><strong>.throttle (250ms)</strong>: Limits event frequency.</label>
+                    <div class="scroll-box" @scroll.throttle={log_event('Throttled scroll...')}>
+                        <div class="scroll-content">Scroll me fast!</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 4: Keyboard & System Modifiers -->
+            <section class="card keyboard">
+                <h2>⌨️ Keyboard & System</h2>
+                <div class="input-group">
+                    <label>Filters (<strong>.enter</strong>, <strong>.escape</strong>):</label>
+                    <input type="text" placeholder="Press Enter or Esc..." 
+                           @keyup.enter={log_event('ENTER pressed')} 
+                           @keyup.escape={log_event('ESCAPE pressed')}>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn outline" @click.shift={log_event('Shift + Click detected')}>Shift + Click</button>
+                    <button class="btn outline" @click.ctrl={log_event('Ctrl + Click (Win/Linux)')} @contextmenu.prevent={1+1}>Ctrl + Click</button>
+                    <button class="btn outline" @click.cmd={log_event('Cmd + Click detected (Mac)')}>Cmd + Click (Mac)</button>
+                </div>
+                <p class="hint">Note: On macOS, Ctrl+Click triggers context menu. Use Cmd+Click instead, or use @contextmenu.prevent to intercept.</p>
+
+                <p class="hint">Global Listeners: Press <strong>Alt + H</strong> anywhere to trigger a global log.</p>
+                <div hidden @keyup.alt.h.window={log_event('Global Alt+H shortcut triggered!')}></div>
+            </section>
+
+            <!-- Section 5: Global/Outside Modifiers -->
+            <section class="card">
+                <h2>🌍 Global & Outside</h2>
+                <div class="item">
+                    <p><strong>.outside</strong>: Triggers when clicking outside the element.</p>
+                    <div class="modal-preview" @click.outside={log_event('Clicked outside the focus-box!')}>
+                        Outside-aware Box
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Right Column: Event Log -->
+        <div class="log-panel">
+            <div class="card log-card">
+                <div class="log-header">
+                    <h2>📟 Event Log</h2>
+                    <button class="clear-btn" @click={clear_logs()}>Clear</button>
+                </div>
+                <div class="log-list" id="event-logs">
+                    <div class="log-entry" $for={entry in logs}>
+                        <span class="log-time">{entry['time']}</span>
+                        <span class="log-msg">{entry['message']}</span>
+                    </div>
+                    <p class="empty-msg" $if={not logs}>Waiting for events...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .container {
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 0 20px;
+        font-family: 'Inter', system-ui, sans-serif;
+        color: #1f2937;
+    }
+
+    header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    header h1 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    header p {
+        color: #6b7280;
+        font-size: 1.1rem;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 400px;
+        gap: 30px;
+        align-items: start;
+    }
+
+    @media (max-width: 900px) {
+        .grid {
+            grid-template-columns: 1fr;
+        }
+        .log-panel {
+            order: -1;
+        }
+    }
+
+    .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+    }
+
+    .card {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid #f3f4f6;
+    }
+
+    h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: #111827;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        font-size: 0.9rem;
+    }
+
+    .btn.primary { background: #6366f1; color: white; }
+    .btn.primary:hover { background: #4f46e5; transform: translateY(-1px); }
+
+    .btn.secondary { background: #f3f4f6; color: #374151; }
+    .btn.secondary:hover { background: #e5e7eb; }
+
+    .btn.accent { background: #a855f7; color: white; }
+    .btn.accent:hover { background: #9333ea; }
+
+    .btn.outline { background: transparent; border: 2px solid #e5e7eb; color: #374151; }
+    .btn.outline:hover { border-color: #6366f1; color: #6366f1; }
+
+    .btn.small { padding: 6px 12px; font-size: 0.8rem; }
+
+    .input-group {
+        margin-bottom: 20px;
+    }
+
+    .input-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #4b5563;
+    }
+
+    input, select {
+        width: 100%;
+        padding: 10px 14px;
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        font-size: 0.95rem;
+        transition: border-color 0.2s;
+        box-sizing: border-box;
+    }
+
+    input:focus, select:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .item {
+        padding: 15px;
+        background: #f9fafb;
+        border-radius: 12px;
+        margin-bottom: 15px;
+    }
+
+    .item p {
+        margin-top: 0;
+        margin-bottom: 10px;
+        font-size: 0.9rem;
+    }
+
+    .link-btn {
+        display: inline-block;
+        color: #6366f1;
+        text-decoration: underline;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .bubble-box {
+        background: white;
+        border: 2px dashed #d1d5db;
+        padding: 15px;
+        border-radius: 8px;
+        display: flex;
+        gap: 10px;
+    }
+
+    .self-box {
+        background: #6366f1;
+        height: 80px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+    .self-box:hover { opacity: 0.9; }
+
+    .badge {
+        background: white;
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #6366f1;
+        /* pointer-events: none; - Removed to allow .self demo to work correctly */
+    }
+
+    .scroll-box {
+        height: 100px;
+        overflow-y: scroll;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: white;
+    }
+
+    .scroll-content {
+        height: 300px;
+        padding: 10px;
+        background: linear-gradient(to bottom, #f3f4f6, #fff);
+        font-size: 0.85rem;
+        color: #9ca3af;
+    }
+
+    .modal-preview {
+        padding: 30px;
+        background: white;
+        border: 2px solid #6366f1;
+        border-radius: 12px;
+        text-align: center;
+        font-weight: 700;
+        color: #6366f1;
+        cursor: default;
+    }
+
+    .hint {
+        font-size: 0.8rem;
+        color: #6b7280;
+        font-style: italic;
+        margin-bottom: 10px;
+    }
+
+    /* Log Panel Styles */
+    .log-panel {
+        position: sticky;
+        top: 40px;
+    }
+
+    .log-card {
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 80px);
+    }
+
+    .log-header {
+        padding: 20px;
+        border-bottom: 1px solid #f3f4f6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f9fafb;
+    }
+
+    .log-header h2 { margin: 0; font-size: 1.1rem; }
+
+    .clear-btn {
+        padding: 4px 10px;
+        border-radius: 6px;
+        background: #ef4444;
+        color: white;
+        border: none;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .log-list {
+        padding: 10px;
+        overflow-y: auto;
+        flex-grow: 1;
+        max-height: 500px;
+    }
+
+    .log-entry {
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        background: #f9fafb;
+        font-size: 0.85rem;
+        border-left: 4px solid #6366f1;
+        display: flex;
+        gap: 12px;
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateX(10px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+    .log-time {
+        color: #9ca3af;
+        font-family: monospace;
+        white-space: nowrap;
+    }
+
+    .log-msg {
+        color: #374151;
+        word-break: break-all;
+    }
+
+    .empty-msg {
+        text-align: center;
+        padding: 40px;
+        color: #9ca3af;
+        font-style: italic;
+    }
+</style>

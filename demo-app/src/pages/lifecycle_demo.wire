@@ -1,0 +1,51 @@
+!path "/lifecycle_demo"
+!layout "basic/__layout__.wire"
+
+---
+import time
+from dataclasses import dataclass
+
+@dataclass
+class LogEntry:
+    phase: str
+    message: str
+
+# 1. Top-Level Statements (Run on Init)
+print("--- [Lifecycle] Top-Level Statements Executing ---")
+if not hasattr(self, 'logs'):
+    self.logs = []
+
+self.logs.append(LogEntry("Top Level", "Executed top-level statements."))
+
+# 2. Standard Hooks (Removed)
+# Users should now use Top-Level code or @mount decorators.
+
+# 3. New @mount Hook
+@mount
+def initialize_data(self):
+    print("--- [Lifecycle] @mount initialize_data ---")
+    self.logs.append(LogEntry("@mount", "Custom mount hook called."))
+
+@mount
+def another_hook(self):
+    print("--- [Lifecycle] @mount another_hook ---")
+    self.logs.append(LogEntry("@mount (2)", "Second mount hook called."))
+---
+
+<div style="padding: 2rem; max-width: 800px; margin: 0 auto; font-family: system-ui;">
+    <h1>Lifecycle Hooks Demo</h1>
+    <p>This page demonstrates the execution order of PyWire lifecycle hooks.</p>
+    
+    <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px; font-family: monospace;">
+        <h3>Execution Log:</h3>
+        <ul>
+            <li $for={entry in logs} style="margin-bottom: 0.5rem;">
+                <span style="color: #6366f1; font-weight: bold;">[{entry.phase}]</span> {entry.message}
+            </li>
+        </ul>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        <p><strong>Note:</strong> Check your server console to see the real-time print execution order!</p>
+    </div>
+</div>

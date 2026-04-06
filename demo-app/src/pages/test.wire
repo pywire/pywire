@@ -1,0 +1,55 @@
+!path "/test-1.7"
+
+---
+count = wire(3)
+other_count = 0
+
+def increment():
+    count.value += 1
+
+def test():
+    other_count += 1
+
+my_list = wire([
+    "Melon",
+    "Lemon",
+    "test",
+    "Pancake",
+])
+
+my_dict = wire({
+    '0001': 'Crabapple',
+    '0002': 'Scrabble',
+    '0003': 'Tapple',
+    '0004': 'Grapple'
+})
+---
+
+<p>Count: {count}</p>
+<button @click={increment}>Increment</button>
+<hr />
+<p>Count: {other_count}</p>
+<button @click={test}>Other Increment</button>
+{$if count > 5}
+    <p>Test</p>
+{/if}
+
+<ul>
+{$for idx, item in enumerate(my_list.value), key=idx}
+    <li>
+    <span>{item}</span>
+    <button @click={my_list.value.pop(idx)}>Del</button>
+    </li>
+{/for}
+</ul>
+
+<hr />
+
+<ul>
+{$for key, value in my_dict.value.items(), key=key}
+    <li>
+    <span>{value}</span>
+    <button @click={del my_dict.value[key]}>Del</button>
+    </li>
+{/for}
+</ul>

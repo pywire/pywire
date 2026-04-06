@@ -1,0 +1,102 @@
+!path {
+    'home': '/basic-spa',
+    'counter': '/basic-spa/counter',
+    'weather': '/basic-spa/weather'
+}
+!layout "layout.wire"
+
+---
+count = 0
+import datetime
+import random
+import asyncio
+
+forecasts = []
+is_loading = False
+
+async def on_load():
+
+    # Auto-fetch on initial load
+    if path.weather:
+        print("on_load weather")
+        await refresh_data()
+    else:
+        print("on_load not weather")
+
+def increment_count():
+    """Increment the counter"""
+
+    count += 1
+
+async def refresh_data():
+
+    
+    # Simulate API delay
+    await asyncio.sleep(1.0)
+    
+    start_date = datetime.date.today()
+    summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"]
+    
+    new_forecasts = []
+    for i in range(5):
+        date = start_date + datetime.timedelta(days=i)
+        temp_c = random.randint(-20, 55)
+        new_forecasts.append({
+            'date': date.strftime("%Y-%m-%d"),
+            'temperatureC': temp_c,
+            'temperatureF': 32 + int(temp_c / 0.5556),
+            'summary': random.choice(summaries)
+        })
+    
+    forecasts = new_forecasts
+---
+
+
+<div $if={path.home}>
+    <slot name="title">Basic Home</slot>
+
+    <h1>Hello, world!</h1>
+    <p>Welcome to your new app.</p>
+</div>
+
+<div $if={path.counter}>
+    <slot name="title">Counter Example</slot>
+
+    <h1>Counter</h1>
+    <p>Current count: {count}</p>
+    <button @click={increment_count()}>Click me</button>
+</div>
+
+<div $if={path.weather}>
+    <slot name="title">Weather Forecast</slot>
+
+    <h1>Weather</h1>
+    <p>This component demonstrates fetching data from the server.</p>
+
+    <div style="margin-bottom: 20px;">
+        <button @click={refresh_data} aria-busy={is_loading}>
+            { "Loading..." if is_loading else "Refresh Data" }
+        </button>
+    </div>
+
+    <figure>
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Temp. (C)</th>
+                    <th scope="col">Temp. (F)</th>
+                    <th scope="col">Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr $for={forecast in forecasts}>
+                    <td>{forecast['date']}</td>
+                    <td>{forecast['temperatureC']}</td>
+                    <td>{forecast['temperatureF']}</td>
+                    <td>{forecast['summary']}</td>
+                </tr>
+            </tbody>
+        </table>
+    </figure>
+</div>

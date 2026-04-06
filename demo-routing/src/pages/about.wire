@@ -1,0 +1,11 @@
+<article>
+    <h2>About pywire</h2>
+    <p>pywire is a modern, reactive Python web framework that brings the development experience of modern JavaScript frameworks to the Python ecosystem.</p>
+    <p>It supports:</p>
+    <ul>
+        <li>Hot Reloading</li>
+        <li>File-based Routing</li>
+        <li>Server-side Rendering</li>
+        <li>Zero JS (unless you want it)</li>
+    </ul>
+</article>

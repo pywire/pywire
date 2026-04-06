@@ -1,0 +1,22 @@
+---
+match error_code:
+    case 404:
+        title = "Page Not Found"
+        message = "Oops! The page you're looking for doesn't exist."
+        color = "#6366f1" # indigo
+    case 500:
+        title = "Server Error"
+        message = "Something went wrong."
+        color = "#ef4444" # red
+    case _:
+        title = f"Error {error_code}"
+        message = "An unknown error occurred."
+        color = "#ef4444" # red
+---
+
+<div style="text-align: center; margin-top: 50px; font-family: system-ui, sans-serif;">
+    <h1 style="font-size: 3rem; color: {color};">{error_code}</h1>
+    <h2>{title}</h2>
+    <p>{message}</p>
+    <a href="/" style="color: #6366f1; text-decoration: none;">&larr; Go Home</a>
+</div>

@@ -1,0 +1,17 @@
+---
+import datetime
+
+count = wire(0)
+
+def increment():
+    """Increment the counter"""
+    count.value += 1
+---
+
+<article>
+    <h2>Counter</h2>
+    <p>A simple counter component.</p>
+    <button @click={increment}>Increment</button>
+    <p>Count: {count.value}</p>
+    <p>Count: {count}</p>
+</article>

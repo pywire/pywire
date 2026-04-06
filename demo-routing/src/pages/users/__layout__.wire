@@ -1,0 +1,27 @@
+<head>
+    <meta name="Test: users/__layout__.wire">
+</head>
+
+<section>
+    <hgroup>
+        <h2>User Management</h2>
+        <p>Dynamic profiles and list view</p>
+    </hgroup>
+    
+    <div class="grid">
+        <aside>
+            <nav>
+                <ul>
+                    <li><a href="/users">All Users</a></li>
+                    <li><a href="/users/1">User #1</a></li>
+                    <li><a href="/users/2">User #2</a></li>
+                    <li><a href="/users/42">User #42</a></li>
+                </ul>
+            </nav>
+        </aside>
+        
+        <div>
+            <slot />
+        </div>
+    </div>
+</section>
