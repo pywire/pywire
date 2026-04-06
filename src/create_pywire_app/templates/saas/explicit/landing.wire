@@ -1,0 +1,8 @@
+!path "/"
+!layout "public-layout.wire"
+
+<section>
+    <h1>Ship a SaaS with pywire</h1>
+    <p>This starter includes Stripe + SQLAlchemy + stubbed auth.</p>
+    <a role="button" href="/pricing">View pricing</a>
+</section>

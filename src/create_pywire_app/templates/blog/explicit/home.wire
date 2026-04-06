@@ -1,0 +1,61 @@
+!path "/"
+!layout "layout.wire"
+
+---
+from pathlib import Path
+import sqlite3
+
+app_root = Path(__file__).resolve().parent.parent
+
+data_dir = app_root / "data"
+data_dir.mkdir(exist_ok=True)
+
+db_path = data_dir / "blog.db"
+
+connection = sqlite3.connect(db_path)
+connection.row_factory = sqlite3.Row
+cursor = connection.cursor()
+cursor.execute(
+    """
+    create table if not exists posts (
+        id integer primary key,
+        slug text unique,
+        title text,
+        body text
+    )
+    """
+)
+
+existing = cursor.execute("select count(*) from posts").fetchone()[0]
+if existing == 0:
+    cursor.executemany(
+        "insert into posts (slug, title, body) values (?, ?, ?)",
+        [
+            (
+                "hello-pywire",
+                "Hello, pywire",
+                "# Hello\\n\\nThis is a markdown post stored in SQLite.",
+            ),
+            (
+                "explicit-routing",
+                "Explicit routing",
+                "## Flexible naming\\n\\nRoutes no longer match file names.",
+            ),
+        ],
+    )
+    connection.commit()
+
+posts = cursor.execute(
+    "select slug, title from posts order by id desc"
+).fetchall()
+
+---
+<section>
+    <h1>Blog + Portfolio (Explicit)</h1>
+    <p>Routes are declared with <code>!path</code> and files are named semantically.</p>
+    <ul>
+        <li $for={post in posts} $key={post["slug"]}>
+            <a href="/posts/{row["slug"]}">{row["title"]}</a>
+        </li>
+    </ul>
+</section>

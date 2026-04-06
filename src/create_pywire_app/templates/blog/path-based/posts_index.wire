@@ -1,0 +1,24 @@
+---
+from pathlib import Path
+import sqlite3
+
+app_root = Path(__file__).resolve().parent.parent
+
+db_path = app_root / "data" / "blog.db"
+
+connection = sqlite3.connect(db_path)
+connection.row_factory = sqlite3.Row
+cursor = connection.cursor()
+posts = cursor.execute(
+    "select slug, title from posts order by id desc"
+).fetchall()
+
+---
+<section>
+    <h1>All posts</h1>
+    <ul>
+        <li $for={post in posts} $key={post["slug"]}>
+            <a href="/posts/{row["slug"]}">{row["title"]}</a>
+        </li>
+    </ul>
+</section>

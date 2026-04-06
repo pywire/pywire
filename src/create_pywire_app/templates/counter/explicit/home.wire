@@ -1,0 +1,13 @@
+!path "/"
+!layout "layout.wire"
+
+---
+count = wire(0)
+
+---
+<div class="container">
+    <h1>Counter (Explicit Routing)</h1>
+    <p>This page uses explicit routing via <code>!path</code>.</p>
+    <p>Count is: {count.value}</p>
+    <button @click={count.value += 1}>Increment</button>
+</div>

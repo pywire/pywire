@@ -1,0 +1,4 @@
+<section class="container">
+    <h1>Something went wrong ({error_code})</h1>
+    <p>Try refreshing the page. If the issue persists, check the server logs.</p>
+</section>

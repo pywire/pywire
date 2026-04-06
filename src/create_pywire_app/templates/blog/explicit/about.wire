@@ -1,0 +1,7 @@
+!path "/about"
+!layout "layout.wire"
+
+<section>
+    <h1>About</h1>
+    <p>This page shows explicit routing with semantic filenames.</p>
+</section>

@@ -1,0 +1,9 @@
+from pywire import PyWire
+
+# Create application instance
+app = PyWire(
+    path_based_routing=False,
+    pages_dir="{{ pages_dir }}",
+    enable_pjax=True,
+    debug=True,
+)
