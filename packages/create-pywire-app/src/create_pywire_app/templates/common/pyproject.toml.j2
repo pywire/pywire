@@ -1,0 +1,22 @@
+[project]
+name = "{{ project_name }}"
+version = "0.1.0"
+description = "A new pywire application"
+requires-python = ">=3.12"
+dependencies = [
+{% for dep in dependencies %}
+    "{{ dep }}",
+{% endfor %}
+]
+{% if deploy_config %}
+
+[tool.pywire.deploy]
+adapter = "{{ deploy_config.adapter }}"
+
+[tool.pywire.deploy.docker]
+port = 8000
+workers = 4
+
+[tool.pywire.deploy.render]
+region = "oregon"
+{% endif %}

@@ -1,0 +1,10 @@
+---
+count = wire(0)
+
+---
+<div class="container">
+    <h1>Counter</h1>
+    <p>Edit <code>pages/index.wire</code> to watch hot reload in action.</p>
+    <p>Count is: {count.value}</p>
+    <button @click={count.value += 1}>Increment</button>
+</div>

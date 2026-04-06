@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+echo "🧪 Running tests for create-pywire-app..."
+
+if [ -t 1 ]; then
+    COLOR_ARGS="--color=yes"
+else
+    COLOR_ARGS="--color=no"
+fi
+
+uv run pytest "$@"

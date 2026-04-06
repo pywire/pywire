@@ -1,0 +1,37 @@
+!path {
+  'home': '/dashboard',
+  'settings': '/dashboard/settings'
+}
+!layout "auth-layout.wire"
+
+---
+# Demo data - in a real app, fetched from database
+settings_sections = [
+    {"id": "account", "title": "Account Settings", "description": "Configure your account preferences."},
+    {"id": "billing", "title": "Billing", "description": "Manage your subscription and payment methods."},
+    {"id": "team", "title": "Team", "description": "Invite and manage team members."},
+]
+
+---
+<main>
+    <!-- Dashboard home: /dashboard -->
+    <section $if={path.home}>
+        <h1>Dashboard</h1>
+        <p>Welcome to your SaaS dashboard.</p>
+        <p>This page uses path-dicts to group /dashboard routes with SPA navigation.</p>
+        <a role="button" href="/dashboard/settings">Go to Settings →</a>
+    </section>
+    
+    <!-- Settings page: /dashboard/settings -->
+    <section $if={path.settings}>
+        <h1>Settings</h1>
+        <p>Manage billing, team, and usage.</p>
+        
+        <article $for={section in settings_sections} $key={section["id"]}>
+            <h2>{section["title"]}</h2>
+            <p>{section["description"]}</p>
+        </article>
+        
+        <p><a href="/dashboard">← Back to Dashboard</a></p>
+    </section>
+</main>

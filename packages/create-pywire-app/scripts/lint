@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running linting for create-pywire-app..."
+
+if [ -t 1 ]; then
+    COLOR_ARGS="--color=yes"
+else
+    COLOR_ARGS="--color=no"
+fi
+
+echo "-> Running ruff check..."
+uv run ruff check src/ tests/
+
+echo "-> Running ruff format..."
+uv run ruff format --check src/ tests/
+
+echo "-> Running ty check..."
+uv run ty check src/

@@ -1,0 +1,55 @@
+!path {
+  'list': '/posts',
+  'detail': '/posts/{slug}'
+}
+!layout "layout.wire"
+
+---
+from pathlib import Path
+import sqlite3
+import markdown
+
+app_root = Path(__file__).resolve().parent.parent
+db_path = app_root / "data" / "blog.db"
+
+connection = sqlite3.connect(db_path)
+connection.row_factory = sqlite3.Row
+cursor = connection.cursor()
+
+# Fetch posts for list view
+posts = cursor.execute(
+    "select slug, title from posts order by id desc"
+).fetchall() if path.list else []
+
+# Fetch single post for detail view
+post = None
+post_title = ""
+post_body_html = ""
+
+if path.detail:
+    # slug is guaranteed non-null here due to path matcher
+    post = cursor.execute(
+        "select title, body from posts where slug = ?",
+        (slug,),
+    ).fetchone()
+
+---
+<main>
+    <!-- List view: /posts -->
+    <section $if={path.list}>
+        <h1>Posts (Path-Dict SPA)</h1>
+        <p>This page handles both /posts and /posts/{slug} using path-dicts.</p>
+        <ul>
+            <li $for={post in posts} $key={post["slug"]}>
+                <a href="/posts/{post['slug']}">{post["title"]}</a>
+            </li>
+        </ul>
+    </section>
+    
+    <!-- Detail view: /posts/{slug} -->
+    <article $if={path.detail}>
+        <h1>{post_title if post else "Post not found"}</h1>
+        <div>{!html markdown.markdown(post["body"]) if post else "<p>We couldn't find that post.</p>"}</div>
+        <p><a href="/posts">← Back to all posts</a></p>
+    </article>
+</main>

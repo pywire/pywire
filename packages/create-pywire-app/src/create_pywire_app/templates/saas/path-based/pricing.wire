@@ -1,0 +1,12 @@
+---
+import os
+
+stripe_public_key = os.environ.get("STRIPE_PUBLIC_KEY", "")
+
+---
+<section>
+    <h1>Pricing</h1>
+    <p>Set <code>STRIPE_PUBLIC_KEY</code> to connect Stripe.</p>
+    <pre>{stripe_public_key or "STRIPE_PUBLIC_KEY not set"}</pre>
+    <button>Start free trial</button>
+</section>

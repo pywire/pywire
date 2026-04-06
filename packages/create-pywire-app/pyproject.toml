@@ -1,0 +1,42 @@
+[project]
+name = "create-pywire-app"
+dynamic = ["version"]
+description = "Init wizard for new pywire projects"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=13.0.0",
+    "questionary>=2.0.0",
+    "jinja2>=3.1.0",
+]
+
+[project.scripts]
+create-pywire-app = "create_pywire_app.main:main"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov",
+    "nox",
+    "ty",
+    "ruff",
+]
+
+[tool.ruff]
+exclude = ["src/create_pywire_app/_version.py"]
+
+[tool.ty.src]
+exclude = [
+    "src/create_pywire_app/templates",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/create_pywire_app/_version.py"
