@@ -23,8 +23,16 @@ jobs:
       examples: ${{ steps.filter.outputs.examples }}
       pywire-docs: ${{ steps.filter.outputs.pywire-docs }}
     steps:
+      - name: Check if release commit
+        id: release-check
+        run: |
+          if [[ "${{ github.event.head_commit.message }}" == "chore(main): release"* ]]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          fi
       - uses: actions/checkout@v4
+        if: steps.release-check.outputs.is_release != 'true'
       - uses: dorny/paths-filter@v3
+        if: steps.release-check.outputs.is_release != 'true'
         id: filter
         with:
           base: main
