@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/pywire/pywire/compare/pywire-v0.2.0...pywire-v0.2.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* add PyPI classifiers to pywire package metadata ([2b4eff7](https://github.com/pywire/pywire/commit/2b4eff719755f3ae75195727f333712e8b802755))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/pywire-v0.1.10...pywire-v0.2.0) (2026-04-07)
 
 
