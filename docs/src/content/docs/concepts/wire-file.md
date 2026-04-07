@@ -23,7 +23,7 @@ name = wire("World")
 ---
 
 <!-- HTML Template -->
-<h1>Hello, {name.value}</h1>
+<h1>Hello, {name}</h1>
 ```
 
 If you don't need any Python logic, you can omit the fences:

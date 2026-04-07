@@ -41,7 +41,7 @@ count.value += 1    # Write (Trigger)
 # 2. Namespace State (Object-like)
 user = wire(name="Alice", age=30)
 print(user.name)    # Read attribute
-user_age = 31       # Write attribute (Trigger)
+user.age = 31       # Write attribute (Trigger)
 ```
 
 ---
@@ -73,7 +73,7 @@ def my_computed(): ...
 my_computed = derived(lambda: ...)
 ```
 
-**Description:** Automatically tracks reactive dependencies accessed within its function body. When any dependency changes, the derived value is recalculated.
+**Description:** Automatically tracks reactive dependencies accessed within its function body. When any dependency changes, the derived value is recalculated lazily (only when accessed). Results are memoized until a dependency changes.
 
 ---
 
@@ -87,6 +87,107 @@ def my_effect(): ...
 ```
 
 **Description:** Re-runs whenever any reactive dependency accessed within the function body updates. Ideal for logging, analytics, or manual DOM interactions via `ref`.
+
+---
+
+### `expose`
+
+Marks a component method or property as accessible via `$ref` from a parent component.
+
+```py
+@expose
+def open(): ...
+
+@expose
+@property
+def value(): ...
+```
+
+**Description:** When a parent binds a ref to a child component using `$ref`, only methods and properties decorated with `@expose` are accessible on the ref. This provides a controlled public API for component interaction.
+
+**Usage:**
+
+```pywire
+<!-- components/modal.wire -->
+---
+from pywire import wire, expose
+
+visible = wire(False)
+
+@expose
+def open():
+    visible.value = True
+
+@expose
+def close():
+    visible.value = False
+---
+<div $if={visible} class="modal">
+    <slot />
+</div>
+```
+
+```pywire
+<!-- pages/index.wire -->
+---
+from pywire import ref
+from components.modal import Modal
+
+modal_ref = ref()
+---
+<button @click={modal_ref.open()}>Open Modal</button>
+<Modal $ref={modal_ref}>
+    <p>Modal content!</p>
+</Modal>
+```
+
+---
+
+### `ref`
+
+Creates a reference to a DOM element or child component instance.
+
+```py
+from pywire import ref
+
+my_ref = ref()
+```
+
+**Description:** Refs provide a way to interact with DOM elements or child components imperatively from Python. Bind a ref using the `$ref` attribute.
+
+**Element Methods** (available when bound to an HTML element):
+
+| Method | Description |
+|--------|-------------|
+| `focus()` | Focus the element |
+| `blur()` | Remove focus from the element |
+| `scroll_to(**kwargs)` | Scroll the element into view |
+| `add_class(name)` | Add a CSS class |
+| `remove_class(name)` | Remove a CSS class |
+| `toggle_class(name)` | Toggle a CSS class |
+| `set_attribute(name, value)` | Set an HTML attribute |
+| `remove_attribute(name)` | Remove an HTML attribute |
+| `request_rect()` | Request the bounding client rect |
+
+**Properties:**
+
+- **`.rect`** — The last known bounding client rect (after calling `request_rect()`).
+- **`.value`** — The current value (for input elements).
+
+**Usage:**
+
+```pywire
+---
+from pywire import ref
+
+input_ref = ref()
+
+def focus_input():
+    input_ref.focus()
+---
+<input $ref={input_ref} type="text" />
+<button @click={focus_input}>Focus Input</button>
+```
 
 ---
 
@@ -104,7 +205,11 @@ class PyWire(
     path_based_routing: bool = True,
     enable_pjax: bool = True,
     debug: bool = False,
-    static_path: str = "/static"
+    static_path: str = "/static",
+    static_dir: str = "static",
+    max_upload_size: int = 10_485_760,
+    upload_token_ttl_seconds: int = 600,
+    enable_webtransport: bool = False,
 )
 ```
 
@@ -122,6 +227,17 @@ class PyWire(
 
 - **`static_path`** (`str`): The URL prefix for serving static files. Defaults to `"/static"`.
 
+- **`static_dir`** (`str`): The directory containing static assets relative to the project root. Defaults to `"static"`.
+
+- **`max_upload_size`** (`int`): Maximum file upload size in bytes. Defaults to 10 MB.
+
+- **`upload_token_ttl_seconds`** (`int`): How long an upload token remains valid. Defaults to 600 seconds.
+
+**Extensible Hooks:**
+
+- **`on_ws_connect(websocket) -> bool`**: Override to implement custom authentication on WebSocket connections. Return `False` to reject the connection.
+- **`get_user(request_or_websocket)`**: Override to populate the `user` object available in pages from your auth system.
+
 **Example:**
 
 ```py
@@ -134,11 +250,11 @@ app = PyWire(pages_dir="src/pages", debug=True)
 
 ---
 
-These functions are optional definitions you can place inside your component's script block.
+These are optional methods you can define in your component's script block. They are called automatically by the framework at specific points in the component lifecycle.
 
-### `mount`
+### `on_before_load`
 
-**Description:** Runs **once** on the server when the component is first initialized for a user session. This is the ideal place to load data, check authentication, or initialize `wire` variables based on URL parameters.
+**Description:** Runs **once** before the component is first rendered. This is the ideal place to load data, check authentication, or initialize `wire` variables based on URL parameters.
 
 **Example:**
 
@@ -147,12 +263,44 @@ These functions are optional definitions you can place inside your component's s
 user_id = wire(None)
 user_data = wire({})
 
-@mount
-def fetch_data(params):
+def on_before_load():
     user_id.value = params.get("id")
-    # Fetch data from database synchronously or asynchronously
     user_data.value = db.get_user(user_id)
 ```
+
+### `on_load`
+
+**Description:** Runs **once** during page initialization, after `on_before_load`. Use this for setup that depends on the initial render state.
+
+### `on_after_render`
+
+**Description:** Runs **after every render** (including the initial render and subsequent reactive updates). Use this for post-render side effects like sending analytics events or manipulating refs.
+
+```py
+render_count = wire(0)
+
+def on_after_render():
+    render_count.value += 1
+```
+
+## Page Context Properties
+
+---
+
+These properties are available on every page and component instance, accessible in the Python block.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `params` | `DotDict` | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`) |
+| `query` | `DotDict` | Query string parameters (e.g., `query.search` for `?search=foo`) |
+| `path` | `DotDict` | Route path flags for multi-route components using `!path` dictionaries |
+| `url` | `URLHelper` | URL helper for the current request |
+| `user` | `Any` | User object populated by the `get_user` hook |
+| `attrs` | `dict` | Fallthrough attributes not captured by `@props` |
+| `context` | `dict` | Inherited context from parent components via `!provide` |
+| `errors` | `ErrorNamespace` | Form validation errors |
+| `loading` | `dict` | Loading state for async operations |
+| `slots` | `dict` | Named slot renderers |
 
 ## Runtime Helpers
 
@@ -211,6 +359,10 @@ Also available as `$event` for compatibility with other frameworks.
 - **`.keyCode`** (`int`): The integer key code for keyboard events.
 
 - **`.formData`** (`dict`): A dictionary of form fields for `@submit` events on forms.
+
+**Mouse event properties:** `.client_x`, `.client_y`, `.offset_x`, `.offset_y`, `.page_x`, `.page_y`, `.button`.
+
+**Modifier keys:** `.alt_key`, `.ctrl_key`, `.meta_key`, `.shift_key`.
 
 **Example:**
 
