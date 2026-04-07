@@ -1,0 +1,63 @@
+---
+title: '!provide & !inject'
+tutorial: Basic PyWire
+section: Directives
+description: Share data between components using context injection.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from components.themed_card import ThemedCard
+
+      theme = wire("blue")
+
+      def toggle_theme():
+        if theme.value == "blue":
+          theme.value = "green"
+        else:
+          theme.value = "blue"
+      ---
+      <div>
+        <h1>Context Injection</h1>
+        <button @click={toggle_theme}>Toggle Theme ({theme})</button>
+        <ThemedCard />
+      </div>
+  - path: components/themed_card.wire
+    initial: |
+      # 1. Add !inject to get the THEME value
+
+      <div class="card" style="border: 3px solid gray; padding: 1rem; margin-top: 1rem;">
+        <p>Theme color: unknown</p>
+      </div>
+    solution: |
+      !inject { color: 'THEME' }
+
+      <div class="card" style={f"border: 3px solid {color}; padding: 1rem; margin-top: 1rem;"}>
+        <p>Theme color: {color}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Add !provide directive to index.wire'
+    target: pages/index.wire
+    pattern: '!provide'
+  - type: file_contains
+    description: 'Add !inject directive to themed_card.wire'
+    target: components/themed_card.wire
+    pattern: '!inject'
+  - type: browser_route_text
+    route: '/'
+    description: 'Verify the theme color is displayed'
+    pattern: 'Theme color: blue'
+pagesDir: pages
+---
+
+The `!provide` and `!inject` directives let you share data between a parent and deeply nested children without passing props through every component.
+
+### Your Task
+
+1.  In `pages/index.wire`, add `!provide { 'THEME': theme }` at the top (before the Python block).
+2.  In `components/themed_card.wire`, add `!inject { color: 'THEME' }` at the top.
+3.  Use `{color}` in the card to display the theme color and in the `style` attribute.
+4.  Click "Toggle Theme" and watch the card update.
+
+This pattern is useful for theming, authentication state, and other cross-cutting data.

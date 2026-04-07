@@ -1,0 +1,77 @@
+---
+title: Side effects
+tutorial: Basic PyWire
+section: Reactivity
+description: Run code in response to state changes using @effect.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      count = wire(0)
+      last_action = wire("None yet")
+
+      # 1. Add an @effect that updates last_action when count changes
+
+      def increment():
+        count.value += 1
+
+      def decrement():
+        count.value -= 1
+      ---
+      <div>
+        <h1>Side Effects</h1>
+        <p>Count: {count}</p>
+        <p>Last action: {last_action}</p>
+        <button @click={increment}>+1</button>
+        <button @click={decrement}>-1</button>
+      </div>
+    solution: |
+      ---
+      count = wire(0)
+      last_action = wire("None yet")
+
+      @effect
+      def track_changes():
+        if count > 0:
+          last_action.value = f"Incremented to {count}"
+        elif count < 0:
+          last_action.value = f"Decremented to {count}"
+
+      def increment():
+        count.value += 1
+
+      def decrement():
+        count.value -= 1
+      ---
+      <div>
+        <h1>Side Effects</h1>
+        <p>Count: {count}</p>
+        <p>Last action: {last_action}</p>
+        <button @click={increment}>+1</button>
+        <button @click={decrement}>-1</button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Use @effect decorator'
+    target: pages/index.wire
+    pattern: '@effect'
+  - type: file_contains
+    description: 'Update last_action inside the effect'
+    target: pages/index.wire
+    pattern: 'last_action.value'
+  - type: browser_route_text
+    route: '/'
+    description: 'Click +1 and verify the last action updates'
+    pattern: 'Incremented to 1'
+pagesDir: pages
+---
+
+Effects let you run side effects (logging, analytics, syncing) whenever reactive state changes. PyWire automatically tracks which wires are accessed inside the effect and re-runs it when any of them update.
+
+### Your Task
+
+1.  Add an `@effect` decorator above a function named `track_changes`.
+2.  Inside it, read `count` and update `last_action.value` with a message like `"Incremented to {count}"`.
+3.  Click **+1** and verify that the "Last action" text updates.
+
+Effects run immediately once, then re-run whenever their dependencies change. Use effects for side effects — for computed values, use `@derived` instead.

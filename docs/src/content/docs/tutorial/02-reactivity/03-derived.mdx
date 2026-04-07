@@ -1,0 +1,68 @@
+---
+title: Derived values
+tutorial: Basic PyWire
+section: Reactivity
+description: Create computed values that automatically update when their dependencies change.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      items = wire(["Apple", "Banana", "Cherry"])
+
+      # 1. Create a derived value 'count' that returns len(items)
+
+      def add_item():
+        items.append("Date")
+      ---
+      <div>
+        <h1>Derived Values</h1>
+        <p>Items: {count}</p>
+        <ul>
+          <li $for={item in items}>{item}</li>
+        </ul>
+        <button @click={add_item}>Add Item</button>
+      </div>
+    solution: |
+      ---
+      items = wire(["Apple", "Banana", "Cherry"])
+
+      @derived
+      def count():
+        return len(items)
+
+      def add_item():
+        items.append("Date")
+      ---
+      <div>
+        <h1>Derived Values</h1>
+        <p>Items: {count}</p>
+        <ul>
+          <li $for={item in items}>{item}</li>
+        </ul>
+        <button @click={add_item}>Add Item</button>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Use @derived decorator'
+    target: pages/index.wire
+    pattern: '@derived'
+  - type: file_contains
+    description: 'Return len(items) in the derived function'
+    target: pages/index.wire
+    pattern: 'return len(items)'
+  - type: browser_route_text
+    route: '/'
+    description: 'Add an item and verify count updates to 4'
+    pattern: 'Items: 4'
+pagesDir: pages
+---
+
+Sometimes you have values that depend entirely on other reactive state. Instead of manually keeping them in sync, use `@derived` to create computed values that update automatically.
+
+### Your Task
+
+1.  Add a `@derived` decorator above a function named `count`.
+2.  Have it return `len(items)`.
+3.  Click the "Add Item" button and verify the count updates to **4**.
+
+Derived values are lazy — they only recompute when accessed after a dependency changes. You can also use `derived(lambda: len(items))` for simple expressions.

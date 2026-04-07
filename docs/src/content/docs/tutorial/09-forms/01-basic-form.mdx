@@ -1,0 +1,66 @@
+---
+title: Basic forms
+tutorial: Basic PyWire
+section: Forms
+description: Handle form submissions with @submit.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      greeting = wire("")
+
+      # 1. Create a handler that sets greeting to "Hello, <name>!"
+
+      ---
+      <div>
+        <h1>Forms</h1>
+
+        <form>
+          <input name="name" placeholder="Your name" />
+          <button type="submit">Greet</button>
+        </form>
+
+        <p $if={greeting}>{greeting}</p>
+      </div>
+    solution: |
+      ---
+      greeting = wire("")
+
+      def handle_submit(data):
+        greeting.value = f"Hello, {data['name']}!"
+      ---
+      <div>
+        <h1>Forms</h1>
+
+        <form @submit.prevent={handle_submit}>
+          <input name="name" placeholder="Your name" />
+          <button type="submit">Greet</button>
+        </form>
+
+        <p $if={greeting}>{greeting}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Add @submit.prevent to the form'
+    target: pages/index.wire
+    pattern: '@submit.prevent'
+  - type: file_contains
+    description: 'Create a handle_submit function'
+    target: pages/index.wire
+    pattern: 'def handle_submit'
+  - type: browser_route_text
+    route: '/'
+    description: 'Type a name and submit to see the greeting'
+    pattern: 'Hello,'
+pagesDir: pages
+---
+
+PyWire handles form submissions on the server. Use `@submit.prevent` to capture form data in Python.
+
+### Your Task
+
+1.  Create a `handle_submit(data)` function that sets `greeting` to `"Hello, {data['name']}!"`.
+2.  Add `@submit.prevent={handle_submit}` to the `<form>` tag.
+3.  Type your name and click "Greet".
+
+The `data` parameter is a dictionary with keys matching each input's `name` attribute. The `.prevent` modifier stops the browser's default form submission.
