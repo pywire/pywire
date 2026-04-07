@@ -31,21 +31,21 @@ For the best experience, add these to your VS Code `settings.json`:
 
 ```json
 {
-    "[pywire]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
-        "editor.formatOnSave": true
-    }
+  "[pywire]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  }
 }
 ```
 
 **Extension settings:**
 
-| Setting | Description |
-|---------|-------------|
-| `pywire.pythonPath` | Path to the Python interpreter (auto-detected by default) |
-| `pywire.tyPath` | Path to the `ty` type checker binary |
-| `pywire.trace.server` | Trace level for language server communication (`off`, `messages`, `verbose`) |
-| `pywire.disableUpdateNotifications` | Suppress extension update notifications |
+| Setting                             | Description                                                                  |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `pywire.pythonPath`                 | Path to the Python interpreter (auto-detected by default)                    |
+| `pywire.tyPath`                     | Path to the `ty` type checker binary                                         |
+| `pywire.trace.server`               | Trace level for language server communication (`off`, `messages`, `verbose`) |
+| `pywire.disableUpdateNotifications` | Suppress extension update notifications                                      |
 
 ## Language Server
 
@@ -72,7 +72,7 @@ Add it to your `.prettierrc`:
 
 ```json
 {
-    "plugins": ["prettier-plugin-pywire"]
+  "plugins": ["prettier-plugin-pywire"]
 }
 ```
 

@@ -75,17 +75,17 @@ def handle_submit(data):
 
 The following HTML validation attributes are supported:
 
-| Attribute | Description |
-|-----------|-------------|
-| `required` | Field must have a value |
-| `minlength="N"` | Minimum character count |
-| `maxlength="N"` | Maximum character count |
-| `min="N"` | Minimum numeric value |
-| `max="N"` | Maximum numeric value |
-| `step="N"` | Numeric step interval |
+| Attribute         | Description                        |
+| ----------------- | ---------------------------------- |
+| `required`        | Field must have a value            |
+| `minlength="N"`   | Minimum character count            |
+| `maxlength="N"`   | Maximum character count            |
+| `min="N"`         | Minimum numeric value              |
+| `max="N"`         | Maximum numeric value              |
+| `step="N"`        | Numeric step interval              |
 | `pattern="regex"` | Value must match the regex pattern |
-| `type="email"` | Must be a valid email format |
-| `type="number"` | Must be a valid number |
+| `type="email"`    | Must be a valid email format       |
+| `type="number"`   | Must be a valid number             |
 
 ## Displaying Errors
 
@@ -103,7 +103,7 @@ You can bind validation attributes dynamically.
 
 ```html
 <!-- Field is required only if 'is_company' checkbox is checked -->
-<input name="company_name" required={is_company} />
+<input name="company_name" required="{is_company}" />
 ```
 
 ## Pydantic Model Integration

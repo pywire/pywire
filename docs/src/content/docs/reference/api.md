@@ -157,17 +157,17 @@ my_ref = ref()
 
 **Element Methods** (available when bound to an HTML element):
 
-| Method | Description |
-|--------|-------------|
-| `focus()` | Focus the element |
-| `blur()` | Remove focus from the element |
-| `scroll_to(**kwargs)` | Scroll the element into view |
-| `add_class(name)` | Add a CSS class |
-| `remove_class(name)` | Remove a CSS class |
-| `toggle_class(name)` | Toggle a CSS class |
-| `set_attribute(name, value)` | Set an HTML attribute |
-| `remove_attribute(name)` | Remove an HTML attribute |
-| `request_rect()` | Request the bounding client rect |
+| Method                       | Description                      |
+| ---------------------------- | -------------------------------- |
+| `focus()`                    | Focus the element                |
+| `blur()`                     | Remove focus from the element    |
+| `scroll_to(**kwargs)`        | Scroll the element into view     |
+| `add_class(name)`            | Add a CSS class                  |
+| `remove_class(name)`         | Remove a CSS class               |
+| `toggle_class(name)`         | Toggle a CSS class               |
+| `set_attribute(name, value)` | Set an HTML attribute            |
+| `remove_attribute(name)`     | Remove an HTML attribute         |
+| `request_rect()`             | Request the bounding client rect |
 
 **Properties:**
 
@@ -289,18 +289,18 @@ def on_after_render():
 
 These properties are available on every page and component instance, accessible in the Python block.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `params` | `DotDict` | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`) |
-| `query` | `DotDict` | Query string parameters (e.g., `query.search` for `?search=foo`) |
-| `path` | `DotDict` | Route path flags for multi-route components using `!path` dictionaries |
-| `url` | `URLHelper` | URL helper for the current request |
-| `user` | `Any` | User object populated by the `get_user` hook |
-| `attrs` | `dict` | Fallthrough attributes not captured by `@props` |
-| `context` | `dict` | Inherited context from parent components via `!provide` |
-| `errors` | `ErrorNamespace` | Form validation errors |
-| `loading` | `dict` | Loading state for async operations |
-| `slots` | `dict` | Named slot renderers |
+| Property  | Type             | Description                                                              |
+| --------- | ---------------- | ------------------------------------------------------------------------ |
+| `params`  | `DotDict`        | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`) |
+| `query`   | `DotDict`        | Query string parameters (e.g., `query.search` for `?search=foo`)         |
+| `path`    | `DotDict`        | Route path flags for multi-route components using `!path` dictionaries   |
+| `url`     | `URLHelper`      | URL helper for the current request                                       |
+| `user`    | `Any`            | User object populated by the `get_user` hook                             |
+| `attrs`   | `dict`           | Fallthrough attributes not captured by `@props`                          |
+| `context` | `dict`           | Inherited context from parent components via `!provide`                  |
+| `errors`  | `ErrorNamespace` | Form validation errors                                                   |
+| `loading` | `dict`           | Loading state for async operations                                       |
+| `slots`   | `dict`           | Named slot renderers                                                     |
 
 ## Runtime Helpers
 

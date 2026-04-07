@@ -23,12 +23,12 @@ PyWire applications can be deployed anywhere that supports Python and ASGI (e.g.
 
 ### Production Flags
 
-| Flag | Description |
-|------|-------------|
-| `--host 0.0.0.0` | Bind to all interfaces (required for containers) |
-| `--port 8000` | Set the port (default: 8000) |
-| `--workers N` | Number of worker processes (default: auto based on CPU cores) |
-| `--no-access-log` | Disable access logging for better performance |
+| Flag              | Description                                                   |
+| ----------------- | ------------------------------------------------------------- |
+| `--host 0.0.0.0`  | Bind to all interfaces (required for containers)              |
+| `--port 8000`     | Set the port (default: 8000)                                  |
+| `--workers N`     | Number of worker processes (default: auto based on CPU cores) |
+| `--no-access-log` | Disable access logging for better performance                 |
 
 ## Deployment Options
 

@@ -75,6 +75,7 @@ When using explicit routing (`path_based_routing=False`), layouts are applied wi
 Layouts compose naturally. When a subdirectory has its own `__layout__.wire`, it nests inside the parent layout:
 
 **`pages/__layout__.wire`** (outer):
+
 ```pywire
 <div class="app">
     <header>My App</header>
@@ -83,6 +84,7 @@ Layouts compose naturally. When a subdirectory has its own `__layout__.wire`, it
 ```
 
 **`pages/dashboard/__layout__.wire`** (inner):
+
 ```pywire
 <div class="dashboard">
     <aside>Dashboard Sidebar</aside>
