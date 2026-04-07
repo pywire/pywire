@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/pywire/pywire/compare/prettier-plugin-pywire-v0.1.4...prettier-plugin-pywire-v0.1.5) (2026-04-07)
+
+
+### Bug Fixes
+
+* **vscode-pywire:** fix CI publish with --no-dependencies flag ([1ef1d72](https://github.com/pywire/pywire/commit/1ef1d72018f4c02bf29a923dd33e4f96bdf813ac))
+
 ## [0.1.4](https://github.com/pywire/pywire/compare/prettier-plugin-pywire-v0.1.3...prettier-plugin-pywire-v0.1.4) (2026-04-07)
 
 
