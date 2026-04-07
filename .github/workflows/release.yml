@@ -128,7 +128,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: cd packages/pywire-language-server && uv build
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-language-server
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/pywire-language-server/dist/
@@ -162,7 +163,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: cd packages/create-pywire-app && uv build
+      - run: uv build --out-dir dist
+        working-directory: packages/create-pywire-app
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/create-pywire-app/dist/
