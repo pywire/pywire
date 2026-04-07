@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/pywire/pywire/compare/pywire-v0.2.3...pywire-v0.2.4) (2026-04-07)
+
+
+### Bug Fixes
+
+* add intermediate directories to sys.path for dotted module imports ([3bed80f](https://github.com/pywire/pywire/commit/3bed80fd21d867e3fa67172a22bc9f19bf130c99))
+
 ## [0.2.3](https://github.com/pywire/pywire/compare/pywire-v0.2.2...pywire-v0.2.3) (2026-04-07)
 
 
