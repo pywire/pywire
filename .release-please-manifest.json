@@ -1,6 +1,6 @@
 {
   "packages/pywire": "0.2.4",
-  "packages/pywire-language-server": "0.2.1",
+  "packages/pywire-language-server": "0.2.2",
   "packages/tree-sitter-pywire": "0.2.1",
   "packages/vscode-pywire": "0.2.1",
   "packages/prettier-plugin-pywire": "0.1.4",
