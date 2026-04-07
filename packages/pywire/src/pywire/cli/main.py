@@ -59,15 +59,34 @@ click.rich_click.COMMAND_GROUPS = {
 }
 
 
+def _setup_import_paths(module_name: str) -> None:
+    """Configure sys.path so a dotted module string and its sibling imports resolve.
+
+    For ``src.main``, both the project root (so ``src`` is a package) and
+    ``src/`` itself (so ``from auth_middleware import …`` works inside main.py)
+    are prepended.  Works for arbitrary nesting depth.
+    """
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    # Add every intermediate directory so that relative-style imports within
+    # each layer work without requiring the full dotted prefix.
+    parts = module_name.split(".")
+    for depth in range(1, len(parts)):
+        subdir = os.path.join(cwd, *parts[:depth])
+        if os.path.isdir(subdir) and subdir not in sys.path:
+            sys.path.insert(0, subdir)
+
+
 def import_app(app_str: str) -> Any:
-    """Import application from string (e.g. 'main:app')."""
+    """Import application from string (e.g. 'main:app' or 'src.main:app')."""
     if ":" not in app_str:
         raise click.BadParameter("App must be in format 'module:app'", param_hint="APP")
 
     module_name, app_name = app_str.split(":", 1)
 
-    # Add current directory to path so we can import local modules
-    sys.path.insert(0, os.getcwd())
+    _setup_import_paths(module_name)
 
     try:
         import importlib
@@ -114,7 +133,7 @@ def _discover_app_str() -> str:
 
                 # Simple check: try to import and look for app
                 try:
-                    sys.path.insert(0, str(cwd))
+                    _setup_import_paths(module_path)
                     import importlib
 
                     module = importlib.import_module(module_path)

@@ -1760,7 +1760,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.1.10"
+version = "0.2.3"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "jinja2" },

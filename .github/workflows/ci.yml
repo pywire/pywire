@@ -25,8 +25,9 @@ jobs:
     steps:
       - name: Check if release commit
         id: release-check
+        env:
+          MSG: ${{ github.event.head_commit.message }}
         run: |
-          MSG="${{ github.event.head_commit.message }}"
           if [[ "$MSG" == "chore(main): release"* ]] || [[ "$MSG" == *"release-please"* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           fi
