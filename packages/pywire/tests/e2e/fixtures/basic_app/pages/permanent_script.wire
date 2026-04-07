@@ -1,0 +1,25 @@
+---
+count = wire(0)
+---
+<h1 id="perm-script-title">Permanent Script Test</h1>
+<p id="count">{count}</p>
+<button id="btn-increment" @click={count.value += 1}>Increment</button>
+<a href="/" id="link-home">Go Home</a>
+
+<div $permanent id="permanent-zone">
+    <p id="permanent-text">Permanent Zone</p>
+    <script>
+        // This script is inside a $permanent element.
+        // It should NOT re-execute on SPA navigation or DOM updates.
+        window.permanentScriptRunCount = (window.permanentScriptRunCount || 0) + 1;
+        document.getElementById('permanent-text').textContent = 'ran:' + window.permanentScriptRunCount;
+    </script>
+</div>
+
+<p id="non-permanent-result">not-run</p>
+<script>
+    // This script is NOT inside a permanent element.
+    // It SHOULD re-execute on every DOM update.
+    window.nonPermanentRunCount = (window.nonPermanentRunCount || 0) + 1;
+    document.getElementById('non-permanent-result').textContent = 'ran:' + window.nonPermanentRunCount;
+</script>

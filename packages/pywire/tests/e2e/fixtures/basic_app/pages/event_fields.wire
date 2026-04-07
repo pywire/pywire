@@ -1,0 +1,24 @@
+---
+last_key = wire("")
+last_coords = wire("")
+full_event_type = wire("")
+
+def on_keypress(event):
+    last_key.value = event.key
+
+def on_click_coords(event):
+    last_coords.value = f"{event.client_x},{event.client_y}"
+
+def on_full_event(event):
+    full_event_type.value = event.type
+---
+<h1 id="event-fields-title">Event Fields Test</h1>
+
+<input id="key-input" type="text" @keydown={on_keypress} />
+<p id="last-key">{last_key}</p>
+
+<button id="btn-coords" @click={on_click_coords}>Click for coords</button>
+<p id="last-coords">{last_coords}</p>
+
+<button id="btn-full" @click={on_full_event}>Full event</button>
+<p id="full-event-type">{full_event_type}</p>
