@@ -149,8 +149,8 @@ jobs:
           cd packages/vscode-pywire
           pnpm install
           pnpm run package
-          npx vsce publish -p ${{ secrets.VSCE_TOKEN }}
-          npx ovsx publish -p ${{ secrets.OVSX_TOKEN }}
+          npx vsce publish --no-dependencies -p ${{ secrets.VSCE_TOKEN }}
+          npx ovsx publish --no-dependencies -p ${{ secrets.OVSX_TOKEN }}
 
   # Publish create-pywire-app to PyPI
   publish-create-app:
