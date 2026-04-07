@@ -1,5 +1,5 @@
 {
-  "packages/pywire": "0.2.1",
+  "packages/pywire": "0.2.2",
   "packages/pywire-language-server": "0.1.4",
   "packages/tree-sitter-pywire": "0.1.3",
   "packages/vscode-pywire": "0.1.4",

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/pywire/pywire/compare/pywire-v0.2.1...pywire-v0.2.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* commit Cargo.lock for reproducible wheel builds, add project URLs ([f8d6864](https://github.com/pywire/pywire/commit/f8d68640c1812fb41db21da97ea23199fe78f69b))
+* move project.urls after all project keys to fix TOML parsing ([e602fce](https://github.com/pywire/pywire/commit/e602fce507a1dd99f95586788d25829d71e6ccda))
+
 ## [0.2.1](https://github.com/pywire/pywire/compare/pywire-v0.2.0...pywire-v0.2.1) (2026-04-07)
 
 
