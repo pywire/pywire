@@ -379,8 +379,8 @@ class PyWire:
         Returns dev bundle when running via 'pywire dev', core bundle otherwise.
         """
         if self._is_dev_mode:
-            return "/_pywire/static/pywire.dev.min.js"
-        return "/_pywire/static/pywire.core.min.js"
+            return f"/_pywire/static/pywire.dev.min.js?v={__version__}"
+        return f"/_pywire/static/pywire.core.min.js?v={__version__}"
 
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""

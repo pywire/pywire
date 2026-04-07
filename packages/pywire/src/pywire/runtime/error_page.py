@@ -27,7 +27,9 @@ class ErrorPage(BasePage):
         # Let's check constructor. It takes request. We can get app from request.app usually if Starlette?
         # request.app is available.
 
-        script_url = "/_pywire/static/pywire.core.min.js"
+        from pywire import __version__ as _pywire_version
+
+        script_url = f"/_pywire/static/pywire.core.min.js?v={_pywire_version}"
         if hasattr(self.request, "app") and hasattr(
             self.request.app, "_get_client_script_url"
         ):
@@ -44,7 +46,7 @@ class ErrorPage(BasePage):
             script_url = pywire_app._get_client_script_url()
         except (AttributeError, KeyError):
             # Fallback
-            script_url = "/_pywire/static/pywire.dev.min.js"
+            script_url = f"/_pywire/static/pywire.dev.min.js?v={_pywire_version}"
 
         html_content = render_template(
             "error/404.html",

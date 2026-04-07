@@ -553,7 +553,9 @@ class BasePage:
                 meta_script = f'<script id="_pywire_spa_meta" type="application/json">{meta_json}</script>'
 
                 # Determine client script URL
-                script_url = "/_pywire/static/pywire.core.min.js"
+                from pywire import __version__ as _pywire_version
+
+                script_url = f"/_pywire/static/pywire.core.min.js?v={_pywire_version}"
                 try:
                     pywire_app = self.request.app.state.pywire
                     script_url = pywire_app._get_client_script_url()

@@ -69,6 +69,8 @@ class CompileErrorPage(BasePage):
 
     async def render(self, init: bool = True) -> HTMLResponse:
         """Render the compile error page."""
+        from pywire import __version__
+
         # Read the context around the error line
         context_lines = []
         if self.error_file and self.error_line and os.path.exists(self.error_file):
@@ -182,7 +184,7 @@ class CompileErrorPage(BasePage):
                 {traceback_html}
             </div>
             <!-- Standard PyWire Client Script for Hot Reload -->
-            <script src="/_pywire/static/pywire.dev.min.js"></script>
+            <script src="/_pywire/static/pywire.dev.min.js?v={__version__}"></script>
         </body>
         </html>
         """
