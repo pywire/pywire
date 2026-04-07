@@ -179,21 +179,63 @@ describe('DOMUpdater', () => {
     delete (window as Window & { scriptValue?: number }).scriptValue
   })
 
-  it('should execute scripts before pywire:update event', () => {
-    let scriptExecutedBeforeUpdate = false
+  it('should execute scripts after morphdom (before pywire:postupdate)', () => {
+    const order: string[] = []
     ;(window as Window & { testExecuted?: () => void }).testExecuted = () => {
-      scriptExecutedBeforeUpdate = true
+      order.push('script')
     }
 
-    const app = document.getElementById('app')!
-    app.addEventListener('pywire:update', () => {
-      // If script executed, this should be true
+    document.documentElement.addEventListener('pywire:postupdate', () => {
+      order.push('postupdate')
     })
 
     updater.update('<div><script>window.testExecuted()</script></div>')
 
-    expect(scriptExecutedBeforeUpdate).toBe(true)
+    // Script should execute, then postupdate fires
+    expect(order).toEqual(['script', 'postupdate'])
     delete (window as Window & { testExecuted?: () => void }).testExecuted
+  })
+
+  it('should not re-execute scripts inside data-pw-permanent elements', () => {
+    ;(window as Window & { permScriptRan?: boolean }).permScriptRan = false
+
+    updater.update(
+      '<div><div data-pw-permanent><script>window.permScriptRan = true</script></div></div>'
+    )
+
+    expect((window as Window & { permScriptRan?: boolean }).permScriptRan).toBe(false)
+    delete (window as Window & { permScriptRan?: boolean }).permScriptRan
+  })
+
+  it('should skip duplicate external scripts already in head', () => {
+    // Mock appendChild before adding the existing script so happy-dom doesn't
+    // try to load the src in the test environment.
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
+
+    // Simulate an existing script already in <head> via querySelector
+    const querySpy = vi
+      .spyOn(document.head, 'querySelector')
+      .mockImplementation((selector: string) => {
+        if (selector === 'script[src="already-loaded.js"]') {
+          return document.createElement('script')
+        }
+        return null
+      })
+
+    updater.update('<div><script src="already-loaded.js"></script></div>')
+
+    // appendChild should NOT have been called for the duplicate script
+    const duplicateCall = appendSpy.mock.calls.find(
+      (call) =>
+        call[0] instanceof HTMLScriptElement &&
+        (call[0] as HTMLScriptElement).getAttribute('src') === 'already-loaded.js'
+    )
+
+    expect(duplicateCall).toBeUndefined()
+    appendSpy.mockRestore()
+    querySpy.mockRestore()
   })
 
   it('should execute scripts with attributes', () => {
