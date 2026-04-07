@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.1...tree-sitter-pywire-v0.2.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* **pywire-language-server:** bump for release ([88aa449](https://github.com/pywire/pywire/commit/88aa449a1a55ece6145f1f21bc7b1ca807e394ca))
+
 ## [0.2.1](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.0...tree-sitter-pywire-v0.2.1) (2026-04-07)
 
 
