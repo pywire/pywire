@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/pywire/pywire/compare/pywire-language-server-v0.2.0...pywire-language-server-v0.2.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* **pywire-language-server:** fix PyPI publish by using explicit build output dir ([8dec973](https://github.com/pywire/pywire/commit/8dec97382276ce0f139cc5abd89b0bd54806bc7d))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.1.4...pywire-language-server-v0.2.0) (2026-04-07)
 
 
