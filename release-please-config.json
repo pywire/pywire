@@ -13,7 +13,8 @@
     },
     "packages/tree-sitter-pywire": {
       "release-type": "node",
-      "component": "tree-sitter-pywire"
+      "component": "tree-sitter-pywire",
+      "extra-files": ["Cargo.toml"]
     },
     "packages/vscode-pywire": {
       "release-type": "node",
