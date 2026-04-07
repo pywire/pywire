@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.6...create-pywire-app-v0.1.7) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prettier-plugin-pywire:** bump for consistency ([33fc161](https://github.com/pywire/pywire/commit/33fc1613c5a70dfc4e8b00d1da3d99f2dc849925))
+
 ## [0.1.6](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.5...create-pywire-app-v0.1.6) (2026-04-07)
 
 
