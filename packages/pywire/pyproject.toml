@@ -24,6 +24,13 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
+
+[project.urls]
+Homepage = "https://pywire.dev"
+Documentation = "https://pywire.dev/docs"
+Repository = "https://github.com/pywire/pywire"
+Issues = "https://github.com/pywire/pywire/issues"
+
 dependencies = [
     "starlette>=0.35.0",
     "python-multipart>=0.0.6",

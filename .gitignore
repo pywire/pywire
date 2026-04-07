@@ -19,7 +19,6 @@ build/
 
 # ─────────────────────── Rust ────────────────────────
 target/
-Cargo.lock
 
 # ─────────────────────── Node ────────────────────────
 node_modules/
@@ -62,6 +61,7 @@ packages/vscode-pywire/bundled/
 *.vsix
 
 # ─────────────────────── tree-sitter-pywire ──────────
+packages/tree-sitter-pywire/Cargo.lock
 packages/tree-sitter-pywire/*.wasm
 
 # ─────────────────────── Docs ────────────────────────
