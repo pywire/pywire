@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DOCS_DIR = path.resolve(__dirname, '..')
 const DOCS_PUBLIC_DIR = path.resolve(DOCS_DIR, 'public')
-const PYWIRE_PKG = path.resolve(__dirname, '../packages/pywire')
+const PYWIRE_PKG = path.resolve(__dirname, '../../packages/pywire')
 const CLIENT_DIR = path.resolve(PYWIRE_PKG, 'src/pywire/client')
 
 function run(cmd, cwd) {
