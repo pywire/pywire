@@ -31,24 +31,91 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # Publish pywire core to PyPI (Maturin/Rust)
-  publish-pywire:
-    name: "Publish pywire to PyPI"
+  # Build pywire wheels across all platforms/architectures
+  build-pywire-wheels:
+    name: "Build pywire wheels"
     needs: release-please
     if: needs.release-please.outputs.pywire--release_created == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+          - os: ubuntu-latest
+            target: aarch64
+            manylinux: auto
+          - os: macos-latest
+            target: universal2-apple-darwin
+          - os: windows-latest
+            target: x86_64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Build JS client
+        run: pnpm install && pnpm build
+        working-directory: packages/pywire/src/pywire/client
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: packages/pywire
           command: build
-          args: --release --out dist
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || '' }}
+          args: --release --out dist --find-interpreter
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pywire-wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: packages/pywire/dist/*.whl
+
+  # Build pywire source distribution
+  build-pywire-sdist:
+    name: "Build pywire sdist"
+    needs: release-please
+    if: needs.release-please.outputs.pywire--release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Build JS client
+        run: pnpm install && pnpm build
+        working-directory: packages/pywire/src/pywire/client
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: packages/pywire
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pywire-sdist
+          path: packages/pywire/dist/*.tar.gz
+
+  # Publish pywire to PyPI
+  publish-pywire:
+    name: "Publish pywire to PyPI"
+    needs: [build-pywire-wheels, build-pywire-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pywire-*
+          path: dist
+          merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: packages/pywire/dist/
+          packages-dir: dist/
 
   # Publish language server to PyPI
   publish-language-server:
