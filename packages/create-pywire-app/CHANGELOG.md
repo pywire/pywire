@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.7](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.6...create-pywire-app-v0.1.7) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prettier-plugin-pywire:** bump for consistency ([33fc161](https://github.com/pywire/pywire/commit/33fc1613c5a70dfc4e8b00d1da3d99f2dc849925))
+* **pywire-language-server:** bump for release ([88aa449](https://github.com/pywire/pywire/commit/88aa449a1a55ece6145f1f21bc7b1ca807e394ca))
+* **tree-sitter-pywire:** bump for consistency ([42b40bd](https://github.com/pywire/pywire/commit/42b40bd3ec2711445865c772573b52774857bbc0))
+* **vscode-pywire:** fix CI publish with --no-dependencies flag ([1ef1d72](https://github.com/pywire/pywire/commit/1ef1d72018f4c02bf29a923dd33e4f96bdf813ac))
+
 ## [0.1.6](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.5...create-pywire-app-v0.1.6) (2026-04-07)
 
 
