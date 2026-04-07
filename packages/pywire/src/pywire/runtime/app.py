@@ -10,7 +10,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -122,6 +122,7 @@ class PyWire:
         static_path: str = "/static",
         max_upload_size: int = 10 * 1024 * 1024,
         upload_token_ttl_seconds: int = 600,
+        middleware: Optional[List] = None,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -361,6 +362,26 @@ class PyWire:
                     _request_ctx.reset(token)
 
         self.app.add_middleware(cast(Any, _RequestContextMiddleware))
+
+        # Apply user-provided middleware.
+        # Starlette's add_middleware prepends (last added = outermost), so we
+        # reverse the list so the first item in the user's list becomes outermost.
+        if middleware:
+            for mw in reversed(middleware):
+                if isinstance(mw, tuple):
+                    cls = mw[0]
+                    options = mw[1] if len(mw) > 1 else {}
+                    self.app.add_middleware(cls, **options)
+                else:
+                    self.app.add_middleware(mw)
+
+    def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
+        """Add ASGI middleware to the application.
+
+        Middleware wraps the ASGI app and is called for HTTP and WebSocket
+        requests. WebTransport connections bypass middleware.
+        """
+        self.app.add_middleware(middleware_class, **kwargs)
 
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
