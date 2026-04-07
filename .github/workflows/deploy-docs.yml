@@ -46,7 +46,7 @@ jobs:
         with:
           version: 9
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-emscripten
 

@@ -121,7 +121,7 @@ async function main() {
         buildCommand = `bash -c "source '${emsdkEnvPath}' && ${buildCommand}"`
       }
 
-      const pyodideRunCmd = `env RUSTUP_TOOLCHAIN=nightly ${buildCommand}`
+      const pyodideRunCmd = buildCommand
       execSync(pyodideRunCmd, { cwd: PYWIRE_PKG, stdio: 'inherit', env })
     } catch (e) {
       console.error('Failed to build WASM wheel:', e)
