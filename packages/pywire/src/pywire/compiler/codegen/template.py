@@ -3100,6 +3100,24 @@ class TemplateCodegen:
                             )
                         )
 
+                    # Add field mask for bandwidth optimization
+                    if attr.field_mask is not None:
+                        field_list = ",".join(sorted(attr.field_mask))
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(
+                                            value=f"data-pw-fields-{event_type}"
+                                        ),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.Constant(value=field_list),
+                            )
+                        )
+
                     # Add args
                     for i, arg_expr in enumerate(attr.args):
                         val = self._wrap_unwrap_wire(
@@ -3263,6 +3281,30 @@ class TemplateCodegen:
                                     )
                                 ],
                                 value=ast.Constant(value=modifiers_str),
+                            )
+                        )
+
+                    # Add field mask for bandwidth optimization (union of all handlers)
+                    combined_mask: Optional[Set[str]] = set()
+                    for attr in attrs_list:
+                        if attr.field_mask is None:
+                            combined_mask = None
+                            break
+                        combined_mask.update(attr.field_mask)  # type: ignore[union-attr]
+                    if combined_mask is not None:
+                        field_list = ",".join(sorted(combined_mask))
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(
+                                            value=f"data-pw-fields-{event_type}"
+                                        ),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.Constant(value=field_list),
                             )
                         )
 

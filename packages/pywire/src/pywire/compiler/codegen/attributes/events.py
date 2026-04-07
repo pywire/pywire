@@ -20,6 +20,11 @@ class EventAttributeCodegen(AttributeCodegen):
                 f'data-modifiers-{attr.event_type}="{" ".join(attr.modifiers)}"'
             )
 
+        # Field mask for bandwidth optimization
+        if attr.field_mask is not None:
+            field_list = ",".join(sorted(attr.field_mask))
+            attrs.append(f'data-pw-fields-{attr.event_type}="{field_list}"')
+
         # Lifted arguments support
         if hasattr(attr, "args") and attr.args:
             for i, arg in enumerate(attr.args):

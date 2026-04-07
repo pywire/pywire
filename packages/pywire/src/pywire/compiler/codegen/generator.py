@@ -697,6 +697,17 @@ class CodeGenerator:
         handlers = []
         handler_count = 0
         from pywire.compiler.ast_nodes import EventAttribute
+        from pywire.compiler.event_analysis import analyze_event_fields
+
+        # Build a map of user-defined handler name -> source code for field analysis
+        user_handler_sources: Dict[str, str] = {}
+        if parsed.python_ast:
+            for node in parsed.python_ast.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    try:
+                        user_handler_sources[node.name] = ast.unparse(node)
+                    except Exception:
+                        pass
 
         def visit_nodes(nodes: List[TemplateNode]) -> None:
             nonlocal handler_count
@@ -729,6 +740,11 @@ class CodeGenerator:
                                 if is_identifier:
                                     # If it's a bare identifier (like 'print'), transform it to call with event
                                     code_to_transform = f"{code_to_transform}(event)"
+
+                                # Analyze event field usage before transformation
+                                attr.field_mask = analyze_event_fields(
+                                    code_to_transform
+                                )
 
                                 body, args = self._transform_inline_code(
                                     code_to_transform,
@@ -772,6 +788,11 @@ class CodeGenerator:
                                 print(
                                     f"Error compiling handler '{attr.handler_name}': {e}"
                                 )
+                        else:
+                            # User-defined method — analyze its source for field mask
+                            source = user_handler_sources.get(attr.handler_name)
+                            if source is not None:
+                                attr.field_mask = analyze_event_fields(source)
 
                 visit_nodes(node.children)
 

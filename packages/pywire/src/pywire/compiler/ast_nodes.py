@@ -2,7 +2,7 @@
 
 import ast
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 @dataclass
@@ -218,7 +218,9 @@ class EventAttribute(SpecialAttribute):
     modifiers: List[str] = field(
         default_factory=list
     )  # List of modifiers (e.g. ['prevent', 'stop'])
-    # Form-specific fields removed
+    field_mask: Optional[Set[str]] = field(
+        default=None
+    )  # Set of camelCase event fields the handler accesses (None = send all)
 
     def __str__(self) -> str:
         return (

@@ -404,6 +404,10 @@ export class UnifiedEventHandler {
       args = this.getArgs(element)
     }
 
+    // Check for field mask — if present, only send listed fields
+    const fieldMaskAttr = element.getAttribute(`data-pw-fields-${eventType}`)
+    const allowedFields = fieldMaskAttr ? new Set(fieldMaskAttr.split(',')) : null
+
     const eventData: EventData = {
       type: eventType,
       id: element.id || undefined,
@@ -421,56 +425,76 @@ export class UnifiedEventHandler {
     }
 
     // Extract specific data based on element type
-    if (element instanceof HTMLInputElement) {
-      if (element.type === 'file') {
-        eventData.value = Array.from(element.files ?? []).map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        }))
-      } else {
-        eventData.value = element.value
+    if (
+      !allowedFields ||
+      allowedFields.has('value') ||
+      allowedFields.has('inputType') ||
+      allowedFields.has('checked')
+    ) {
+      if (element instanceof HTMLInputElement) {
+        if (!allowedFields || allowedFields.has('value')) {
+          if (element.type === 'file') {
+            eventData.value = Array.from(element.files ?? []).map((file) => ({
+              name: file.name,
+              size: file.size,
+              type: file.type,
+            }))
+          } else {
+            eventData.value = element.value
+          }
+        }
+        if (!allowedFields || allowedFields.has('inputType')) {
+          eventData.inputType = element.type
+        }
+        if (
+          (!allowedFields || allowedFields.has('checked')) &&
+          (element.type === 'checkbox' || element.type === 'radio')
+        ) {
+          eventData.checked = element.checked
+        }
+      } else if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+        if (!allowedFields || allowedFields.has('value')) {
+          eventData.value = element.value
+        }
       }
-      eventData.inputType = element.type
-      if (element.type === 'checkbox' || element.type === 'radio') {
-        eventData.checked = element.checked
-      }
-    } else if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
-      eventData.value = element.value
     }
 
     // Extract Key data
     if (e instanceof KeyboardEvent) {
-      eventData.key = e.key
-      eventData.code = e.code
-      eventData.keyCode = e.keyCode
-      eventData.altKey = e.altKey
-      eventData.ctrlKey = e.ctrlKey
-      eventData.metaKey = e.metaKey
-      eventData.shiftKey = e.shiftKey
+      if (!allowedFields || allowedFields.has('key')) eventData.key = e.key
+      if (!allowedFields || allowedFields.has('code')) eventData.code = e.code
+      if (!allowedFields || allowedFields.has('keyCode')) eventData.keyCode = e.keyCode
+      if (!allowedFields || allowedFields.has('altKey')) eventData.altKey = e.altKey
+      if (!allowedFields || allowedFields.has('ctrlKey')) eventData.ctrlKey = e.ctrlKey
+      if (!allowedFields || allowedFields.has('metaKey')) eventData.metaKey = e.metaKey
+      if (!allowedFields || allowedFields.has('shiftKey')) eventData.shiftKey = e.shiftKey
     }
 
     // Extract Mouse/Pointer data
     if (e instanceof MouseEvent || (window.PointerEvent && e instanceof PointerEvent)) {
       const me = e as MouseEvent
-      eventData.clientX = me.clientX
-      eventData.clientY = me.clientY
-      eventData.offsetX = me.offsetX
-      eventData.offsetY = me.offsetY
-      eventData.pageX = me.pageX
-      eventData.pageY = me.pageY
-      eventData.screenX = me.screenX
-      eventData.screenY = me.screenY
-      eventData.button = me.button
-      eventData.buttons = me.buttons
-      eventData.altKey = me.altKey
-      eventData.ctrlKey = me.ctrlKey
-      eventData.metaKey = me.metaKey
-      eventData.shiftKey = me.shiftKey
+      if (!allowedFields || allowedFields.has('clientX')) eventData.clientX = me.clientX
+      if (!allowedFields || allowedFields.has('clientY')) eventData.clientY = me.clientY
+      if (!allowedFields || allowedFields.has('offsetX')) eventData.offsetX = me.offsetX
+      if (!allowedFields || allowedFields.has('offsetY')) eventData.offsetY = me.offsetY
+      if (!allowedFields || allowedFields.has('pageX')) eventData.pageX = me.pageX
+      if (!allowedFields || allowedFields.has('pageY')) eventData.pageY = me.pageY
+      if (!allowedFields || allowedFields.has('screenX')) eventData.screenX = me.screenX
+      if (!allowedFields || allowedFields.has('screenY')) eventData.screenY = me.screenY
+      if (!allowedFields || allowedFields.has('button')) eventData.button = me.button
+      if (!allowedFields || allowedFields.has('buttons')) eventData.buttons = me.buttons
+      if (!allowedFields || allowedFields.has('altKey')) eventData.altKey = me.altKey
+      if (!allowedFields || allowedFields.has('ctrlKey')) eventData.ctrlKey = me.ctrlKey
+      if (!allowedFields || allowedFields.has('metaKey')) eventData.metaKey = me.metaKey
+      if (!allowedFields || allowedFields.has('shiftKey')) eventData.shiftKey = me.shiftKey
     }
 
     // Extract Form Data for submit
-    if (eventType === 'submit' && element instanceof HTMLFormElement) {
+    if (
+      (!allowedFields || allowedFields.has('formData')) &&
+      eventType === 'submit' &&
+      element instanceof HTMLFormElement
+    ) {
       if (!this.validateFileInputs(element)) {
         return
       }
