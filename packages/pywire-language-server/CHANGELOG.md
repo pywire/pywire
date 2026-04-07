@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/pywire/pywire/compare/pywire-language-server-v0.2.1...pywire-language-server-v0.2.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prettier-plugin-pywire:** bump for consistency ([33fc161](https://github.com/pywire/pywire/commit/33fc1613c5a70dfc4e8b00d1da3d99f2dc849925))
+
 ## [0.2.1](https://github.com/pywire/pywire/compare/pywire-language-server-v0.2.0...pywire-language-server-v0.2.1) (2026-04-07)
 
 
