@@ -53,7 +53,7 @@ click.rich_click.COMMAND_GROUPS = {
     "pywire": [
         {
             "name": "Commands",
-            "commands": ["dev", "run", "build"],
+            "commands": ["dev", "run", "build", "deploy"],
         }
     ]
 }
@@ -364,6 +364,103 @@ def run(
         access_log=not no_access_log,
         factory=False,
     )
+
+
+@cli.command()
+@click.argument("app", required=False)
+@click.option(
+    "--platform",
+    type=click.Choice(["render", "docker", "fly"]),
+    default="docker",
+    help="Deployment platform",
+)
+@click.option(
+    "--out-dir",
+    default=".",
+    type=click.Path(),
+    help="Output directory for deploy configs",
+)
+def deploy(app: Optional[str], platform: str, out_dir: str) -> None:
+    """Generate deployment configuration for your PyWire app."""
+    from pywire.cli.deploy import (
+        generate_dockerfile,
+        generate_fly_toml,
+        generate_render_yaml,
+        validate_deploy_config,
+    )
+
+    project_root = Path(os.getcwd())
+    out_path = Path(out_dir)
+
+    # Auto-discover and verify app
+    if not app:
+        app = _discover_app_str()
+    console.print(f"📦 Preparing deploy config for [cyan]{app}[/]...")
+
+    # Pre-compile
+    app_instance = import_app(app)
+
+    pages_dir = Path(getattr(app_instance, "pages_dir", "pages"))
+
+    from pywire.compiler.build import build_project
+
+    build_project(pages_dir=pages_dir, out_dir=Path(".pywire/build"))
+    console.print("✅ Build complete")
+
+    # Validate
+    issues = validate_deploy_config(platform, project_root)
+    if issues:
+        for issue in issues:
+            console.print(f"⚠️  {issue}")
+
+    # Derive project name from directory
+    project_name = project_root.name
+
+    # Handle fly stub
+    if platform == "fly":
+        console.print(
+            "⚠️  Full Fly.io support is coming soon. "
+            "For now, you can use the Docker platform ([cyan]--platform docker[/]) "
+            "and deploy via [cyan]fly deploy[/] with the generated Dockerfile."
+        )
+        generate_fly_toml(project_root, project_name)
+        return
+
+    # Generate config
+    if platform == "docker":
+        filename = "Dockerfile"
+        content = generate_dockerfile(project_root)
+    elif platform == "render":
+        filename = "render.yaml"
+        content = generate_render_yaml(project_root, project_name)
+    else:
+        raise click.UsageError(f"Unknown platform: {platform}")
+
+    target = out_path / filename
+
+    if target.exists():
+        if not click.confirm(f"'{target}' already exists. Overwrite?"):
+            console.print("Aborted.")
+            return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    console.print(f"✅ Generated [cyan]{target}[/]")
+
+    # Next steps guidance
+    if platform == "docker":
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            f"  1. [cyan]docker build -t {project_name} .[/]\n"
+            f"  2. [cyan]docker run -p 8000:8000 {project_name}[/]"
+        )
+    elif platform == "render":
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. Push your code to a Git repository\n"
+            "  2. Connect the repo on [link=https://render.com]render.com[/link]\n"
+            "  3. Render will auto-detect [cyan]render.yaml[/] and deploy"
+        )
 
 
 if __name__ == "__main__":
