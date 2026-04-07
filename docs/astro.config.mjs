@@ -64,6 +64,8 @@ export default defineConfig({
             { label: 'The .wire File', slug: 'concepts/wire-file' },
             { label: 'Reactivity & State', slug: 'concepts/reactivity' },
             { label: 'Server-Side Events', slug: 'concepts/events' },
+            { label: 'Components', slug: 'concepts/components' },
+            { label: 'Context & Injection', slug: 'concepts/context' },
           ],
         },
         {
