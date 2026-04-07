@@ -109,7 +109,7 @@ async function main() {
       // Use Python 3.13 for the build environment (required for Pyodide 0.29.x + pyodide-build 0.32.0)
       const setupCmd = [
         `uv venv ${venvPath} --python 3.13`,
-        `uv pip install --python ${venvPath}/bin/python "pyodide-build>=0.32.0" "wheel>=0.42.0" "pip"`,
+        `uv pip install --python ${venvPath}/bin/python "pyodide-build>=0.32.0,<0.33.0" "wheel>=0.42.0" "pip"`,
       ].join(' && ')
 
       console.log('Setting up build environment (Python 3.13)...')
