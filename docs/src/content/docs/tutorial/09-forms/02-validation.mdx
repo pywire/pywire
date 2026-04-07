@@ -1,0 +1,96 @@
+---
+title: Form validation
+tutorial: Basic PyWire
+section: Forms
+description: Add validation using HTML attributes and the Form component.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from pywire import ref
+      from pywire.components import Form
+
+      form_ref = ref()
+      result = wire("")
+
+      def handle_submit(data):
+        result.value = f"Registered {data['username']} (age {data['age']})"
+      ---
+      <div>
+        <h1>Validation</h1>
+
+        <form @submit={handle_submit}>
+          <div>
+            <label>Username</label>
+            <input name="username" />
+          </div>
+          <div>
+            <label>Age</label>
+            <input name="age" type="number" />
+          </div>
+          <button type="submit">Register</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from pywire import ref
+      from pywire.components import Form
+
+      form_ref = ref()
+      result = wire("")
+
+      def handle_submit(data):
+        result.value = f"Registered {data['username']} (age {data['age']})"
+      ---
+      <div>
+        <h1>Validation</h1>
+
+        <Form @submit={handle_submit} $ref={form_ref}>
+          <div>
+            <label>Username</label>
+            <input name="username" required minlength="3" />
+            <span $if={form_ref.errors.username} style="color: red;">
+              {form_ref.errors.username.message}
+            </span>
+          </div>
+          <div>
+            <label>Age</label>
+            <input name="age" type="number" required min="18" />
+            <span $if={form_ref.errors.age} style="color: red;">
+              {form_ref.errors.age.message}
+            </span>
+          </div>
+          <button type="submit">Register</button>
+        </Form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Use the Form component instead of form'
+    target: pages/index.wire
+    pattern: '<Form'
+  - type: file_contains
+    description: 'Add required attribute to username input'
+    target: pages/index.wire
+    pattern: 'required'
+  - type: file_contains
+    description: 'Display validation errors'
+    target: pages/index.wire
+    pattern: 'form_ref.errors'
+pagesDir: pages
+---
+
+PyWire's `Form` component automatically validates inputs based on HTML attributes like `required`, `minlength`, and `min`. Errors are collected on the form ref.
+
+### Your Task
+
+1.  Change `<form>` to `<Form>` (the imported component) and add `$ref={form_ref}`.
+2.  Add `required minlength="3"` to the username input.
+3.  Add `required min="18"` to the age input.
+4.  Below each input, add an error display: `<span $if={form_ref.errors.username}>{form_ref.errors.username.message}</span>`.
+5.  Try submitting with an empty form to see validation errors.
+
+The `Form` component intercepts submission, validates against the HTML rules, and only calls your handler if everything passes.
