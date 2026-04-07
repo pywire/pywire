@@ -167,6 +167,21 @@ jobs:
         with:
           packages-dir: packages/create-pywire-app/dist/
 
+  # Close the docs release PR when pywire releases (docs are deployed automatically)
+  close-docs-release-pr:
+    name: "Close docs release PR"
+    needs: release-please
+    if: needs.release-please.outputs.pywire--release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          gh pr close release-please--branches--main--components--pywire-docs \
+            --repo "$GITHUB_REPOSITORY" \
+            --comment "Closing: pywire release automatically deploys docs." \
+            || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # Deploy docs to Cloudflare Pages (on pywire release or docs release)
   deploy-docs:
     name: "Deploy Docs (Production)"
