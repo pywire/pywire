@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/pywire/pywire/compare/pywire-v0.2.2...pywire-v0.2.3) (2026-04-07)
+
+
+### Bug Fixes
+
+* use license file reference and skip CI for release-please commits ([5816944](https://github.com/pywire/pywire/commit/5816944a2bd012001c8b0bf3e17e1ff78746da36))
+
 ## [0.2.2](https://github.com/pywire/pywire/compare/pywire-v0.2.1...pywire-v0.2.2) (2026-04-07)
 
 
