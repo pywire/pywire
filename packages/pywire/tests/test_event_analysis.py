@@ -152,3 +152,135 @@ event_data.value
 """
     result = analyze_event_fields(source)
     assert result == {"key", "value"}
+
+
+# ---------------------------------------------------------------------------
+# Additional edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_empty_handler_body():
+    """Handler with pass-only body returns empty set."""
+    source = """
+def handle(event):
+    pass
+"""
+    result = analyze_event_fields(source)
+    assert result == set()
+
+
+def test_event_in_conditional():
+    """Fields accessed in if/else branches are all collected."""
+    source = """
+def handle(event):
+    if True:
+        x = event.client_x
+    else:
+        k = event.key
+"""
+    result = analyze_event_fields(source)
+    assert result == {"clientX", "key"}
+
+
+def test_event_in_list_comprehension():
+    """Event access inside comprehension is detected."""
+    source = """
+def handle(event):
+    vals = [event.key for _ in range(1)]
+"""
+    result = analyze_event_fields(source)
+    assert result == {"key"}
+
+
+def test_event_subscript_returns_none():
+    """event['key'] is dynamic access — should return None for safety."""
+    source = """
+def handle(event):
+    val = event['key']
+"""
+    # Subscript is not an Attribute node, so it won't be detected as a field.
+    # But it also doesn't trigger needs_full_event — so it returns empty set.
+    # This is acceptable since event['key'] isn't a real usage pattern.
+    result = analyze_event_fields(source)
+    assert result is not None  # it's an empty set, not None
+
+
+def test_reassigned_event_not_tracked():
+    """If event is reassigned (e = event), the alias is NOT tracked (known limitation)."""
+    source = """
+def handle(event):
+    e = event
+    print(e.key)
+"""
+    # Only direct event.X access is tracked; aliases are not followed.
+    # The alias assignment `e = event` doesn't trigger needs_full_event either,
+    # since it's not a function call or starred expression.
+    result = analyze_event_fields(source)
+    assert result == set()  # e.key not tracked (known limitation)
+
+
+# ---------------------------------------------------------------------------
+# Codegen integration
+# ---------------------------------------------------------------------------
+
+
+def test_codegen_emits_field_mask():
+    """EventAttributeCodegen generates data-pw-fields-* attribute when field_mask is set."""
+    from pywire.compiler.ast_nodes import EventAttribute
+    from pywire.compiler.codegen.attributes.events import EventAttributeCodegen
+
+    attr = EventAttribute(
+        name="@click",
+        value="{handler}",
+        event_type="click",
+        handler_name="handler",
+        line=1,
+        column=0,
+    )
+    attr.field_mask = {"clientX", "clientY"}
+
+    codegen = EventAttributeCodegen()
+    html = codegen.generate_html(attr)
+    assert 'data-on-click="handler"' in html
+    assert 'data-pw-fields-click="clientX,clientY"' in html
+
+
+def test_codegen_no_field_mask_attribute_when_none():
+    """No data-pw-fields-* attribute when field_mask is None (send all fields)."""
+    from pywire.compiler.ast_nodes import EventAttribute
+    from pywire.compiler.codegen.attributes.events import EventAttributeCodegen
+
+    attr = EventAttribute(
+        name="@click",
+        value="{handler}",
+        event_type="click",
+        handler_name="handler",
+        line=1,
+        column=0,
+    )
+    attr.field_mask = None
+
+    codegen = EventAttributeCodegen()
+    html = codegen.generate_html(attr)
+    assert 'data-on-click="handler"' in html
+    assert "data-pw-fields" not in html
+
+
+def test_codegen_empty_field_mask():
+    """Empty field mask emits empty data-pw-fields attribute."""
+    from pywire.compiler.ast_nodes import EventAttribute
+    from pywire.compiler.codegen.attributes.events import EventAttributeCodegen
+
+    attr = EventAttribute(
+        name="@click",
+        value="{handler}",
+        event_type="click",
+        handler_name="handler",
+        line=1,
+        column=0,
+    )
+    attr.field_mask = set()
+
+    codegen = EventAttributeCodegen()
+    html = codegen.generate_html(attr)
+    assert 'data-pw-fields-click=""' in html

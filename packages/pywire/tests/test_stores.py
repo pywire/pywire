@@ -313,6 +313,111 @@ class TestPageContext:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Edge cases and error handling
+# ---------------------------------------------------------------------------
+
+
+class TestStoreEdgeCases:
+    def test_double_unsubscribe_is_safe(self):
+        """Calling unsubscribe twice should not raise."""
+        s = writable(1)
+        unsub = s.subscribe(lambda v: None)
+        unsub()
+        unsub()  # should not raise
+
+    def test_subscriber_exception_does_not_break_others(self):
+        """A subscriber that throws should not prevent other subscribers from receiving updates."""
+        s = writable(0)
+        good_vals = []
+
+        def bad_sub(v):
+            raise ValueError("boom")
+
+        def good_sub(v):
+            good_vals.append(v)
+
+        s.subscribe(good_sub)
+        s.subscribe(bad_sub)
+        s.value = 1  # should not raise despite bad_sub
+        assert good_vals == [0, 1]
+
+    def test_subscriber_modifying_store_during_callback(self):
+        """Subscriber that modifies the store during its callback (reentrancy)."""
+        s = writable(0)
+        vals = []
+
+        def reentrant_sub(v):
+            vals.append(v)
+            if v == 1:
+                s.value = 2  # reentrant write
+
+        s.subscribe(reentrant_sub)
+        s.value = 1
+        # Should have received 0 (initial), 1, and 2
+        assert 0 in vals
+        assert 1 in vals
+        assert 2 in vals
+
+    def test_readable_start_fn_returns_non_callable(self):
+        """start_fn that returns a non-callable value should not crash on unsubscribe."""
+
+        def start(set_val):
+            return "not a function"  # not callable
+
+        s = readable(0, start)
+        unsub = s.subscribe(lambda v: None)
+        unsub()  # should not raise
+
+    def test_nested_derived_stores(self):
+        """Derived store from another derived store."""
+        base = writable(2)
+        doubled = store_derived(base, lambda v: v * 2)
+        quadrupled = store_derived(doubled, lambda v: v * 2)
+        assert quadrupled.value == 8
+        base.value = 5
+        assert quadrupled.value == 20
+
+    def test_derived_with_multiple_stores_one_changes(self):
+        """Derived from multiple stores updates when any source changes."""
+        a = writable(10)
+        b = writable(20)
+        total = store_derived([a, b], lambda x, y: x + y)
+        assert total.value == 30
+        a.value = 15
+        assert total.value == 35
+        b.value = 25
+        assert total.value == 40
+
+    def test_readable_double_unsubscribe_does_not_double_stop(self):
+        """Double unsubscribe should only call stop_fn once."""
+        stop_count = []
+
+        def start(set_val):
+            return lambda: stop_count.append(True)
+
+        s = readable(0, start)
+        unsub = s.subscribe(lambda v: None)
+        unsub()
+        unsub()
+        assert len(stop_count) == 1
+
+    def test_context_none_value_vs_missing(self):
+        """Setting context to None is distinguishable from a missing key."""
+        from unittest.mock import MagicMock
+        from pywire.runtime.page import BasePage
+
+        request = MagicMock()
+        request.app.state.debug = False
+        request.app.state.enable_pjax = False
+        page = BasePage(request=request, params={}, query={})
+
+        page.set_context("key", None)
+        assert page.get_context("key") is None
+        assert page.get_context("key", "fallback") is None  # key exists, value is None
+        assert page.get_context("missing", "fallback") == "fallback"  # key doesn't exist
+
+
 class TestPublicAPI:
     def test_imports_from_pywire(self):
         from pywire import writable, readable, store_derived

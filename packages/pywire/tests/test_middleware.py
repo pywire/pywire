@@ -157,3 +157,88 @@ class TestWebSocketThroughMiddleware:
             # Connection succeeded — that's the assertion.
             # Close cleanly; the server handler may send its own close.
             pass
+
+
+# ---------------------------------------------------------------------------
+# Error handling & edge cases
+# ---------------------------------------------------------------------------
+
+
+class FailingMiddleware(BaseHTTPMiddleware):
+    """Middleware that raises an exception."""
+
+    async def dispatch(self, request: Request, call_next):
+        raise ValueError("middleware failure")
+
+
+class RequestModifyingMiddleware(BaseHTTPMiddleware):
+    """Middleware that modifies request state."""
+
+    async def dispatch(self, request: Request, call_next):
+        request.state.injected = "from-middleware"
+        response = await call_next(request)
+        return response
+
+
+class TestMiddlewareErrorHandling:
+    def setup_method(self):
+        self.app = _make_app(middleware=[FailingMiddleware])
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def teardown_method(self):
+        shutil.rmtree(self.app._test_dir, ignore_errors=True)
+
+    def test_middleware_exception_returns_500(self):
+        """Middleware raising an exception should result in a 500 response."""
+        response = self.client.get("/")
+        assert response.status_code == 500
+
+
+class TestEmptyMiddlewareList:
+    def setup_method(self):
+        self.app = _make_app(middleware=[])
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def teardown_method(self):
+        shutil.rmtree(self.app._test_dir, ignore_errors=True)
+
+    def test_empty_middleware_list_works(self):
+        """Passing an empty list should be equivalent to no middleware."""
+        response = self.client.get("/")
+        assert response.status_code == 200
+
+
+class TestMiddlewareNoneDefault:
+    def setup_method(self):
+        self.app = _make_app()  # No middleware kwarg
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def teardown_method(self):
+        shutil.rmtree(self.app._test_dir, ignore_errors=True)
+
+    def test_no_middleware_param_works(self):
+        """Omitting the middleware parameter should work as before."""
+        response = self.client.get("/")
+        assert response.status_code == 200
+
+
+class TestMultipleMiddlewareCombined:
+    """Test middleware and add_middleware used together."""
+
+    def setup_method(self):
+        self.app = _make_app(
+            middleware=[(OrderMiddleware, {"tag": "constructor"})]
+        )
+        self.app.add_middleware(OrderMiddleware, tag="add_method")
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def teardown_method(self):
+        shutil.rmtree(self.app._test_dir, ignore_errors=True)
+
+    def test_both_middleware_execute(self):
+        """Both constructor and add_middleware should execute."""
+        response = self.client.get("/")
+        order = response.headers.get("X-Order", "")
+        # add_middleware is called after constructor middleware, so it's outermost
+        assert "constructor" in order
+        assert "add_method" in order

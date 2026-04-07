@@ -47,7 +47,10 @@ class WritableStore:
         Returns an unsubscribe function.
         """
         self._subscribers.add(callback)
-        callback(self._wire._value)  # Svelte convention: call immediately
+        try:
+            callback(self._wire._value)  # Svelte convention: call immediately
+        except Exception:
+            pass  # Don't let subscriber errors break the subscription
 
         def unsubscribe() -> None:
             self._subscribers.discard(callback)
@@ -56,7 +59,10 @@ class WritableStore:
 
     def _notify_subscribers(self) -> None:
         for cb in list(self._subscribers):
-            cb(self._wire._value)
+            try:
+                cb(self._wire._value)
+            except Exception:
+                pass  # Don't let one subscriber break others
 
     def __repr__(self) -> str:
         return f"WritableStore({self._wire._value!r})"
