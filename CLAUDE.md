@@ -127,3 +127,13 @@ Multi-version Python testing uses **nox** in the core and language server packag
 ### CI
 
 GitHub Actions workflows use `dorny/paths-filter` to run checks only for packages that have changed. Release management uses `release-please` with per-package versioning.
+
+### Commit Conventions (release-please)
+
+release-please uses **file paths only** to attribute commits to packages. The conventional commit scope (e.g., `fix(pywire):`) does NOT control which package gets a release PR — it only affects changelog formatting.
+
+Rules:
+- **Never use empty commits** (`--allow-empty`) to trigger releases — they fan out to ALL packages
+- To bump a specific package, modify a file inside that package's directory (e.g., touch a docstring, add a changelog note)
+- Use `chore:` prefix for CI/infra/dependency changes — release-please ignores `chore:` commits entirely
+- Valid component scopes: `pywire`, `pywire-language-server`, `tree-sitter-pywire`, `vscode-pywire`, `prettier-plugin-pywire`, `create-pywire-app`, `pywire-docs`
