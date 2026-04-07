@@ -4,5 +4,6 @@
   "packages/tree-sitter-pywire": "0.1.3",
   "packages/vscode-pywire": "0.1.4",
   "packages/prettier-plugin-pywire": "0.1.2",
-  "packages/create-pywire-app": "0.1.5"
+  "packages/create-pywire-app": "0.1.5",
+  "docs": "0.1.0"
 }

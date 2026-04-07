@@ -26,6 +26,10 @@
     "packages/create-pywire-app": {
       "release-type": "python",
       "component": "create-pywire-app"
+    },
+    "docs": {
+      "release-type": "node",
+      "component": "pywire-docs"
     }
   }
 }

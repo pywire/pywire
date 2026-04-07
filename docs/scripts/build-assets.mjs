@@ -4,10 +4,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = path.resolve(__dirname, '../..')
 const DOCS_DIR = path.resolve(__dirname, '..')
 const DOCS_PUBLIC_DIR = path.resolve(DOCS_DIR, 'public')
-const CLIENT_DIR = path.resolve(REPO_ROOT, 'src/pywire/client')
+const PYWIRE_PKG = path.resolve(__dirname, '../packages/pywire')
+const CLIENT_DIR = path.resolve(PYWIRE_PKG, 'src/pywire/client')
 
 function run(cmd, cwd) {
   console.log(`> ${cmd} (in ${cwd})`)
@@ -84,7 +84,7 @@ async function main() {
     // We specify dependencies/versions explicitly to match the docs runtime (Pyodide 0.29.x -> Emscripten 4.0.9)
     try {
       // 1. Clean up any stale build artifacts
-      const staleXbuildenv = path.join(REPO_ROOT, '.pyodide-xbuildenv')
+      const staleXbuildenv = path.join(PYWIRE_PKG, '.pyodide-xbuildenv')
       if (fs.existsSync(staleXbuildenv)) {
         console.log(`Removing stale xbuildenv at ${staleXbuildenv}`)
         fs.rmSync(staleXbuildenv, { recursive: true, force: true })
@@ -102,9 +102,9 @@ async function main() {
 
       console.log('Building for Pyodide 0.29.3 with Emscripten 4.0.9')
 
-      const venvPath = path.join(REPO_ROOT, '.build-venv')
+      const venvPath = path.join(PYWIRE_PKG, '.build-venv')
       const pyodideBin = path.join(venvPath, 'bin', 'pyodide')
-      const emsdkEnvPath = path.join(REPO_ROOT, 'emsdk', 'emsdk_env.sh')
+      const emsdkEnvPath = path.join(PYWIRE_PKG, 'emsdk', 'emsdk_env.sh')
 
       // Use Python 3.13 for the build environment (required for Pyodide 0.29.x + pyodide-build 0.32.0)
       const setupCmd = [
@@ -113,7 +113,7 @@ async function main() {
       ].join(' && ')
 
       console.log('Setting up build environment (Python 3.13)...')
-      run(setupCmd, REPO_ROOT)
+      run(setupCmd, PYWIRE_PKG)
 
       let buildCommand = `${pyodideBin} build . --verbose --exports whole_archive --outdir ${publicDistDir}`
       if (fs.existsSync(emsdkEnvPath)) {
@@ -122,7 +122,7 @@ async function main() {
       }
 
       const pyodideRunCmd = `env RUSTUP_TOOLCHAIN=nightly ${buildCommand}`
-      execSync(pyodideRunCmd, { cwd: REPO_ROOT, stdio: 'inherit', env })
+      execSync(pyodideRunCmd, { cwd: PYWIRE_PKG, stdio: 'inherit', env })
     } catch (e) {
       console.error('Failed to build WASM wheel:', e)
       process.exit(1)
@@ -130,14 +130,14 @@ async function main() {
   } else {
     // Standard native build (default)
     try {
-      run(`uv build --wheel --out-dir ${publicDistDir}`, REPO_ROOT)
+      run(`uv build --wheel --out-dir ${publicDistDir}`, PYWIRE_PKG)
     } catch (_e) {
       console.warn('uv build failed, trying uv run python -m build')
       try {
-        run(`uv run --all-extras python -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT)
+        run(`uv run --all-extras python -m build --wheel --outdir ${publicDistDir}`, PYWIRE_PKG)
       } catch (_e2) {
         console.warn('uv run failed, falling back to .venv/bin/python3')
-        run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, REPO_ROOT)
+        run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, PYWIRE_PKG)
       }
     }
   }

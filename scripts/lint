@@ -18,5 +18,5 @@ echo "=== Linting VS Code Extension ==="
 echo "=== Linting Prettier Plugin PyWire ==="
 (cd packages/prettier-plugin-pywire && ./scripts/lint)
 
-echo "=== Linting PyWire Marketing Site ==="
-(cd docs && ./scripts/lint)
+echo "=== Linting PyWire Docs ==="
+(cd docs && pnpm format && pnpm lint:fix)

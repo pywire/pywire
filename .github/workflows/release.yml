@@ -22,6 +22,7 @@ jobs:
       tree-sitter-pywire--release_created: ${{ steps.release.outputs['packages/tree-sitter-pywire--release_created'] }}
       prettier-plugin-pywire--release_created: ${{ steps.release.outputs['packages/prettier-plugin-pywire--release_created'] }}
       create-pywire-app--release_created: ${{ steps.release.outputs['packages/create-pywire-app--release_created'] }}
+      pywire-docs--release_created: ${{ steps.release.outputs['docs--release_created'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -42,10 +43,11 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: packages/pywire
-          command: publish
-          args: --username __token__
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+          command: build
+          args: --release --out dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/pywire/dist/
 
   # Publish language server to PyPI
   publish-language-server:
@@ -58,10 +60,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: |
-          cd packages/pywire-language-server
-          uv build
-          uv publish --token ${{ secrets.PYPI_TOKEN }}
+      - run: cd packages/pywire-language-server && uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/pywire-language-server/dist/
 
   # Publish VS Code extension
   publish-vscode:
@@ -72,6 +74,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - run: |
           cd packages/vscode-pywire
           pnpm install
@@ -90,7 +94,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: |
-          cd packages/create-pywire-app
-          uv build
-          uv publish --token ${{ secrets.PYPI_TOKEN }}
+      - run: cd packages/create-pywire-app && uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/create-pywire-app/dist/
+
+  # Deploy docs to Cloudflare Pages (on pywire release or docs release)
+  deploy-docs:
+    name: "Deploy Docs (Production)"
+    needs: release-please
+    if: >-
+      needs.release-please.outputs.pywire--release_created == 'true'
+      || needs.release-please.outputs.pywire-docs--release_created == 'true'
+    uses: ./.github/workflows/deploy-docs.yml
+    with:
+      environment: production
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

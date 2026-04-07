@@ -21,7 +21,7 @@ jobs:
       treesitter: ${{ steps.filter.outputs.treesitter }}
       create-app: ${{ steps.filter.outputs.create-app }}
       examples: ${{ steps.filter.outputs.examples }}
-      docs: ${{ steps.filter.outputs.docs }}
+      pywire-docs: ${{ steps.filter.outputs.pywire-docs }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -50,7 +50,7 @@ jobs:
             examples:
               - 'examples/**'
               - '.github/workflows/ci.yml'
-            docs:
+            pywire-docs:
               - 'docs/**'
               - '.github/workflows/ci.yml'
 
@@ -180,11 +180,11 @@ jobs:
       - name: Run Checks
         run: cd examples && ./scripts/check
 
-  # Docs site
-  check-docs:
-    name: "Check Docs"
+  # PyWire Interactive Docs
+  check-pywire-docs:
+    name: "Check PyWire Docs"
     needs: changes
-    if: needs.changes.outputs.docs == 'true'
+    if: needs.changes.outputs.pywire-docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -194,7 +194,7 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
       - name: Run Checks
-        run: cd docs && ./scripts/check
+        run: cd docs && pnpm check
 
   # Python Tests (run when core or LS changes)
   python-tests:

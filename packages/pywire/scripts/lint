@@ -22,14 +22,3 @@ if [ -d "src/pywire/client" ]; then
     )
 fi
 
-echo "-> Linting docs..."
-if [ -d "docs" ]; then
-    (
-        cd docs
-        if [ ! -x node_modules/.bin/prettier ]; then
-            pnpm install --prefer-frozen-lockfile
-        fi
-        pnpm format
-        pnpm lint:fix
-    )
-fi

@@ -65,10 +65,8 @@ packages/vscode-pywire/bundled/
 packages/tree-sitter-pywire/*.wasm
 
 # ─────────────────────── Docs ────────────────────────
-docs/site/public/sw.js
-docs/site/public/pywire-worker.js
-packages/pywire/docs/public/sw.js
-packages/pywire/docs/public/pywire-worker.js
+docs/public/sw.js
+docs/public/pywire-worker.js
 
 # ─────────────────────── Certs ───────────────────────
 localhost.pem

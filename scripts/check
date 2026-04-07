@@ -21,8 +21,8 @@ echo "=== Checking VS Code Extension ==="
 echo "=== Checking Prettier Plugin PyWire ==="
 (cd packages/prettier-plugin-pywire && ./scripts/check)
 
-echo "=== Checking PyWire Marketing Site ==="
-(cd docs && ./scripts/check)
+echo "=== Checking PyWire Docs ==="
+(cd docs && pnpm check)
 
 echo "=== Running Workspace Tests ==="
 ./scripts/test
