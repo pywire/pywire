@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/pywire/pywire/compare/vscode-pywire-v0.2.0...vscode-pywire-v0.2.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* **prettier-plugin-pywire:** bump for consistency ([33fc161](https://github.com/pywire/pywire/commit/33fc1613c5a70dfc4e8b00d1da3d99f2dc849925))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.1.4...vscode-pywire-v0.2.0) (2026-04-07)
 
 
