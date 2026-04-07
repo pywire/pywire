@@ -91,6 +91,40 @@ def toggle_theme():
 </style>
 ```
 
+## Programmatic Context API
+
+In addition to the template directives, you can manage context from Python code using `set_context()` and `get_context()` on any page or component instance.
+
+### `self.set_context(key, value)`
+
+Sets a context value that child components can access:
+
+```python
+def on_before_load(self):
+    user = get_user_from_session(self.request)
+    self.set_context("CURRENT_USER", user)
+```
+
+### `self.get_context(key, default=None)`
+
+Reads a context value set by an ancestor:
+
+```python
+def on_load(self):
+    user = self.get_context("CURRENT_USER")
+    if user:
+        self.greeting = f"Welcome, {user.name}"
+```
+
+### When to Use Each Approach
+
+| Approach                          | Best for                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| `!provide` / `!inject`            | Static context known at template compile time                                           |
+| `set_context()` / `get_context()` | Dynamic context set based on runtime conditions (request state, database lookups, auth) |
+
+Both approaches share the same underlying context dictionary, so values set with `set_context()` are accessible via `!inject` and vice versa.
+
 ## Key Points
 
 - Context keys are strings — use descriptive, uppercase names by convention (e.g., `'THEME'`, `'AUTH_USER'`).

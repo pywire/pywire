@@ -3,7 +3,50 @@ title: Deployment
 description: Deploying your PyWire application to production.
 ---
 
-PyWire applications can be deployed anywhere that supports Python and ASGI (e.g., Fly.io, Railway, DigitalOcean, or your own VPS).
+PyWire applications can be deployed anywhere that supports Python and ASGI (e.g., Render, Fly.io, Railway, DigitalOcean, or your own VPS).
+
+## `pywire deploy`
+
+The fastest way to get deployment configs is the `deploy` command. It builds your project and generates platform-specific configuration files.
+
+```sh
+pywire deploy --platform docker
+```
+
+### Platforms
+
+**Docker** (default) — generates a `Dockerfile`:
+
+```sh
+pywire deploy --platform docker
+```
+
+The generated Dockerfile uses `python:3.12-slim`, installs dependencies with `uv`, and runs the app with `pywire run`.
+
+**Render** — generates a `render.yaml`:
+
+```sh
+pywire deploy --platform render
+```
+
+After generating, push to your Git repo and connect it to [Render](https://render.com). The `render.yaml` configures a web service with the correct build and start commands.
+
+**Fly.io** — currently a stub that recommends Docker:
+
+```sh
+pywire deploy --platform fly
+```
+
+Full Fly.io support is coming. For now, generate a Dockerfile and deploy with `fly deploy`.
+
+### Options
+
+| Flag         | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--platform` | Target platform: `docker`, `render`, or `fly` (default: `docker`) |
+| `--out-dir`  | Output directory for generated files (default: `.`)               |
+
+The command validates your project before generating configs. If `pyproject.toml` or `uv.lock` is missing, you'll see a warning.
 
 ## Preparing for Production
 
@@ -30,32 +73,17 @@ PyWire applications can be deployed anywhere that supports Python and ASGI (e.g.
 | `--workers N`     | Number of worker processes (default: auto based on CPU cores) |
 | `--no-access-log` | Disable access logging for better performance                 |
 
-## Deployment Options
+## Manual Deployment
 
-The `create-pywire-app` scaffolding tool can generate deployment configurations for you.
+If you prefer to write deployment configs by hand or use a platform not supported by `pywire deploy`, PyWire works with any ASGI-compatible hosting.
 
 ### Docker
-
-Docker is the recommended deployment method. When you scaffold a project with `create-pywire-app`, you can choose to include a Dockerfile. The generated image:
-
-- Uses a multi-stage build to keep the image small
-- Installs only production dependencies
-- Runs the app with `pywire run`
 
 Build and run locally:
 
 ```sh
 docker build -t my-pywire-app .
 docker run -p 8000:8000 my-pywire-app
-```
-
-### Fly.io
-
-PyWire offers a pre-configured [Fly.io](https://fly.io/) deployment template. If you selected the Fly.io option during `create-pywire-app`, your project includes a `fly.toml` file ready to deploy:
-
-```sh
-fly launch
-fly deploy
 ```
 
 ### Generic ASGI Deployment

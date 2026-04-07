@@ -35,9 +35,28 @@ app = PyWire(
     debug=True,
 
     # Directory (relative to project root) containing your static assets (default: "/static")
-    static_path="/assets"
+    static_path="/assets",
+
+    # ASGI middleware (default: None). See the Middleware guide.
+    middleware=[CORSMiddleware],
 )
 ```
+
+### Middleware
+
+PyWire supports standard ASGI middleware. Pass middleware classes (or `(class, options)` tuples) to the `middleware` parameter, or use `app.add_middleware()` after construction:
+
+```python
+from starlette.middleware.cors import CORSMiddleware
+
+app = PyWire(
+    middleware=[
+        (CORSMiddleware, {"allow_origins": ["*"]}),
+    ],
+)
+```
+
+See the [Middleware guide](/docs/guides/middleware) for full details.
 
 ## Running the App
 

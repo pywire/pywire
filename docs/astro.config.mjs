@@ -66,6 +66,7 @@ export default defineConfig({
             { label: 'Server-Side Events', slug: 'concepts/events' },
             { label: 'Components', slug: 'concepts/components' },
             { label: 'Context & Injection', slug: 'concepts/context' },
+            { label: 'Stores', slug: 'concepts/stores' },
           ],
         },
         {
@@ -84,6 +85,7 @@ export default defineConfig({
             { label: 'Routing', slug: 'guides/routing' },
             { label: 'Layouts', slug: 'guides/layouts' },
             { label: 'Forms & Validation', slug: 'guides/forms' },
+            { label: 'Middleware', slug: 'guides/middleware' },
           ],
         },
         {
