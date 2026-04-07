@@ -188,6 +188,14 @@ class BasePage:
         self._active_component_keys: Set[str] = set()
         self._component_state_snapshots: Dict[str, Dict[str, Any]] = {}
 
+    def set_context(self, key: str, value: Any) -> None:
+        """Set a context value accessible to child components."""
+        self.context[key] = value
+
+    def get_context(self, key: str, default: Any = None) -> Any:
+        """Get a context value from parent component chain."""
+        return self.context.get(key, default)
+
     @property
     def navigate(self) -> Callable[[str], None]:
         """Return a callable that sets the pending navigation path."""
