@@ -75,7 +75,7 @@ def increment():
 
 ## Derived State
 
-Often, you have state that depends entirely on other state. PyWire provides `derived` to handle this efficiently. Derived values update automatically when their dependencies change.
+Often, you have state that depends entirely on other state. PyWire provides `derived` to handle this efficiently. Derived values are **lazily evaluated** — they only recompute when accessed after a dependency has changed. Results are memoized until a dependency updates.
 
 ### As a Decorator (`@derived`)
 
@@ -106,9 +106,38 @@ count = wire(1)
 is_even = derived(lambda: count % 2 == 0)
 ```
 
+### Filtering and Transforming Data
+
+Derived values are especially useful for computed views of data:
+
+```python
+todos = wire([
+    {"text": "Buy milk", "done": False},
+    {"text": "Write docs", "done": True},
+    {"text": "Fix bug", "done": False},
+])
+
+@derived
+def pending_todos():
+    return [t for t in todos if not t["done"]]
+
+@derived
+def pending_count():
+    return len(pending_todos)
+```
+
+In your template, `{pending_count}` updates automatically whenever `todos` changes.
+
+### Dependency Tracking
+
+PyWire tracks which reactive variables are accessed during a derived function's execution. If you access `count` and `multiplier`, the derived value recomputes when either changes. You don't need to declare dependencies explicitly — just access the variables you need.
+
+> [!NOTE]
+> Circular dependencies (derived A depends on derived B, which depends on derived A) are detected at runtime and raise a `CircularDependencyError`.
+
 ## Side Effects (`@effect`)
 
-If you need to run code _in response_ to state changes (like logging, saving to local storage, or fetching data), use the `@effect` decorator.
+If you need to run code _in response_ to state changes (like logging, saving to a database, or triggering external API calls), use the `@effect` decorator.
 
 ```python
 from pywire import wire, effect
@@ -122,6 +151,25 @@ def log_changes():
 ```
 
 PyWire automatically tracks dependencies inside the effect function. If you access a reactive variable, the effect re-runs when that variable updates.
+
+### Common Use Cases
+
+- **Logging and analytics**: Track state changes for debugging or metrics.
+- **External API calls**: Sync state to an external service when it changes.
+- **Derived side effects**: Trigger actions based on computed conditions.
+
+```python
+items = wire([])
+
+@effect
+def warn_if_empty():
+    if len(items) == 0:
+        print("Warning: No items remaining!")
+```
+
+### When NOT to Use Effects
+
+Don't use effects to compute derived values — use `derived` instead. Effects are for **side effects** (actions that do something beyond returning a value), not for transforming data.
 
 ## Scope & Persistence
 
@@ -138,4 +186,4 @@ State defined in a `.wire` file is **scoped to the component instance**.
 To share state between components or users, you should use standard Python patterns:
 
 - **Global Variables**: Define `wire()` objects in a separate `.py` module and import them. This creates global, singleton state shared by _all_ users (be careful!).
-- **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables during the `mount()` lifecycle hook.
+- **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables during the `on_before_load()` lifecycle hook.
