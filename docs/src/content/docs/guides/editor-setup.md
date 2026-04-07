@@ -38,6 +38,15 @@ For the best experience, add these to your VS Code `settings.json`:
 }
 ```
 
+**Extension settings:**
+
+| Setting | Description |
+|---------|-------------|
+| `pywire.pythonPath` | Path to the Python interpreter (auto-detected by default) |
+| `pywire.tyPath` | Path to the `ty` type checker binary |
+| `pywire.trace.server` | Trace level for language server communication (`off`, `messages`, `verbose`) |
+| `pywire.disableUpdateNotifications` | Suppress extension update notifications |
+
 ## Language Server
 
 The PyWire Language Server powers the IntelliSense features in the VS Code extension. It's built on [pygls](https://github.com/openlawlibrary/pygls) and implements the Language Server Protocol, so it can work with any LSP-compatible editor.
