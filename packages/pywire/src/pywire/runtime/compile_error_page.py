@@ -7,6 +7,7 @@ from typing import Any, Optional, Union, cast
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
+from pywire import __version__
 from pywire.compiler.exceptions import PyWireSyntaxError
 from pywire.runtime.page import BasePage
 
