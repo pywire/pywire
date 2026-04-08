@@ -9,8 +9,6 @@ import asyncio
 import logging
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger(__name__)
-
 from aioquic.asyncio import QuicConnectionProtocol, serve
 from aioquic.h3.connection import H3_ALPN, H3Connection
 from aioquic.h3.events import (
@@ -19,6 +17,8 @@ from aioquic.h3.events import (
 )
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import ProtocolNegotiated, QuicEvent
+
+logger = logging.getLogger(__name__)
 
 
 class ASGIProtocol(QuicConnectionProtocol):
@@ -54,7 +54,9 @@ class ASGIProtocol(QuicConnectionProtocol):
         if isinstance(event, HeadersReceived):
             # Parse ASGI scope from headers
             scope = self._build_scope(event)
-            logger.debug("Received %s request to %s", scope["type"], scope.get("path", "/"))
+            logger.debug(
+                "Received %s request to %s", scope["type"], scope.get("path", "/")
+            )
 
             # Create ASGI handler
             if self._app is None:
