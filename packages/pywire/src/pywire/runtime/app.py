@@ -154,8 +154,8 @@ class PyWire:
         else:
             path = Path(pages_dir)
             if not path.is_absolute():
-                # Explicit paths are relative to the caller (file definition)
-                self.pages_dir = (caller_dir / path).resolve()
+                # Explicit paths are relative to the project root
+                self.pages_dir = (project_root / path).resolve()
             else:
                 self.pages_dir = path.resolve()
 
