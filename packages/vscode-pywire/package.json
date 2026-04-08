@@ -2,7 +2,6 @@
   "name": "pywire",
   "displayName": "PyWire",
   "description": "Language support for PyWire files",
-<<<<<<< HEAD
   "version": "0.2.2",
   "type": "module",
   "publisher": "pywire",
