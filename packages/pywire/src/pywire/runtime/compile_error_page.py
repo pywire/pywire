@@ -70,7 +70,6 @@ class CompileErrorPage(BasePage):
 
     async def render(self, init: bool = True) -> HTMLResponse:
         """Render the compile error page."""
-        from pywire import __version__
 
         # Read the context around the error line
         context_lines = []

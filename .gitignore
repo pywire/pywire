@@ -75,5 +75,6 @@ localhost-key.pem
 # ─────────────────────── Other ───────────────────────
 chatbot.db
 .gemini/
+.claude/worktrees/
 gha-creds-*.json
 .agent/settings.local.json

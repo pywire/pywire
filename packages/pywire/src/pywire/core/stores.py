@@ -120,9 +120,7 @@ class ReadableStore:
 class DerivedStore:
     """A store derived from one or more source stores."""
 
-    def __init__(
-        self, stores: Union[list, tuple], fn: Callable[..., Any]
-    ) -> None:
+    def __init__(self, stores: Union[list, tuple], fn: Callable[..., Any]) -> None:
         self._stores = stores
         self._fn = fn
         self._derived = Derived(lambda: fn(*[s.value for s in self._stores]))

@@ -225,9 +225,7 @@ export class DOMUpdater {
    * - External scripts with a src already in <head> are skipped to avoid duplicates.
    * - Inline scripts use indirect eval() for global-scope execution.
    */
-  private executeScripts(
-    scripts: { script: HTMLScriptElement; inPermanent: boolean }[]
-  ): void {
+  private executeScripts(scripts: { script: HTMLScriptElement; inPermanent: boolean }[]): void {
     for (const { script, inPermanent } of scripts) {
       if (inPermanent) continue
 
