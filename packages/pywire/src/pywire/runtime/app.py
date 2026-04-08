@@ -171,8 +171,8 @@ class PyWire:
         else:
             path = Path(static_dir)
             if not path.is_absolute():
-                # Explicit paths are relative to the caller (file definition)
-                self.static_dir = (caller_dir / path).resolve()
+                # Explicit paths are relative to the project root
+                self.static_dir = (project_root / path).resolve()
             else:
                 self.static_dir = path.resolve()
 
