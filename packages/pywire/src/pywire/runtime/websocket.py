@@ -845,24 +845,41 @@ class WebSocketHandler:
                         # Update our reference
                         self.connection_pages[connection] = new_page
 
+                        # Set update hook (needed for background tasks / await blocks)
+                        ws = connection
+
+                        async def broadcast_update(
+                            _page: Any = new_page, _ws: Any = ws
+                        ) -> None:
+                            update = await _page.render_update(init=False)
+                            await self._send_update_payload(_ws, update)
+
+                        new_page._on_update = broadcast_update
+
+                        # Run on_load lifecycle hook (render with init=False skips it)
+                        if hasattr(new_page, "on_load"):
+                            if inspect.iscoroutinefunction(new_page.on_load):
+                                await new_page.on_load()
+                            else:
+                                new_page.on_load()
+
                         # Render with new code but preserved state (init=False avoids re-injecting client scripts)
                         response = await new_page.render(init=False)
                         html = cast(bytes, response.body).decode("utf-8")
                         await connection.send_bytes(
                             msgpack.packb({"type": "update", "html": html})
                         )
-                        print(
-                            f"PyWire: Hot reload (state preserved) for {type(new_page).__name__}"
+                        logger.info(
+                            "Hot reload (state preserved) for %s",
+                            type(new_page).__name__,
                         )
 
                     except Exception as e:
                         # Anything failed, fall back to hard reload
-                        print(
-                            f"PyWire: Hot reload failed, falling back to hard reload: {e}"
+                        logger.warning(
+                            "Hot reload failed, falling back to hard reload: %s", e,
+                            exc_info=True,
                         )
-                        import traceback
-
-                        traceback.print_exc()
                         message_bytes = msgpack.packb({"type": "reload"})
                         await connection.send_bytes(message_bytes)
                 else:

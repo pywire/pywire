@@ -72,9 +72,9 @@ class WireBase:
         if ctx:
             page, region_id = ctx
             self._pages.add(page)
-            print(
-                f"WIRE-TRACK: wire={id(self)} registered page={id(page)} region={region_id} field={field}",
-                flush=True,
+            logger.debug(
+                "WIRE-TRACK: wire=%s registered page=%s region=%s field=%s",
+                id(self), id(page), region_id, field,
             )
             register = getattr(page, "_register_wire_read", None)
             if register:
@@ -118,9 +118,9 @@ class WireBase:
 
         # Notify connected pages for re-render
         for page in list(self._pages):
-            print(
-                f"WIRE-NOTIFY: wire={id(self)} notifying page={id(page)} field={field}",
-                flush=True,
+            logger.debug(
+                "WIRE-NOTIFY: wire=%s notifying page=%s field=%s",
+                id(self), id(page), field,
             )
             invalidate = getattr(page, "_invalidate_wire", None)
             if invalidate:

@@ -650,9 +650,9 @@ class BasePage:
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
 
-        print(
-            f"INVALIDATE: page={id(self)} wire={id(wire_obj)} key={key} affected_regions={regions}",
-            flush=True,
+        logger.debug(
+            "INVALIDATE: page=%s wire=%s key=%s affected_regions=%s",
+            id(self), id(wire_obj), key, regions,
         )
 
         if regions:
@@ -743,7 +743,7 @@ class BasePage:
 
                     # If we successfully generated partial updates, return them
                     result = {"type": "regions", "regions": updates}
-                    print(f"RENDER-UPDATE-REGIONS: {updates}", flush=True)
+                    logger.debug("RENDER-UPDATE-REGIONS: %s", updates)
 
                     # 2. Collect commands from all refs (recursively)
                     commands = self._collect_all_commands()

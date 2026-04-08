@@ -1,6 +1,7 @@
 """Page loader - compiles and executes .pywire files."""
 
 import ast
+import logging
 import os
 import hashlib
 import importlib.util
@@ -8,6 +9,8 @@ import json
 import sys
 from contextvars import ContextVar
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from types import ModuleType
 from typing import Any, Dict, Optional, Set, Type, cast
 
@@ -228,8 +231,9 @@ class PageLoader:
             dependents = self._reverse_deps.get(key, set())
             for dependent in list(dependents):
                 # We construct a Path object to recurse properly (though internal key is string)
-                print(
-                    f"PyWire: Invalidating dependent {dependent} because {key} changed."
+                logger.debug(
+                    "Invalidating dependent %s because %s changed.",
+                    dependent, key,
                 )
                 invalidated.update(self.invalidate_cache(Path(dependent)))
 

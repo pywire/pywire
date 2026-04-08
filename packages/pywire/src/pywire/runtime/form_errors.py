@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class MissingFieldError:
@@ -41,7 +44,7 @@ class ErrorNamespace(dict):
         if name.startswith("_"):
             return super().__getattribute__(name)
         val = self.get(name, MISSING_FIELD_ERROR)
-        print(f"ERROR-NS-GETATTR: name={name} val={val} type={type(val)}", flush=True)
+        logger.debug("ERROR-NS-GETATTR: name=%s val=%s type=%s", name, val, type(val))
         return val
 
     def __getitem__(self, key: str) -> Any:

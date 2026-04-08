@@ -7,6 +7,7 @@ from pywire.core.wire import WirePrimitive, unwrap_wire
 from pywire.runtime.pydantic_integration import validate_with_model, extract_field_rules
 from pywire.runtime.validation import FieldRules, form_validator
 from pywire.runtime.form_errors import ErrorNamespace, build_error_namespace
+import logging as _logging
 
 @props
 class Props:
@@ -23,7 +24,7 @@ def _errors_wire_for():
     if not hasattr(self, "_errors_wire"):
         self._errors_wire = WirePrimitive(ErrorNamespace())
     w = self._errors_wire
-    print(f"ERRORS-WIRE-FOR: self={id(self)} wire={id(w)}", flush=True)
+    _logging.getLogger("pywire.components.form").debug("ERRORS-WIRE-FOR: self=%s wire=%s", id(self), id(w))
     return w
 
 def _clear_errors():
@@ -33,7 +34,7 @@ def _set_errors(errs):
     from pywire.runtime.form_errors import build_error_namespace
     wire = _errors_wire_for()
     ns = build_error_namespace(errs)
-    print(f"SET-ERRORS: wire={id(wire)} ns={ns} ns_type={type(ns)} username={getattr(ns, 'username', 'N/A')}", flush=True)
+    _logging.getLogger("pywire.components.form").debug("SET-ERRORS: wire=%s ns=%s ns_type=%s username=%s", id(wire), ns, type(ns), getattr(ns, 'username', 'N/A'))
     wire.value = ns
 
 def _build_runtime_schema():

@@ -203,6 +203,9 @@ class PyWire:
         else:
             self.debug = debug
 
+        if self.debug:
+            logging.getLogger("pywire").setLevel(logging.DEBUG)
+
         self.enable_webtransport = enable_webtransport
         self.max_upload_size = max(1, int(max_upload_size))
         self.upload_token_ttl_seconds = max(30, int(upload_token_ttl_seconds))
@@ -475,17 +478,13 @@ class PyWire:
             return Response("Not Found", status_code=404)
 
         path_str = request.query_params.get("path")
-        if self.debug:
-            print(f"\nDEBUG: _handle_source path={path_str}")
+        logger.debug("_handle_source path=%s", path_str)
         if not path_str:
             return Response("Missing path", status_code=400)
 
         try:
             path = Path(path_str).resolve()
-            if self.debug:
-                print(
-                    f"DEBUG: _handle_source resolved path={path}, exists={path.exists()}"
-                )
+            logger.debug("_handle_source resolved path=%s, exists=%s", path, path.exists())
             # Path existence check
             if not path.exists():
                 return Response("File not found", status_code=404)
@@ -897,7 +896,7 @@ class PyWire:
                         if route_path:
                             self.router.add_route(route_path, new_page_class)
 
-                print(f"Reloaded: {file_path}")
+                logger.info("Reloaded: %s", file_path)
 
             except Exception as e:
                 logger.error(f"Failed to reload {file_path}: {e}", exc_info=True)
@@ -1143,8 +1142,7 @@ class PyWire:
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""
-        if self.debug:
-            print(f"DEBUG: Scope type: {scope['type']}")
+        logger.debug("Scope type: %s", scope["type"])
         if scope["type"] == "webtransport":
             await self.web_transport_handler.handle(scope, receive, send)
             return

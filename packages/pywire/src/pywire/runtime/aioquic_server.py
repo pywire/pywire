@@ -6,7 +6,10 @@ which requires explicit enable_webtransport=True in H3Connection initialization.
 """
 
 import asyncio
+import logging
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 from aioquic.asyncio import QuicConnectionProtocol, serve
 from aioquic.h3.connection import H3_ALPN, H3Connection
@@ -39,10 +42,7 @@ class ASGIProtocol(QuicConnectionProtocol):
             if event.alpn_protocol in H3_ALPN:
                 # CRITICAL: Enable WebTransport support
                 self._http = H3Connection(self._quic, enable_webtransport=True)
-                print(
-                    "PyWire: HTTP/3 connection established with WebTransport enabled",
-                    flush=True,
-                )
+                logger.debug("HTTP/3 connection established with WebTransport enabled")
 
         # Pass events to HTTP/3 layer
         if self._http is not None:
@@ -54,10 +54,7 @@ class ASGIProtocol(QuicConnectionProtocol):
         if isinstance(event, HeadersReceived):
             # Parse ASGI scope from headers
             scope = self._build_scope(event)
-            print(
-                f"PyWire: Received {scope['type']} request to {scope.get('path', '/')}",
-                flush=True,
-            )
+            logger.debug("Received %s request to %s", scope["type"], scope.get("path", "/"))
 
             # Create ASGI handler
             if self._app is None:
@@ -112,7 +109,7 @@ class ASGIProtocol(QuicConnectionProtocol):
 
         async def send(message: dict) -> None:
             msg_type = message["type"]
-            print(f"PyWire: Sending {msg_type} on stream {stream_id}", flush=True)
+            logger.debug("Sending %s on stream %s", msg_type, stream_id)
 
             if msg_type == "webtransport.accept":
                 # Send 200 OK for WebTransport
@@ -124,10 +121,7 @@ class ASGIProtocol(QuicConnectionProtocol):
                             (b"sec-webtransport-http3-draft", b"draft02"),
                         ],
                     )
-                print(
-                    f"PyWire: WebTransport connection accepted on stream {stream_id}",
-                    flush=True,
-                )
+                logger.debug("WebTransport connection accepted on stream %s", stream_id)
             elif msg_type == "http.response.start":
                 status = message.get("status", 200)
                 response_headers = message.get("headers", [])
@@ -185,7 +179,7 @@ async def run_aioquic_server(
         return ASGIProtocol(*args, app_factory=app_factory, **kwargs)
 
     # Start server
-    print(f"PyWire: Starting aioquic HTTP/3 server on {host}:{port}", flush=True)
+    logger.info("Starting aioquic HTTP/3 server on %s:%s", host, port)
     await serve(
         host,
         port,
