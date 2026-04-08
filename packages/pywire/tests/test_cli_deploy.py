@@ -8,6 +8,7 @@ from click.testing import CliRunner
 
 from pywire.cli.deploy import (
     generate_dockerfile,
+    generate_fly_toml,
     generate_render_yaml,
     validate_deploy_config,
 )
@@ -33,6 +34,28 @@ class TestGenerateRenderYaml:
     def test_substitutes_different_names(self) -> None:
         content = generate_render_yaml(Path("."), "cool-project")
         assert "name: cool-project" in content
+
+
+class TestGenerateFlyToml:
+    def test_includes_app_name(self) -> None:
+        content = generate_fly_toml(Path("."), "my-app")
+        assert 'app = "my-app"' in content
+
+    def test_includes_dockerfile_reference(self) -> None:
+        content = generate_fly_toml(Path("."), "my-app")
+        assert 'dockerfile = "Dockerfile"' in content
+
+    def test_includes_internal_port(self) -> None:
+        content = generate_fly_toml(Path("."), "my-app")
+        assert "internal_port = 8000" in content
+
+    def test_force_https(self) -> None:
+        content = generate_fly_toml(Path("."), "my-app")
+        assert "force_https = true" in content
+
+    def test_substitutes_different_names(self) -> None:
+        content = generate_fly_toml(Path("."), "cool-project")
+        assert 'app = "cool-project"' in content
 
 
 class TestValidateDeployConfig:
@@ -105,7 +128,7 @@ class TestDeployCommand:
             assert "runtime: python" in content
 
     @patch("pywire.compiler.build.build_project")
-    def test_fly_prints_stub_warning(self, mock_build: MagicMock) -> None:
+    def test_fly_generates_fly_toml_and_dockerfile(self, mock_build: MagicMock) -> None:
         mock_build.return_value = MagicMock(
             pages=0, layouts=0, components=0, out_dir=".pywire/build"
         )
@@ -114,7 +137,27 @@ class TestDeployCommand:
             _make_app_dir(tmpdir)
             result = runner.invoke(cli, ["deploy", "--platform", "fly"])
             assert result.exit_code == 0, result.output
-            assert "coming soon" in result.output
+            assert Path("fly.toml").exists()
+            assert Path("Dockerfile").exists()
+            fly_content = Path("fly.toml").read_text()
+            assert 'app = "' in fly_content
+            assert "internal_port = 8000" in fly_content
+            assert "fly deploy" in result.output
+
+    @patch("pywire.compiler.build.build_project")
+    def test_fly_skips_dockerfile_if_exists(self, mock_build: MagicMock) -> None:
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            _make_app_dir(tmpdir)
+            Path("Dockerfile").write_text("# custom dockerfile")
+            result = runner.invoke(cli, ["deploy", "--platform", "fly"])
+            assert result.exit_code == 0, result.output
+            assert Path("fly.toml").exists()
+            # Existing Dockerfile should not be overwritten (not in files_to_write)
+            assert Path("Dockerfile").read_text() == "# custom dockerfile"
 
     @patch("pywire.compiler.build.build_project")
     def test_existing_file_asks_overwrite(self, mock_build: MagicMock) -> None:
@@ -128,7 +171,7 @@ class TestDeployCommand:
             # Decline overwrite
             result = runner.invoke(cli, ["deploy", "--platform", "docker"], input="n\n")
             assert result.exit_code == 0, result.output
-            assert "Aborted" in result.output
+            assert "Skipped" in result.output
             assert Path("Dockerfile").read_text() == "old content"
 
     @patch("pywire.compiler.build.build_project")

@@ -309,17 +309,28 @@ def build(
 
     from pywire.compiler.build import build_project
 
+    # Resolve static_dir for asset fingerprinting
+    resolved_static_dir = None
+    if hasattr(app_instance, "static_dir") and app_instance.static_dir:
+        resolved_static_dir = Path(app_instance.static_dir)
+
     summary = build_project(
         optimize=optimize,
         pages_dir=resolved_pages_dir,
         out_dir=Path(out_dir),
+        static_dir=resolved_static_dir,
     )
 
-    console.print(
-        "✅ Build complete "
-        f"(pages={summary.pages}, layouts={summary.layouts}, "
-        f"components={summary.components}, out={summary.out_dir})"
-    )
+    parts = [
+        f"pages={summary.pages}",
+        f"layouts={summary.layouts}",
+        f"components={summary.components}",
+    ]
+    if summary.static_assets > 0:
+        parts.append(f"static_assets={summary.static_assets}")
+    parts.append(f"out={summary.out_dir}")
+
+    console.print(f"✅ Build complete ({', '.join(parts)})")
 
 
 @cli.command()
@@ -416,36 +427,34 @@ def deploy(app: Optional[str], platform: str, out_dir: str) -> None:
     # Derive project name from directory
     project_name = project_root.name
 
-    # Handle fly stub
-    if platform == "fly":
-        console.print(
-            "⚠️  Full Fly.io support is coming soon. "
-            "For now, you can use the Docker platform ([cyan]--platform docker[/]) "
-            "and deploy via [cyan]fly deploy[/] with the generated Dockerfile."
-        )
-        generate_fly_toml(project_root, project_name)
-        return
+    # Generate config files
+    files_to_write: list[tuple[str, str]] = []
 
-    # Generate config
     if platform == "docker":
-        filename = "Dockerfile"
-        content = generate_dockerfile(project_root)
+        files_to_write.append(("Dockerfile", generate_dockerfile(project_root)))
     elif platform == "render":
-        filename = "render.yaml"
-        content = generate_render_yaml(project_root, project_name)
+        files_to_write.append(
+            ("render.yaml", generate_render_yaml(project_root, project_name))
+        )
+    elif platform == "fly":
+        files_to_write.append(
+            ("fly.toml", generate_fly_toml(project_root, project_name))
+        )
+        # Fly.io uses Docker — generate a Dockerfile if one doesn't already exist
+        if not (out_path / "Dockerfile").exists():
+            files_to_write.append(("Dockerfile", generate_dockerfile(project_root)))
     else:
         raise click.UsageError(f"Unknown platform: {platform}")
 
-    target = out_path / filename
-
-    if target.exists():
-        if not click.confirm(f"'{target}' already exists. Overwrite?"):
-            console.print("Aborted.")
-            return
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content)
-    console.print(f"✅ Generated [cyan]{target}[/]")
+    for filename, content in files_to_write:
+        target = out_path / filename
+        if target.exists():
+            if not click.confirm(f"'{target}' already exists. Overwrite?"):
+                console.print(f"Skipped [cyan]{target}[/]")
+                continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        console.print(f"✅ Generated [cyan]{target}[/]")
 
     # Next steps guidance
     if platform == "docker":
@@ -460,6 +469,13 @@ def deploy(app: Optional[str], platform: str, out_dir: str) -> None:
             "  1. Push your code to a Git repository\n"
             "  2. Connect the repo on [link=https://render.com]render.com[/link]\n"
             "  3. Render will auto-detect [cyan]render.yaml[/] and deploy"
+        )
+    elif platform == "fly":
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. Install the Fly CLI: [cyan]curl -L https://fly.io/install.sh | sh[/]\n"
+            "  2. Run [cyan]fly launch --no-deploy[/] to create the app on Fly.io\n"
+            "  3. Deploy with [cyan]fly deploy[/]"
         )
 
 

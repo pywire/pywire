@@ -222,6 +222,11 @@ class PyWire:
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
+        # Asset fingerprinting cache (prod without build: path -> content hash)
+        self._asset_hash_cache: Dict[str, str] = {}
+        # Asset manifest (prod with build: original path -> fingerprinted filename)
+        self._asset_manifest: Optional[Dict[str, str]] = None
+
         self.router = Router()
 
         from pywire.runtime.loader import get_loader
@@ -288,6 +293,14 @@ class PyWire:
                 internal_static_dir,
             )
 
+        # Load asset manifest from build output (if pywire build was run)
+        build_manifest_path = project_root / ".pywire" / "build" / "asset-manifest.json"
+        build_static_dir = project_root / ".pywire" / "build" / "static"
+        if build_manifest_path.exists():
+            manifest = json.loads(build_manifest_path.read_text())
+            self._asset_manifest = manifest
+            logger.info("Loaded asset manifest with %d entries", len(manifest))
+
         # Mount User Static Files if configured
         if self.static_dir:
             if not self.static_dir.exists():
@@ -295,6 +308,16 @@ class PyWire:
                     f"Configured static directory '{self.static_dir}' does not exist."
                 )
             else:
+                # If build produced fingerprinted static files, mount those first
+                # (fingerprinted filenames like logo.a1b2c3d4.png are only in build dir)
+                if self._asset_manifest and build_static_dir.exists():
+                    routes.append(
+                        Mount(
+                            self.static_url_path,
+                            app=StaticFiles(directory=str(build_static_dir)),
+                            name="static_fingerprinted",
+                        )
+                    )
                 routes.append(
                     Mount(
                         self.static_url_path,

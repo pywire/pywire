@@ -205,6 +205,59 @@ class BasePage:
 
         return _navigate
 
+    def asset(self, path: str) -> str:
+        """Return a fingerprinted URL for a user static asset.
+
+        Usage in .wire templates: {asset('images/logo.png')}
+
+        Behavior depends on mode:
+        - Dev: ?v={mtime} for instant invalidation
+        - Prod with build: filename-based (logo.a1b2c3d4.png) for CDN caching
+        - Prod without build: ?v={content_hash} fallback
+        """
+        import hashlib
+        import os
+
+        try:
+            pywire_app = self.request.app.state.pywire
+        except (AttributeError, KeyError):
+            return f"/static/{path}"
+
+        static_dir = pywire_app.static_dir
+        static_url_path = getattr(pywire_app, "static_url_path", "/static")
+
+        if static_dir is None:
+            return f"{static_url_path}/{path}"
+
+        base_url = f"{static_url_path}/{path}"
+
+        if pywire_app._is_dev_mode:
+            # Dev: timestamp-based, no caching
+            file_path = static_dir / path
+            try:
+                mtime = os.path.getmtime(file_path)
+                return f"{base_url}?v={int(mtime)}"
+            except OSError:
+                return base_url
+
+        # Prod with manifest (pywire build was run): filename-based
+        manifest = pywire_app._asset_manifest
+        if manifest is not None and path in manifest:
+            return f"{static_url_path}/{manifest[path]}"
+
+        # Prod without manifest: content hash fallback
+        cache = pywire_app._asset_hash_cache
+        if path in cache:
+            return f"{base_url}?v={cache[path]}"
+
+        file_path = static_dir / path
+        try:
+            content_hash = hashlib.md5(file_path.read_bytes()).hexdigest()[:12]
+            cache[path] = content_hash
+            return f"{base_url}?v={content_hash}"
+        except OSError:
+            return base_url
+
     def _is_debug(self) -> bool:
         try:
             return getattr(self.request.app.state, "debug", False)

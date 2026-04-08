@@ -41,12 +41,28 @@ def generate_render_yaml(project_root: Path, project_name: str) -> str:
     return RENDER_YAML_TEMPLATE.format(project_name=project_name)
 
 
-def generate_fly_toml(project_root: Path, project_name: str) -> str:
-    """Generate fly.toml content for a PyWire project.
+FLY_TOML_TEMPLATE = """\
+app = "{app_name}"
+primary_region = "ord"
 
-    TODO: Implement full Fly.io configuration generation.
-    """
-    return ""
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+
+[[vm]]
+  memory = "512mb"
+  cpus = 1
+"""
+
+
+def generate_fly_toml(project_root: Path, project_name: str) -> str:
+    """Generate fly.toml content for a PyWire project."""
+    return FLY_TOML_TEMPLATE.format(app_name=project_name)
 
 
 def validate_deploy_config(platform: str, project_root: Path) -> list[str]:
