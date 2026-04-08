@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.2...tree-sitter-pywire-v0.2.3) (2026-04-08)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** fix build warning on macOS ([e3f75e7](https://github.com/pywire/pywire/commit/e3f75e7a63d738cb266d35b791aa3586d9ffb2b7))
+
 ## [0.2.2](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.1...tree-sitter-pywire-v0.2.2) (2026-04-07)
 
 
