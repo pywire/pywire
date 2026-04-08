@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/pywire/pywire/compare/pywire-v0.2.6...pywire-v0.2.7) (2026-04-08)
+
+
+### Bug Fixes
+
+* **pywire:** resolve explicit static_dir relative to project root ([c95f252](https://github.com/pywire/pywire/commit/c95f252c05743ca3f4570270adadb99ae90b657d))
+
 ## [0.2.6](https://github.com/pywire/pywire/compare/pywire-v0.2.5...pywire-v0.2.6) (2026-04-08)
 
 
