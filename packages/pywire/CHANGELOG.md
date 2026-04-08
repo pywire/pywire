@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/pywire/pywire/compare/pywire-v0.2.5...pywire-v0.2.6) (2026-04-08)
+
+
+### Bug Fixes
+
+* **pywire:** resolve explicit pages_dir relative to project root ([ae753f1](https://github.com/pywire/pywire/commit/ae753f1a7605a4e1bea521738e18bd87c24ac2cb))
+
 ## [0.2.5](https://github.com/pywire/pywire/compare/pywire-v0.2.4...pywire-v0.2.5) (2026-04-07)
 
 
