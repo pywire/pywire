@@ -786,7 +786,7 @@ class WebSocketHandler:
                 # Persist session state after navigation
                 session_id = self.session_ids.get(websocket)
                 if session_id:
-                    await self._persist_session(session_id, new_page)
+                    self._persist_session(session_id, new_page)
             except Exception:
                 raise
         except Exception as e:
@@ -804,9 +804,7 @@ class WebSocketHandler:
     async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
         """Persist page state to the session store (background)."""
         try:
-            snapshot = snapshot_page_state(
-                page, warn_size=self.app.session_warn_size
-            )
+            snapshot = snapshot_page_state(page, warn_size=self.app.session_warn_size)
             await self.app.session_store.set(
                 session_id, snapshot, ttl=self.app.session_ttl
             )

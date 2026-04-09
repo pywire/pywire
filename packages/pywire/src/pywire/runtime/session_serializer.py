@@ -86,9 +86,7 @@ def _is_serializable(value: Any) -> bool:
     return False
 
 
-def snapshot_page_state(
-    page: Any, *, warn_size: int = 0
-) -> Dict[str, Any]:
+def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     """Extract serializable user state from a BasePage instance.
 
     Args:

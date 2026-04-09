@@ -39,7 +39,7 @@ class RedisSessionStore:
     async def connect(self) -> None:
         """Initialize the Redis connection pool."""
         try:
-            import redis.asyncio as aioredis  # ty: ignore[unresolved-import]
+            import redis.asyncio as aioredis
         except ImportError:
             raise ImportError(_MISSING_REDIS_MSG) from None
 
