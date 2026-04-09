@@ -86,8 +86,15 @@ def _is_serializable(value: Any) -> bool:
     return False
 
 
-def snapshot_page_state(page: Any) -> Dict[str, Any]:
+def snapshot_page_state(
+    page: Any, *, warn_size: int = 0
+) -> Dict[str, Any]:
     """Extract serializable user state from a BasePage instance.
+
+    Args:
+        page: The BasePage instance to snapshot.
+        warn_size: If > 0, log a warning when the snapshot exceeds this
+            many bytes. Set via ``PyWire(session_warn_size=...)``.
 
     Returns a dict with:
     - "attrs": user-defined attributes (wire values peeked to raw)
@@ -186,6 +193,24 @@ def snapshot_page_state(page: Any) -> Dict[str, Any]:
     snapshot["page_class"] = type(page).__qualname__
     if hasattr(page, "request") and hasattr(page.request, "url"):
         snapshot["route_path"] = str(page.request.url.path)
+
+    # Warn if snapshot is large
+    if warn_size > 0:
+        try:
+            import msgpack
+
+            size = len(msgpack.packb(snapshot))
+            if size > warn_size:
+                logger.warning(
+                    "Session snapshot for %s is %d bytes (threshold: %d). "
+                    "Large sessions increase Redis memory and persist latency. "
+                    "Consider moving large data out of page attributes.",
+                    type(page).__qualname__,
+                    size,
+                    warn_size,
+                )
+        except Exception:
+            pass  # msgpack not available or snapshot not packable — skip check
 
     return snapshot
 

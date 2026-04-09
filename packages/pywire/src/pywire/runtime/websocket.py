@@ -360,9 +360,6 @@ class WebSocketHandler:
                 msgpack.packb({"type": "init_ack", "session_id": session_id})
             )
 
-            # Persist initial state
-            await self._persist_session(session_id, page)
-
         except Exception as e:
             import traceback
 
@@ -515,7 +512,7 @@ class WebSocketHandler:
             # Persist session state after event
             session_id = self.session_ids.get(websocket)
             if session_id:
-                await self._persist_session(session_id, page)
+                self._persist_session(session_id, page)
 
         except Exception as e:
             # Send structured trace to client (no print - trace is sufficient)
@@ -800,10 +797,16 @@ class WebSocketHandler:
         finally:
             log_callback_ctx.reset(token)
 
-    async def _persist_session(self, session_id: str, page: BasePage) -> None:
-        """Persist page state to the session store."""
+    def _persist_session(self, session_id: str, page: BasePage) -> None:
+        """Schedule non-blocking session persistence."""
+        asyncio.create_task(self._do_persist_session(session_id, page))
+
+    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
+        """Persist page state to the session store (background)."""
         try:
-            snapshot = snapshot_page_state(page)
+            snapshot = snapshot_page_state(
+                page, warn_size=self.app.session_warn_size
+            )
             await self.app.session_store.set(
                 session_id, snapshot, ttl=self.app.session_ttl
             )

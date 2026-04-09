@@ -124,7 +124,7 @@ class HTTPTransportHandler:
 
         # Persist initial state to session store
         if session.page:
-            await self._persist_session(session_id, session.page)
+            self._persist_session(session_id, session.page)
 
         return Response(
             msgpack.packb({"sessionId": session_id, "version": __version__}),
@@ -240,7 +240,7 @@ class HTTPTransportHandler:
 
             # Persist updated state
             if session.page:
-                await self._persist_session(session_id, session.page)
+                self._persist_session(session_id, session.page)
 
             return Response(
                 msgpack.packb(payload),
@@ -254,10 +254,16 @@ class HTTPTransportHandler:
                 media_type="application/x-msgpack",
             )
 
-    async def _persist_session(self, session_id: str, page: BasePage) -> None:
-        """Persist page state to the session store."""
+    def _persist_session(self, session_id: str, page: BasePage) -> None:
+        """Schedule non-blocking session persistence."""
+        asyncio.create_task(self._do_persist_session(session_id, page))
+
+    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
+        """Persist page state to the session store (background)."""
         try:
-            snapshot = snapshot_page_state(page)
+            snapshot = snapshot_page_state(
+                page, warn_size=self.app.session_warn_size
+            )
             await self.app.session_store.set(
                 session_id, snapshot, ttl=self.app.session_ttl
             )

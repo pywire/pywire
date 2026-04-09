@@ -3,6 +3,7 @@
 Handles 'webtransport' scope type from Hypercorn.
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -140,7 +141,7 @@ class WebTransportHandler:
                     # Persist session state
                     session_id = self.session_ids.get(connection_id)
                     if session_id:
-                        await self._persist_session(session_id, page)
+                        self._persist_session(session_id, page)
 
                 except Exception as e:
                     # Send error response (no print - response is sufficient)
@@ -203,13 +204,16 @@ class WebTransportHandler:
                     session_id = str(uuid.uuid4())
                 self.session_ids[connection_id] = session_id
 
-                # Persist initial state
-                await self._persist_session(session_id, page)
+    def _persist_session(self, session_id: str, page: BasePage) -> None:
+        """Schedule non-blocking session persistence."""
+        asyncio.create_task(self._do_persist_session(session_id, page))
 
-    async def _persist_session(self, session_id: str, page: BasePage) -> None:
-        """Persist page state to the session store."""
+    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
+        """Persist page state to the session store (background)."""
         try:
-            snapshot = snapshot_page_state(page)
+            snapshot = snapshot_page_state(
+                page, warn_size=self.app.session_warn_size
+            )
             await self.app.session_store.set(
                 session_id, snapshot, ttl=self.app.session_ttl
             )

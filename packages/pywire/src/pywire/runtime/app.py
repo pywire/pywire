@@ -125,6 +125,7 @@ class PyWire:
         middleware: Optional[List] = None,
         session_store: Optional[Any] = None,
         session_ttl: int = 1800,
+        session_warn_size: int = 256 * 1024,  # 256 KB
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -250,6 +251,7 @@ class PyWire:
 
         # Session store: auto-detect Redis from env, fall back to in-memory
         self.session_ttl = session_ttl
+        self.session_warn_size = session_warn_size
         if session_store is not None:
             self.session_store = session_store
         else:
