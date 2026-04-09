@@ -64,7 +64,7 @@ class TestWritableStore:
         a_vals = []
         b_vals = []
         unsub_a = s.subscribe(lambda v: a_vals.append(v))
-        unsub_b = s.subscribe(lambda v: b_vals.append(v))
+        s.subscribe(lambda v: b_vals.append(v))
         s.value = 1
         assert a_vals == [0, 1]
         assert b_vals == [0, 1]
@@ -111,7 +111,7 @@ class TestReadableStore:
         assert started == []  # Not yet
 
         received = []
-        unsub = s.subscribe(lambda v: received.append(v))
+        s.subscribe(lambda v: received.append(v))
         assert started == [True]
         # The start function set the value to 100, so our callback should get 100
         # (first call gets initial=0 before start runs, then start sets to 100)

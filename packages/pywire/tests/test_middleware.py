@@ -3,8 +3,6 @@
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
-
 import pytest
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware

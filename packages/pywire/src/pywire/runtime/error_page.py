@@ -29,18 +29,6 @@ class ErrorPage(BasePage):
 
         from pywire import __version__ as _pywire_version
 
-        script_url = f"/_pywire/static/pywire.core.min.js?v={_pywire_version}"
-        if hasattr(self.request, "app") and hasattr(
-            self.request.app, "_get_client_script_url"
-        ):
-            # Use the private method if available (a bit hacky but correct for PyWire app)
-            # Or check debug mode directly
-            pass
-
-        # Actually, simpler: check if we are in dev mode via request.app.state if set?
-        # The prompt mentioned "attach the correct script based on the environment".
-        # PyWire app sets self.app.state.pywire = self.
-
         try:
             pywire_app = self.request.app.state.pywire
             script_url = pywire_app._get_client_script_url()

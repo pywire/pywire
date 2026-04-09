@@ -21,29 +21,29 @@ class SessionStore(Protocol):
 
     async def get(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a session snapshot by ID. Returns None if not found or expired."""
-        ...
+        return None
 
     async def set(
         self, session_id: str, data: Dict[str, Any], ttl: Optional[int] = None
     ) -> None:
         """Store a session snapshot. If ttl is provided, the session expires after that many seconds."""
-        ...
+        pass
 
     async def delete(self, session_id: str) -> None:
         """Delete a session."""
-        ...
+        pass
 
     async def exists(self, session_id: str) -> bool:
         """Check if a session exists and has not expired."""
-        ...
+        return False
 
     async def touch(self, session_id: str, ttl: Optional[int] = None) -> None:
         """Reset the TTL on a session without updating its data."""
-        ...
+        pass
 
     async def close(self) -> None:
         """Clean up resources (connections, background tasks, etc.)."""
-        ...
+        pass
 
 
 class MemorySessionStore:
