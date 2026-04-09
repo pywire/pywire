@@ -34,7 +34,6 @@ from pywire.compiler.directives.base import DirectiveParser
 from pywire.compiler.directives.layout import LayoutDirectiveParser
 from pywire.compiler.directives.no_spa import NoSpaDirectiveParser
 from pywire.compiler.directives.path import PathDirectiveParser
-from pywire.compiler.directives.context import ContextDirectiveParser
 from pywire.compiler.exceptions import PyWireSyntaxError
 from pywire.compiler.interpolation.jinja import JinjaInterpolationParser
 
@@ -55,7 +54,6 @@ class PyWireParser:
             PathDirectiveParser(),
             NoSpaDirectiveParser(),
             LayoutDirectiveParser(),
-            ContextDirectiveParser(),
         ]
 
         # Attribute parser chain

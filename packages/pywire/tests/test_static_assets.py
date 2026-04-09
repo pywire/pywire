@@ -87,7 +87,7 @@ def test_custom_static_path(tmp_path: Path) -> None:
     (static_dir / "test.js").write_text("console.log('test')", encoding="utf-8")
 
     app = PyWire(
-        pages_dir=str(pages_dir), static_dir=str(static_dir), static_path="/public"
+        pages_dir=str(pages_dir), static_dir=str(static_dir), static_route="/public"
     )
     client = TestClient(app)
 

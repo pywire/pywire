@@ -34,6 +34,8 @@ describe('PyWireApp', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
+    // Remove any leftover SPA metadata from previous tests
+    document.getElementById('_pywire_spa_meta')?.remove()
     app = new PyWireApp({ autoInit: false })
   })
 
@@ -61,10 +63,10 @@ describe('PyWireApp', () => {
   })
 
   it('should NOT intercept link clicks with data-pw-reload', async () => {
-    // Setup metadata (enable pjax to make sure it would otherwise intercept)
+    // Setup metadata (enable pjax with matching route to ensure it would otherwise intercept)
     const meta = document.createElement('script')
     meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({ enable_pjax: true })
+    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/reload'] })
     document.head.appendChild(meta)
 
     await app.init()
@@ -82,5 +84,123 @@ describe('PyWireApp', () => {
 
     expect(preventDefaultSpy).not.toHaveBeenCalled()
     expect(navigateToSpy).not.toHaveBeenCalled()
+  })
+
+  it('should NOT intercept clicks on static asset links', async () => {
+    const meta = document.createElement('script')
+    meta.id = '_pywire_spa_meta'
+    meta.textContent = JSON.stringify({
+      enable_pjax: true,
+      all_paths: ['/'],
+      static_path: '/static',
+    })
+    document.head.appendChild(meta)
+
+    await app.init()
+
+    const link = document.createElement('a')
+    link.href = '/static/file.txt'
+    document.body.appendChild(link)
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+    const navigateToSpy = vi.spyOn(app, 'navigateTo')
+
+    link.dispatchEvent(event)
+
+    expect(preventDefaultSpy).not.toHaveBeenCalled()
+    expect(navigateToSpy).not.toHaveBeenCalled()
+  })
+
+  it('should NOT intercept clicks on static links with custom static_path', async () => {
+    const meta = document.createElement('script')
+    meta.id = '_pywire_spa_meta'
+    meta.textContent = JSON.stringify({
+      enable_pjax: true,
+      all_paths: ['/'],
+      static_path: '/assets',
+    })
+    document.head.appendChild(meta)
+
+    await app.init()
+
+    const link = document.createElement('a')
+    link.href = '/assets/logo.png'
+    document.body.appendChild(link)
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+    const navigateToSpy = vi.spyOn(app, 'navigateTo')
+
+    link.dispatchEvent(event)
+
+    expect(preventDefaultSpy).not.toHaveBeenCalled()
+    expect(navigateToSpy).not.toHaveBeenCalled()
+  })
+
+  it('should NOT intercept non-wire links when pjax enabled', async () => {
+    const meta = document.createElement('script')
+    meta.id = '_pywire_spa_meta'
+    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/', '/about'] })
+    document.head.appendChild(meta)
+
+    await app.init()
+
+    const link = document.createElement('a')
+    link.href = '/login'
+    document.body.appendChild(link)
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+    const navigateToSpy = vi.spyOn(app, 'navigateTo')
+
+    link.dispatchEvent(event)
+
+    expect(preventDefaultSpy).not.toHaveBeenCalled()
+    expect(navigateToSpy).not.toHaveBeenCalled()
+  })
+
+  it('should intercept wire links when pjax enabled', async () => {
+    const meta = document.createElement('script')
+    meta.id = '_pywire_spa_meta'
+    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/', '/about'] })
+    document.head.appendChild(meta)
+
+    await app.init()
+
+    const link = document.createElement('a')
+    link.href = '/about'
+    document.body.appendChild(link)
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+    const navigateToSpy = vi.spyOn(app, 'navigateTo').mockImplementation(() => {})
+
+    link.dispatchEvent(event)
+
+    expect(preventDefaultSpy).toHaveBeenCalled()
+    expect(navigateToSpy).toHaveBeenCalledWith('/about')
+  })
+
+  it('should intercept parameterized wire paths when pjax enabled', async () => {
+    const meta = document.createElement('script')
+    meta.id = '_pywire_spa_meta'
+    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/users/:id'] })
+    document.head.appendChild(meta)
+
+    await app.init()
+
+    const link = document.createElement('a')
+    link.href = '/users/42'
+    document.body.appendChild(link)
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+    const navigateToSpy = vi.spyOn(app, 'navigateTo').mockImplementation(() => {})
+
+    link.dispatchEvent(event)
+
+    expect(preventDefaultSpy).toHaveBeenCalled()
+    expect(navigateToSpy).toHaveBeenCalledWith('/users/42')
   })
 })

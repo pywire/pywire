@@ -34,8 +34,8 @@ app = PyWire(
     # Enable debug mode (exposes source maps, etc.) (default: False)
     debug=True,
 
-    # Directory (relative to project root) containing your static assets (default: "/static")
-    static_path="/assets",
+    # URL prefix for serving static files (default: "/static")
+    static_route="/assets",
 
     # ASGI middleware (default: None). See the Middleware guide.
     middleware=[CORSMiddleware],

@@ -55,6 +55,9 @@ http3 = [
     "aioquic>=0.9.0",
     "hypercorn>=0.14.0",
 ]
+redis = [
+    "redis>=5.0.0",
+]
 
 [project.scripts]
 pywire = "pywire.cli.main:cli"

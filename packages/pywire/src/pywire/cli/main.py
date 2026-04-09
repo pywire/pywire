@@ -461,21 +461,41 @@ def deploy(app: Optional[str], platform: str, out_dir: str) -> None:
         console.print(
             "\n[bold]Next steps:[/]\n"
             f"  1. [cyan]docker build -t {project_name} .[/]\n"
-            f"  2. [cyan]docker run -p 8000:8000 {project_name}[/]"
+            f"  2. [cyan]docker run -p 8000:8000 {project_name}[/]\n"
+            "\n[bold]Scaling with Redis:[/]\n"
+            "  To run multiple workers or containers, install [cyan]pywire[redis][/] and set\n"
+            "  [cyan]REDIS_URL[/] — PyWire auto-detects it for shared session state.\n"
+            f"  [cyan]docker run -p 8000:8000 -e REDIS_URL=redis://your-redis:6379 {project_name}[/]"
         )
     elif platform == "render":
         console.print(
             "\n[bold]Next steps:[/]\n"
             "  1. Push your code to a Git repository\n"
-            "  2. Connect the repo on [link=https://render.com]render.com[/link]\n"
-            "  3. Render will auto-detect [cyan]render.yaml[/] and deploy"
+            "  2. Go to [link=https://dashboard.render.com]dashboard.render.com[/link] "
+            "→ [bold]New → Blueprint[/] and connect your repo\n"
+            "  3. Render reads [cyan]render.yaml[/] automatically and provisions the service\n"
+            "\n[bold]Scaling with Redis:[/]\n"
+            "  The generated [cyan]render.yaml[/] runs with [cyan]--workers 1[/] (safe default).\n"
+            "  To scale, add a Render KV store and set [cyan]REDIS_URL[/]:\n"
+            "  1. [cyan]uv add pywire[redis][/]\n"
+            "  2. Add a [cyan]keyvalue[/] service to [cyan]render.yaml[/] with [cyan]fromService[/]\n"
+            "  3. Increase [cyan]--workers[/] in [cyan]startCommand[/]\n"
+            "  PyWire auto-detects [cyan]REDIS_URL[/] for shared session state — no code changes needed."
         )
     elif platform == "fly":
         console.print(
             "\n[bold]Next steps:[/]\n"
             "  1. Install the Fly CLI: [cyan]curl -L https://fly.io/install.sh | sh[/]\n"
-            "  2. Run [cyan]fly launch --no-deploy[/] to create the app on Fly.io\n"
-            "  3. Deploy with [cyan]fly deploy[/]"
+            "  2. Run [cyan]fly launch --no-deploy[/] to import [cyan]fly.toml[/]\n"
+            "  3. Deploy with [cyan]fly deploy[/]\n"
+            "\n[bold]Scaling:[/]\n"
+            "  The generated Dockerfile runs with [cyan]--workers 1[/] (safe default).\n"
+            "  To scale to multiple machines ([cyan]fly scale count N[/]):\n"
+            "  • [bold]Option A — Fly sticky sessions:[/] Route sessions to the same machine\n"
+            "    using [cyan]fly-replay[/]. Simple but breaks for VPNs/corporate proxies.\n"
+            "  • [bold]Option B — Redis (recommended):[/] Add Upstash Redis via\n"
+            "    [cyan]fly redis create[/], set [cyan]REDIS_URL[/], and install\n"
+            "    [cyan]pywire[redis][/]. PyWire auto-detects it — no code changes needed."
         )
 
 

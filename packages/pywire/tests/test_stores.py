@@ -263,57 +263,6 @@ class TestStoreWireIntegration:
 
 
 # ---------------------------------------------------------------------------
-# BasePage set_context / get_context
-# ---------------------------------------------------------------------------
-
-
-class TestPageContext:
-    def _make_page(self, context=None):
-        """Create a minimal BasePage-like instance for testing context methods."""
-        from unittest.mock import MagicMock
-        from pywire.runtime.page import BasePage
-
-        request = MagicMock()
-        request.app.state.debug = False
-        request.app.state.enable_pjax = False
-
-        kwargs = {}
-        if context is not None:
-            kwargs["_context"] = context
-
-        return BasePage(request=request, params={}, query={}, **kwargs)
-
-    def test_set_and_get_context(self):
-        page = self._make_page()
-        page.set_context("theme", "dark")
-        assert page.get_context("theme") == "dark"
-
-    def test_get_context_default(self):
-        page = self._make_page()
-        assert page.get_context("missing") is None
-        assert page.get_context("missing", "fallback") == "fallback"
-
-    def test_context_inherited_from_parent(self):
-        parent = self._make_page()
-        parent.set_context("color", "blue")
-        child = self._make_page(context=parent.context)
-        assert child.get_context("color") == "blue"
-
-    def test_child_context_does_not_mutate_parent(self):
-        parent = self._make_page()
-        parent.set_context("x", 1)
-        child = self._make_page(context=parent.context)
-        child.set_context("x", 2)
-        assert parent.get_context("x") == 1
-        assert child.get_context("x") == 2
-
-
-# ---------------------------------------------------------------------------
-# Public API imports
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Edge cases and error handling
 # ---------------------------------------------------------------------------
 
@@ -401,22 +350,6 @@ class TestStoreEdgeCases:
         unsub()
         unsub()
         assert len(stop_count) == 1
-
-    def test_context_none_value_vs_missing(self):
-        """Setting context to None is distinguishable from a missing key."""
-        from unittest.mock import MagicMock
-        from pywire.runtime.page import BasePage
-
-        request = MagicMock()
-        request.app.state.debug = False
-        request.app.state.enable_pjax = False
-        page = BasePage(request=request, params={}, query={})
-
-        page.set_context("key", None)
-        assert page.get_context("key") is None
-        assert page.get_context("key", "fallback") is None  # key exists, value is None
-        assert page.get_context("missing", "fallback") == "fallback"  # key doesn't exist
-
 
 class TestPublicAPI:
     def test_imports_from_pywire(self):

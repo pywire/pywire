@@ -198,6 +198,10 @@ class Router:
                 return (route.page_class, params, route.name)
         return None
 
+    def get_all_patterns(self) -> list[str]:
+        """Return all registered route pattern strings."""
+        return [r.pattern for r in self.routes]
+
     def remove_routes_for_file(self, file_path: str) -> None:
         """Remove all routes associated with a file path."""
         # Normalize file path for comparison

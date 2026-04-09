@@ -15,7 +15,7 @@ RUN uv sync --frozen --no-dev
 COPY . .
 
 EXPOSE 8000
-CMD ["uv", "run", "pywire", "run", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "pywire", "run", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 """
 
 RENDER_YAML_TEMPLATE = """\
@@ -23,8 +23,9 @@ services:
   - type: web
     name: {project_name}
     runtime: python
-    buildCommand: pip install uv && uv sync --frozen
-    startCommand: uv run pywire run --host 0.0.0.0 --port $PORT
+    plan: free
+    buildCommand: uv sync --frozen && uv cache prune --ci
+    startCommand: uv run pywire run --host 0.0.0.0 --port $PORT --workers 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
@@ -76,12 +77,9 @@ def validate_deploy_config(platform: str, project_root: Path) -> list[str]:
     if not (project_root / "pyproject.toml").exists():
         issues.append("Missing pyproject.toml — required for dependency installation.")
 
-    if platform in ("docker", "fly") and not (project_root / "uv.lock").exists():
-        issues.append(
-            "Missing uv.lock — run 'uv lock' to generate a lock file for reproducible builds."
-        )
-
-    if platform == "render" and not (project_root / "uv.lock").exists():
+    if platform in ("docker", "fly", "render") and not (
+        project_root / "uv.lock"
+    ).exists():
         issues.append(
             "Missing uv.lock — run 'uv lock' to generate a lock file for reproducible builds."
         )

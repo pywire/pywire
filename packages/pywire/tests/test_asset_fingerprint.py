@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ def _make_page(
     is_dev_mode: bool = False,
     asset_hash_cache: dict | None = None,
     asset_manifest: dict | None = None,
+    asset_warned_missing: set | None = None,
 ) -> BasePage:
     """Create a minimal BasePage with a mock app for testing asset()."""
     pywire_app = SimpleNamespace(
@@ -26,6 +28,9 @@ def _make_page(
         _is_dev_mode=is_dev_mode,
         _asset_hash_cache=asset_hash_cache if asset_hash_cache is not None else {},
         _asset_manifest=asset_manifest,
+        _asset_warned_missing=asset_warned_missing
+        if asset_warned_missing is not None
+        else set(),
     )
     app_state = SimpleNamespace(pywire=pywire_app)
     app = SimpleNamespace(state=app_state)
@@ -149,7 +154,7 @@ class TestAssetEdgeCases:
         result = page.asset("style.css")
         assert result == "/static/style.css"
 
-    def test_custom_static_path(self, tmp_path: Path) -> None:
+    def test_custom_static_route(self, tmp_path: Path) -> None:
         static = tmp_path / "assets"
         static.mkdir()
         css = static / "style.css"
@@ -181,8 +186,54 @@ class TestAssetEdgeCases:
         assert result == f"/static/css/main.css?v={expected_hash}"
 
 
+class TestAssetWarnings:
+    def test_missing_file_warns_in_dev(self, tmp_path: Path, caplog) -> None:
+        static = tmp_path / "static"
+        static.mkdir()
+
+        page = _make_page(static_dir=static, is_dev_mode=True)
+
+        with caplog.at_level(logging.WARNING, logger="pywire.runtime.page"):
+            page.asset("missing.css")
+            page.asset("missing.css")
+
+        # Dev mode: warn every time (no dedup)
+        warnings = [r for r in caplog.records if "missing.css" in r.message]
+        assert len(warnings) == 2
+
+    def test_missing_file_warns_once_in_prod(self, tmp_path: Path, caplog) -> None:
+        static = tmp_path / "static"
+        static.mkdir()
+
+        warned: set = set()
+        page = _make_page(
+            static_dir=static, is_dev_mode=False, asset_warned_missing=warned
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pywire.runtime.page"):
+            page.asset("missing.css")
+            page.asset("missing.css")
+
+        # Prod mode: warn only once per path
+        warnings = [r for r in caplog.records if "missing.css" in r.message]
+        assert len(warnings) == 1
+
+    def test_existing_file_no_warning(self, tmp_path: Path, caplog) -> None:
+        static = tmp_path / "static"
+        static.mkdir()
+        (static / "exists.css").write_text("body {}")
+
+        page = _make_page(static_dir=static)
+
+        with caplog.at_level(logging.WARNING, logger="pywire.runtime.page"):
+            page.asset("exists.css")
+
+        warnings = [r for r in caplog.records if "exists.css" in r.message]
+        assert len(warnings) == 0
+
+
 class TestFingerprintStaticAssets:
-    def test_creates_fingerprinted_copies(self, tmp_path: Path) -> None:
+    def test_creates_fingerprinted_and_original_copies(self, tmp_path: Path) -> None:
         static = tmp_path / "static"
         static.mkdir()
         (static / "logo.png").write_bytes(b"fake png data")
@@ -196,9 +247,10 @@ class TestFingerprintStaticAssets:
         assert "logo.png" in manifest
         assert "style.css" in manifest
 
-        # Verify fingerprinted files exist
+        # Both fingerprinted and original filenames must exist
         for original, fingerprinted in manifest.items():
             assert (out / "static" / fingerprinted).exists()
+            assert (out / "static" / original).exists()
 
     def test_fingerprinted_filename_format(self, tmp_path: Path) -> None:
         static = tmp_path / "static"

@@ -47,7 +47,7 @@ def test_static_path_config(tmp_path: Path) -> None:
 
     # Configure custom path
     app = PyWire(
-        pages_dir=str(pages_dir), static_dir=str(static_dir), static_path="/public"
+        pages_dir=str(pages_dir), static_dir=str(static_dir), static_route="/public"
     )
     client = TestClient(app)
 

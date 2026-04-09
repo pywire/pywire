@@ -100,5 +100,36 @@ class TestRouterRuntime(unittest.TestCase):
         self.assertEqual(router.routes[0].page_class, PageB)
 
 
+    def test_get_all_patterns(self) -> None:
+        router = Router()
+        router.add_route("/", MockPage)
+        router.add_route("/about", MockPage)
+        router.add_route("/users/:id", MockPage)
+
+        patterns = router.get_all_patterns()
+        self.assertEqual(patterns, ["/", "/about", "/users/:id"])
+
+    def test_get_all_patterns_empty(self) -> None:
+        router = Router()
+        self.assertEqual(router.get_all_patterns(), [])
+
+    def test_get_all_patterns_after_remove(self) -> None:
+        class PageA(MockPage):
+            __file_path__ = "a.wire"
+            __route__ = "/a"
+
+        class PageB(MockPage):
+            __file_path__ = "b.wire"
+            __route__ = "/b"
+
+        router = Router()
+        router.add_page(PageA)
+        router.add_page(PageB)
+
+        self.assertEqual(router.get_all_patterns(), ["/a", "/b"])
+        router.remove_routes_for_file("a.wire")
+        self.assertEqual(router.get_all_patterns(), ["/b"])
+
+
 if __name__ == "__main__":
     unittest.main()

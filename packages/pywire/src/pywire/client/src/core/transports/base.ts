@@ -52,6 +52,7 @@ export interface ServerMessage {
   version?: string
   path?: string
   commands?: Command[]
+  session_id?: string
 }
 
 export interface NavigateMessage {
@@ -70,7 +71,13 @@ export interface ConsoleMessage {
   lines: string[]
 }
 
-export type ClientMessage = EventMessage | RelocateMessage | RefSyncMessage
+export type ClientMessage = EventMessage | RelocateMessage | RefSyncMessage | InitClientMessage
+
+export interface InitClientMessage {
+  type: 'init'
+  path: string
+  session_id?: string
+}
 
 export interface EventMessage {
   type: 'event'

@@ -8,6 +8,7 @@ import {
   RelocateMessage,
   Command,
   RefSyncMessage,
+  InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
 import { RefManager } from './ref-manager'
@@ -42,8 +43,12 @@ export class PyWireApp {
   protected config: PyWireConfig
   protected siblingPaths: string[] = []
   protected pathRegexes: RegExp[] = []
+  protected allPaths: string[] = []
+  protected allPathRegexes: RegExp[] = []
   protected pjaxEnabled = false
+  protected staticPath: string = '/static'
   protected isConnected = false
+  protected sessionId: string | null = null
 
   constructor(config: Partial<PyWireConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -110,10 +115,15 @@ export class PyWireApp {
 
     if (connected) {
       // Send init message to register this client and setup page instance
-      this.transport.send({
+      const initMsg: InitClientMessage = {
         type: 'init',
         path: window.location.pathname + window.location.search,
-      })
+      }
+      // Include session_id on reconnect to restore state from session store
+      if (this.sessionId) {
+        initMsg.session_id = this.sessionId
+      }
+      this.transport.send(initMsg)
     }
   }
 
@@ -126,13 +136,16 @@ export class PyWireApp {
       try {
         const meta = JSON.parse(metaScript.textContent || '{}')
         this.siblingPaths = meta.sibling_paths || []
+        this.allPaths = meta.all_paths || []
         this.pjaxEnabled = !!meta.enable_pjax
+        this.staticPath = meta.static_path || '/static'
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
           logger.setDebug(this.config.debug)
         }
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
+        this.allPathRegexes = this.allPaths.map((p) => this.patternToRegex(p))
       } catch (e) {
         logger.warn('PyWire: Failed to parse SPA metadata', e)
       }
@@ -146,9 +159,9 @@ export class PyWireApp {
     // Escape special regex chars except for our placeholders
     let regex = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     // Replace :param:type or :param with capture groups
-    regex = regex.replace(/:(\\w+)(:\\w+)?/g, '([^/]+)')
+    regex = regex.replace(/:(\w+)(:\w+)?/g, '([^/]+)')
     // Replace {param:type} or {param} with capture groups
-    regex = regex.replace(/\\{(\\w+)(:\\w+)?\\}/g, '([^/]+)')
+    regex = regex.replace(/\{(\w+)(:\w+)?\}/g, '([^/]+)')
     return new RegExp(`^${regex}$`)
   }
 
@@ -157,6 +170,13 @@ export class PyWireApp {
    */
   protected isSiblingPath(path: string): boolean {
     return this.pathRegexes.some((regex) => regex.test(path))
+  }
+
+  /**
+   * Check if a path matches any known wire page route.
+   */
+  protected isWirePath(path: string): boolean {
+    return this.allPathRegexes.some((regex) => regex.test(path))
   }
 
   /**
@@ -185,9 +205,17 @@ export class PyWireApp {
       let shouldIntercept = false
 
       if (this.pjaxEnabled) {
-        shouldIntercept = true
+        shouldIntercept = this.isWirePath(link.pathname)
       } else if (this.isSiblingPath(link.pathname)) {
         shouldIntercept = true
+      }
+
+      // Never PJAX-navigate to static assets or internal PyWire routes
+      if (this.staticPath.length > 1 && link.pathname.startsWith(this.staticPath + '/')) {
+        shouldIntercept = false
+      }
+      if (link.pathname.startsWith('/_pywire/')) {
+        shouldIntercept = false
       }
 
       // NO-SPA: Check for data-pw-reload attribute
@@ -246,7 +274,13 @@ export class PyWireApp {
     switch (msg.type) {
       case 'update':
         if (msg.commands && msg.commands.length > 0) {
-          msg.commands.forEach((cmd: Command) => this.refManager.executeCommand(cmd))
+          msg.commands.forEach((cmd: Command) => {
+            if (cmd.cmd === 'set_cookie' || cmd.cmd === 'delete_cookie') {
+              this.handleCookieCommand(cmd)
+            } else {
+              this.refManager.executeCommand(cmd)
+            }
+          })
         }
         if (msg.regions && msg.regions.length > 0) {
           msg.regions.forEach((update: { region: string; html: string }) => {
@@ -288,6 +322,10 @@ export class PyWireApp {
         break
 
       case 'init_ack':
+        // Store session ID for reconnection state restoration
+        if (msg.session_id) {
+          this.sessionId = msg.session_id
+        }
         logger.log('PyWire: Application ready')
         break
 
@@ -304,6 +342,28 @@ export class PyWireApp {
 
       default:
         logger.warn('PyWire: Unknown message type', msg)
+    }
+  }
+
+  /**
+   * Handle a cookie command from the server (set or delete).
+   * Note: httponly cookies cannot be set via document.cookie.
+   */
+  protected handleCookieCommand(cmd: Command): void {
+    const args = cmd.args as Record<string, string | number | boolean>
+    if (cmd.cmd === 'set_cookie') {
+      let cookie = `${args.key}=${encodeURIComponent(String(args.value || ''))}`
+      if (args.path) cookie += `; path=${args.path}`
+      if (args.domain) cookie += `; domain=${args.domain}`
+      if (args.max_age !== undefined && args.max_age !== null) cookie += `; max-age=${args.max_age}`
+      if (args.secure) cookie += '; secure'
+      if (args.samesite) cookie += `; samesite=${args.samesite}`
+      document.cookie = cookie
+    } else if (cmd.cmd === 'delete_cookie') {
+      let cookie = `${args.key}=; max-age=0`
+      if (args.path) cookie += `; path=${args.path}`
+      if (args.domain) cookie += `; domain=${args.domain}`
+      document.cookie = cookie
     }
   }
 

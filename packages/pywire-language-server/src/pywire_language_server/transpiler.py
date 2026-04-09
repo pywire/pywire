@@ -700,5 +700,5 @@ class Transpiler:
             "from pywire.runtime.events import (\n    EventData,\n    UIEventData,\n    MouseEventData,\n    KeyboardEventData,\n    InputEventData,\n    FormEventData,\n)\n\n"
         )
         _append(
-            "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\n\n"
+            "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\ndef asset(path: str) -> str: ...\ndef set_cookie(key: str, value: str = '', *, max_age: int | None = None, expires: int | None = None, path: str = '/', domain: str | None = None, secure: bool = False, httponly: bool = False, samesite: str | None = 'lax') -> None: ...\ndef delete_cookie(key: str, *, path: str = '/', domain: str | None = None) -> None: ...\n\n"
         )

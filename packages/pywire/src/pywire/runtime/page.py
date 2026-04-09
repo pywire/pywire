@@ -61,7 +61,6 @@ class BasePage:
         "slots",
         "__is_component__",
         "_style_collector",
-        "_context",
         "_parent_page",
         "_component_key",
     }
@@ -102,15 +101,6 @@ class BasePage:
         else:
             self._style_collector = StyleCollector()
 
-        # Context inheritance for !provide/!inject
-        # If passed from parent component, make a shallow copy for child-specific shadowing.
-        # Otherwise create a new empty context (root page).
-        if "_context" in kwargs:
-            self.context = kwargs.pop("_context").copy()
-        else:
-            self.context = {}
-        self.context: Dict[str, Any]
-
         self.user: Any = None  # Set by middleware
 
         # Expose params as attributes for easy access in templates
@@ -129,6 +119,7 @@ class BasePage:
         # Framework-managed state
         self.errors: Dict[str, Any] = {}
         self.loading: Dict[str, bool] = {}
+        self._pending_cookies: List[Dict[str, Any]] = []
 
         # Slot registry: layout_id -> slot_name -> renderer (replacement semantics)
         self.slots: Dict[str, Dict[str, Union[Callable, str]]] = defaultdict(dict)
@@ -188,14 +179,6 @@ class BasePage:
         self._active_component_keys: Set[str] = set()
         self._component_state_snapshots: Dict[str, Dict[str, Any]] = {}
 
-    def set_context(self, key: str, value: Any) -> None:
-        """Set a context value accessible to child components."""
-        self.context[key] = value
-
-    def get_context(self, key: str, default: Any = None) -> Any:
-        """Get a context value from parent component chain."""
-        return self.context.get(key, default)
-
     @property
     def navigate(self) -> Callable[[str], None]:
         """Return a callable that sets the pending navigation path."""
@@ -204,6 +187,80 @@ class BasePage:
             self._pending_navigation = path
 
         return _navigate
+
+    def set_cookie(
+        self,
+        key: str,
+        value: str = "",
+        *,
+        max_age: Optional[int] = None,
+        expires: Optional[int] = None,
+        path: str = "/",
+        domain: Optional[str] = None,
+        secure: bool = False,
+        httponly: bool = False,
+        samesite: Optional[str] = "lax",
+    ) -> None:
+        """Queue a cookie to be set on the response.
+
+        Works in both HTTP (applied to Response headers) and
+        WebSocket (sent as a client command) contexts.
+
+        Note: httponly cookies can only be set via HTTP response headers.
+        Over WebSocket, the httponly flag is ignored since document.cookie
+        cannot set httponly cookies.
+        """
+        self._pending_cookies.append(
+            {
+                "action": "set",
+                "key": key,
+                "value": value,
+                "max_age": max_age,
+                "expires": expires,
+                "path": path,
+                "domain": domain,
+                "secure": secure,
+                "httponly": httponly,
+                "samesite": samesite,
+            }
+        )
+
+    def delete_cookie(
+        self,
+        key: str,
+        *,
+        path: str = "/",
+        domain: Optional[str] = None,
+    ) -> None:
+        """Queue a cookie for deletion."""
+        self._pending_cookies.append(
+            {
+                "action": "delete",
+                "key": key,
+                "path": path,
+                "domain": domain,
+            }
+        )
+
+    def _flush_cookie_commands(self) -> List[Dict[str, Any]]:
+        """Convert pending cookies to client commands for WebSocket delivery."""
+        commands = []
+        for cookie in self._pending_cookies:
+            commands.append(
+                {
+                    "cmd": "set_cookie"
+                    if cookie["action"] == "set"
+                    else "delete_cookie",
+                    "refId": "__page__",
+                    "args": {
+                        k: v
+                        for k, v in cookie.items()
+                        if k != "action" and v is not None
+                    },
+                }
+            )
+        self._pending_cookies.clear()
+        return commands
 
     def asset(self, path: str) -> str:
         """Return a fingerprinted URL for a user static asset.
@@ -238,6 +295,7 @@ class BasePage:
                 mtime = os.path.getmtime(file_path)
                 return f"{base_url}?v={int(mtime)}"
             except OSError:
+                logger.warning("Static asset not found: %s (in %s)", path, file_path)
                 return base_url
 
         # Prod with manifest (pywire build was run): filename-based
@@ -256,6 +314,15 @@ class BasePage:
             cache[path] = content_hash
             return f"{base_url}?v={content_hash}"
         except OSError:
+            warned = getattr(pywire_app, "_asset_warned_missing", None)
+            if warned is not None:
+                if path not in warned:
+                    warned.add(path)
+                    logger.warning(
+                        "Static asset not found: %s (in %s)", path, file_path
+                    )
+            else:
+                logger.warning("Static asset not found: %s (in %s)", path, file_path)
             return base_url
 
     def _is_debug(self) -> bool:
@@ -281,9 +348,6 @@ class BasePage:
             self.url = new_kwargs["url"]
         if "_style_collector" in new_kwargs:
             self._style_collector = new_kwargs["_style_collector"]
-        if "_context" in new_kwargs:
-            self.context = new_kwargs["_context"].copy()
-
         fallback_attrs: Dict[str, Any] = {}
         for key, value in new_kwargs.items():
             if self._is_framework_prop_key(key):
@@ -594,6 +658,7 @@ class BasePage:
             # Check if SPA features are enabled via attribute or app state
             pjax_enabled = False
             debug_mode = False
+            static_url_path = "/static"
             try:
                 pjax_enabled = bool(
                     getattr(self.request.app.state, "enable_pjax", False)
@@ -601,12 +666,33 @@ class BasePage:
                 debug_mode = bool(getattr(self.request.app.state, "debug", False))
             except (AttributeError, KeyError):
                 pass
+            try:
+                pywire_app = self.request.app.state.pywire
+                _url_path = getattr(pywire_app, "static_url_path", None)
+                if isinstance(_url_path, str):
+                    static_url_path = _url_path
+            except (AttributeError, KeyError):
+                pass
+
+            # Collect all wire route patterns for whitelist SPA navigation
+            all_wire_paths: list = []
+            try:
+                pywire_app = self.request.app.state.pywire
+                router = getattr(pywire_app, "router", None)
+                if router is not None:
+                    patterns = router.get_all_patterns()
+                    if isinstance(patterns, list):
+                        all_wire_paths = patterns
+            except (AttributeError, KeyError):
+                pass
 
             if not no_spa and not is_component:
                 meta = {
                     "sibling_paths": getattr(self, "__sibling_paths__", []),
+                    "all_paths": all_wire_paths,
                     "enable_pjax": pjax_enabled,
                     "debug": debug_mode,
+                    "static_path": static_url_path,
                 }
                 import json
 
@@ -642,7 +728,31 @@ class BasePage:
                 else:
                     hook()
 
-        return Response(html, media_type="text/html")
+        response = Response(html, media_type="text/html")
+
+        # Apply any pending cookies to the HTTP response
+        for cookie in self._pending_cookies:
+            if cookie["action"] == "set":
+                response.set_cookie(
+                    cookie["key"],
+                    cookie["value"],
+                    max_age=cookie.get("max_age"),
+                    expires=cookie.get("expires"),
+                    path=cookie.get("path", "/"),
+                    domain=cookie.get("domain"),
+                    secure=cookie.get("secure", False),
+                    httponly=cookie.get("httponly", False),
+                    samesite=cookie.get("samesite", "lax"),
+                )
+            elif cookie["action"] == "delete":
+                response.delete_cookie(
+                    cookie["key"],
+                    path=cookie.get("path", "/"),
+                    domain=cookie.get("domain"),
+                )
+        self._pending_cookies.clear()
+
+        return response
 
     def _clear_wire_tracking(self) -> None:
         self._wire_subscribers.clear()
@@ -715,7 +825,10 @@ class BasePage:
 
         logger.debug(
             "INVALIDATE: page=%s wire=%s key=%s affected_regions=%s",
-            id(self), id(wire_obj), key, regions,
+            id(self),
+            id(wire_obj),
+            key,
+            regions,
         )
 
         if regions:
@@ -752,6 +865,9 @@ class BasePage:
             if not self._dirty_regions:
                 result: Dict[str, Any] = {"type": "regions", "regions": []}
                 commands = self._collect_all_commands()
+                cookie_cmds = self._flush_cookie_commands()
+                if cookie_cmds:
+                    commands = (commands or []) + cookie_cmds
                 if commands:
                     result["commands"] = commands
                 return result
@@ -810,10 +926,17 @@ class BasePage:
 
                     # 2. Collect commands from all refs (recursively)
                     commands = self._collect_all_commands()
+                    cookie_cmds = self._flush_cookie_commands()
+                    if cookie_cmds:
+                        commands = (commands or []) + cookie_cmds
                     if commands:
                         result["commands"] = commands
 
                     return result
+
+        # Flush cookie commands before render() (which would apply them to the
+        # discarded HTTP Response and clear _pending_cookies)
+        cookie_cmds = self._flush_cookie_commands()
 
         response = await self.render(init=init)
         html = bytes(response.body).decode("utf-8")
@@ -821,6 +944,8 @@ class BasePage:
 
         result: dict[str, Any] = {"type": "full", "html": html}
         commands = self._collect_all_commands()
+        if cookie_cmds:
+            commands = (commands or []) + cookie_cmds
         if commands:
             result["commands"] = commands
         return result

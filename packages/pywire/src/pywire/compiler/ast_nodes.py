@@ -61,26 +61,6 @@ class PropsDirective(Directive):
 
 
 @dataclass
-class InjectDirective(Directive):
-    """!inject { local: 'GLOBAL' }"""
-
-    mapping: Dict[str, str]  # {local_var: global_key}
-
-    def __str__(self) -> str:
-        return f"InjectDirective(mapping={self.mapping})"
-
-
-@dataclass
-class ProvideDirective(Directive):
-    """!provide { 'GLOBAL': local }"""
-
-    mapping: Dict[str, str]  # {global_key: local_var_expr}
-
-    def __str__(self) -> str:
-        return f"ProvideDirective(mapping={self.mapping})"
-
-
-@dataclass
 class SpecialAttribute(ASTNode):
     """Base for special attributes ($, @, :)."""
 

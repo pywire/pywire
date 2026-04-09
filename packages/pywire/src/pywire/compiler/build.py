@@ -41,6 +41,11 @@ def fingerprint_static_assets(static_dir: Path, out_dir: Path) -> Dict[str, str]
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file_path, dest)
 
+        # Also copy the original filename so non-fingerprinted URLs still resolve
+        original_dest = build_static_dir / rel_path
+        original_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(file_path, original_dest)
+
         manifest[str(rel_path)] = str(fingerprinted_rel)
 
     # Write manifest

@@ -157,6 +157,8 @@ class ProjectGenerator:
 
     def get_deploy_config(self) -> Optional[Dict[str, str]]:
         """Get deployment adapter configuration."""
+        if "Fly.io (fly.toml + Dockerfile)" in self.adapters:
+            return {"adapter": "fly"}
         if "Docker (Dockerfile)" in self.adapters:
             return {"adapter": "docker"}
         if "Render (render.yaml)" in self.adapters:
@@ -410,6 +412,15 @@ class ProjectGenerator:
             content = self.renderer.render("common/render.yaml.j2", context)
             (self.project_path / "render.yaml").write_text(content)
 
+        if "Fly.io (fly.toml + Dockerfile)" in self.adapters:
+            context = {"project_name": self.project_name}
+            content = self.renderer.render("common/fly.toml.j2", context)
+            (self.project_path / "fly.toml").write_text(content)
+            # Fly.io uses Docker for builds
+            self.renderer.copy_static(
+                "common/Dockerfile", self.project_path / "Dockerfile"
+            )
+
 
 def main():
     # Fix for macOS when running with redirected stdin (e.g. via pipe)
@@ -545,7 +556,11 @@ def main():
         # Deployment Adapters
         adapters = questionary.checkbox(
             "Select deployment adapters to configure:",
-            choices=["Docker (Dockerfile)", "Render (render.yaml)"],
+            choices=[
+                "Docker (Dockerfile)",
+                "Render (render.yaml)",
+                "Fly.io (fly.toml + Dockerfile)",
+            ],
         ).unsafe_ask()
 
         # Generate project
@@ -616,8 +631,13 @@ def main():
                 env = os.environ.copy()
                 env.pop("VIRTUAL_ENV", None)
 
+                sync_cmd = ["uv", "sync"]
+                if not use_local:
+                    # Prevent inheriting workspace source overrides (e.g. pywire = { workspace = true })
+                    # so the generated uv.lock always resolves pywire from PyPI, not a local path.
+                    sync_cmd.append("--no-sources")
                 subprocess.run(
-                    ["uv", "sync"],
+                    sync_cmd,
                     cwd=project_path,
                     check=True,
                     capture_output=True,

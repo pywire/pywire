@@ -380,11 +380,8 @@ class TemplateCodegen:
                 if node.id in local_vars or node.id in ("json", "escape_html"):
                     return node
 
-                # 2. If explicitly known as import, keep as is
-                if known_imports is not None and node.id in known_imports:
-                    return node
-
-                # 3. If explicitly known as global/instance var, transform to self.<name>
+                # 2. If explicitly known as global/instance var, transform to self.<name>
+                #    This takes priority over imports so user variables shadow framework names
                 if known_globals is not None and node.id in known_globals:
                     return ast.Attribute(
                         value=ast.Name(id="self", ctx=ast.Load()),
@@ -392,11 +389,15 @@ class TemplateCodegen:
                         ctx=node.ctx,
                     )
 
-                # 3. If builtin, keep as is (unless matched by step 1/2)
+                # 3. If explicitly known as import, keep as is
+                if known_imports is not None and node.id in known_imports:
+                    return node
+
+                # 4. If builtin, keep as is
                 if node.id in dir(builtins):
                     return node
 
-                # 4. Otherwise, assume implicit instance attribute
+                # 5. Otherwise, assume implicit instance attribute
                 return ast.Attribute(
                     value=ast.Name(id="self", ctx=ast.Load()),
                     attr=node.id,
@@ -2147,16 +2148,6 @@ class TemplateCodegen:
                 )
             )
 
-            # Pass context for !provide/!inject
-            dict_keys.append(ast.Constant(value="_context"))
-            dict_values.append(
-                ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()),
-                    attr="context",
-                    ctx=ast.Load(),
-                )
-            )
-
             # 2. Pass explicitly defined props (static)
             ref_expr = None
             for k, v in node.attributes.items():
@@ -2174,6 +2165,7 @@ class TemplateCodegen:
                                 expr_code,
                                 local_vars,
                                 known_globals,
+                                known_imports,
                                 line_offset=node.line,
                                 col_offset=node.column,
                                 wire_vars=wire_vars,
@@ -2199,6 +2191,7 @@ class TemplateCodegen:
                                     expr_code,
                                     local_vars,
                                     known_globals,
+                                    known_imports,
                                     line_offset=node.line,
                                     col_offset=node.column,
                                 ),
@@ -2225,6 +2218,7 @@ class TemplateCodegen:
                                                     part.expression,
                                                     local_vars,
                                                     known_globals,
+                                                    known_imports,
                                                     line_offset=part.line,
                                                     col_offset=part.column,
                                                 ),
@@ -2309,6 +2303,7 @@ class TemplateCodegen:
                             raw_handler,
                             local_vars,
                             known_globals,
+                            known_imports,
                             line_offset=node.line,
                             col_offset=node.column,
                         ),
@@ -2568,6 +2563,7 @@ class TemplateCodegen:
                                 part.expression,
                                 local_vars,
                                 known_globals,
+                                known_imports,
                                 line_offset=part.line,
                                 col_offset=part.column,
                             )
@@ -2618,6 +2614,7 @@ class TemplateCodegen:
                     interp.expression,
                     local_vars,
                     known_globals,
+                    known_imports,
                     line_offset=interp.line,
                     col_offset=interp.column,
                 )
@@ -2745,6 +2742,7 @@ class TemplateCodegen:
                             expr_code,
                             local_vars,
                             known_globals,
+                            known_imports,
                             line_offset=node.line,
                             col_offset=node.column,
                             wire_vars=wire_vars,
@@ -2842,6 +2840,7 @@ class TemplateCodegen:
                                 key_attr.expr,
                                 local_vars,
                                 known_globals,
+                                known_imports,
                                 line_offset=node.line,
                                 col_offset=node.column,
                                 cached=False,
@@ -2968,6 +2967,7 @@ class TemplateCodegen:
                                                 part.expression,
                                                 local_vars,
                                                 known_globals,
+                                                known_imports,
                                             ),
                                         )
                                     )
@@ -3127,6 +3127,7 @@ class TemplateCodegen:
                                     arg_expr,
                                     local_vars,
                                     known_globals,
+                                    known_imports,
                                     line_offset=node.line,
                                     col_offset=node.column,
                                 ),
@@ -3209,6 +3210,7 @@ class TemplateCodegen:
                                             arg_expr,
                                             local_vars,
                                             known_globals,
+                                            known_imports,
                                             line_offset=node.line,
                                             col_offset=node.column,
                                         ),
@@ -3522,6 +3524,7 @@ class TemplateCodegen:
                             show_attr.condition,
                             local_vars,
                             known_globals,
+                            known_imports,
                             line_offset=node.line,
                             col_offset=node.column,
                             cached=False,
@@ -3647,6 +3650,7 @@ class TemplateCodegen:
                             explicit_spread.expr,
                             local_vars,
                             known_globals,
+                            known_imports,
                             line_offset=node.line,
                             col_offset=node.column,
                             wire_vars=wire_vars,
