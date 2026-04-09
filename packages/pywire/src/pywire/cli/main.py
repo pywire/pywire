@@ -475,11 +475,11 @@ def deploy(app: Optional[str], platform: str, out_dir: str) -> None:
             "→ [bold]New → Blueprint[/] and connect your repo\n"
             "  3. Render reads [cyan]render.yaml[/] automatically and provisions the service\n"
             "\n[bold]Scaling with Redis:[/]\n"
-            "  The generated [cyan]render.yaml[/] runs with [cyan]--workers 1[/] (safe default).\n"
+            "  The generated Dockerfile runs with [cyan]--workers 1[/] (safe default).\n"
             "  To scale, add a Render KV store and set [cyan]REDIS_URL[/]:\n"
             "  1. [cyan]uv add pywire[redis][/]\n"
             "  2. Add a [cyan]keyvalue[/] service to [cyan]render.yaml[/] with [cyan]fromService[/]\n"
-            "  3. Increase [cyan]--workers[/] in [cyan]startCommand[/]\n"
+            "  3. Increase [cyan]--workers[/] in the Dockerfile [cyan]CMD[/]\n"
             "  PyWire auto-detects [cyan]REDIS_URL[/] for shared session state — no code changes needed."
         )
     elif platform == "fly":

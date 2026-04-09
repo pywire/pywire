@@ -26,23 +26,20 @@ This project is configured for **Render**. To deploy:
 
 ### Scaling with Redis (multi-worker)
 
-By default, the generated `render.yaml` runs with `--workers 1`. To scale beyond a single
+By default, the generated `Dockerfile` runs with `--workers 1`. To scale beyond a single
 worker, add a Redis-backed KV store so that session state is shared across processes:
 
 1. Install the Redis extra: `uv add pywire[redis]`
-2. Update your `render.yaml`:
+2. Update `--workers 4` (or more) in the `CMD` line of your `Dockerfile`
+3. Update your `render.yaml` to add a KV store:
 
 ```yaml
 services:
   - type: web
     name: {{ project_name }}
-    runtime: python
+    runtime: docker
     plan: starter  # or higher
-    buildCommand: uv sync --frozen && uv cache prune --ci
-    startCommand: uv run pywire run --host 0.0.0.0 --port $PORT --workers 4
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12"
       - key: REDIS_URL
         fromService:
           name: {{ project_name }}-redis

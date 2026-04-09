@@ -1,10 +1,6 @@
 services:
   - type: web
     name: {{ project_name }}
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: apt-get update && apt-get install -y build-essential curl && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs && corepack enable pnpm && uv sync --frozen && uv cache prune --ci
-    startCommand: uv run pywire run --host 0.0.0.0 --port $PORT --workers 1
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.12"
+    envVars: []
