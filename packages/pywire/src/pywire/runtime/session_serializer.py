@@ -48,9 +48,9 @@ _WIRE_TYPE_TAGS: Dict[type, str] = {
 }
 
 _WIRE_TAG_TO_FACTORY: Dict[str, Any] = {
-    "primitive": lambda v: wire(v),
-    "list": lambda v: wire(v),
-    "dict": lambda v: wire(v),
+    "primitive": wire,
+    "list": wire,
+    "dict": wire,
     "set": lambda v: wire(set(v) if isinstance(v, list) else v),
     "namespace": lambda v: wire(**v) if isinstance(v, dict) else wire(v),
 }
