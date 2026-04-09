@@ -4,3 +4,4 @@ public/
 .astro/
 pnpm-lock.yaml
 *.lock
+CHANGELOG.md
