@@ -31,13 +31,23 @@ pywire deploy --platform render
 
 After generating, push to your Git repo and connect it to [Render](https://render.com). The `render.yaml` configures a web service with the correct build and start commands.
 
-**Fly.io** — currently a stub that recommends Docker:
+**Fly.io** — generates a `fly.toml` and a `Dockerfile`:
 
 ```sh
 pywire deploy --platform fly
 ```
 
-Full Fly.io support is coming. For now, generate a Dockerfile and deploy with `fly deploy`.
+Then deploy with the Fly CLI:
+
+```sh
+# One-time setup
+fly launch --no-deploy   # imports fly.toml
+
+# Deploy
+fly deploy
+```
+
+To scale to multiple machines (`fly scale count N`), you need sticky sessions or a shared Redis instance — `fly redis create`, then set `REDIS_URL`. PyWire auto-detects it with no code changes needed.
 
 ### Options
 

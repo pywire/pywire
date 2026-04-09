@@ -117,6 +117,55 @@ Derived stores support `subscribe()` just like writable and readable stores:
 doubled.subscribe(lambda v: print(f"Doubled: {v}"))
 ```
 
+## Sharing State Across Pages
+
+The primary use case for stores is sharing reactive state across multiple pages. Define your stores in a separate module and import them into each page's Python block.
+
+**`src/stores.py`:**
+
+```python
+from pywire import writable, store_derived
+
+counter = writable(0)
+counter_label = store_derived(counter, lambda n: f"Count: {n} ({'even' if n % 2 == 0 else 'odd'})")
+```
+
+**`src/pages/index.wire`:**
+
+```pywire
+---
+from stores import counter, counter_label
+
+def increment():
+    counter.value += 1
+
+def decrement():
+    counter.value -= 1
+
+def reset():
+    counter.set(0)
+---
+<p><strong>{counter_label.value}</strong></p>
+<button @click={decrement()}>−</button>
+<button @click={increment()}>+</button>
+<button @click={reset()}>Reset</button>
+```
+
+**`src/pages/about.wire`:**
+
+```pywire
+---
+from stores import counter
+
+def increment():
+    counter.value += 1
+---
+<p>The counter value here is live: <strong>{counter.value}</strong></p>
+<button @click={increment()}>Increment from About</button>
+```
+
+The store lives at the module level, so both pages share the same value. Incrementing from either page updates both — including live re-renders via WebSocket — and SPA navigation between pages preserves the count without a server round-trip.
+
 ## Integration with Wire Reactivity
 
 Stores use `wire()` internally, so they participate in PyWire's render context tracking automatically. If you access `store.value` inside a `@derived` or `@effect`, the dependency is tracked:

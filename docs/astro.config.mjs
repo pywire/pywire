@@ -65,7 +65,6 @@ export default defineConfig({
             { label: 'Reactivity & State', slug: 'concepts/reactivity' },
             { label: 'Server-Side Events', slug: 'concepts/events' },
             { label: 'Components', slug: 'concepts/components' },
-            { label: 'Context & Injection', slug: 'concepts/context' },
             { label: 'Stores', slug: 'concepts/stores' },
           ],
         },
