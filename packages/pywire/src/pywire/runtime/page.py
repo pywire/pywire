@@ -665,15 +665,14 @@ class BasePage:
                 )
                 debug_mode = bool(getattr(self.request.app.state, "debug", False))
             except (AttributeError, KeyError):
-                pass
+                pass  # request.app.state may not exist in testing or non-Starlette contexts
             try:
                 pywire_app = self.request.app.state.pywire
                 _url_path = getattr(pywire_app, "static_url_path", None)
                 if isinstance(_url_path, str):
                     static_url_path = _url_path
             except (AttributeError, KeyError):
-                pass
-
+                pass  # fall back to default static_url_path
             # Collect all wire route patterns for whitelist SPA navigation
             all_wire_paths: list = []
             try:
@@ -684,7 +683,7 @@ class BasePage:
                     if isinstance(patterns, list):
                         all_wire_paths = patterns
             except (AttributeError, KeyError):
-                pass
+                pass  # no router available; SPA navigation will use sibling paths only
 
             if not no_spa and not is_component:
                 meta = {

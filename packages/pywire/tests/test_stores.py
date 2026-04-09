@@ -3,8 +3,8 @@
 import pytest
 
 from pywire.core.stores import writable, readable, store_derived, WritableStore, ReadableStore, DerivedStore
-from pywire.core.signals import Effect, Derived, _TRACKING_STACK
-from pywire.core.wire import WirePrimitive, set_render_context, reset_render_context
+from pywire.core.signals import Effect, Derived
+from pywire.core.wire import set_render_context, reset_render_context
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +353,7 @@ class TestStoreEdgeCases:
 
 class TestPublicAPI:
     def test_imports_from_pywire(self):
-        from pywire import writable, readable, store_derived
+        from pywire import writable, readable, store_derived  # noqa: F401
 
         s = writable(1)
         assert s.value == 1

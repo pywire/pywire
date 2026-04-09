@@ -712,7 +712,7 @@ class CodeGenerator:
                     try:
                         user_handler_sources[node.name] = ast.unparse(node)
                     except Exception:
-                        pass
+                        pass  # ast.unparse can fail on malformed nodes; skip gracefully
 
         def visit_nodes(nodes: List[TemplateNode]) -> None:
             nonlocal handler_count

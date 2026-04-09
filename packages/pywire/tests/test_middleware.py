@@ -3,13 +3,9 @@
 import shutil
 import tempfile
 from pathlib import Path
-import pytest
-from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocket
 
 from pywire.runtime.app import PyWire
 
@@ -151,7 +147,7 @@ class TestWebSocketThroughMiddleware:
         # The PyWire WS endpoint is at /_pywire/ws
         # We just verify the connection is not rejected by middleware.
         # BaseHTTPMiddleware passes WebSocket scopes through untouched.
-        with self.client.websocket_connect("/_pywire/ws") as ws:
+        with self.client.websocket_connect("/_pywire/ws") as _ws:
             # Connection succeeded — that's the assertion.
             # Close cleanly; the server handler may send its own close.
             pass

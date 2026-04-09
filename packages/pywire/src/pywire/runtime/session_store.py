@@ -119,6 +119,6 @@ class MemorySessionStore:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                pass
+                pass  # expected when cleanup task is cancelled during shutdown
         self._data.clear()
         self._expiry.clear()
