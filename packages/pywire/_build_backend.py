@@ -30,7 +30,7 @@ _CLIENT_DIR = _ROOT / "src" / "pywire" / "client"
 _STATIC_DIR = _ROOT / "src" / "pywire" / "static"
 
 
-def _build_client() -> None:
+def _build_client(*, required: bool = True) -> None:
     pkg_path = _CLIENT_DIR / "package.json"
     if not pkg_path.exists():
         return
@@ -41,6 +41,12 @@ def _build_client() -> None:
     if not pnpm:
         if (_STATIC_DIR / "pywire.core.min.js").exists():
             log.warning("pnpm not found, skipping client build (assets already exist).")
+            return
+        if not required:
+            log.warning(
+                "pnpm not found and client assets missing — skipping client build. "
+                "Install Node.js and pnpm to build the client."
+            )
             return
         raise RuntimeError(
             "pnpm not found and client assets missing. "
@@ -108,5 +114,5 @@ def build_sdist(sdist_directory, config_settings=None):
 
 
 def build_editable(wheel_directory, config_settings=None, metadata_directory=None):
-    _build_client()
+    _build_client(required=False)
     return _orig_build_editable(wheel_directory, config_settings, metadata_directory)
