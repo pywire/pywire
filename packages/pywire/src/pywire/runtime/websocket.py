@@ -808,9 +808,7 @@ class WebSocketHandler:
                 session_id, snapshot, ttl=self.app.session_ttl
             )
         except Exception:
-            logger.warning(
-                "Failed to persist session %s", session_id, exc_info=True
-            )
+            logger.warning("Failed to persist session %s", session_id, exc_info=True)
 
     async def broadcast_reload(self) -> None:
         """Broadcast reload to all clients, preserving state where possible.

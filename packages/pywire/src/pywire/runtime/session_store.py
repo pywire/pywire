@@ -66,9 +66,7 @@ class MemorySessionStore:
         while True:
             await asyncio.sleep(60)
             now = time.monotonic()
-            expired = [
-                sid for sid, exp in self._expiry.items() if exp <= now
-            ]
+            expired = [sid for sid, exp in self._expiry.items() if exp <= now]
             for sid in expired:
                 self._data.pop(sid, None)
                 self._expiry.pop(sid, None)

@@ -258,7 +258,9 @@ class PyWire:
                 from pywire.runtime.redis_store import RedisSessionStore
 
                 self.session_store = RedisSessionStore(redis_url)
-                logger.info("Using Redis session store (auto-detected from environment)")
+                logger.info(
+                    "Using Redis session store (auto-detected from environment)"
+                )
             else:
                 from pywire.runtime.session_store import MemorySessionStore
 
@@ -402,12 +404,14 @@ class PyWire:
         @asynccontextmanager
         async def _lifespan(app: Any):
             # Startup
-            if hasattr(self.session_store, "connect"):
-                await self.session_store.connect()
+            connect = getattr(self.session_store, "connect", None)
+            if callable(connect):
+                await connect()
             yield
             # Shutdown
-            if hasattr(self.session_store, "close"):
-                await self.session_store.close()
+            close = getattr(self.session_store, "close", None)
+            if callable(close):
+                await close()
 
         # Create Starlette app with all transport routes
         self.app = Starlette(

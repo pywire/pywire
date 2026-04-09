@@ -77,9 +77,10 @@ def validate_deploy_config(platform: str, project_root: Path) -> list[str]:
     if not (project_root / "pyproject.toml").exists():
         issues.append("Missing pyproject.toml — required for dependency installation.")
 
-    if platform in ("docker", "fly", "render") and not (
-        project_root / "uv.lock"
-    ).exists():
+    if (
+        platform in ("docker", "fly", "render")
+        and not (project_root / "uv.lock").exists()
+    ):
         issues.append(
             "Missing uv.lock — run 'uv lock' to generate a lock file for reproducible builds."
         )

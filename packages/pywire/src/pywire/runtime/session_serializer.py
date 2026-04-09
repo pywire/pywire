@@ -81,8 +81,7 @@ def _is_serializable(value: Any) -> bool:
         return all(_is_serializable(v) for v in value)
     if isinstance(value, dict):
         return all(
-            isinstance(k, (str, int)) and _is_serializable(v)
-            for k, v in value.items()
+            isinstance(k, (str, int)) and _is_serializable(v) for k, v in value.items()
         )
     return False
 
@@ -220,9 +219,7 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
                         current.update(value if isinstance(value, dict) else {})
                     elif isinstance(current, WireSet):
                         current.clear()
-                        current.update(
-                            set(value) if isinstance(value, list) else value
-                        )
+                        current.update(set(value) if isinstance(value, list) else value)
                     elif isinstance(current, WireNamespace):
                         if isinstance(value, dict):
                             for k, v in value.items():

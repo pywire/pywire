@@ -13,7 +13,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pywire.runtime.page import BasePage
-from pywire.runtime.session_serializer import restore_page_state, snapshot_page_state
+from pywire.runtime.session_serializer import snapshot_page_state
 from pywire import __version__
 
 logger = logging.getLogger(__name__)

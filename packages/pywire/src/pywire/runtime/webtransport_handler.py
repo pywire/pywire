@@ -190,9 +190,7 @@ class WebTransportHandler:
                 session_id = None
                 if client_session_id:
                     try:
-                        snapshot = await self.app.session_store.get(
-                            client_session_id
-                        )
+                        snapshot = await self.app.session_store.get(client_session_id)
                         if snapshot:
                             restore_page_state(page, snapshot)
                             session_id = client_session_id
