@@ -195,6 +195,9 @@ export class PyWireApp {
       const link = (e.target as Element).closest('a[href]') as HTMLAnchorElement | null
       if (!link) return
 
+      // Let the browser handle modified clicks (new tab, new window, etc.)
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+
       // Only intercept same-origin links
       if (link.origin !== window.location.origin) return
 
