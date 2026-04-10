@@ -1,22 +1,22 @@
 """Page loader - compiles and executes .pywire files."""
 
 import ast
-import logging
-import os
 import hashlib
 import importlib.util
 import json
+import logging
+import os
 import sys
 from contextvars import ContextVar
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 from types import ModuleType
 from typing import Any, Dict, Optional, Set, Type, cast
 
 from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.compiler.parser import PyWireParser
 from pywire.runtime.page import BasePage
+
+logger = logging.getLogger(__name__)
 
 # Tracks the file currently being loaded so the import hook can record dependencies.
 _loading_file: ContextVar[Optional[str]] = ContextVar("_loading_file", default=None)
@@ -233,7 +233,8 @@ class PageLoader:
                 # We construct a Path object to recurse properly (though internal key is string)
                 logger.debug(
                     "Invalidating dependent %s because %s changed.",
-                    dependent, key,
+                    dependent,
+                    key,
                 )
                 invalidated.update(self.invalidate_cache(Path(dependent)))
 

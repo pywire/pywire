@@ -1,4 +1,5 @@
 README.md
+CHANGELOG.md
 .github/
 *.lock
 pnpm-lock.yaml

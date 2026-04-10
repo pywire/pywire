@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import sys
 import traceback
+import uuid
 from typing import Any, Dict, Set, cast
 
 import msgpack
@@ -13,6 +14,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
+from pywire.runtime.session_serializer import restore_page_state, snapshot_page_state
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,8 @@ class WebSocketHandler:
         self.active_connections: Set[WebSocket] = set()
         # Map websocket to page instance
         self.connection_pages: Dict[WebSocket, BasePage] = {}
+        # Map websocket to session ID for state persistence
+        self.session_ids: Dict[WebSocket, str] = {}
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
@@ -63,11 +67,14 @@ class WebSocketHandler:
             self.active_connections.remove(websocket)
             if websocket in self.connection_pages:
                 del self.connection_pages[websocket]
+            # Keep session in store (TTL handles cleanup) — enables reconnect
+            self.session_ids.pop(websocket, None)
         except asyncio.CancelledError:
             # Server shutdown, clean disconnect
             self.active_connections.discard(websocket)
             if websocket in self.connection_pages:
                 del self.connection_pages[websocket]
+            self.session_ids.pop(websocket, None)
             # Don't re-raise, let it exit gracefully
             return
         except Exception as e:
@@ -290,7 +297,31 @@ class WebSocketHandler:
                 path=path_info,
                 url=url_helper,
             )
+
+            # Session ID: reuse from reconnect or generate new
+            client_session_id = data.get("session_id")
+            session_id = None
+
+            if client_session_id:
+                # Attempt to restore session state from store
+                try:
+                    snapshot = await self.app.session_store.get(client_session_id)
+                    if snapshot:
+                        restore_page_state(page, snapshot)
+                        session_id = client_session_id
+                        logger.debug("Restored session %s", session_id)
+                except Exception:
+                    logger.warning(
+                        "Failed to restore session %s",
+                        client_session_id,
+                        exc_info=True,
+                    )
+
+            if session_id is None:
+                session_id = str(uuid.uuid4())
+
             self.connection_pages[websocket] = page
+            self.session_ids[websocket] = session_id
 
             # Define update broadcaster for background tasks (like await blocks)
             async def broadcast_update() -> None:
@@ -298,17 +329,12 @@ class WebSocketHandler:
                 await self._send_update_payload(websocket, update)
 
             page._on_update = broadcast_update
-            page._on_update = broadcast_update
             if getattr(self.app, "debug", False):
                 logger.debug(
                     f"[{page._instance_id}] Setting _on_update in _handle_init"
                 )
 
             # Render initial state to register dependencies
-            # We don't send the HTML back because client already has it (static load)
-            # Render initial state to register dependencies
-            # We don't send the HTML back because client already has it (static load)
-            # We don't send the HTML back because client already has it (static load)
             if getattr(self.app, "debug", False):
                 logger.debug(
                     f"[{page._instance_id}] Calling page.render(init=True) in _handle_init"
@@ -329,8 +355,10 @@ class WebSocketHandler:
                 page._pending_navigation = None
                 return
 
-            # Send ack
-            await websocket.send_bytes(msgpack.packb({"type": "init_ack"}))
+            # Send ack with session ID
+            await websocket.send_bytes(
+                msgpack.packb({"type": "init_ack", "session_id": session_id})
+            )
 
         except Exception as e:
             import traceback
@@ -480,6 +508,11 @@ class WebSocketHandler:
                 return
 
             await self._send_update_payload(websocket, update)
+
+            # Persist session state after event
+            session_id = self.session_ids.get(websocket)
+            if session_id:
+                self._persist_session(session_id, page)
 
         except Exception as e:
             # Send structured trace to client (no print - trace is sufficient)
@@ -749,6 +782,11 @@ class WebSocketHandler:
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
                 )
+
+                # Persist session state after navigation
+                session_id = self.session_ids.get(websocket)
+                if session_id:
+                    self._persist_session(session_id, new_page)
             except Exception:
                 raise
         except Exception as e:
@@ -758,6 +796,20 @@ class WebSocketHandler:
             await websocket.send_bytes(msgpack.packb({"type": "reload"}))
         finally:
             log_callback_ctx.reset(token)
+
+    def _persist_session(self, session_id: str, page: BasePage) -> None:
+        """Schedule non-blocking session persistence."""
+        asyncio.create_task(self._do_persist_session(session_id, page))
+
+    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
+        """Persist page state to the session store (background)."""
+        try:
+            snapshot = snapshot_page_state(page, warn_size=self.app.session_warn_size)
+            await self.app.session_store.set(
+                session_id, snapshot, ttl=self.app.session_ttl
+            )
+        except Exception:
+            logger.warning("Failed to persist session %s", session_id, exc_info=True)
 
     async def broadcast_reload(self) -> None:
         """Broadcast reload to all clients, preserving state where possible.
@@ -877,7 +929,8 @@ class WebSocketHandler:
                     except Exception as e:
                         # Anything failed, fall back to hard reload
                         logger.warning(
-                            "Hot reload failed, falling back to hard reload: %s", e,
+                            "Hot reload failed, falling back to hard reload: %s",
+                            e,
                             exc_info=True,
                         )
                         message_bytes = msgpack.packb({"type": "reload"})

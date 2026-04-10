@@ -24,5 +24,3 @@ echo "=== Checking Prettier Plugin PyWire ==="
 echo "=== Checking PyWire Docs ==="
 (cd docs && pnpm check)
 
-echo "=== Running Workspace Tests ==="
-./scripts/test

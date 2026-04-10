@@ -1,0 +1,22 @@
+---
+count = wire(0)
+---
+<h1 id="script-dom-title">Script DOM Reference Test</h1>
+<p id="count">{count}</p>
+<button id="btn-increment" @click={count.value += 1}>Increment</button>
+<a href="/" id="link-home">Go Home</a>
+
+<div id="target-el">Target Element</div>
+<p id="script-result">not-run</p>
+
+<script>
+    // This script references a DOM element by ID.
+    // On SPA navigation, this should execute AFTER morphdom updates the DOM,
+    // so #target-el exists and can be found.
+    var el = document.getElementById('target-el');
+    if (el) {
+        document.getElementById('script-result').textContent = 'found:' + el.textContent;
+    } else {
+        document.getElementById('script-result').textContent = 'not-found';
+    }
+</script>

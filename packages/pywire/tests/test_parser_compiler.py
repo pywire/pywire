@@ -1,10 +1,8 @@
 import unittest
 
 from pywire.compiler.ast_nodes import (
-    InjectDirective,
     InterpolationNode,
     LayoutDirective,
-    ProvideDirective,
 )
 from pywire.compiler.parser import PyWireParser
 
@@ -50,18 +48,6 @@ def hello(): pass
         self.assertEqual(len(parsed.directives), 1)
         assert isinstance(parsed.directives[0], LayoutDirective)
         self.assertEqual(parsed.directives[0].layout_path, "main.wire")
-
-    def test_parse_provide_inject(self) -> None:
-        # Provide
-        content = (
-            "!provide { 'theme': 'dark' }\n!inject { theme: 'theme' }\n<div></div>"
-        )
-        parsed = self.parser.parse(content)
-        self.assertEqual(len(parsed.directives), 2)
-        assert isinstance(parsed.directives[0], ProvideDirective)
-        assert isinstance(parsed.directives[1], InjectDirective)
-        self.assertEqual(parsed.directives[0].mapping, {"theme": "'dark'"})
-        self.assertEqual(parsed.directives[1].mapping, {"theme": "theme"})
 
 
 if __name__ == "__main__":

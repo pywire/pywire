@@ -74,7 +74,10 @@ class WireBase:
             self._pages.add(page)
             logger.debug(
                 "WIRE-TRACK: wire=%s registered page=%s region=%s field=%s",
-                id(self), id(page), region_id, field,
+                id(self),
+                id(page),
+                region_id,
+                field,
             )
             register = getattr(page, "_register_wire_read", None)
             if register:
@@ -120,7 +123,9 @@ class WireBase:
         for page in list(self._pages):
             logger.debug(
                 "WIRE-NOTIFY: wire=%s notifying page=%s field=%s",
-                id(self), id(page), field,
+                id(self),
+                id(page),
+                field,
             )
             invalidate = getattr(page, "_invalidate_wire", None)
             if invalidate:

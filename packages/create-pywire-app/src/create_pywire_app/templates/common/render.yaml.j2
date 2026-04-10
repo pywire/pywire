@@ -1,9 +1,21 @@
 services:
   - type: web
     name: {{ project_name }}
-    runtime: python
-    buildCommand: pip install uv && uv sync --frozen
-    startCommand: uv run pywire run --host 0.0.0.0 --port $PORT
+    runtime: docker
+{% if redis_enabled %}
+    plan: starter
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12"
+      - key: REDIS_URL
+        fromService:
+          name: {{ project_name }}-kv
+          type: keyvalue
+          property: connectionString
+
+  - type: keyvalue
+    name: {{ project_name }}-kv
+    plan: starter
+    ipAllowList: []
+{% else %}
+    plan: free
+    envVars: []
+{% endif %}

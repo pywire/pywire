@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -12,7 +13,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pywire.runtime.page import BasePage
+from pywire.runtime.session_serializer import snapshot_page_state
 from pywire import __version__
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -117,6 +121,10 @@ class HTTPTransportHandler:
 
         self.sessions[session_id] = session
         self.start_cleanup_task()
+
+        # Persist initial state to session store
+        if session.page:
+            self._persist_session(session_id, session.page)
 
         return Response(
             msgpack.packb({"sessionId": session_id, "version": __version__}),
@@ -230,6 +238,10 @@ class HTTPTransportHandler:
             else:
                 payload = {"type": "error", "error": "Invalid update payload"}
 
+            # Persist updated state
+            if session.page:
+                self._persist_session(session_id, session.page)
+
             return Response(
                 msgpack.packb(payload),
                 media_type="application/x-msgpack",
@@ -240,6 +252,22 @@ class HTTPTransportHandler:
                 msgpack.packb({"type": "error", "error": str(e)}),
                 status_code=500,
                 media_type="application/x-msgpack",
+            )
+
+    def _persist_session(self, session_id: str, page: BasePage) -> None:
+        """Schedule non-blocking session persistence."""
+        asyncio.create_task(self._do_persist_session(session_id, page))
+
+    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
+        """Persist page state to the session store (background)."""
+        try:
+            snapshot = snapshot_page_state(page, warn_size=self.app.session_warn_size)
+            await self.app.session_store.set(
+                session_id, snapshot, ttl=self.app.session_ttl
+            )
+        except Exception:
+            logger.warning(
+                "Failed to persist HTTP session %s", session_id, exc_info=True
             )
 
     def queue_update(self, session_id: str, update: Dict[str, Any]) -> None:

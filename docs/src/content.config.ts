@@ -1,4 +1,5 @@
-import { defineCollection, z } from 'astro:content'
+import { defineCollection } from 'astro:content'
+import { z } from 'zod'
 import { docsLoader } from '@astrojs/starlight/loaders'
 import { docsSchema } from '@astrojs/starlight/schema'
 
@@ -23,7 +24,7 @@ export const collections = {
           .optional(),
         behaviors: z
           .object({
-            canAddFiles: z.record(z.literal(true)).optional(),
+            canAddFiles: z.record(z.string(), z.literal(true)).optional(),
             canDeleteFiles: z.array(z.string()).optional(),
             restrictedPaths: z.array(z.string()).optional(),
           })

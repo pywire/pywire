@@ -3,11 +3,14 @@
 Handles 'webtransport' scope type from Hypercorn.
 """
 
+import asyncio
 import json
 import logging
+import uuid
 from typing import Any, Dict, Set, cast
 
 from pywire.runtime.page import BasePage
+from pywire.runtime.session_serializer import restore_page_state, snapshot_page_state
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,8 @@ class WebTransportHandler:
 
         # Map connection -> current page instance
         self.connection_pages: Dict[Any, BasePage] = {}
+        # Map connection_id -> session_id
+        self.session_ids: Dict[Any, str] = {}
 
     async def handle(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         """Handle ASGI webtransport scope."""
@@ -104,6 +109,7 @@ class WebTransportHandler:
             self.active_connections.discard(connection_id)
             if connection_id in self.connection_pages:
                 del self.connection_pages[connection_id]
+            self.session_ids.pop(connection_id, None)
 
     async def _handle_message(
         self, data: dict[str, Any], scope: dict[str, Any], send: Any, stream_id: int
@@ -131,6 +137,11 @@ class WebTransportHandler:
                         html = cast(bytes, response.body).decode("utf-8")
                         response_data = {"type": "update", "html": html}
                         await self._send_response(send, stream_id, response_data)
+
+                    # Persist session state
+                    session_id = self.session_ids.get(connection_id)
+                    if session_id:
+                        self._persist_session(session_id, page)
 
                 except Exception as e:
                     # Send error response (no print - response is sufficient)
@@ -174,6 +185,42 @@ class WebTransportHandler:
                     page.user = self.app.get_user(request)
 
                 self.connection_pages[connection_id] = page
+
+                # Session ID: reuse from reconnect or generate new
+                client_session_id = data.get("session_id")
+                session_id = None
+                if client_session_id:
+                    try:
+                        snapshot = await self.app.session_store.get(client_session_id)
+                        if snapshot:
+                            restore_page_state(page, snapshot)
+                            session_id = client_session_id
+                    except Exception:
+                        logger.warning(
+                            "Failed to restore WebTransport session",
+                            exc_info=True,
+                        )
+                if session_id is None:
+                    session_id = str(uuid.uuid4())
+                self.session_ids[connection_id] = session_id
+
+    def _persist_session(self, session_id: str, page: BasePage) -> None:
+        """Schedule non-blocking session persistence."""
+        asyncio.create_task(self._do_persist_session(session_id, page))
+
+    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
+        """Persist page state to the session store (background)."""
+        try:
+            snapshot = snapshot_page_state(page, warn_size=self.app.session_warn_size)
+            await self.app.session_store.set(
+                session_id, snapshot, ttl=self.app.session_ttl
+            )
+        except Exception:
+            logger.warning(
+                "Failed to persist WebTransport session %s",
+                session_id,
+                exc_info=True,
+            )
 
     async def _send_response(
         self, send: Any, stream_id: int, data: dict[str, Any]

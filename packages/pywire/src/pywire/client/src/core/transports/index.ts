@@ -5,6 +5,7 @@ export {
   ClientMessage,
   EventMessage,
   RelocateMessage,
+  InitClientMessage,
   EventData,
   StackFrame,
   Command,

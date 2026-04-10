@@ -1,3 +1,4 @@
+from pywire import __version__
 from pywire.runtime.app import PyWire
 from starlette.testclient import TestClient
 
@@ -18,7 +19,7 @@ def test_app_mode_gating_prod(tmp_path) -> None:
     assert response.status_code == 404
 
     # Script URL should be core bundle
-    assert app._get_client_script_url() == "/_pywire/static/pywire.core.min.js"
+    assert app._get_client_script_url() == f"/_pywire/static/pywire.core.min.js?v={__version__}"
 
 
 def test_app_mode_gating_debug_not_dev(tmp_path) -> None:
@@ -37,7 +38,7 @@ def test_app_mode_gating_debug_not_dev(tmp_path) -> None:
     assert app.debug is True
 
     # Still core bundle if NOT in dev mode (even if debug=True)
-    assert app._get_client_script_url() == "/_pywire/static/pywire.core.min.js"
+    assert app._get_client_script_url() == f"/_pywire/static/pywire.core.min.js?v={__version__}"
 
 
 def test_app_mode_gating_dev(tmp_path) -> None:
@@ -57,7 +58,7 @@ def test_app_mode_gating_dev(tmp_path) -> None:
     assert "test_app_mode_gating_dev" in response.text
 
     # Script URL should be dev bundle
-    assert app._get_client_script_url() == "/_pywire/static/pywire.dev.min.js"
+    assert app._get_client_script_url() == f"/_pywire/static/pywire.dev.min.js?v={__version__}"
 
 
 def test_capabilities_endpoint(tmp_path) -> None:

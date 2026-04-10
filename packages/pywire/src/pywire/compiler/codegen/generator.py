@@ -7,13 +7,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
 from pywire.compiler.ast_nodes import (
     Directive,
     EventAttribute,
-    InjectDirective,
     LayoutDirective,
     NoSpaDirective,
     ParsedPyWire,
     PathDirective,
     PropsDirective,
-    ProvideDirective,
     SpecialAttribute,
     TemplateNode,
 )
@@ -576,12 +574,17 @@ class CodeGenerator:
         if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
             init_hooks.extend(self._collected_mount_hooks)
 
-        # Ensure 'on_before_load' and 'on_load' are present
+        # Include standard lifecycle hooks if defined by the page
         final_init_hooks = []
+        user_func_names = set()
+        if parsed.python_ast:
+            for node in parsed.python_ast.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    user_func_names.add(node.name)
 
-        # Standard hooks - REMOVED per user request
-        # final_init_hooks.append('on_before_load')
-        # final_init_hooks.append('on_load')
+        for hook in ("on_before_load", "on_load"):
+            if hook in user_func_names:
+                final_init_hooks.append(hook)
 
         # Add mount hooks
         if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
@@ -624,6 +627,8 @@ class CodeGenerator:
             "error_detail",
             "error_trace",
             "navigate",
+            "set_cookie",
+            "delete_cookie",
         }
         async_methods = set()
 
@@ -697,6 +702,17 @@ class CodeGenerator:
         handlers = []
         handler_count = 0
         from pywire.compiler.ast_nodes import EventAttribute
+        from pywire.compiler.event_analysis import analyze_event_fields
+
+        # Build a map of user-defined handler name -> source code for field analysis
+        user_handler_sources: Dict[str, str] = {}
+        if parsed.python_ast:
+            for node in parsed.python_ast.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    try:
+                        user_handler_sources[node.name] = ast.unparse(node)
+                    except Exception:
+                        pass  # ast.unparse can fail on malformed nodes; skip gracefully
 
         def visit_nodes(nodes: List[TemplateNode]) -> None:
             nonlocal handler_count
@@ -729,6 +745,11 @@ class CodeGenerator:
                                 if is_identifier:
                                     # If it's a bare identifier (like 'print'), transform it to call with event
                                     code_to_transform = f"{code_to_transform}(event)"
+
+                                # Analyze event field usage before transformation
+                                attr.field_mask = analyze_event_fields(
+                                    code_to_transform
+                                )
 
                                 body, args = self._transform_inline_code(
                                     code_to_transform,
@@ -772,6 +793,11 @@ class CodeGenerator:
                                 print(
                                     f"Error compiling handler '{attr.handler_name}': {e}"
                                 )
+                        else:
+                            # User-defined method — analyze its source for field mask
+                            source = user_handler_sources.get(attr.handler_name)
+                            if source is not None:
+                                attr.field_mask = analyze_event_fields(source)
 
                 visit_nodes(node.children)
 
@@ -1071,39 +1097,6 @@ class CodeGenerator:
 
         # Add prop assignments
         body.extend(props_assigns)
-
-        # NOTE: !provide is now handled in _generate_render_template_method to ensure reactivity
-
-        # Handle !inject - retrieve values from context
-        inject_directive = parsed.get_directive_by_type(InjectDirective)
-        if inject_directive:
-            assert isinstance(inject_directive, InjectDirective)
-            # self.local_var = self.context.get('GLOBAL_KEY')
-            for local_var, global_key in inject_directive.mapping.items():
-                body.append(
-                    ast.Assign(
-                        targets=[
-                            ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()),
-                                attr=local_var,
-                                ctx=ast.Store(),
-                            )
-                        ],
-                        value=ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Attribute(
-                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                    attr="context",
-                                    ctx=ast.Load(),
-                                ),
-                                attr="get",
-                                ctx=ast.Load(),
-                            ),
-                            args=[ast.Constant(value=global_key)],
-                            keywords=[],
-                        ),
-                    )
-                )
 
         # Call _init_slots
         body.append(
@@ -1636,72 +1629,6 @@ class CodeGenerator:
             )
             binding_funcs.append(init_slots_func)
 
-            # Handle !provide - Override render() to update context before layout rendering
-            provide_directive = cast(
-                Optional[ProvideDirective],
-                parsed.get_directive_by_type(ProvideDirective),
-            )
-            if provide_directive:
-                provide_body: List[ast.stmt] = []
-                for key, val_expr in provide_directive.mapping.items():
-                    val_ast = self.template_codegen._transform_expr(
-                        val_expr, set(), known_globals
-                    )
-                    provide_body.append(
-                        ast.Assign(
-                            targets=[
-                                ast.Subscript(
-                                    value=ast.Attribute(
-                                        value=ast.Name(id="self", ctx=ast.Load()),
-                                        attr="context",
-                                        ctx=ast.Load(),
-                                    ),
-                                    slice=ast.Constant(value=key),
-                                    ctx=ast.Store(),
-                                )
-                            ],
-                            value=cast(ast.expr, val_ast),
-                        )
-                    )
-
-                # return await super().render(init)
-                render_call = ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Call(
-                            func=ast.Name(id="super", ctx=ast.Load()),
-                            args=[],
-                            keywords=[],
-                        ),
-                        attr="render",
-                        ctx=ast.Load(),
-                    ),
-                    args=[ast.Name(id="init", ctx=ast.Load())],
-                    keywords=[],
-                )
-                provide_body.append(ast.Return(value=ast.Await(value=render_call)))
-
-                render_override = ast.AsyncFunctionDef(
-                    name="render",
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[
-                            ast.arg(arg="self"),
-                            ast.arg(
-                                arg="init",
-                                annotation=ast.Name(id="bool", ctx=ast.Load()),
-                            ),
-                        ],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[ast.Constant(value=True)],
-                    ),
-                    body=provide_body,
-                    decorator_list=[],
-                    returns=None,
-                )
-                binding_funcs.append(render_override)
-
             # Generate _render_template override to bypass layout when used as a component
             default_slot_method = (
                 f"_render_slot_fill_default_{file_hash}"
@@ -1845,42 +1772,6 @@ class CodeGenerator:
             # Prepend unpack statements to render_func body
             if render_func and props_unpack_stmts:
                 render_func.body[0:0] = props_unpack_stmts
-
-            # Handle !provide - Update context values at start of render to catch state changes
-            provide_directive = cast(
-                Optional[ProvideDirective],
-                parsed.get_directive_by_type(ProvideDirective),
-            )
-            if provide_directive and render_func:
-                provide_stmts = []
-                for key, val_expr in provide_directive.mapping.items():
-                    # Transform expression using known globals for this page scope
-                    # Note: val_expr is string. We need to parse it or use transform helper.
-
-                    val_ast = self.template_codegen._transform_expr(
-                        val_expr, set(), known_globals
-                    )
-
-                    provide_stmts.append(
-                        ast.Assign(
-                            targets=[
-                                ast.Subscript(
-                                    value=ast.Attribute(
-                                        value=ast.Name(id="self", ctx=ast.Load()),
-                                        attr="context",
-                                        ctx=ast.Load(),
-                                    ),
-                                    slice=ast.Constant(value=key),
-                                    ctx=ast.Store(),
-                                )
-                            ],
-                            value=cast(ast.expr, val_ast),
-                        )
-                    )
-
-                # Insert after props unpacking (if any)
-                insert_idx = len(props_unpack_stmts) if props_unpack_stmts else 0
-                render_func.body[insert_idx:insert_idx] = provide_stmts
 
             binding_funcs.extend(aux_funcs)
 

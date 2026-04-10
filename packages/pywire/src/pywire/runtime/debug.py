@@ -67,7 +67,9 @@ class DevErrorMiddleware:
         from pywire.runtime.error_renderer import render_template
 
         # Script URL logic for 500 pages (usually dev mode)
-        script_url = "/_pywire/static/pywire.dev.min.js"
+        from pywire import __version__ as _pywire_version
+
+        script_url = f"/_pywire/static/pywire.dev.min.js?v={_pywire_version}"
         if hasattr(self.app, "state") and hasattr(self.app.state, "pywire"):
             pywire_app = self.app.state.pywire
             get_url = getattr(pywire_app, "_get_client_script_url", None)
@@ -177,7 +179,9 @@ class DevErrorMiddleware:
     ) -> str:
         from pywire.runtime.error_renderer import render_template
 
-        script_url = "/_pywire/static/pywire.dev.min.js"
+        from pywire import __version__ as _pywire_version
+
+        script_url = f"/_pywire/static/pywire.dev.min.js?v={_pywire_version}"
         if hasattr(self.app, "state") and hasattr(self.app.state, "pywire"):
             pywire_app = self.app.state.pywire
             get_url = getattr(pywire_app, "_get_client_script_url", None)

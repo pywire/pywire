@@ -9,6 +9,21 @@ type Application = PyWireApp
 type UploadResult = { _upload_id: string }
 type FormDataValue = string | string[] | UploadResult | UploadResult[]
 
+// Event base class metadata — serializable but useless noise on every Event.
+// These never change since they're the Event interface itself.
+const SKIP_EVENT_META = new Set([
+  'type',
+  'bubbles',
+  'cancelable',
+  'composed',
+  'eventPhase',
+  'isTrusted',
+  'defaultPrevented',
+  'cancelBubble',
+  'returnValue',
+  'timeStamp',
+])
+
 export class UnifiedEventHandler {
   private app: Application
   private debouncers = new Map<string, number>()
@@ -404,6 +419,13 @@ export class UnifiedEventHandler {
       args = this.getArgs(element)
     }
 
+    // Check for field mask — if present, only send listed fields.
+    // null = attribute absent (no mask, send all fields)
+    // empty string = attribute present but empty (send no event-specific fields)
+    const fieldMaskAttr = element.getAttribute(`data-pw-fields-${eventType}`)
+    const allowedFields =
+      fieldMaskAttr !== null ? new Set(fieldMaskAttr.split(',').filter((f) => f)) : null
+
     const eventData: EventData = {
       type: eventType,
       id: element.id || undefined,
@@ -420,57 +442,71 @@ export class UnifiedEventHandler {
       Object.assign(eventData, refData)
     }
 
-    // Extract specific data based on element type
-    if (element instanceof HTMLInputElement) {
-      if (element.type === 'file') {
-        eventData.value = Array.from(element.files ?? []).map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        }))
-      } else {
-        eventData.value = element.value
+    // Extract specific data based on element type (reads from DOM element, not event)
+    if (
+      !allowedFields ||
+      allowedFields.has('value') ||
+      allowedFields.has('inputType') ||
+      allowedFields.has('checked')
+    ) {
+      if (element instanceof HTMLInputElement) {
+        if (!allowedFields || allowedFields.has('value')) {
+          if (element.type === 'file') {
+            eventData.value = Array.from(element.files ?? []).map((file) => ({
+              name: file.name,
+              size: file.size,
+              type: file.type,
+            }))
+          } else {
+            eventData.value = element.value
+          }
+        }
+        if (!allowedFields || allowedFields.has('inputType')) {
+          eventData.inputType = element.type
+        }
+        if (
+          (!allowedFields || allowedFields.has('checked')) &&
+          (element.type === 'checkbox' || element.type === 'radio')
+        ) {
+          eventData.checked = element.checked
+        }
+      } else if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+        if (!allowedFields || allowedFields.has('value')) {
+          eventData.value = element.value
+        }
       }
-      eventData.inputType = element.type
-      if (element.type === 'checkbox' || element.type === 'radio') {
-        eventData.checked = element.checked
-      }
-    } else if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
-      eventData.value = element.value
     }
 
-    // Extract Key data
-    if (e instanceof KeyboardEvent) {
-      eventData.key = e.key
-      eventData.code = e.code
-      eventData.keyCode = e.keyCode
-      eventData.altKey = e.altKey
-      eventData.ctrlKey = e.ctrlKey
-      eventData.metaKey = e.metaKey
-      eventData.shiftKey = e.shiftKey
-    }
+    // Generic event property extraction — grabs all serializable properties
+    // from the event object (KeyboardEvent, MouseEvent, WheelEvent, etc.)
+    for (const key in e) {
+      if (SKIP_EVENT_META.has(key)) continue
+      if (key === key.toUpperCase() && key.length > 1) continue // Event constants (NONE, AT_TARGET, etc.)
+      if (allowedFields && !allowedFields.has(key)) continue
+      if (key in eventData) continue
 
-    // Extract Mouse/Pointer data
-    if (e instanceof MouseEvent || (window.PointerEvent && e instanceof PointerEvent)) {
-      const me = e as MouseEvent
-      eventData.clientX = me.clientX
-      eventData.clientY = me.clientY
-      eventData.offsetX = me.offsetX
-      eventData.offsetY = me.offsetY
-      eventData.pageX = me.pageX
-      eventData.pageY = me.pageY
-      eventData.screenX = me.screenX
-      eventData.screenY = me.screenY
-      eventData.button = me.button
-      eventData.buttons = me.buttons
-      eventData.altKey = me.altKey
-      eventData.ctrlKey = me.ctrlKey
-      eventData.metaKey = me.metaKey
-      eventData.shiftKey = me.shiftKey
+      const val = (e as unknown as Record<string, unknown>)[key]
+      if (val === null || val === undefined) continue
+
+      const t = typeof val
+      if (t === 'string' || t === 'number' || t === 'boolean') {
+        eventData[key] = val
+      } else if (t === 'object' && !(val instanceof Node) && !(val instanceof Window)) {
+        try {
+          JSON.stringify(val)
+          eventData[key] = val
+        } catch {
+          /* not serializable, skip */
+        }
+      }
     }
 
     // Extract Form Data for submit
-    if (eventType === 'submit' && element instanceof HTMLFormElement) {
+    if (
+      (!allowedFields || allowedFields.has('formData')) &&
+      eventType === 'submit' &&
+      element instanceof HTMLFormElement
+    ) {
       if (!this.validateFileInputs(element)) {
         return
       }

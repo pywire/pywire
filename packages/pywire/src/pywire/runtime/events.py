@@ -106,6 +106,8 @@ def create_event_data(raw: Dict[str, Any]) -> EventData:
         "mouseleave",
         "mouseover",
         "mouseout",
+        "contextmenu",
+        "wheel",
     ):
         return MouseEventData(raw)
     if type_name in ("keydown", "keyup", "keypress"):

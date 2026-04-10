@@ -33,6 +33,7 @@ class Derived:
         self.fn = fn
         self.dependencies: Set[Any] = set()
         self._subscribers: WeakSet[Subscriber] = WeakSet()  # downstream Derived/Effect
+        self._pages: WeakSet = WeakSet()  # pages tracking this Derived for re-render
         self._cache: Any = None
         self._dirty: bool = True
         self._computing: bool = False
@@ -79,8 +80,14 @@ class Derived:
         """Called when an upstream dependency changes."""
         if not self._dirty:
             self._dirty = True
+            # Notify downstream Derived/Effect subscribers
             for sub in list(self._subscribers):
                 sub.execute()
+            # Notify pages that are tracking this Derived for re-render
+            for page in list(self._pages):
+                invalidate = getattr(page, "_invalidate_wire", None)
+                if invalidate:
+                    invalidate(self, "value")
 
     def _track_read(self) -> None:
         """Register with the page's render context if active."""
@@ -90,12 +97,9 @@ class Derived:
         if not ctx:
             return
         page, region_id = ctx
+        self._pages.add(page)
         register = getattr(page, "_register_wire_read", None)
         if register:
-            # We register ourselves as a dependency of the region.
-            # When we mark dirty, we don't directly notify the page (yet),
-            # but when the page re-renders, it will read our fresh .value.
-            # Actually, to trigger a re-render, we MUST notify the page if we change.
             register(self, "value", region_id)
 
     # Proxy methods for template convenience

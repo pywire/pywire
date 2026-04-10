@@ -1,6 +1,7 @@
 [build-system]
 requires = ["maturin>=1.7,<2"]
-build-backend = "maturin"
+build-backend = "_build_backend"
+backend-path = ["."]
 
 [project]
 name = "pywire"
@@ -55,6 +56,9 @@ http3 = [
     "aioquic>=0.9.0",
     "hypercorn>=0.14.0",
 ]
+redis = [
+    "redis>=5.0.0",
+]
 
 [project.scripts]
 pywire = "pywire.cli.main:cli"
@@ -103,6 +107,10 @@ rules = { possibly-missing-attribute = "ignore", invalid-argument-type = "ignore
 [[tool.ty.overrides]]
 include = ["src/pywire/compiler/codegen/**"]
 rules = { no-matching-overload = "ignore", invalid-argument-type = "ignore" }
+
+[[tool.ty.overrides]]
+include = ["src/pywire/runtime/redis_store.py"]
+rules = { unresolved-import = "ignore", invalid-await = "ignore" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

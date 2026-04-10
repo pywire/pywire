@@ -105,7 +105,7 @@ class EmbeddedLanguageSupport {
     document: TextDocument,
     position: Position,
     command: string,
-    args: any[],
+    args: unknown[],
     log: (msg: string) => void
   ): Promise<T | undefined> {
     const mode = this.getEmbeddedMode(document, position)

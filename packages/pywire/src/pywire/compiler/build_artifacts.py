@@ -26,6 +26,7 @@ class BuildSummary:
     layouts: int
     components: int
     out_dir: Path
+    static_assets: int = 0
 
 
 class ArtifactBuilder:

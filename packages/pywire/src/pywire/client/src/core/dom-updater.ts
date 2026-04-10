@@ -198,13 +198,46 @@ export class DOMUpdater {
     }
   }
 
-  private executeScripts(container: ParentNode): void {
-    const scripts = container.querySelectorAll('script')
-    scripts.forEach((oldScript) => {
-      if (oldScript.src) {
+  /**
+   * Extract all <script> elements from a container, removing them so morphdom
+   * doesn't try to diff them. Returns the scripts for deferred execution.
+   * Scripts inside data-pw-permanent elements are marked so they can be skipped.
+   */
+  private extractScripts(
+    container: ParentNode
+  ): { script: HTMLScriptElement; inPermanent: boolean }[] {
+    const scripts = Array.from(container.querySelectorAll('script'))
+    const extracted: { script: HTMLScriptElement; inPermanent: boolean }[] = []
+
+    for (const script of scripts) {
+      // Check if this script is inside a data-pw-permanent element
+      const inPermanent = !!script.closest('[data-pw-permanent]')
+      extracted.push({ script, inPermanent })
+      script.remove()
+    }
+
+    return extracted
+  }
+
+  /**
+   * Execute a list of previously extracted scripts.
+   * - Scripts from data-pw-permanent elements are skipped (they already ran).
+   * - External scripts with a src already in <head> are skipped to avoid duplicates.
+   * - Inline scripts use indirect eval() for global-scope execution.
+   */
+  private executeScripts(scripts: { script: HTMLScriptElement; inPermanent: boolean }[]): void {
+    for (const { script, inPermanent } of scripts) {
+      if (inPermanent) continue
+
+      const srcAttr = script.getAttribute('src')
+      if (srcAttr) {
+        // Skip if a script with this src already exists in <head>.
+        // Use getAttribute to compare the raw attribute value (not the resolved URL).
+        const existing = document.head.querySelector(`script[src="${srcAttr}"]`)
+        if (existing) continue
+
         const newScript = document.createElement('script')
-        // Copy all attributes
-        Array.from(oldScript.attributes).forEach((attr) => {
+        Array.from(script.attributes).forEach((attr) => {
           newScript.setAttribute(attr.name, attr.value)
         })
         try {
@@ -213,9 +246,7 @@ export class DOMUpdater {
           // Script load errors are surfaced via the 'error' event on the element
         }
       } else {
-        // For inline scripts, use indirect eval to ensure global execution
-        // This is more reliable in some test environments than appendChild
-        const code = oldScript.textContent || ''
+        const code = script.textContent || ''
         if (code) {
           try {
             // Indirect eval runs in global scope
@@ -226,7 +257,7 @@ export class DOMUpdater {
           }
         }
       }
-    })
+    }
   }
 
   /**
@@ -248,17 +279,22 @@ export class DOMUpdater {
       // Capture focus before morphdom runs
       const focusState = this.captureFocusState()
 
+      // Extract scripts BEFORE morphdom so they don't interfere with diffing.
+      // They will be executed AFTER morphdom updates the DOM, so inline scripts
+      // can reference newly-inserted elements (fixes SPA/PJAX script re-execution).
+      let deferredScripts: { script: HTMLScriptElement; inPermanent: boolean }[] = []
+
       let contentToMorph: Node = newContent as Node
       if (typeof newContent === 'string') {
         if (target.nodeName === 'HTML') {
           const parser = new DOMParser()
           const parsedDoc = parser.parseFromString(newContent, 'text/html')
-          this.executeScripts(parsedDoc)
+          deferredScripts = this.extractScripts(parsedDoc)
           contentToMorph = parsedDoc.documentElement
         } else {
           const tempContainer = document.createElement(target.nodeName === 'BODY' ? 'body' : 'div')
           tempContainer.innerHTML = newContent.trim()
-          this.executeScripts(tempContainer)
+          deferredScripts = this.extractScripts(tempContainer)
           if (childrenOnly) {
             // If morphing children only, the container itself is passed to morphdom.
             // morphdom will then diff target's children against tempContainer's children.
@@ -270,8 +306,8 @@ export class DOMUpdater {
           }
         }
       } else {
-        // If newContent is already a Node, execute scripts within it.
-        this.executeScripts(newContent as Element)
+        // If newContent is already a Node, extract scripts from it.
+        deferredScripts = this.extractScripts(newContent as Element)
       }
 
       if (morphdom) {
@@ -392,7 +428,12 @@ export class DOMUpdater {
         // Restore focus after morphdom completes
         this.restoreFocusState(focusState)
 
-        // Dispatch post-update event on target
+        // Execute deferred scripts AFTER morphdom has updated the DOM and focus
+        // is restored. This ensures inline scripts can reference newly-inserted
+        // DOM elements (critical for SPA/PJAX navigation).
+        this.executeScripts(deferredScripts)
+
+        // Dispatch post-update event on target (after scripts have executed)
         target.dispatchEvent(
           new CustomEvent('pywire:postupdate', { bubbles: true, detail: { target } })
         )

@@ -205,7 +205,7 @@ class PyWire(
     path_based_routing: bool = True,
     enable_pjax: bool = True,
     debug: bool = False,
-    static_path: str = "/static",
+    static_route: str | None = None,
     static_dir: str = "static",
     max_upload_size: int = 10_485_760,
     upload_token_ttl_seconds: int = 600,
@@ -225,7 +225,7 @@ class PyWire(
 
 - **`debug`** (`bool`): Enables developer tools, including the TUI dashboard, source maps, and detailed error overlays. Defaults to `False`.
 
-- **`static_path`** (`str`): The URL prefix for serving static files. Defaults to `"/static"`.
+- **`static_route`** (`str | None`): The URL prefix for serving static files. Defaults to `"/static"` when `None`. Set to `""` to serve from root (warns about page route conflicts).
 
 - **`static_dir`** (`str`): The directory containing static assets relative to the project root. Defaults to `"static"`.
 

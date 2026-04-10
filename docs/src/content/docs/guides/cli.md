@@ -69,6 +69,36 @@ pywire build [APP] [OPTIONS]
 - `--out-dir TEXT`: Output directory (default: `.pywire/build`).
 - `--pages-dir TEXT`: Override pages directory.
 
+## `pywire deploy`
+
+Generates deployment configuration files for your app.
+
+```sh
+pywire deploy [APP] [OPTIONS]
+```
+
+The command builds your project, validates the setup, and generates platform-specific config files (Dockerfile, render.yaml, etc.).
+
+**Options:**
+
+- `--platform {docker,render,fly}`: Target platform (default: `docker`).
+- `--out-dir PATH`: Output directory for generated files (default: `.`).
+
+**Examples:**
+
+```sh
+# Generate a Dockerfile
+pywire deploy --platform docker
+
+# Generate a render.yaml for Render.com
+pywire deploy --platform render
+
+# Generate into a subdirectory
+pywire deploy --platform docker --out-dir deploy/
+```
+
+See [Deployment](/docs/guides/deployment) for platform-specific guides.
+
 ## `create-pywire-app`
 
 (Separate command, typically run via `uvx`) Scaffolds a new project. See [Quickstart](/docs/guides/quickstart).

@@ -10,7 +10,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -119,9 +119,13 @@ class PyWire:
         debug: bool = False,
         enable_webtransport: bool = False,
         static_dir: Optional[str] = None,
-        static_path: str = "/static",
+        static_route: Optional[str] = None,
         max_upload_size: int = 10 * 1024 * 1024,
         upload_token_ttl_seconds: int = 600,
+        middleware: Optional[List] = None,
+        session_store: Optional[Any] = None,
+        session_ttl: int = 1800,
+        session_warn_size: int = 256 * 1024,  # 256 KB
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -176,7 +180,18 @@ class PyWire:
             else:
                 self.static_dir = path.resolve()
 
-        self.static_url_path = static_path
+        if static_route is None:
+            self.static_url_path = "/static"
+        else:
+            if not static_route.startswith("/"):
+                static_route = "/" + static_route
+            if static_route == "/":
+                logger.warning(
+                    "static_route='/' serves static files from the root path. "
+                    "PyWire page routes will take priority over static file "
+                    "routes, which may cause inconsistencies."
+                )
+            self.static_url_path = static_route
 
         # Add project root and src directory to sys.path to allow imports in .wire files
         import sys
@@ -221,11 +236,37 @@ class PyWire:
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
+        # Asset fingerprinting cache (prod without build: path -> content hash)
+        self._asset_hash_cache: Dict[str, str] = {}
+        # Asset manifest (prod with build: original path -> fingerprinted filename)
+        self._asset_manifest: Optional[Dict[str, str]] = None
+        # Track warned missing assets (prod: warn once per path)
+        self._asset_warned_missing: Set[str] = set()
+
         self.router = Router()
 
         from pywire.runtime.loader import get_loader
 
         self.loader = get_loader()
+
+        # Session store: auto-detect Redis from env, fall back to in-memory
+        self.session_ttl = session_ttl
+        self.session_warn_size = session_warn_size
+        if session_store is not None:
+            self.session_store = session_store
+        else:
+            redis_url = os.environ.get("REDIS_URL") or os.environ.get("FLY_REDIS_URL")
+            if redis_url:
+                from pywire.runtime.redis_store import RedisSessionStore
+
+                self.session_store = RedisSessionStore(redis_url)
+                logger.info(
+                    "Using Redis session store (auto-detected from environment)"
+                )
+            else:
+                from pywire.runtime.session_store import MemorySessionStore
+
+                self.session_store = MemorySessionStore()
 
         self.ws_handler = WebSocketHandler(self)
         self.http_handler = HTTPTransportHandler(self)
@@ -287,6 +328,14 @@ class PyWire:
                 internal_static_dir,
             )
 
+        # Load asset manifest from build output (if pywire build was run)
+        build_manifest_path = project_root / ".pywire" / "build" / "asset-manifest.json"
+        build_static_dir = project_root / ".pywire" / "build" / "static"
+        if build_manifest_path.exists():
+            manifest = json.loads(build_manifest_path.read_text())
+            self._asset_manifest = manifest
+            logger.info("Loaded asset manifest with %d entries", len(manifest))
+
         # Mount User Static Files if configured
         if self.static_dir:
             if not self.static_dir.exists():
@@ -294,13 +343,25 @@ class PyWire:
                     f"Configured static directory '{self.static_dir}' does not exist."
                 )
             else:
-                routes.append(
-                    Mount(
-                        self.static_url_path,
-                        app=StaticFiles(directory=str(self.static_dir)),
-                        name="static",
+                # If build produced fingerprinted static files, serve from
+                # the build dir (contains both originals and fingerprinted copies).
+                # Otherwise serve from the source static dir.
+                if self._asset_manifest and build_static_dir.exists():
+                    routes.append(
+                        Mount(
+                            self.static_url_path,
+                            app=StaticFiles(directory=str(build_static_dir)),
+                            name="static",
+                        )
                     )
-                )
+                else:
+                    routes.append(
+                        Mount(
+                            self.static_url_path,
+                            app=StaticFiles(directory=str(self.static_dir)),
+                            name="static",
+                        )
+                    )
 
         # Debug endpoints (must be before catch-all)
         # ONLY enable these if BOTH debug=True AND we are in dev mode
@@ -339,8 +400,27 @@ class PyWire:
             Route("/{path:path}", self._handle_request, methods=["GET", "POST"])
         )
 
+        # Session store lifecycle via lifespan context manager
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def _lifespan(app: Any):
+            # Startup
+            connect = getattr(self.session_store, "connect", None)
+            if callable(connect):
+                await connect()
+            yield
+            # Shutdown
+            close = getattr(self.session_store, "close", None)
+            if callable(close):
+                await close()
+
         # Create Starlette app with all transport routes
-        self.app = Starlette(routes=routes, exception_handlers=exception_handlers)
+        self.app = Starlette(
+            routes=routes,
+            exception_handlers=exception_handlers,
+            lifespan=_lifespan,
+        )
 
         # Store configuration in app state for runtime access (e.g. by pages)
         self.app.state.enable_pjax = self.enable_pjax
@@ -362,6 +442,26 @@ class PyWire:
 
         self.app.add_middleware(cast(Any, _RequestContextMiddleware))
 
+        # Apply user-provided middleware.
+        # Starlette's add_middleware prepends (last added = outermost), so we
+        # reverse the list so the first item in the user's list becomes outermost.
+        if middleware:
+            for mw in reversed(middleware):
+                if isinstance(mw, tuple):
+                    cls = mw[0]
+                    options = mw[1] if len(mw) > 1 else {}
+                    self.app.add_middleware(cls, **options)
+                else:
+                    self.app.add_middleware(mw)
+
+    def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
+        """Add ASGI middleware to the application.
+
+        Middleware wraps the ASGI app and is called for HTTP and WebSocket
+        requests. WebTransport connections bypass middleware.
+        """
+        self.app.add_middleware(middleware_class, **kwargs)
+
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
         return JSONResponse(
@@ -379,8 +479,8 @@ class PyWire:
         Returns dev bundle when running via 'pywire dev', core bundle otherwise.
         """
         if self._is_dev_mode:
-            return "/_pywire/static/pywire.dev.min.js"
-        return "/_pywire/static/pywire.core.min.js"
+            return f"/_pywire/static/pywire.dev.min.js?v={__version__}"
+        return f"/_pywire/static/pywire.core.min.js?v={__version__}"
 
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""
@@ -484,7 +584,9 @@ class PyWire:
 
         try:
             path = Path(path_str).resolve()
-            logger.debug("_handle_source resolved path=%s, exists=%s", path, path.exists())
+            logger.debug(
+                "_handle_source resolved path=%s, exists=%s", path, path.exists()
+            )
             # Path existence check
             if not path.exists():
                 return Response("File not found", status_code=404)

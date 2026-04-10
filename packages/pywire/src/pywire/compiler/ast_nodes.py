@@ -2,7 +2,7 @@
 
 import ast
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 @dataclass
@@ -58,26 +58,6 @@ class PropsDirective(Directive):
 
     def __str__(self) -> str:
         return f"PropsDirective(args={self.args})"
-
-
-@dataclass
-class InjectDirective(Directive):
-    """!inject { local: 'GLOBAL' }"""
-
-    mapping: Dict[str, str]  # {local_var: global_key}
-
-    def __str__(self) -> str:
-        return f"InjectDirective(mapping={self.mapping})"
-
-
-@dataclass
-class ProvideDirective(Directive):
-    """!provide { 'GLOBAL': local }"""
-
-    mapping: Dict[str, str]  # {global_key: local_var_expr}
-
-    def __str__(self) -> str:
-        return f"ProvideDirective(mapping={self.mapping})"
 
 
 @dataclass
@@ -218,7 +198,9 @@ class EventAttribute(SpecialAttribute):
     modifiers: List[str] = field(
         default_factory=list
     )  # List of modifiers (e.g. ['prevent', 'stop'])
-    # Form-specific fields removed
+    field_mask: Optional[Set[str]] = field(
+        default=None
+    )  # Set of camelCase event fields the handler accesses (None = send all)
 
     def __str__(self) -> str:
         return (
