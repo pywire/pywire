@@ -9,6 +9,21 @@ type Application = PyWireApp
 type UploadResult = { _upload_id: string }
 type FormDataValue = string | string[] | UploadResult | UploadResult[]
 
+// Event base class metadata — serializable but useless noise on every Event.
+// These never change since they're the Event interface itself.
+const SKIP_EVENT_META = new Set([
+  'type',
+  'bubbles',
+  'cancelable',
+  'composed',
+  'eventPhase',
+  'isTrusted',
+  'defaultPrevented',
+  'cancelBubble',
+  'returnValue',
+  'timeStamp',
+])
+
 export class UnifiedEventHandler {
   private app: Application
   private debouncers = new Map<string, number>()
@@ -404,9 +419,12 @@ export class UnifiedEventHandler {
       args = this.getArgs(element)
     }
 
-    // Check for field mask — if present, only send listed fields
+    // Check for field mask — if present, only send listed fields.
+    // null = attribute absent (no mask, send all fields)
+    // empty string = attribute present but empty (send no event-specific fields)
     const fieldMaskAttr = element.getAttribute(`data-pw-fields-${eventType}`)
-    const allowedFields = fieldMaskAttr ? new Set(fieldMaskAttr.split(',')) : null
+    const allowedFields =
+      fieldMaskAttr !== null ? new Set(fieldMaskAttr.split(',').filter((f) => f)) : null
 
     const eventData: EventData = {
       type: eventType,
@@ -424,7 +442,7 @@ export class UnifiedEventHandler {
       Object.assign(eventData, refData)
     }
 
-    // Extract specific data based on element type
+    // Extract specific data based on element type (reads from DOM element, not event)
     if (
       !allowedFields ||
       allowedFields.has('value') ||
@@ -459,34 +477,28 @@ export class UnifiedEventHandler {
       }
     }
 
-    // Extract Key data
-    if (e instanceof KeyboardEvent) {
-      if (!allowedFields || allowedFields.has('key')) eventData.key = e.key
-      if (!allowedFields || allowedFields.has('code')) eventData.code = e.code
-      if (!allowedFields || allowedFields.has('keyCode')) eventData.keyCode = e.keyCode
-      if (!allowedFields || allowedFields.has('altKey')) eventData.altKey = e.altKey
-      if (!allowedFields || allowedFields.has('ctrlKey')) eventData.ctrlKey = e.ctrlKey
-      if (!allowedFields || allowedFields.has('metaKey')) eventData.metaKey = e.metaKey
-      if (!allowedFields || allowedFields.has('shiftKey')) eventData.shiftKey = e.shiftKey
-    }
+    // Generic event property extraction — grabs all serializable properties
+    // from the event object (KeyboardEvent, MouseEvent, WheelEvent, etc.)
+    for (const key in e) {
+      if (SKIP_EVENT_META.has(key)) continue
+      if (key === key.toUpperCase() && key.length > 1) continue // Event constants (NONE, AT_TARGET, etc.)
+      if (allowedFields && !allowedFields.has(key)) continue
+      if (key in eventData) continue
 
-    // Extract Mouse/Pointer data
-    if (e instanceof MouseEvent || (window.PointerEvent && e instanceof PointerEvent)) {
-      const me = e as MouseEvent
-      if (!allowedFields || allowedFields.has('clientX')) eventData.clientX = me.clientX
-      if (!allowedFields || allowedFields.has('clientY')) eventData.clientY = me.clientY
-      if (!allowedFields || allowedFields.has('offsetX')) eventData.offsetX = me.offsetX
-      if (!allowedFields || allowedFields.has('offsetY')) eventData.offsetY = me.offsetY
-      if (!allowedFields || allowedFields.has('pageX')) eventData.pageX = me.pageX
-      if (!allowedFields || allowedFields.has('pageY')) eventData.pageY = me.pageY
-      if (!allowedFields || allowedFields.has('screenX')) eventData.screenX = me.screenX
-      if (!allowedFields || allowedFields.has('screenY')) eventData.screenY = me.screenY
-      if (!allowedFields || allowedFields.has('button')) eventData.button = me.button
-      if (!allowedFields || allowedFields.has('buttons')) eventData.buttons = me.buttons
-      if (!allowedFields || allowedFields.has('altKey')) eventData.altKey = me.altKey
-      if (!allowedFields || allowedFields.has('ctrlKey')) eventData.ctrlKey = me.ctrlKey
-      if (!allowedFields || allowedFields.has('metaKey')) eventData.metaKey = me.metaKey
-      if (!allowedFields || allowedFields.has('shiftKey')) eventData.shiftKey = me.shiftKey
+      const val = (e as unknown as Record<string, unknown>)[key]
+      if (val === null || val === undefined) continue
+
+      const t = typeof val
+      if (t === 'string' || t === 'number' || t === 'boolean') {
+        eventData[key] = val
+      } else if (t === 'object' && !(val instanceof Node) && !(val instanceof Window)) {
+        try {
+          JSON.stringify(val)
+          eventData[key] = val
+        } catch {
+          /* not serializable, skip */
+        }
+      }
     }
 
     // Extract Form Data for submit

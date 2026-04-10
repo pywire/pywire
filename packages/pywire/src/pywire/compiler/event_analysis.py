@@ -56,12 +56,45 @@ class _EventFieldVisitor(ast.NodeVisitor):
         self.needs_full_event = False
         self._event_names = {"event", "event_data"}
 
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # Track aliases: `e = event` adds 'e' to _event_names
+        if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self._event_names.add(target.id)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        # Track annotated aliases: `e: EventData = event`
+        if (
+            node.value
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self._event_names
+            and isinstance(node.target, ast.Name)
+        ):
+            self._event_names.add(node.target.id)
+        self.generic_visit(node)
+
     def visit_Attribute(self, node: ast.Attribute) -> None:
         # event.key, event_data.client_x, etc.
         if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
             snake = node.attr
             camel = SNAKE_TO_CAMEL.get(snake, snake)
             self.fields.add(camel)
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        # event['key'], event_data['client_x'], etc.
+        if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
+            if isinstance(node.slice, ast.Constant) and isinstance(
+                node.slice.value, str
+            ):
+                snake = node.slice.value
+                camel = SNAKE_TO_CAMEL.get(snake, snake)
+                self.fields.add(camel)
+            else:
+                # event[some_var] — dynamic, can't determine field
+                self.needs_full_event = True
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:

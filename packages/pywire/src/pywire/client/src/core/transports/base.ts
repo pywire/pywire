@@ -122,6 +122,8 @@ export interface EventData {
   screenY?: number
   button?: number
   buttons?: number
+  // Custom events
+  detail?: unknown
   // Modifiers
   altKey?: boolean
   ctrlKey?: boolean

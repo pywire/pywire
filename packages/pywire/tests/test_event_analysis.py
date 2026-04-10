@@ -192,31 +192,81 @@ def handle(event):
     assert result == {"key"}
 
 
-def test_event_subscript_returns_none():
-    """event['key'] is dynamic access — should return None for safety."""
+def test_event_subscript_string_literal():
+    """event['key'] with string literal is tracked."""
     source = """
 def handle(event):
     val = event['key']
 """
-    # Subscript is not an Attribute node, so it won't be detected as a field.
-    # But it also doesn't trigger needs_full_event — so it returns empty set.
-    # This is acceptable since event['key'] isn't a real usage pattern.
     result = analyze_event_fields(source)
-    assert result is not None  # it's an empty set, not None
+    assert result == {"key"}
 
 
-def test_reassigned_event_not_tracked():
-    """If event is reassigned (e = event), the alias is NOT tracked (known limitation)."""
+def test_event_subscript_dynamic_returns_none():
+    """event[some_var] with dynamic key needs all fields."""
+    source = """
+def handle(event):
+    field = 'key'
+    val = event[field]
+"""
+    result = analyze_event_fields(source)
+    assert result is None
+
+
+def test_event_subscript_snake_to_camel():
+    """event['client_x'] maps to camelCase."""
+    source = """
+def handle(event):
+    x = event['client_x']
+"""
+    result = analyze_event_fields(source)
+    assert result == {"clientX"}
+
+
+def test_reassigned_event_tracked():
+    """If event is reassigned (e = event), the alias IS tracked."""
     source = """
 def handle(event):
     e = event
     print(e.key)
 """
-    # Only direct event.X access is tracked; aliases are not followed.
-    # The alias assignment `e = event` doesn't trigger needs_full_event either,
-    # since it's not a function call or starred expression.
     result = analyze_event_fields(source)
-    assert result == set()  # e.key not tracked (known limitation)
+    assert result == {"key"}
+
+
+def test_chained_reassignment():
+    """Transitive aliases: e = event; f = e; f.key."""
+    source = """
+def handle(event):
+    e = event
+    f = e
+    print(f.key)
+"""
+    result = analyze_event_fields(source)
+    assert result == {"key"}
+
+
+def test_reassignment_plus_direct():
+    """Alias access combined with direct access collects both."""
+    source = """
+def handle(event):
+    e = event
+    print(e.key)
+    print(event.code)
+"""
+    result = analyze_event_fields(source)
+    assert result == {"key", "code"}
+
+
+def test_annotated_reassignment():
+    """Annotated alias: e: Any = event."""
+    source = """
+def handle(event):
+    e: object = event
+    print(e.key)
+"""
+    result = analyze_event_fields(source)
+    assert result == {"key"}
 
 
 # ---------------------------------------------------------------------------
