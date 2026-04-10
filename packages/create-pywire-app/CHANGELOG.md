@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.7...create-pywire-app-v0.2.0) (2026-04-10)
+
+
+### Features
+
+* stores, middleware, context API, deploy CLI, event optimization, and cache busting ([#43](https://github.com/pywire/pywire/issues/43)) ([00e55d1](https://github.com/pywire/pywire/commit/00e55d18a177a9cdb1378eaede2969f30b91f9ff))
+
 ## [0.1.7](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.6...create-pywire-app-v0.1.7) (2026-04-07)
 
 
