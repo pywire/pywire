@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/pywire/pywire/compare/pywire-v0.2.7...pywire-v0.3.0) (2026-04-10)
+
+
+### Features
+
+* stores, middleware, context API, deploy CLI, event optimization, and cache busting ([#43](https://github.com/pywire/pywire/issues/43)) ([00e55d1](https://github.com/pywire/pywire/commit/00e55d18a177a9cdb1378eaede2969f30b91f9ff))
+
+
+### Bug Fixes
+
+* **pywire:** gate debug logs behind logger.debug and fix hot reload lifecycle ([f0de813](https://github.com/pywire/pywire/commit/f0de813868771fb2d628b44717ba48fb75d38127))
+
 ## [0.2.7](https://github.com/pywire/pywire/compare/pywire-v0.2.6...pywire-v0.2.7) (2026-04-08)
 
 
