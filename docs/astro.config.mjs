@@ -93,6 +93,7 @@ export default defineConfig({
             { label: 'Editor Setup', slug: 'guides/editor-setup' },
             { label: 'CLI Reference', slug: 'guides/cli' },
             { label: 'Deployment', slug: 'guides/deployment' },
+            { label: 'Horizontal Scaling', slug: 'guides/scaling' },
           ],
         },
         {

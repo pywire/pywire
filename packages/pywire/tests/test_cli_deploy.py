@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from pywire.cli.deploy import (
     generate_dockerfile,
     generate_fly_toml,
+    generate_railway_json,
     generate_render_yaml,
     validate_deploy_config,
 )
@@ -23,17 +24,46 @@ class TestGenerateDockerfile:
         assert "EXPOSE 8000" in content
         assert "pywire" in content
 
+    def test_default_workers_is_one(self) -> None:
+        content = generate_dockerfile(Path("."))
+        assert '"--workers", "1"' in content
+
+    def test_custom_workers(self) -> None:
+        content = generate_dockerfile(Path("."), workers=4)
+        assert '"--workers", "4"' in content
+
 
 class TestGenerateRenderYaml:
     def test_includes_project_name(self) -> None:
         content = generate_render_yaml(Path("."), "my-app")
         assert "name: my-app" in content
-        assert "runtime: python" in content
-        assert "pywire run" in content
+        assert "runtime: docker" in content
 
     def test_substitutes_different_names(self) -> None:
         content = generate_render_yaml(Path("."), "cool-project")
         assert "name: cool-project" in content
+
+    def test_redis_includes_kv_store(self) -> None:
+        content = generate_render_yaml(Path("."), "my-app", redis=True)
+        assert "type: keyvalue" in content
+        assert "REDIS_URL" in content
+        assert "my-app-kv" in content
+        assert "plan: starter" in content
+
+    def test_no_redis_no_kv_store(self) -> None:
+        content = generate_render_yaml(Path("."), "my-app", redis=False)
+        assert "keyvalue" not in content
+        assert "REDIS_URL" not in content
+
+
+class TestGenerateRailwayJson:
+    def test_returns_valid_json(self) -> None:
+        import json
+
+        content = generate_railway_json(Path("."))
+        parsed = json.loads(content)
+        assert "build" in parsed
+        assert parsed["build"]["dockerfilePath"] == "Dockerfile"
 
 
 class TestGenerateFlyToml:
@@ -125,7 +155,7 @@ class TestDeployCommand:
             assert result.exit_code == 0, result.output
             assert Path("render.yaml").exists()
             content = Path("render.yaml").read_text()
-            assert "runtime: python" in content
+            assert "runtime: docker" in content
 
     @patch("pywire.compiler.build.build_project")
     def test_fly_generates_fly_toml_and_dockerfile(self, mock_build: MagicMock) -> None:

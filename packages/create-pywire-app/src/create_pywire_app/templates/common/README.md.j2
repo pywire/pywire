@@ -23,10 +23,18 @@ This project is configured for **Render**. To deploy:
 3. Connect your repo — Render reads `render.yaml` automatically and provisions the service.
 
 > See [Render Blueprint docs](https://render.com/docs/blueprint-spec) for details.
+{% if redis_enabled %}
+
+### Redis (pre-configured)
+
+Your `render.yaml` includes a KV store that Render provisions automatically. The `REDIS_URL`
+environment variable is injected into your web service before it starts. PyWire auto-detects
+it for session persistence — no code changes needed.
+{% else %}
 
 ### Scaling with Redis (multi-worker)
 
-By default, the generated `Dockerfile` runs with `--workers 1`. To scale beyond a single
+By default, the generated `Dockerfile` runs with `--workers {{ workers }}`. To scale beyond a single
 worker, add a Redis-backed KV store so that session state is shared across processes:
 
 1. Install the Redis extra: `uv add pywire[redis]`
@@ -58,6 +66,7 @@ changes needed. Use `plan: standard` or higher for persistence across restarts.
 
 Without Redis, stick with `--workers 1` — multiple workers would split WebSocket session
 state across processes and break reactivity.
+{% endif %}
 {% elif deploy_config.adapter == "fly" %}
 This project is configured for **Fly.io**. To deploy:
 
@@ -70,7 +79,7 @@ fly deploy
 
 ### Single-machine deployment
 
-The generated `Dockerfile` runs with `--workers 1`. This is the safe default because PyWire
+The generated `Dockerfile` runs with `--workers {{ workers }}`. This is the safe default because PyWire
 holds WebSocket session state in process memory.
 
 ### Scaling to multiple machines
@@ -82,7 +91,7 @@ state. Two options:
 session to the same machine using a cookie containing `FLY_MACHINE_ID`. Works for light
 scaling but has limitations — VPN users and some corporate proxies may break affinity.
 
-**Option B — Redis (recommended for production):** Add an
+**Option B — Redis/Valkey (recommended for production):** Add an
 [Upstash Redis](https://fly.io/docs/reference/redis/) instance so all machines share session
 state:
 
@@ -104,7 +113,7 @@ docker build -t {{ project_name }} .
 docker run -p 8000:8000 {{ project_name }}
 ```
 
-### Scaling with Redis
+### Scaling with Redis/Valkey
 
 To run multiple workers or containers, set the `REDIS_URL` environment variable to share
 session state across processes:
@@ -114,5 +123,38 @@ docker run -p 8000:8000 -e REDIS_URL=redis://your-redis:6379 {{ project_name }}
 ```
 
 Install the Redis extra first: `uv add pywire[redis]`
+{% elif deploy_config.adapter == "railway" %}
+This project is configured for **Railway**. To deploy:
+
+1. Install the [Railway CLI](https://docs.railway.com/guides/cli): `npm i -g @railway/cli`
+2. Run `railway login` and `railway init`
+3. Deploy with `railway up`
+
+Railway auto-detects the Dockerfile and builds your app.
+
+### Scaling with Redis/Valkey
+
+To run multiple workers, add a Redis addon via the Railway dashboard or `railway add`.
+Railway injects `REDIS_URL` automatically. Install the Redis extra first:
+
+```sh
+uv add pywire[redis]
+```
+
+Then increase `--workers` in the `CMD` line of your `Dockerfile`. PyWire auto-detects
+`REDIS_URL` — no code changes needed.
 {% endif %}
+{% endif %}
+
+## Workers & scaling
+
+The `Dockerfile` runs with `--workers {{ workers }}`. Each worker is a separate Uvicorn process.
+
+{% if workers > 1 %}
+**Redis/Valkey is {{ "enabled" if redis_enabled else "required" }}** for multi-worker deployments. Without a shared
+session store, WebSocket sessions would be split across processes and break reactivity.
+{% else %}
+A single worker is the safe default — all WebSocket session state stays in one process.
+To scale to multiple workers or machines, you need a shared session store (Redis or Valkey).
+See [Horizontal Scaling](https://pywire.dev/guides/scaling/) for details.
 {% endif %}

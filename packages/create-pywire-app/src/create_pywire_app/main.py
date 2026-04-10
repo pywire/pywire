@@ -121,6 +121,8 @@ class ProjectGenerator:
         use_src: bool,
         adapters: List[str],
         pywire_dep: str,
+        redis_enabled: bool = False,
+        workers: int = 1,
     ):
         self.project_path = project_path
         self.project_name = project_name
@@ -129,6 +131,8 @@ class ProjectGenerator:
         self.use_src = use_src
         self.adapters = adapters
         self.pywire_dep = pywire_dep
+        self.redis_enabled = redis_enabled
+        self.workers = workers
         self.renderer = TemplateRenderer()
 
         self.app_root = project_path / "src" if use_src else project_path
@@ -159,6 +163,8 @@ class ProjectGenerator:
         """Get deployment adapter configuration."""
         if "Fly.io (fly.toml + Dockerfile)" in self.adapters:
             return {"adapter": "fly"}
+        if "Railway (Dockerfile)" in self.adapters:
+            return {"adapter": "railway"}
         if "Docker (Dockerfile)" in self.adapters:
             return {"adapter": "docker"}
         if "Render (render.yaml)" in self.adapters:
@@ -218,6 +224,9 @@ class ProjectGenerator:
             "project_name": self.project_name,
             "template_description": self.get_template_description(),
             "routing_style": routing_label,
+            "deploy_config": self.get_deploy_config(),
+            "redis_enabled": self.redis_enabled,
+            "workers": self.workers,
         }
         content = self.renderer.render("common/README.md.j2", context)
         (self.project_path / "README.md").write_text(content)
@@ -400,26 +409,40 @@ class ProjectGenerator:
                 self.pages_dir / "dashboard-pages.wire",
             )
 
+    def _generate_dockerfile(self) -> None:
+        """Generate Dockerfile (templated with workers count)."""
+        context = {"workers": self.workers}
+        content = self.renderer.render("common/Dockerfile.j2", context)
+        (self.project_path / "Dockerfile").write_text(content)
+
     def _generate_adapters(self) -> None:
         """Generate deployment adapter files."""
         if "Docker (Dockerfile)" in self.adapters:
-            self.renderer.copy_static(
-                "common/Dockerfile", self.project_path / "Dockerfile"
-            )
+            self._generate_dockerfile()
 
         if "Render (render.yaml)" in self.adapters:
-            context = {"project_name": self.project_name}
+            context = {
+                "project_name": self.project_name,
+                "redis_enabled": self.redis_enabled,
+            }
             content = self.renderer.render("common/render.yaml.j2", context)
             (self.project_path / "render.yaml").write_text(content)
+            # Render uses Docker — generate Dockerfile
+            if not (self.project_path / "Dockerfile").exists():
+                self._generate_dockerfile()
 
         if "Fly.io (fly.toml + Dockerfile)" in self.adapters:
             context = {"project_name": self.project_name}
             content = self.renderer.render("common/fly.toml.j2", context)
             (self.project_path / "fly.toml").write_text(content)
             # Fly.io uses Docker for builds
-            self.renderer.copy_static(
-                "common/Dockerfile", self.project_path / "Dockerfile"
-            )
+            if not (self.project_path / "Dockerfile").exists():
+                self._generate_dockerfile()
+
+        if "Railway (Dockerfile)" in self.adapters:
+            # Railway auto-detects Dockerfiles — just generate one
+            if not (self.project_path / "Dockerfile").exists():
+                self._generate_dockerfile()
 
 
 def main():
@@ -560,8 +583,33 @@ def main():
                 "Docker (Dockerfile)",
                 "Render (render.yaml)",
                 "Fly.io (fly.toml + Dockerfile)",
+                "Railway (Dockerfile)",
             ],
         ).unsafe_ask()
+
+        # Redis/workers scaling options
+        redis_enabled = False
+        workers = 1
+        if adapters:
+            redis_enabled = questionary.confirm(
+                "Enable Redis/Valkey for multi-worker scaling?\n"
+                "  (Increases resource usage and may cost more on paid hosting tiers)",
+                default=False,
+                auto_enter=False,
+                instruction=" (y/N) ",
+            ).unsafe_ask()
+
+            if redis_enabled:
+                workers_str = questionary.text(
+                    "Number of workers:",
+                    default="4",
+                    validate=lambda v: (
+                        True
+                        if v.isdigit() and int(v) > 0
+                        else "Enter a positive number"
+                    ),
+                ).unsafe_ask()
+                workers = int(workers_str)
 
         # Generate project
         console.print()
@@ -579,6 +627,8 @@ def main():
                 use_src=use_src,
                 adapters=adapters,
                 pywire_dep=pywire_dep,
+                redis_enabled=redis_enabled,
+                workers=workers,
             )
             generator.generate()
 

@@ -2,5 +2,20 @@ services:
   - type: web
     name: {{ project_name }}
     runtime: docker
+{% if redis_enabled %}
+    plan: starter
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: {{ project_name }}-kv
+          type: keyvalue
+          property: connectionString
+
+  - type: keyvalue
+    name: {{ project_name }}-kv
+    plan: starter
+    ipAllowList: []
+{% else %}
     plan: free
     envVars: []
+{% endif %}

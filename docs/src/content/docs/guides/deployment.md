@@ -47,14 +47,31 @@ fly launch --no-deploy   # imports fly.toml
 fly deploy
 ```
 
-To scale to multiple machines (`fly scale count N`), you need sticky sessions or a shared Redis instance — `fly redis create`, then set `REDIS_URL`. PyWire auto-detects it with no code changes needed.
+To scale to multiple machines (`fly scale count N`), you need sticky sessions or a shared Redis instance — see [Horizontal Scaling](/guides/scaling/).
+
+**Railway** — generates a `railway.json` and `Dockerfile`:
+
+```sh
+pywire deploy --platform railway
+```
+
+Railway auto-detects the Dockerfile. Deploy with the [Railway CLI](https://docs.railway.com/guides/cli):
+
+```sh
+railway login && railway init
+railway up
+```
 
 ### Options
 
-| Flag         | Description                                                       |
-| ------------ | ----------------------------------------------------------------- |
-| `--platform` | Target platform: `docker`, `render`, or `fly` (default: `docker`) |
-| `--out-dir`  | Output directory for generated files (default: `.`)               |
+| Flag         | Description                                                                    |
+| ------------ | ------------------------------------------------------------------------------ |
+| `--platform` | Target platform: `docker`, `render`, `fly`, or `railway` (default: `docker`)   |
+| `--workers`  | Number of worker processes (default: `1`)                                      |
+| `--redis`    | Include Redis/Valkey KV store in deployment config                             |
+| `--out-dir`  | Output directory for generated files (default: `.`)                            |
+
+Use `--redis --workers 4` to generate configs pre-configured for multi-worker scaling. See [Horizontal Scaling](/guides/scaling/) for details.
 
 The command validates your project before generating configs. If `pyproject.toml` or `uv.lock` is missing, you'll see a warning.
 
