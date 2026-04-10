@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.2.2...pywire-language-server-v0.3.0) (2026-04-10)
+
+
+### Features
+
+* stores, middleware, context API, deploy CLI, event optimization, and cache busting ([#43](https://github.com/pywire/pywire/issues/43)) ([00e55d1](https://github.com/pywire/pywire/commit/00e55d18a177a9cdb1378eaede2969f30b91f9ff))
+
 ## [0.2.2](https://github.com/pywire/pywire/compare/pywire-language-server-v0.2.1...pywire-language-server-v0.2.2) (2026-04-07)
 
 
