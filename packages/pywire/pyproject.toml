@@ -5,7 +5,7 @@ backend-path = ["."]
 
 [project]
 name = "pywire"
-version = "0.2.7"
+version = "0.3.0"
 authors = [
     { name="Reece Holmdahl", email="reece@pywire.dev" },
 ]
