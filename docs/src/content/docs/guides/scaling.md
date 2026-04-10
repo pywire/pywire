@@ -80,9 +80,9 @@ app = PyWire(
 
 ### Environment variables
 
-| Variable        | Description                                             |
-| --------------- | ------------------------------------------------------- |
-| `REDIS_URL`     | Redis/Valkey connection string (checked first)          |
+| Variable        | Description                                              |
+| --------------- | -------------------------------------------------------- |
+| `REDIS_URL`     | Redis/Valkey connection string (checked first)           |
 | `FLY_REDIS_URL` | Fly.io Upstash Redis URL (fallback if `REDIS_URL` unset) |
 
 ### Custom session stores
@@ -119,14 +119,14 @@ Multiple containers with a shared Redis instance (`docker-compose.yaml`):
 services:
   web:
     build: .
-    ports: ["8000:8000"]
+    ports: ['8000:8000']
     environment:
       REDIS_URL: redis://redis:6379
     depends_on: [redis]
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ['6379:6379']
 ```
 
 ### Render
