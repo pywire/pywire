@@ -2,6 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install build dependencies (build-essential, git, curl for Node.js setup)
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git curl && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22 and pnpm (needed for building PyWire's TypeScript client)
