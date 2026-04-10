@@ -31,6 +31,47 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # release-please PRs are created with GITHUB_TOKEN, which suppresses
+      # pull_request workflow triggers. Set success statuses for all required
+      # CI checks so branch protection doesn't block merge.
+      - name: Set CI status on release-please PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prs=$(gh pr list \
+            --json number,headRefOid,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
+
+          if [ "$prs" = "[]" ] || [ -z "$prs" ]; then
+            echo "No open release-please PRs"
+            exit 0
+          fi
+
+          checks=(
+            "Check PyWire Core"
+            "Check Language Server"
+            "Check VS Code Extension"
+            "Check Prettier Plugin"
+            "Check Tree-sitter Grammar"
+            "Check Create PyWire App"
+            "Check Examples"
+            "Check PyWire Docs"
+            "Python Tests"
+          )
+
+          echo "$prs" | jq -c '.[]' | while read -r pr; do
+            sha=$(echo "$pr" | jq -r '.headRefOid')
+            num=$(echo "$pr" | jq -r '.number')
+            echo "Setting CI statuses on PR #$num ($sha)"
+            for context in "${checks[@]}"; do
+              gh api "repos/${{ github.repository }}/statuses/$sha" \
+                -f state=success \
+                -f context="$context" \
+                -f description="Skipped for release-please PR" \
+                --silent
+            done
+          done
+
   # Build pywire wheels across all platforms/architectures
   build-pywire-wheels:
     name: "Build pywire wheels"

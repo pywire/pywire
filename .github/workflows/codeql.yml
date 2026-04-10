@@ -1,0 +1,40 @@
+name: "CodeQL"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * 1" # Weekly on Monday
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    # Skip release-please: PR branches and merge commits to main
+    if: >-
+      github.event_name == 'schedule'
+      || (github.event_name == 'pull_request'
+          && !startsWith(github.head_ref, 'release-please--'))
+      || (github.event_name == 'push'
+          && !startsWith(github.event.head_commit.message, 'chore(main): release'))
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
