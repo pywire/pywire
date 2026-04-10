@@ -52,15 +52,16 @@ irm pywire.dev/install.ps1 | iex
 
 ## How it works
 
-PyWire pages are `.wire` files — a template format that embeds Python, HTML, CSS, and JS in a single file:
+PyWire pages are `.wire` files — a template format that embeds Python, HTML, CSS, and even JS in a single file:
 
 ```wire
-class Counter(Page):
-    count = wire(0)
+---
+count = wire(0)
 
-    def increment(self):
-        self.count += 1
+def increment(self):
+    self.count += 1
 
+---
 <button @click="increment">
     Clicked {{ count }} times
 </button>
@@ -79,11 +80,10 @@ This repo uses **uv** for Python packages and **pnpm** for Node packages.
 
 ```sh
 ./scripts/install   # uv sync + pnpm install + build TypeScript client
-./scripts/check     # lint + type-check + test across all packages
+./scripts/check     # format check + type-check + test across all packages and supported versions
 ./scripts/test      # run core Python + client TypeScript tests
+./scripts/lint      # run the formatter across all projects
 ```
-
-See [CLAUDE.md](CLAUDE.md) for full commands per package.
 
 ---
 
