@@ -124,7 +124,7 @@ class PyWire:
         upload_token_ttl_seconds: int = 600,
         middleware: Optional[List] = None,
         session_store: Optional[Any] = None,
-        session_ttl: int = 1800,
+        session_ttl: Optional[int] = None,
         session_warn_size: int = 256 * 1024,  # 256 KB
         ws_ping_interval: int = 25,
         ws_ping_timeout: int = 10,
@@ -262,7 +262,11 @@ class PyWire:
         self.loader = get_loader()
 
         # Session store: auto-detect Redis from env, fall back to in-memory
-        self.session_ttl = session_ttl
+        self.session_ttl = (
+            session_ttl
+            if session_ttl is not None
+            else int(os.environ.get("SESSION_TTL", "1800"))
+        )
         self.session_warn_size = session_warn_size
         if session_store is not None:
             self.session_store = session_store
