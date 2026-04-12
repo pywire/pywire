@@ -39,6 +39,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           prs=$(gh pr list \
+            --repo "${{ github.repository }}" \
             --json number,headRefOid,headRefName \
             --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
 
@@ -77,6 +78,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           prs=$(gh pr list \
+            --repo "${{ github.repository }}" \
             --json number,headRefName \
             --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
 
