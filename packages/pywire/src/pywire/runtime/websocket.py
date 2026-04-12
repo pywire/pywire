@@ -30,6 +30,10 @@ class WebSocketHandler:
         self.connection_pages: Dict[WebSocket, BasePage] = {}
         # Map websocket to session ID for state persistence
         self.session_ids: Dict[WebSocket, str] = {}
+        # Map websocket to its ping loop task
+        self._ping_tasks: Dict[WebSocket, asyncio.Task[None]] = {}
+        # Track pending pong events per connection
+        self._pong_events: Dict[WebSocket, asyncio.Event] = {}
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
@@ -47,41 +51,74 @@ class WebSocketHandler:
             msgpack.packb({"type": "init", "version": __version__})
         )
 
+        # Start keep-alive ping loop
+        ping_interval = getattr(self.app, "ws_ping_interval", 25)
+        if ping_interval > 0:
+            self._pong_events[websocket] = asyncio.Event()
+            self._ping_tasks[websocket] = asyncio.create_task(
+                self._ping_loop(websocket)
+            )
+
         try:
-            # Create isolated page instance for this connection
-            # We need to reconstruct the page based on current URL
-            # Note: This simplifies things by assuming initial state.
-            # Real session support would hydrate state here.
-
-            # Since we don't have the request context easily here yet without
-            # more complex routing, we wait for the first event to associate/create
-            # the page if needed, or we rely on the client to send initial context.
-            # For this MVP, we'll instantiate the page when an event arrives.
-
             while True:
                 data_bytes = await websocket.receive_bytes()
                 data = msgpack.unpackb(data_bytes, raw=False)
                 await self._process_message(websocket, data)
 
         except WebSocketDisconnect:
-            self.active_connections.remove(websocket)
-            if websocket in self.connection_pages:
-                del self.connection_pages[websocket]
-            # Keep session in store (TTL handles cleanup) — enables reconnect
-            self.session_ids.pop(websocket, None)
+            pass
         except asyncio.CancelledError:
-            # Server shutdown, clean disconnect
-            self.active_connections.discard(websocket)
-            if websocket in self.connection_pages:
-                del self.connection_pages[websocket]
-            self.session_ids.pop(websocket, None)
-            # Don't re-raise, let it exit gracefully
-            return
+            # Server shutdown, clean disconnect — don't re-raise
+            pass
         except Exception as e:
             print(f"WebSocket error: {e}")
-            import traceback
-
             traceback.print_exc()
+        finally:
+            self._cleanup_connection(websocket)
+
+    def _cleanup_connection(self, websocket: WebSocket) -> None:
+        """Clean up all state associated with a WebSocket connection."""
+        # Cancel ping task
+        task = self._ping_tasks.pop(websocket, None)
+        if task and not task.done():
+            task.cancel()
+        self._pong_events.pop(websocket, None)
+
+        self.active_connections.discard(websocket)
+        self.connection_pages.pop(websocket, None)
+        # Keep session in store (TTL handles cleanup) — enables reconnect
+        self.session_ids.pop(websocket, None)
+
+    async def _ping_loop(self, websocket: WebSocket) -> None:
+        """Send periodic pings and close the connection if pong is not received."""
+        interval: int = getattr(self.app, "ws_ping_interval", 25)
+        timeout: int = getattr(self.app, "ws_ping_timeout", 10)
+        pong_event = self._pong_events[websocket]
+
+        try:
+            while True:
+                await asyncio.sleep(interval)
+
+                # Send ping
+                pong_event.clear()
+                try:
+                    await websocket.send_bytes(msgpack.packb({"type": "ping"}))
+                except Exception:
+                    # Connection already closed
+                    return
+
+                # Wait for pong
+                try:
+                    await asyncio.wait_for(pong_event.wait(), timeout=timeout)
+                except TimeoutError:
+                    logger.warning("WebSocket ping timeout, closing connection")
+                    try:
+                        await websocket.close(code=1000)
+                    except Exception:
+                        pass
+                    return
+        except asyncio.CancelledError:
+            return
 
     async def _process_message(
         self, websocket: WebSocket, data: Dict[str, Any]
@@ -89,7 +126,12 @@ class WebSocketHandler:
         """Process incoming message from client."""
         msg_type = data.get("type")
 
-        if msg_type == "event":
+        if msg_type == "pong":
+            pong_event = self._pong_events.get(websocket)
+            if pong_event:
+                pong_event.set()
+            return
+        elif msg_type == "event":
             await self._handle_event(websocket, data)
         elif msg_type == "init":
             await self._handle_init(websocket, data)

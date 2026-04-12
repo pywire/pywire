@@ -126,6 +126,8 @@ class PyWire:
         session_store: Optional[Any] = None,
         session_ttl: int = 1800,
         session_warn_size: int = 256 * 1024,  # 256 KB
+        ws_ping_interval: int = 25,
+        ws_ping_timeout: int = 10,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -267,6 +269,9 @@ class PyWire:
                 from pywire.runtime.session_store import MemorySessionStore
 
                 self.session_store = MemorySessionStore()
+
+        self.ws_ping_interval = max(0, int(ws_ping_interval))
+        self.ws_ping_timeout = max(1, int(ws_ping_timeout))
 
         self.ws_handler = WebSocketHandler(self)
         self.http_handler = HTTPTransportHandler(self)
