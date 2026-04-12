@@ -546,9 +546,7 @@ export class PyWireApp {
     const detail = rawCmd.detail ?? {}
     const bubbles = (rawCmd.bubbles as boolean) ?? true
 
-    const target = refId
-      ? document.querySelector(`[data-pw-ref="${refId}"]`)
-      : document.body
+    const target = refId ? document.querySelector(`[data-pw-ref="${refId}"]`) : document.body
 
     if (target) {
       target.dispatchEvent(

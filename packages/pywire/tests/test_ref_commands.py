@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from pywire.runtime.page import BasePage
-from pywire.core.refs import ref, InputElement, AnyRef
+from pywire.core.refs import ref, InputElement
 
 
 class MockWebSocket:
@@ -146,8 +146,8 @@ def test_update_value_does_not_queue_setvalue():
 
 
 def test_anyref_set_value_queues_setvalue_command():
-    """Setting AnyRef.value programmatically queues a setValue command."""
-    my_ref = AnyRef()
+    """Setting InputElement.value programmatically queues a setValue command."""
+    my_ref = InputElement()
     my_ref._ref_id = "ref-xyz"
     my_ref._bound_type = "input"
 
@@ -160,8 +160,8 @@ def test_anyref_set_value_queues_setvalue_command():
 
 
 def test_anyref_update_value_does_not_queue_setvalue():
-    """AnyRef._update_value (from client ref_sync) does NOT queue a setValue command."""
-    my_ref = AnyRef()
+    """InputElement._update_value (from client ref_sync) does NOT queue a setValue command."""
+    my_ref = InputElement()
     my_ref._ref_id = "ref-xyz"
     my_ref._bound_type = "input"
 

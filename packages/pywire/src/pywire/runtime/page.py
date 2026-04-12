@@ -752,12 +752,12 @@ class BasePage:
                 reconnect_overlay_enabled = True
                 try:
                     pywire_app = self.request.app.state.pywire
-                    reconnect_max_attempts = getattr(
-                        pywire_app, "reconnect_max_attempts", 10
-                    )
-                    reconnect_overlay_enabled = getattr(
-                        pywire_app, "reconnect_overlay", True
-                    )
+                    _rma = getattr(pywire_app, "reconnect_max_attempts", 10)
+                    if isinstance(_rma, int):
+                        reconnect_max_attempts = _rma
+                    _roe = getattr(pywire_app, "reconnect_overlay", True)
+                    if isinstance(_roe, bool):
+                        reconnect_overlay_enabled = _roe
                 except (AttributeError, KeyError):
                     pass
 

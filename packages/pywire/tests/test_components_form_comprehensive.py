@@ -264,6 +264,7 @@ def custom_validator_form():
         model=CustomValidatorUser,
         on_submit=submit_mock,
     )
+    _bind_form_ref_as_form(form)
     return form, submit_mock
 
 
@@ -339,6 +340,7 @@ def nested_model_form():
         model=NestedUser,
         on_submit=submit_mock,
     )
+    _bind_form_ref_as_form(form)
     return form, submit_mock
 
 

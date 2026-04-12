@@ -437,7 +437,6 @@ class CanvasElement(HTMLElement):
             self._data_url = state["dataUrl"]
 
 
-
 # Type alias for static analysis ease
 Ref = Union[
     RefBase,

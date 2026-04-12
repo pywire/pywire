@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, Mock
 from pywire.core.refs import (
     ref,
-    AnyRef,
+    HTMLElement,
     MediaElement,
     DialogElement,
     CanvasElement,
@@ -157,17 +157,16 @@ class TestCanvasElement:
         assert r.data_url == "data:image/png;base64,abc"
 
 
-# --- Auto-detection (AnyRef auto-upgrade) ---
+# --- Auto-detection (HTMLElement auto-upgrade) ---
 
 
 class TestAutoDetection:
     def test_anyref_upgrades_to_media_on_bind(self, mock_page):
         """ref() on <video> or <audio> should auto-upgrade to MediaElement."""
         r = ref()
-        assert isinstance(r, AnyRef)
+        assert isinstance(r, HTMLElement)
         r._bind("media", "ref-video-1", mock_page)
         assert isinstance(r, MediaElement)
-        assert not isinstance(r, AnyRef)
 
     def test_anyref_upgrades_to_dialog_on_bind(self, mock_page):
         r = ref()
@@ -196,11 +195,11 @@ class TestAutoDetection:
         r._bind("media", "ref-video-1", mock_page)
         assert isinstance(r, MediaElement)
 
-    def test_anyref_stays_for_element(self, mock_page):
-        """ref() on a generic element stays AnyRef."""
+    def test_htmlelement_stays_for_element(self, mock_page):
+        """ref() on a generic element stays HTMLElement (no upgrade needed)."""
         r = ref()
         r._bind("element", "ref-div-1", mock_page)
-        assert isinstance(r, AnyRef)
+        assert isinstance(r, HTMLElement)
 
 
 # --- Command collection includes media commands ---
