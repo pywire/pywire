@@ -55,7 +55,7 @@ class RefBase(WireBase):
 
         If this ref was created as a generic HTMLElement (via bare ``ref()``),
         it will be automatically upgraded to the appropriate subclass
-        (InputElement / FormElement) based on *bound_type*.
+        (InputElement / FormElement / MediaElement / etc.) based on *bound_type*.
         """
         # Auto-upgrade: if this is a plain HTMLElement (not a subclass), swap
         # the class to match the element it was actually bound to.
@@ -63,11 +63,8 @@ class RefBase(WireBase):
             target_cls = _BOUND_TYPE_TO_CLASS.get(bound_type, HTMLElement)
             if target_cls is not HTMLElement:
                 self.__class__ = target_cls  # type: ignore[assignment]
-                # Re-run the target's __init__ to set up any extra state
-                if target_cls is InputElement:
-                    self._value = None  # type: ignore[attr-defined]
-                elif target_cls is FormElement:
-                    self._data = {}  # type: ignore[attr-defined]
+                # Re-run the target's __init__ to initialize any extra state
+                target_cls.__init__(self)  # type: ignore[misc]
 
         self._bound_type = bound_type
         self._ref_id = ref_id
@@ -351,10 +348,107 @@ class ComponentRef(RefBase, Generic[T]):
         self._queue_command("addClass", name=name)
 
 
+class MediaElement(HTMLElement):
+    """Ref for <audio> and <video> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._current_time: float = 0.0
+        self._paused: bool = True
+        self._duration: float = 0.0
+
+    def play(self) -> None:
+        """Queue a play command for the client."""
+        self._queue_command("play")
+
+    def pause(self) -> None:
+        """Queue a pause command for the client."""
+        self._queue_command("pause")
+
+    def load(self) -> None:
+        """Queue a load command for the client."""
+        self._queue_command("load")
+
+    @property
+    def current_time(self) -> float:
+        return self._current_time
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @property
+    def duration(self) -> float:
+        return self._duration
+
+    def _update_media_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs media state."""
+        if "currentTime" in state:
+            self._current_time = float(state["currentTime"])
+        if "paused" in state:
+            self._paused = bool(state["paused"])
+        if "duration" in state:
+            self._duration = float(state["duration"])
+
+
+class DialogElement(HTMLElement):
+    """Ref for <dialog> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._open: bool = False
+
+    def show_modal(self) -> None:
+        """Queue a showModal command for the client."""
+        self._queue_command("showModal")
+
+    def close(self, return_value: str = "") -> None:
+        """Queue a close command for the client."""
+        self._queue_command("close", returnValue=return_value)
+
+    @property
+    def open(self) -> bool:
+        return self._open
+
+    def _update_dialog_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs dialog state."""
+        if "open" in state:
+            self._open = bool(state["open"])
+
+
+class CanvasElement(HTMLElement):
+    """Ref for <canvas> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._data_url: Optional[str] = None
+
+    def request_data_url(self, type: str = "image/png") -> None:
+        """Queue a requestDataUrl command for the client."""
+        self._queue_command("requestDataUrl", type=type)
+
+    @property
+    def data_url(self) -> Optional[str]:
+        return self._data_url
+
+    def _update_canvas_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs canvas state."""
+        if "dataUrl" in state:
+            self._data_url = state["dataUrl"]
+
 
 
 # Type alias for static analysis ease
-Ref = Union[RefBase, HTMLElement, InputElement, FormElement, ComponentRef]
+Ref = Union[
+    RefBase,
+    HTMLElement,
+    InputElement,
+    FormElement,
+    ComponentRef,
+    MediaElement,
+    DialogElement,
+    CanvasElement,
+]
 
 
 # Mapping from bound_type string to the ref class that should handle it
@@ -363,6 +457,9 @@ _BOUND_TYPE_TO_CLASS: Dict[str, Type[RefBase]] = {
     "form": FormElement,
     "element": HTMLElement,
     "component": ComponentRef,
+    "media": MediaElement,
+    "dialog": DialogElement,
+    "canvas": CanvasElement,
 }
 
 
@@ -380,6 +477,15 @@ class RefFactory:
 
     @overload
     def __getitem__(self, item: Type[FormElement]) -> Type[FormElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[MediaElement]) -> Type[MediaElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[DialogElement]) -> Type[DialogElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[CanvasElement]) -> Type[CanvasElement]: ...
 
     @overload
     def __getitem__(self, item: Type[HTMLElement]) -> Type[HTMLElement]: ...

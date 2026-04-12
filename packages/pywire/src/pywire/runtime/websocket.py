@@ -986,6 +986,7 @@ class WebSocketHandler:
         """Handle ref value synchronization."""
         ref_id = data.get("refId")
         value = data.get("value")
+        prop = data.get("property")
 
         if not ref_id or websocket not in self.connection_pages:
             return
@@ -995,9 +996,24 @@ class WebSocketHandler:
 
         if ref:
             try:
-                # Update value directly
-                if hasattr(ref, "_update_value"):
-                    ref._update_value(value)
+                if prop:
+                    # Property sync for media/dialog/canvas elements
+                    from pywire.core.refs import (
+                        MediaElement,
+                        DialogElement,
+                        CanvasElement,
+                    )
+
+                    if isinstance(ref, MediaElement):
+                        ref._update_media_state({prop: value})
+                    elif isinstance(ref, DialogElement):
+                        ref._update_dialog_state({prop: value})
+                    elif isinstance(ref, CanvasElement):
+                        ref._update_canvas_state({prop: value})
+                else:
+                    # Update value directly
+                    if hasattr(ref, "_update_value"):
+                        ref._update_value(value)
             except Exception as e:
                 if getattr(self.app, "debug", False):
                     print(f"Ref sync error for {ref_id}: {e}")
