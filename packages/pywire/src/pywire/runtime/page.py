@@ -686,12 +686,28 @@ class BasePage:
                 pass  # no router available; SPA navigation will use sibling paths only
 
             if not no_spa and not is_component:
+                # Reconnect overlay config from PyWire app
+                reconnect_max_attempts = 10
+                reconnect_overlay_enabled = True
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    reconnect_max_attempts = getattr(
+                        pywire_app, "reconnect_max_attempts", 10
+                    )
+                    reconnect_overlay_enabled = getattr(
+                        pywire_app, "reconnect_overlay", True
+                    )
+                except (AttributeError, KeyError):
+                    pass
+
                 meta = {
                     "sibling_paths": getattr(self, "__sibling_paths__", []),
                     "all_paths": all_wire_paths,
                     "enable_pjax": pjax_enabled,
                     "debug": debug_mode,
                     "static_path": static_url_path,
+                    "reconnect_max_attempts": reconnect_max_attempts,
+                    "reconnect_overlay": reconnect_overlay_enabled,
                 }
                 import json
 
@@ -710,7 +726,23 @@ class BasePage:
                     pass
 
                 client_script = f'<script src="{script_url}"></script>'
-                injection = f"{meta_script}{client_script}"
+
+                # Inject custom reconnect overlay template if loaded
+                reconnect_injection = ""
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    tmpl_html = getattr(pywire_app, "_reconnect_template_html", None)
+                    tmpl_style = getattr(pywire_app, "_reconnect_template_style", None)
+                    if tmpl_html:
+                        reconnect_injection += (
+                            f'<template id="_pywire_reconnect">{tmpl_html}</template>'
+                        )
+                    if tmpl_style:
+                        reconnect_injection += f"<style>{tmpl_style}</style>"
+                except (AttributeError, KeyError):
+                    pass
+
+                injection = f"{reconnect_injection}{meta_script}{client_script}"
 
                 if "</body>" in html:
                     parts = html.rsplit("</body>", 1)

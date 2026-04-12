@@ -126,6 +126,8 @@ class PyWire:
         session_store: Optional[Any] = None,
         session_ttl: int = 1800,
         session_warn_size: int = 256 * 1024,  # 256 KB
+        reconnect_max_attempts: int = 10,
+        reconnect_overlay: bool = True,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -235,6 +237,14 @@ class PyWire:
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
+
+        # Reconnection overlay config (passed to client via SPA metadata)
+        self.reconnect_max_attempts = reconnect_max_attempts
+        self.reconnect_overlay = reconnect_overlay
+
+        # Custom reconnect template HTML/CSS (loaded from __reconnect__.wire)
+        self._reconnect_template_html: Optional[str] = None
+        self._reconnect_template_style: Optional[str] = None
 
         # Asset fingerprinting cache (prod without build: path -> content hash)
         self._asset_hash_cache: Dict[str, str] = {}
@@ -681,6 +691,107 @@ class PyWire:
                     f"Failed to load error page {error_page_path}: {e}", exc_info=True
                 )
 
+        # Check for __reconnect__.wire — custom reconnection overlay template
+        reconnect_page_path = self.pages_dir / "__reconnect__.wire"
+        if reconnect_page_path.exists():
+            self._load_reconnect_template(reconnect_page_path)
+
+    def _load_reconnect_template(self, file_path: Path) -> None:
+        """Load __reconnect__.wire as a static HTML template with optional scoped styles.
+
+        Python frontmatter is warned about (it cannot execute client-side when
+        disconnected). The resulting HTML is stored for injection as a
+        ``<template id="_pywire_reconnect">`` into each page.
+        """
+        try:
+            from pywire.compiler.parser import PyWireParser
+
+            parser = PyWireParser()
+            parsed = parser.parse_file(file_path)
+
+            # Warn if the file contains Python frontmatter
+            if parsed.python_code and parsed.python_code.strip():
+                logger.warning(
+                    "__reconnect__.wire contains Python frontmatter which will be "
+                    "ignored — Python cannot execute on the client when disconnected."
+                )
+
+            # Render template nodes to raw HTML
+            html_parts: list[str] = []
+            style_parts: list[str] = []
+
+            for node in parsed.template:
+                if hasattr(node, "tag") and node.tag == "style":
+                    # Extract style content
+                    css = self._extract_text_content(node)
+                    if css:
+                        style_parts.append(css)
+                else:
+                    html_parts.append(self._render_template_node(node))
+
+            html = "\n".join(html_parts).strip()
+            if html:
+                self._reconnect_template_html = html
+            if style_parts:
+                self._reconnect_template_style = "\n".join(style_parts)
+
+            logger.info("Loaded custom reconnect template from %s", file_path)
+        except Exception as e:
+            logger.error(
+                "Failed to load reconnect template %s: %s", file_path, e, exc_info=True
+            )
+
+    @staticmethod
+    def _extract_text_content(node: Any) -> str:
+        """Recursively extract text content from a template node."""
+        parts: list[str] = []
+        if hasattr(node, "text_content") and node.text_content:
+            parts.append(node.text_content)
+        if hasattr(node, "children"):
+            for child in node.children:
+                parts.append(PyWire._extract_text_content(child))
+        return "".join(parts)
+
+    @staticmethod
+    def _render_template_node(node: Any) -> str:
+        """Render a template node back to HTML string (simple reconstruction)."""
+        if (
+            hasattr(node, "text_content")
+            and node.text_content
+            and not hasattr(node, "tag")
+        ):
+            return node.text_content
+        if not hasattr(node, "tag") or not node.tag:
+            # Text node
+            text = getattr(node, "text_content", "") or ""
+            return text
+
+        tag = node.tag
+        attrs = ""
+        if hasattr(node, "attributes") and node.attributes:
+            attr_parts = []
+            for k, v in node.attributes.items():
+                if v is True:
+                    attr_parts.append(k)
+                elif v is not None:
+                    attr_parts.append(f'{k}="{v}"')
+            if attr_parts:
+                attrs = " " + " ".join(attr_parts)
+
+        # Self-closing tags
+        void_tags = {"br", "hr", "img", "input", "meta", "link"}
+        if tag in void_tags:
+            return f"<{tag}{attrs} />"
+
+        children_html = ""
+        if hasattr(node, "children"):
+            children_html = "".join(
+                PyWire._render_template_node(c) for c in node.children
+            )
+
+        text = getattr(node, "text_content", "") or ""
+        return f"<{tag}{attrs}>{text}{children_html}</{tag}>"
+
     def _scan_directory(
         self, dir_path: Path, layout_path: Optional[str] = None, url_prefix: str = ""
     ) -> None:
@@ -986,6 +1097,8 @@ class PyWire:
                 # Special handling for __error__.wire
                 if file_path.name == "__error__.wire":
                     self.router.add_route("/__error__", new_page_class)
+                elif file_path.name == "__reconnect__.wire":
+                    self._load_reconnect_template(file_path)
                 elif is_in_pages:
                     self.router.add_page(new_page_class)
 

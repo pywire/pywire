@@ -12,6 +12,7 @@ import {
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
 import { RefManager } from './ref-manager'
+import { ReconnectOverlay } from './reconnect-overlay'
 import { logger } from './logger'
 
 export interface PyWireConfig extends TransportConfig {
@@ -19,6 +20,10 @@ export interface PyWireConfig extends TransportConfig {
   autoInit?: boolean
   /** Enable verbose debug logging */
   debug?: boolean
+  /** Maximum reconnection attempts before giving up (default 10) */
+  reconnectMaxAttempts?: number
+  /** Show reconnection overlay on disconnect (default true) */
+  reconnectOverlay?: boolean
 }
 
 const DEFAULT_CONFIG: PyWireConfig = {
@@ -39,6 +44,7 @@ export class PyWireApp {
   protected updater: DOMUpdater
   protected eventHandler: UnifiedEventHandler
   protected refManager: RefManager
+  protected reconnectOverlay: ReconnectOverlay
   protected initialized = false
   protected config: PyWireConfig
   protected siblingPaths: string[] = []
@@ -49,6 +55,7 @@ export class PyWireApp {
   protected staticPath: string = '/static'
   protected isConnected = false
   protected sessionId: string | null = null
+  private intentionalDisconnect = false
 
   constructor(config: Partial<PyWireConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -56,6 +63,10 @@ export class PyWireApp {
     this.transport = new TransportManager(this.config)
     this.updater = new DOMUpdater(this.config.debug)
     this.eventHandler = new UnifiedEventHandler(this)
+    this.reconnectOverlay = new ReconnectOverlay({
+      maxAttempts: this.config.reconnectMaxAttempts,
+      enabled: this.config.reconnectOverlay,
+    })
     this.refManager = new RefManager((refId, value) => {
       if (this.isConnected) {
         const msg: RefSyncMessage = {
@@ -124,6 +135,9 @@ export class PyWireApp {
         initMsg.session_id = this.sessionId
       }
       this.transport.send(initMsg)
+    } else if (!this.intentionalDisconnect) {
+      // Show reconnect overlay when connection drops unexpectedly
+      this.reconnectOverlay.show()
     }
   }
 
@@ -142,6 +156,19 @@ export class PyWireApp {
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
           logger.setDebug(this.config.debug)
+        }
+        // Apply reconnect config from server metadata
+        if (meta.reconnect_max_attempts !== undefined) {
+          this.config.reconnectMaxAttempts = meta.reconnect_max_attempts
+          this.reconnectOverlay = new ReconnectOverlay({
+            maxAttempts: meta.reconnect_max_attempts,
+            enabled: meta.reconnect_overlay ?? this.config.reconnectOverlay,
+          })
+        } else if (meta.reconnect_overlay !== undefined) {
+          this.reconnectOverlay = new ReconnectOverlay({
+            maxAttempts: this.config.reconnectMaxAttempts,
+            enabled: meta.reconnect_overlay,
+          })
         }
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
@@ -329,6 +356,8 @@ export class PyWireApp {
         if (msg.session_id) {
           this.sessionId = msg.session_id
         }
+        // Hide reconnect overlay — state has been synced successfully
+        this.reconnectOverlay.hide()
         logger.log('PyWire: Application ready')
         break
 
@@ -381,6 +410,8 @@ export class PyWireApp {
    * Disconnect from the server.
    */
   disconnect(): void {
+    this.intentionalDisconnect = true
+    this.reconnectOverlay.hide()
     this.transport.disconnect()
   }
 }
