@@ -49,6 +49,7 @@ class RefBase(WireBase):
             None  # The child component instance if bound to one
         )
         self._commands: List[Dict[str, Any]] = []
+        self._event_handlers: Dict[str, str] = {}
 
     def _bind(self, bound_type: str, ref_id: str, page: "BasePage"):
         """Bind the ref to a specific HTML element or form.
@@ -115,6 +116,25 @@ class RefBase(WireBase):
         cmds = list(self._commands)
         self._commands.clear()
         return cmds
+
+    def _register_handler(self, event_type: str, handler_name: str) -> None:
+        """Record that this ref's element has a pywire event handler."""
+        self._event_handlers[event_type] = handler_name
+
+    def dispatch(
+        self,
+        event_name: str,
+        *,
+        detail: Optional[Dict[str, Any]] = None,
+        bubbles: bool = True,
+    ) -> None:
+        """Dispatch a custom DOM event from this element.
+
+        Equivalent to calling ``dispatch(event_name, target_ref=self, ...)``.
+        """
+        from pywire.core.dispatch import dispatch as _dispatch
+
+        _dispatch(event_name, detail=detail, bubbles=bubbles, target_ref=self)
 
     # Hooks for value/data updates (to be overridden or extended)
     def _update_data(self, data: Dict[str, Any]):

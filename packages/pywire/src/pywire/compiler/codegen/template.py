@@ -3213,6 +3213,28 @@ class TemplateCodegen:
                                 value=dump_call,
                             )
                         )
+
+                    # Register handler on the ref for server-side dispatch interception
+                    if ref_expr is not None:
+                        body.append(
+                            self._set_line(
+                                ast.Expr(
+                                    value=ast.Call(
+                                        func=ast.Attribute(
+                                            value=cast(ast.expr, ref_expr),
+                                            attr="_register_handler",
+                                            ctx=ast.Load(),
+                                        ),
+                                        args=[
+                                            ast.Constant(value=event_type),
+                                            ast.Constant(value=attr.handler_name),
+                                        ],
+                                        keywords=[],
+                                    )
+                                ),
+                                node,
+                            )
+                        )
                 else:
                     # Multiple handlers - JSON format
                     # _handlers_X = []

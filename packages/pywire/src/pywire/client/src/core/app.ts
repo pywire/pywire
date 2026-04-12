@@ -545,16 +545,21 @@ export class PyWireApp {
     const event = rawCmd.event as string
     const detail = rawCmd.detail ?? {}
     const bubbles = (rawCmd.bubbles as boolean) ?? true
+    const serverHandled = (rawCmd.serverHandled as boolean) ?? false
 
     const target = refId ? document.querySelector(`[data-pw-ref="${refId}"]`) : document.body
 
     if (target) {
-      target.dispatchEvent(
-        new CustomEvent(event, {
-          bubbles,
-          detail,
-        })
-      )
+      const customEvent = new CustomEvent(event, {
+        bubbles,
+        detail,
+      })
+      // Mark the event so pywire's event handler skips re-sending it to the
+      // server — the Python handler was already called server-side.
+      if (serverHandled) {
+        ;(customEvent as unknown as Record<string, unknown>).__pwServerHandled = true
+      }
+      target.dispatchEvent(customEvent)
     } else {
       logger.warn(`PyWire: dispatch '${event}' failed - ref '${refId}' not found in DOM`)
     }

@@ -185,6 +185,7 @@ class BasePage:
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
         self._pending_navigation: Optional[str] = None
         self._pending_dispatches: List[Dict[str, Any]] = []
+        self._pending_intercepted_handlers: List[tuple[str, dict]] = []
         self._components: Dict[str, "BasePage"] = {}
         self._active_component_keys: Set[str] = set()
         self._component_state_snapshots: Dict[str, Dict[str, Any]] = {}
@@ -931,6 +932,12 @@ class BasePage:
                 await component._handle_component_event(remainder, event_data)
             else:
                 await self._dispatch_handler(event_name, event_data)
+
+            # Drain server-intercepted dispatch handlers (from dispatch()
+            # with bubbles=False targeting a ref with a registered handler).
+            while self._pending_intercepted_handlers:
+                h_name, h_data = self._pending_intercepted_handlers.pop(0)
+                await self._dispatch_handler(h_name, h_data)
         except Exception as exc:
             # Run @error hooks — if any returns truthy, suppress the error
             if await self._run_error_hooks(exc):

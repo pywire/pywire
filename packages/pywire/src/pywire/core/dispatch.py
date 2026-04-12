@@ -46,6 +46,28 @@ def dispatch(
             "dispatch() must be called during a page render or event handler"
         )
 
+    # Server-side interception: when called from a handler context (not render),
+    # the target ref has a registered pywire handler for this event, and bubbling
+    # is disabled, call the handler directly on the server — no DOM round trip
+    # for the pywire handler.  The dispatch command is still sent to the client
+    # so that any JS listeners fire with the correct detail, but it is marked
+    # ``serverHandled`` so the client won't re-send it back to the server.
+    server_handled = False
+    if (
+        target_ref is not None
+        and not bubbles
+        and _page_context.get() is not None
+    ):
+        handler_name = getattr(target_ref, "_event_handlers", {}).get(
+            event_name
+        )
+        if handler_name:
+            handler_page = getattr(target_ref, "_page", None) or page
+            handler_page._pending_intercepted_handlers.append(
+                (handler_name, {"detail": detail or {}})
+            )
+            server_handled = True
+
     ref_id: Optional[str] = None
     if target_ref is not None:
         ref_id = getattr(target_ref, "_ref_id", None)
@@ -57,5 +79,7 @@ def dispatch(
         "bubbles": bubbles,
         "refId": ref_id,
     }
+    if server_handled:
+        command["serverHandled"] = True
 
     page._pending_dispatches.append(command)
