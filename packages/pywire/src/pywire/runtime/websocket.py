@@ -342,6 +342,7 @@ class WebSocketHandler:
             # Session ID: reuse from reconnect or generate new
             client_session_id = data.get("session_id")
             session_id = None
+            session_restored = False
 
             if client_session_id:
                 # Attempt to restore session state from store
@@ -350,6 +351,7 @@ class WebSocketHandler:
                     if snapshot:
                         restore_page_state(page, snapshot)
                         session_id = client_session_id
+                        session_restored = True
                         logger.debug("Restored session %s", session_id)
                 except Exception:
                     logger.warning(
@@ -396,9 +398,15 @@ class WebSocketHandler:
                 page._pending_navigation = None
                 return
 
-            # Send ack with session ID
+            # Send ack with session ID and restoration status
             await websocket.send_bytes(
-                msgpack.packb({"type": "init_ack", "session_id": session_id})
+                msgpack.packb(
+                    {
+                        "type": "init_ack",
+                        "session_id": session_id,
+                        "session_restored": session_restored,
+                    }
+                )
             )
 
             # Run @mount hooks after first render delivered to client

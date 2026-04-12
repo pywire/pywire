@@ -428,6 +428,10 @@ export class PyWireApp {
         break
 
       case 'init_ack':
+        // Detect expired session: client had a session_id but server couldn't restore it
+        if (msg.session_restored === false && this.sessionId !== null) {
+          this.showSessionExpiredNotification()
+        }
         // Store session ID for reconnection state restoration
         if (msg.session_id) {
           this.sessionId = msg.session_id
@@ -473,6 +477,47 @@ export class PyWireApp {
       if (args.domain) cookie += `; domain=${args.domain}`
       document.cookie = cookie
     }
+  }
+
+  /**
+   * Show a non-intrusive toast notification when the session has expired.
+   * Auto-dismisses after 5 seconds or on click.
+   */
+  protected showSessionExpiredNotification(): void {
+    const toast = document.createElement('div')
+    toast.textContent = 'Your session has expired. The page has been reset.'
+    toast.setAttribute('role', 'alert')
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      z-index: 10001;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: auto;
+    `
+    document.body.appendChild(toast)
+
+    // Fade in
+    requestAnimationFrame(() => {
+      toast.style.opacity = '1'
+    })
+
+    const dismiss = () => {
+      toast.style.opacity = '0'
+      setTimeout(() => toast.remove(), 300)
+    }
+
+    toast.addEventListener('click', dismiss)
+    setTimeout(dismiss, 5000)
   }
 
   /**

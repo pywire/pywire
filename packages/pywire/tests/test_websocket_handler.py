@@ -1,10 +1,11 @@
 import asyncio
 import pytest
 from typing import Any, Dict, Optional, cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import msgpack
 from pywire.runtime.page import BasePage
+from pywire.runtime.session_store import MemorySessionStore
 from pywire.runtime.websocket import WebSocketHandler
 from starlette.requests import Request
 from starlette.responses import Response
@@ -132,3 +133,86 @@ class TestWebSocketHandler:
 
         assert ws.sent_messages[1]["level"] == "error"
         assert ws.sent_messages[1]["lines"] == ["Hello Stderr"]
+
+    @pytest.mark.asyncio
+    async def test_init_ack_session_restored_true(self) -> None:
+        """init_ack should include session_restored=True when session was found in store."""
+        ws = MockWebSocket()
+        store = MemorySessionStore()
+        # Pre-populate a session
+        await store.set("existing-session", {"attrs": {"count": 5}, "wire_tags": {}}, ttl=60)
+
+        self.app.session_store = store
+        self.app.router.match.return_value = (MockPage, {}, "main")
+        self.app.debug = False
+        self.app._is_dev_mode = False
+        self.app.session_ttl = 60
+        self.app.session_warn_size = 256 * 1024
+
+        data = {
+            "type": "init",
+            "path": "/",
+            "session_id": "existing-session",
+        }
+        await self.handler._handle_init(cast(WebSocket, ws), data)
+
+        init_ack = next(
+            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
+        )
+        assert init_ack is not None
+        assert init_ack["session_restored"] is True
+        assert init_ack["session_id"] == "existing-session"
+
+    @pytest.mark.asyncio
+    async def test_init_ack_session_restored_false_expired(self) -> None:
+        """init_ack should include session_restored=False when session expired."""
+        ws = MockWebSocket()
+        store = MemorySessionStore()
+        # No session in store — simulates expired session
+
+        self.app.session_store = store
+        self.app.router.match.return_value = (MockPage, {}, "main")
+        self.app.debug = False
+        self.app._is_dev_mode = False
+        self.app.session_ttl = 60
+        self.app.session_warn_size = 256 * 1024
+
+        data = {
+            "type": "init",
+            "path": "/",
+            "session_id": "expired-session",
+        }
+        await self.handler._handle_init(cast(WebSocket, ws), data)
+
+        init_ack = next(
+            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
+        )
+        assert init_ack is not None
+        assert init_ack["session_restored"] is False
+        # A new session_id should have been generated
+        assert init_ack["session_id"] != "expired-session"
+
+    @pytest.mark.asyncio
+    async def test_init_ack_session_restored_false_fresh(self) -> None:
+        """init_ack should include session_restored=False for a fresh connection (no session_id)."""
+        ws = MockWebSocket()
+        store = MemorySessionStore()
+
+        self.app.session_store = store
+        self.app.router.match.return_value = (MockPage, {}, "main")
+        self.app.debug = False
+        self.app._is_dev_mode = False
+        self.app.session_ttl = 60
+        self.app.session_warn_size = 256 * 1024
+
+        data = {
+            "type": "init",
+            "path": "/",
+        }
+        await self.handler._handle_init(cast(WebSocket, ws), data)
+
+        init_ack = next(
+            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
+        )
+        assert init_ack is not None
+        assert init_ack["session_restored"] is False
