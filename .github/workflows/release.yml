@@ -72,6 +72,26 @@ jobs:
             done
           done
 
+      - name: Auto-approve and auto-merge release-please PRs
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          prs=$(gh pr list \
+            --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
+
+          if [ "$prs" = "[]" ] || [ -z "$prs" ]; then
+            echo "No open release-please PRs"
+            exit 0
+          fi
+
+          echo "$prs" | jq -c '.[]' | while read -r pr; do
+            num=$(echo "$pr" | jq -r '.number')
+            echo "Approving and enabling auto-merge on PR #$num"
+            gh pr review "$num" --approve --repo "$GITHUB_REPOSITORY" || true
+            gh pr merge "$num" --auto --squash --repo "$GITHUB_REPOSITORY" || true
+          done
+
   # Build pywire wheels across all platforms/architectures
   build-pywire-wheels:
     name: "Build pywire wheels"
@@ -231,9 +251,9 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-  # Close the docs release PR when pywire releases and docs changed (docs are deployed automatically)
-  close-docs-release-pr:
-    name: "Close docs release PR"
+  # Merge the docs release PR when pywire releases and docs changed (keeps manifest in sync)
+  merge-docs-release-pr:
+    name: "Merge docs release PR"
     needs: [release-please, check-docs-changed]
     if: >-
       needs.release-please.outputs.pywire--release_created == 'true'
@@ -241,13 +261,14 @@ jobs:
       && needs.check-docs-changed.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          gh pr close release-please--branches--main--components--pywire-docs \
-            --repo "$GITHUB_REPOSITORY" \
-            --comment "Closing: pywire release automatically deploys docs." \
-            || true
+      - name: Merge docs release PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          gh pr merge release-please--branches--main--components--pywire-docs \
+            --squash \
+            --repo "$GITHUB_REPOSITORY" \
+            || true
 
   # Deploy docs to Cloudflare Pages (on pywire release with doc changes, or explicit docs release)
   deploy-docs:
