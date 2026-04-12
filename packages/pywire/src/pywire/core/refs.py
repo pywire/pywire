@@ -192,6 +192,7 @@ class InputElement(HTMLElement):
     def __init__(self, initial_value: Any = None):
         super().__init__()
         self._value: Any = initial_value
+        self._syncing_from_client: bool = False
 
     @property
     def value(self) -> Any:
@@ -210,9 +211,6 @@ class InputElement(HTMLElement):
 
     @value.setter
     def value(self, value: Any):
-        self._update_value(value)
-
-    def _update_value(self, value: Any):
         if self._bound_type and self._bound_type not in (
             "input",
             "element",
@@ -222,6 +220,26 @@ class InputElement(HTMLElement):
                 f"InputElement bound to '{self._bound_type}' cannot accept value updates"
             )
         self._value = value
+        # Push value to client when set programmatically (not from client sync)
+        if not self._syncing_from_client:
+            self._queue_command("setValue", value=value)
+        self._notify_write()
+
+    def _update_value(self, value: Any):
+        """Update value from client sync (ref_sync message). Does NOT push back."""
+        if self._bound_type and self._bound_type not in (
+            "input",
+            "element",
+            "component",
+        ):
+            raise RefTypeError(
+                f"InputElement bound to '{self._bound_type}' cannot accept value updates"
+            )
+        self._syncing_from_client = True
+        try:
+            self._value = value
+        finally:
+            self._syncing_from_client = False
 
 
 class FormElement(HTMLElement):
@@ -331,6 +349,8 @@ class ComponentRef(RefBase, Generic[T]):
 
     def add_class(self, name: str):
         self._queue_command("addClass", name=name)
+
+
 
 
 # Type alias for static analysis ease

@@ -31,6 +31,7 @@ export class RefManager {
   private onSync?: (refId: string, value: ElementValue) => void
   private observer: MutationObserver
   private observedElements = new WeakSet<HTMLElement>()
+  private suppressSync = new WeakSet<HTMLElement>()
 
   constructor(onSync?: (refId: string, value: ElementValue) => void) {
     this.onSync = onSync
@@ -88,6 +89,7 @@ export class RefManager {
       element instanceof HTMLSelectElement
     ) {
       const handler = debounce(() => {
+        if (this.suppressSync.has(element)) return
         const val = this.getElementValue(element)
         if (this.onSync && refId) {
           this.onSync(refId, val)
@@ -160,6 +162,27 @@ export class RefManager {
           break
         case 'requestRect':
           this.pendingRectRequests.add(refId)
+          break
+        case 'setValue':
+          if (
+            element instanceof HTMLInputElement ||
+            element instanceof HTMLTextAreaElement ||
+            element instanceof HTMLSelectElement
+          ) {
+            // Suppress sync to avoid echo loop back to server
+            this.suppressSync.add(element)
+            if (element instanceof HTMLInputElement && element.type === 'checkbox') {
+              element.checked = Boolean(args.value)
+            } else {
+              element.value = String(args.value ?? '')
+            }
+            // Re-enable sync after current microtask
+            queueMicrotask(() => this.suppressSync.delete(element))
+          } else {
+            logger.warn(
+              `PyWire: 'setValue' only supported for input, textarea, and select elements`
+            )
+          }
           break
         case 'clearFileInput':
           if (element instanceof HTMLInputElement && element.type === 'file') {
