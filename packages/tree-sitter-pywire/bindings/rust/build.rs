@@ -25,5 +25,6 @@ fn main() {
         .warnings(false)
         .std("c11")
         .file(src_dir.join("parser.c"))
+        .file(src_dir.join("scanner.c"))
         .compile("tree-sitter-pywire");
 }

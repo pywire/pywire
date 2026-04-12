@@ -62,4 +62,66 @@ mod tests {
             "Directive not found in S-expression"
         );
     }
+
+    fn parse_python_code(source: &str) -> String {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&super::language())
+            .expect("Error loading PyWire grammar");
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        let mut cursor = root.walk();
+        for child in root.children(&mut cursor) {
+            if child.kind() == "frontmatter" {
+                let mut fc = child.walk();
+                for inner in child.children(&mut fc) {
+                    if inner.kind() == "python_content" {
+                        return source[inner.start_byte()..inner.end_byte()].to_string();
+                    }
+                }
+            }
+        }
+        String::new()
+    }
+
+    #[test]
+    fn test_basic_separator() {
+        let code = parse_python_code("---\nx = 1\n---\n<div></div>\n");
+        assert_eq!(code, "x = 1\n");
+    }
+
+    #[test]
+    fn test_empty_frontmatter() {
+        let code = parse_python_code("---\n---\n<div></div>\n");
+        assert_eq!(code, "");
+    }
+
+    #[test]
+    fn test_comment_with_separator() {
+        let code = parse_python_code("---\nx = 1\n# --- event handlers ---\ny = 2\n---\n<div></div>\n");
+        assert!(code.contains("# --- event handlers ---"), "got: {code}");
+        assert!(code.contains("y = 2"), "got: {code}");
+    }
+
+    #[test]
+    fn test_hash_dashes_at_start() {
+        let code = parse_python_code("---\n# ---\nx = 1\n---\n<div></div>\n");
+        assert!(code.contains("# ---"), "got: {code}");
+        assert!(code.contains("x = 1"), "got: {code}");
+    }
+
+    #[test]
+    fn test_multiline_string_with_separator() {
+        let source = "---\ntest = 0\nmy_string = \"\"\"\nline 1\n---\nstill in string\n\"\"\"\n---\n<html />\n";
+        let code = parse_python_code(source);
+        assert!(code.contains("still in string"), "got: {code}");
+        assert!(code.contains("---"), "got: {code}");
+    }
+
+    #[test]
+    fn test_single_line_string_with_separator() {
+        let code = parse_python_code("---\nx = \"---\"\n---\n<div></div>\n");
+        assert_eq!(code, "x = \"---\"\n");
+    }
 }

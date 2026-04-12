@@ -214,45 +214,10 @@
       }
     },
     "_python_content": {
-      "type": "REPEAT1",
+      "type": "TOKEN",
       "content": {
-        "type": "CHOICE",
-        "members": [
-          {
-            "type": "PATTERN",
-            "value": "[^-\\n\\r]+"
-          },
-          {
-            "type": "PATTERN",
-            "value": "\\r?\\n"
-          },
-          {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "-"
-              },
-              {
-                "type": "PATTERN",
-                "value": "[^-\\n\\r]*"
-              }
-            ]
-          },
-          {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "--"
-              },
-              {
-                "type": "PATTERN",
-                "value": "[^-\\n\\r]*"
-              }
-            ]
-          }
-        ]
+        "type": "PATTERN",
+        "value": ".+"
       }
     },
     "template_section": {
@@ -1093,7 +1058,16 @@
     ]
   ],
   "precedences": [],
-  "externals": [],
+  "externals": [
+    {
+      "type": "SYMBOL",
+      "name": "separator"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_python_content"
+    }
+  ],
   "inline": [],
   "supertypes": [],
   "reserved": {}

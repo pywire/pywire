@@ -1,6 +1,11 @@
 module.exports = grammar({
     name: 'pywire',
 
+    externals: $ => [
+        $.separator,
+        $._python_content,
+    ],
+
     extras: $ => [
         $.comment,
         /[ \t\r\n]/
@@ -52,12 +57,10 @@ module.exports = grammar({
 
         separator: $ => token(/---[ \t]*\r?\n/),
 
-        _python_content: $ => repeat1(choice(
-            /[^-\n\r]+/,
-            /\r?\n/,
-            seq('-', /[^-\n\r]*/),
-            seq('--', /[^-\n\r]*/)
-        )),
+        // Handled by external scanner — matches all Python content between
+        // separators, properly tracking string/comment state so that ---
+        // inside strings or comments is not mistaken for a separator.
+        _python_content: $ => token(/.+/),
 
         template_section: $ => repeat1($._html_content),
 

@@ -154,11 +154,6 @@
     }
   },
   {
-    "type": "hyphen",
-    "named": true,
-    "fields": {}
-  },
-  {
     "type": "interpolation",
     "named": true,
     "fields": {
@@ -176,11 +171,6 @@
   },
   {
     "type": "python_code",
-    "named": true,
-    "fields": {}
-  },
-  {
-    "type": "python_content",
     "named": true,
     "fields": {}
   },
@@ -527,14 +517,6 @@
     "named": false
   },
   {
-    "type": "-",
-    "named": false
-  },
-  {
-    "type": "--",
-    "named": false
-  },
-  {
     "type": "/>",
     "named": false
   },
@@ -652,6 +634,10 @@
     "named": false
   },
   {
+    "type": "hyphen",
+    "named": true
+  },
+  {
     "type": "if",
     "named": false
   },
@@ -674,6 +660,10 @@
   {
     "type": "param",
     "named": false
+  },
+  {
+    "type": "python_content",
+    "named": true
   },
   {
     "type": "separator",

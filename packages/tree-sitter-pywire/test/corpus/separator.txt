@@ -18,3 +18,90 @@ x = 1
     (tag
       (tag_name)
       (tag_name))))
+
+==================
+Dashes in Python comment
+==================
+
+---
+x = 1
+# --- event handlers ---
+y = 2
+---
+<div></div>
+
+---
+
+(source_file
+  (frontmatter
+    (separator)
+    (python_content)
+    (separator))
+  (template_section
+    (tag
+      (tag_name)
+      (tag_name))))
+
+==================
+Dashes in Python string
+==================
+
+---
+title = "--- section ---"
+---
+<div></div>
+
+---
+
+(source_file
+  (frontmatter
+    (separator)
+    (python_content)
+    (separator))
+  (template_section
+    (tag
+      (tag_name)
+      (tag_name))))
+
+==================
+Dashes in triple-quoted string at column 0
+==================
+
+---
+s = """
+---
+still in string
+"""
+---
+<div></div>
+
+---
+
+(source_file
+  (frontmatter
+    (separator)
+    (python_content)
+    (separator))
+  (template_section
+    (tag
+      (tag_name)
+      (tag_name))))
+
+==================
+Empty frontmatter
+==================
+
+---
+---
+<div></div>
+
+---
+
+(source_file
+  (frontmatter
+    (separator)
+    (separator))
+  (template_section
+    (tag
+      (tag_name)
+      (tag_name))))
