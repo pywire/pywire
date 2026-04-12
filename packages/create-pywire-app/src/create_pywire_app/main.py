@@ -159,17 +159,15 @@ class ProjectGenerator:
         }
         return descriptions.get(self.template, "")
 
-    def get_deploy_config(self) -> Optional[Dict[str, str]]:
-        """Get deployment adapter configuration."""
-        if "Fly.io (fly.toml + Dockerfile)" in self.adapters:
-            return {"adapter": "fly"}
-        if "Railway (Dockerfile)" in self.adapters:
-            return {"adapter": "railway"}
-        if "Docker (Dockerfile)" in self.adapters:
-            return {"adapter": "docker"}
-        if "Render (render.yaml)" in self.adapters:
-            return {"adapter": "render"}
-        return None
+    def get_deploy_adapters(self) -> List[str]:
+        """Get list of selected deployment adapter names."""
+        adapter_map = {
+            "Fly.io (fly.toml + Dockerfile)": "fly",
+            "Railway (Dockerfile)": "railway",
+            "Docker (Dockerfile)": "docker",
+            "Render (render.yaml)": "render",
+        }
+        return [adapter_map[a] for a in self.adapters if a in adapter_map]
 
     def generate(self) -> None:
         """Generate the complete project structure."""
@@ -212,7 +210,7 @@ class ProjectGenerator:
         context = {
             "project_name": self.project_name,
             "dependencies": self.get_dependencies(),
-            "deploy_config": self.get_deploy_config(),
+            "deploy_adapters": self.get_deploy_adapters(),
         }
         content = self.renderer.render("common/pyproject.toml.j2", context)
         (self.project_path / "pyproject.toml").write_text(content)
@@ -224,7 +222,7 @@ class ProjectGenerator:
             "project_name": self.project_name,
             "template_description": self.get_template_description(),
             "routing_style": routing_label,
-            "deploy_config": self.get_deploy_config(),
+            "deploy_adapters": self.get_deploy_adapters(),
             "redis_enabled": self.redis_enabled,
             "workers": self.workers,
         }

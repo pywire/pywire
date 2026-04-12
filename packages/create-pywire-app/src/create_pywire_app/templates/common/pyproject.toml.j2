@@ -8,10 +8,10 @@ dependencies = [
     "{{ dep }}",
 {% endfor %}
 ]
-{% if deploy_config %}
+{% if deploy_adapters %}
 
 [tool.pywire.deploy]
-adapter = "{{ deploy_config.adapter }}"
+adapters = [{% for a in deploy_adapters %}"{{ a }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 
 [tool.pywire.deploy.docker]
 port = 8000

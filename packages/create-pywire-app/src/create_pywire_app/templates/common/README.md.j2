@@ -12,10 +12,13 @@ uv run pywire dev
 ## Routing
 
 This project uses **{{ routing_style }}** routing.
-{% if deploy_config %}
+{% if deploy_adapters %}
 
 ## Deploy
-{% if deploy_config.adapter == "render" %}
+{% for adapter in deploy_adapters %}
+{% if adapter == "render" %}
+### Render
+
 This project is configured for **Render**. To deploy:
 
 1. Push your repo to GitHub.
@@ -25,14 +28,14 @@ This project is configured for **Render**. To deploy:
 > See [Render Blueprint docs](https://render.com/docs/blueprint-spec) for details.
 {% if redis_enabled %}
 
-### Redis (pre-configured)
+#### Redis (pre-configured)
 
 Your `render.yaml` includes a KV store that Render provisions automatically. The `REDIS_URL`
 environment variable is injected into your web service before it starts. PyWire auto-detects
 it for session persistence — no code changes needed.
 {% else %}
 
-### Scaling with Redis (multi-worker)
+#### Scaling with Redis (multi-worker)
 
 By default, the generated `Dockerfile` runs with `--workers {{ workers }}`. To scale beyond a single
 worker, add a Redis-backed KV store so that session state is shared across processes:
@@ -67,7 +70,9 @@ changes needed. Use `plan: standard` or higher for persistence across restarts.
 Without Redis, stick with `--workers 1` — multiple workers would split WebSocket session
 state across processes and break reactivity.
 {% endif %}
-{% elif deploy_config.adapter == "fly" %}
+{% elif adapter == "fly" %}
+### Fly.io
+
 This project is configured for **Fly.io**. To deploy:
 
 ```sh
@@ -77,12 +82,12 @@ fly deploy
 
 > Install the [Fly CLI](https://fly.io/docs/hands-on/install-flyctl/) first if you haven't already.
 
-### Single-machine deployment
+#### Single-machine deployment
 
 The generated `Dockerfile` runs with `--workers {{ workers }}`. This is the safe default because PyWire
 holds WebSocket session state in process memory.
 
-### Scaling to multiple machines
+#### Scaling to multiple machines
 
 To scale horizontally (`fly scale count N`), each machine needs access to shared session
 state. Two options:
@@ -105,7 +110,9 @@ Then install the Redis extra (`uv add pywire[redis]`) and increase workers in yo
 Dockerfile. PyWire auto-detects `REDIS_URL` — no code changes needed.
 
 **Try Option A first** for light horizontal scaling. Prefer Option B for production.
-{% elif deploy_config.adapter == "docker" %}
+{% elif adapter == "docker" %}
+### Docker
+
 This project is configured for **Docker**. To build and run:
 
 ```sh
@@ -113,7 +120,7 @@ docker build -t {{ project_name }} .
 docker run -p 8000:8000 {{ project_name }}
 ```
 
-### Scaling with Redis/Valkey
+#### Scaling with Redis/Valkey
 
 To run multiple workers or containers, set the `REDIS_URL` environment variable to share
 session state across processes:
@@ -123,7 +130,9 @@ docker run -p 8000:8000 -e REDIS_URL=redis://your-redis:6379 {{ project_name }}
 ```
 
 Install the Redis extra first: `uv add pywire[redis]`
-{% elif deploy_config.adapter == "railway" %}
+{% elif adapter == "railway" %}
+### Railway
+
 This project is configured for **Railway**. To deploy:
 
 1. Install the [Railway CLI](https://docs.railway.com/guides/cli): `npm i -g @railway/cli`
@@ -132,7 +141,7 @@ This project is configured for **Railway**. To deploy:
 
 Railway auto-detects the Dockerfile and builds your app.
 
-### Scaling with Redis/Valkey
+#### Scaling with Redis/Valkey
 
 To run multiple workers, add a Redis addon via the Railway dashboard or `railway add`.
 Railway injects `REDIS_URL` automatically. Install the Redis extra first:
@@ -144,6 +153,7 @@ uv add pywire[redis]
 Then increase `--workers` in the `CMD` line of your `Dockerfile`. PyWire auto-detects
 `REDIS_URL` — no code changes needed.
 {% endif %}
+{% endfor %}
 {% endif %}
 
 ## Workers & scaling
