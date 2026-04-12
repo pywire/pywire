@@ -43,7 +43,13 @@ class CodeGenerator:
         """Generate complete module AST."""
         self.file_path = parsed.file_path
         self._has_top_level_init = False
+        self._collected_init_hooks: List[str] = []
         self._collected_mount_hooks: List[str] = []
+        self._collected_unmount_hooks: List[str] = []
+        self._collected_before_load_hooks: List[str] = []
+        self._collected_before_update_hooks: List[str] = []
+        self._collected_after_update_hooks: List[str] = []
+        self._collected_error_hooks: List[str] = []
         self._collected_derived_hooks: List[str] = []
         self._collected_effect_hooks: List[str] = []
         self._collected_exposed_methods: List[str] = []
@@ -569,32 +575,86 @@ class CodeGenerator:
             )
 
         # Lifecycle hooks calculation
-        init_hooks = []
-        # If we found @mount decorated methods
-        if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
-            init_hooks.extend(self._collected_mount_hooks)
+        # @before_load hooks (pages only, before any page logic)
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="BEFORE_LOAD_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[
+                        ast.Constant(value=h) for h in self._collected_before_load_hooks
+                    ],
+                    ctx=ast.Load(),
+                ),
+            )
+        )
 
-        # Include standard lifecycle hooks if defined by the page
-        final_init_hooks = []
-        user_func_names = set()
-        if parsed.python_ast:
-            for node in parsed.python_ast.body:
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    user_func_names.add(node.name)
-
-        for hook in ("on_before_load", "on_load"):
-            if hook in user_func_names:
-                final_init_hooks.append(hook)
-
-        # Add mount hooks
-        if hasattr(self, "_collected_mount_hooks") and self._collected_mount_hooks:
-            final_init_hooks.extend(self._collected_mount_hooks)
-
+        # @init hooks (before first render, data fetching)
         class_body.append(
             ast.Assign(
                 targets=[ast.Name(id="INIT_HOOKS", ctx=ast.Store())],
                 value=ast.List(
-                    elts=[ast.Constant(value=h) for h in final_init_hooks],
+                    elts=[ast.Constant(value=h) for h in self._collected_init_hooks],
+                    ctx=ast.Load(),
+                ),
+            )
+        )
+
+        # @mount hooks (after first render delivered to client)
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="MOUNT_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[ast.Constant(value=h) for h in self._collected_mount_hooks],
+                    ctx=ast.Load(),
+                ),
+            )
+        )
+
+        # @unmount hooks (component removed from render tree)
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="UNMOUNT_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[ast.Constant(value=h) for h in self._collected_unmount_hooks],
+                    ctx=ast.Load(),
+                ),
+            )
+        )
+
+        # @before_update hooks (before re-render, can cancel)
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="BEFORE_UPDATE_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[
+                        ast.Constant(value=h)
+                        for h in self._collected_before_update_hooks
+                    ],
+                    ctx=ast.Load(),
+                ),
+            )
+        )
+
+        # @after_update hooks (after re-render sent to client)
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="AFTER_UPDATE_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[
+                        ast.Constant(value=h)
+                        for h in self._collected_after_update_hooks
+                    ],
+                    ctx=ast.Load(),
+                ),
+            )
+        )
+
+        # @error hooks (exception in handler or render)
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="ERROR_HOOKS", ctx=ast.Store())],
+                value=ast.List(
+                    elts=[ast.Constant(value=h) for h in self._collected_error_hooks],
                     ctx=ast.Load(),
                 ),
             )
@@ -1154,7 +1214,13 @@ class CodeGenerator:
             known_globals = set()
 
         # Collect hooks
+        self._collected_init_hooks = []
         self._collected_mount_hooks = []
+        self._collected_unmount_hooks = []
+        self._collected_before_load_hooks = []
+        self._collected_before_update_hooks = []
+        self._collected_after_update_hooks = []
+        self._collected_error_hooks = []
         self._collected_derived_hooks = []
         self._collected_effect_hooks = []
         self._collected_exposed_methods = []
@@ -1172,11 +1238,26 @@ class CodeGenerator:
                 new_decorators = []
                 for dec in node.decorator_list:
                     if isinstance(dec, ast.Name):
+                        if dec.id == "init":
+                            self._collected_init_hooks.append(node.name)
+                            continue
                         if dec.id == "mount":
                             self._collected_mount_hooks.append(node.name)
                             continue
                         if dec.id == "unmount":
-                            # Placeholder for future unmount
+                            self._collected_unmount_hooks.append(node.name)
+                            continue
+                        if dec.id == "before_load":
+                            self._collected_before_load_hooks.append(node.name)
+                            continue
+                        if dec.id == "before_update":
+                            self._collected_before_update_hooks.append(node.name)
+                            continue
+                        if dec.id == "after_update":
+                            self._collected_after_update_hooks.append(node.name)
+                            continue
+                        if dec.id == "error":
+                            self._collected_error_hooks.append(node.name)
                             continue
                         if dec.id == "derived":
                             self._collected_derived_hooks.append(node.name)

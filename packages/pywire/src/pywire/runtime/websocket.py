@@ -1,7 +1,6 @@
 """WebSocket handler for PyWire."""
 
 import asyncio
-import inspect
 import sys
 import traceback
 import uuid
@@ -360,6 +359,9 @@ class WebSocketHandler:
                 msgpack.packb({"type": "init_ack", "session_id": session_id})
             )
 
+            # Run @mount hooks after first render delivered to client
+            await page._run_hooks(page.MOUNT_HOOKS)
+
         except Exception as e:
             import traceback
 
@@ -470,12 +472,6 @@ class WebSocketHandler:
                 # This ensures _track_read is called and regions are registered
                 # so that subsequent writes in handlers trigger updates
                 await page.render(init=True)
-
-                if hasattr(page, "on_load"):
-                    if inspect.iscoroutinefunction(page.on_load):
-                        await page.on_load()
-                    else:
-                        page.on_load()
             else:
                 page = self.connection_pages[websocket]
 
@@ -508,6 +504,9 @@ class WebSocketHandler:
                 return
 
             await self._send_update_payload(websocket, update)
+
+            # Run @after_update hooks after re-render sent to client
+            await page._run_hooks(page.AFTER_UPDATE_HOOKS)
 
             # Persist session state after event
             session_id = self.session_ids.get(websocket)
@@ -623,19 +622,15 @@ class WebSocketHandler:
 
                 page._on_update = broadcast_update
 
-                # Run on_load lifecycle hook
-                if hasattr(page, "on_load"):
-                    if inspect.iscoroutinefunction(page.on_load):
-                        await page.on_load()
-                    else:
-                        page.on_load()
-
                 # Render and send body-only HTML (init=False avoids re-injecting client scripts)
                 response = await page.render(init=False)
                 html = cast(bytes, response.body).decode("utf-8")
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
                 )
+
+                # Run @mount hooks after first render delivered to client
+                await page._run_hooks(page.MOUNT_HOOKS)
                 return
 
             # Parse new URL
@@ -757,14 +752,7 @@ class WebSocketHandler:
 
             new_page._on_update = broadcast_update
 
-            # Run __on_load lifecycle hook
             try:
-                if hasattr(new_page, "on_load"):
-                    if inspect.iscoroutinefunction(new_page.on_load):
-                        await new_page.on_load()
-                    else:
-                        cast(Any, new_page).on_load()
-
                 # Render and send body-only HTML (init=False avoids re-injecting client scripts)
                 response = await new_page.render(init=False)
                 html = cast(bytes, response.body).decode("utf-8")
@@ -782,6 +770,9 @@ class WebSocketHandler:
                 await websocket.send_bytes(
                     msgpack.packb({"type": "update", "html": html})
                 )
+
+                # Run @mount hooks after first render delivered to client
+                await new_page._run_hooks(new_page.MOUNT_HOOKS)
 
                 # Persist session state after navigation
                 session_id = self.session_ids.get(websocket)
@@ -907,13 +898,6 @@ class WebSocketHandler:
                             await self._send_update_payload(_ws, update)
 
                         new_page._on_update = broadcast_update
-
-                        # Run on_load lifecycle hook (render with init=False skips it)
-                        if hasattr(new_page, "on_load"):
-                            if inspect.iscoroutinefunction(new_page.on_load):
-                                await new_page.on_load()
-                            else:
-                                new_page.on_load()
 
                         # Render with new code but preserved state (init=False avoids re-injecting client scripts)
                         response = await new_page.render(init=False)

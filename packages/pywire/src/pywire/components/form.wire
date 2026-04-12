@@ -179,7 +179,8 @@ def set_errors(errs):
 def validation_rules():
     return html5_rules
 
-def on_after_render():
+@init
+def _setup_validation_rules():
     global html5_rules
     if model is not None:
         html5_rules = extract_field_rules(model)
