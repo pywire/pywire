@@ -9,7 +9,6 @@ from .refs import (
     InputElement,
     FormElement,
     ComponentRef,
-    AnyRef,
     RefTypeError,
     RefNotBoundError,
     RefFactory,
@@ -35,6 +34,5 @@ __all__ = [
     "InputElement",
     "FormElement",
     "ComponentRef",
-    "AnyRef",
     "WireComponent",
 ]

@@ -51,7 +51,24 @@ class RefBase(WireBase):
         self._commands: List[Dict[str, Any]] = []
 
     def _bind(self, bound_type: str, ref_id: str, page: "BasePage"):
-        """Bind the ref to a specific HTML element or form."""
+        """Bind the ref to a specific HTML element or form.
+
+        If this ref was created as a generic HTMLElement (via bare ``ref()``),
+        it will be automatically upgraded to the appropriate subclass
+        (InputElement / FormElement) based on *bound_type*.
+        """
+        # Auto-upgrade: if this is a plain HTMLElement (not a subclass), swap
+        # the class to match the element it was actually bound to.
+        if type(self) is HTMLElement:
+            target_cls = _BOUND_TYPE_TO_CLASS.get(bound_type, HTMLElement)
+            if target_cls is not HTMLElement:
+                self.__class__ = target_cls  # type: ignore[assignment]
+                # Re-run the target's __init__ to set up any extra state
+                if target_cls is InputElement:
+                    self._value = None  # type: ignore[attr-defined]
+                elif target_cls is FormElement:
+                    self._data = {}  # type: ignore[attr-defined]
+
         self._bound_type = bound_type
         self._ref_id = ref_id
         self._page = page
@@ -63,7 +80,17 @@ class RefBase(WireBase):
         self._notify_write()
 
     def _bind_component(self, instance: Any, page: "BasePage"):
-        """Bind the ref to a custom component instance."""
+        """Bind the ref to a custom component instance.
+
+        If this ref was created as a plain ``HTMLElement`` (via bare ``ref()``),
+        it will be automatically upgraded to ``ComponentRef`` so that attribute
+        proxying works correctly.
+        """
+        # Auto-upgrade bare HTMLElement -> ComponentRef
+        if type(self) is HTMLElement:
+            self.__class__ = ComponentRef  # type: ignore[assignment]
+            self._component_type = None  # type: ignore[attr-defined]
+
         self._bound_type = "component"
         self._instance = instance
         self._page = page
@@ -275,11 +302,9 @@ class ComponentRef(RefBase, Generic[T]):
             return
 
         if hasattr(self, "_instance") and self._instance:
-            # print(f"DEBUG: ComponentRef.__setattr__ proxying {name} to {self._instance}") # Removed print
             setattr(self._instance, name, value)
             self._notify_write()
         else:
-            # print(f"DEBUG: ComponentRef.__setattr__ setting {name} on self (unbound)") # Removed print
             super().__setattr__(name, value)
 
     @property
@@ -308,110 +333,17 @@ class ComponentRef(RefBase, Generic[T]):
         self._queue_command("addClass", name=name)
 
 
-class AnyRef(FormElement, InputElement, ComponentRef):
-    """
-    Backward compatibility Ref that supports all operations.
-    Used when `ref()` is called without type arguments.
-    """
-
-    def __init__(self, initial_value: Any = None):
-        # Initialize bases
-        HTMLElement.__init__(self)
-        InputElement.__init__(self, initial_value)
-        FormElement.__init__(self)
-        ComponentRef.__init__(self, None)
-
-    # Re-implement guards to avoid confusion even in "Any" mode
-    def _update_data(self, data: Dict[str, Any]):
-        if self._bound_type == "form":
-            self._data = data
-        else:
-            # Maintain old behavior: mostly silent or specific error?
-            # Old code raised RefTypeError, but AnyRef combines them.
-            pass
-
-    def _update_value(self, value: Any):
-        if self._bound_type in ("input", "element", "component"):
-            self._value = value
-
-    @property
-    def value(self) -> Any:
-        self._track_read()
-        if (
-            self._bound_type == "component"
-            and self._instance
-            and hasattr(self._instance, "value")
-        ):
-            return self._instance.value
-        return self._value
-
-    @value.setter
-    def value(self, val: Any):
-        if (
-            self._bound_type == "component"
-            and self._instance
-            and hasattr(self._instance, "value")
-        ):
-            self._instance.value = val
-        else:
-            self._value = val
-        self._notify_write()
-
-    def submit(self):
-        """
-        Handle submit command.
-        Prioritizes component proxy if available,
-        otherwise falls back to native form submit.
-        """
-        print(f"DEBUG: AnyRef.submit() entered. self={self} instance={self._instance}")
-        if self._instance:
-            handler = getattr(self._instance, "submit", None)
-            exposed_methods = getattr(self._instance, "_exposed_methods", set())
-            is_exposed = ("submit" in exposed_methods) or (
-                handler is not None and getattr(handler, "_pywire_exposed", False)
-            )
-
-            print(
-                f"DEBUG: AnyRef.submit() found handler={handler} is_exposed={is_exposed}"
-            )
-            if handler is not None and is_exposed:
-                # Call proxied component method
-                print("DEBUG: AnyRef.submit() calling proxy handler")
-                res = handler()
-                import inspect
-
-                if inspect.iscoroutine(res):
-                    return res
-
-                async def _nop():
-                    pass
-
-                return _nop()
-
-        # If we have a DOM ID, use the native command to ensure data sync
-        if self._ref_id:
-            print(
-                f"DEBUG: AnyRef.submit() using native command for ref_id={self._ref_id}"
-            )
-            super().submit()
-
-            async def _nop():
-                pass
-
-            return _nop()
-
-        # Default to native command (will raise if unbound)
-        print("DEBUG: AnyRef.submit() falling back to native command (super)")
-        super().submit()
-
-        async def _nop():
-            pass
-
-        return _nop()
-
-
 # Type alias for static analysis ease
-Ref = Union[RefBase, HTMLElement, InputElement, FormElement, ComponentRef, AnyRef]
+Ref = Union[RefBase, HTMLElement, InputElement, FormElement, ComponentRef]
+
+
+# Mapping from bound_type string to the ref class that should handle it
+_BOUND_TYPE_TO_CLASS: Dict[str, Type[RefBase]] = {
+    "input": InputElement,
+    "form": FormElement,
+    "element": HTMLElement,
+    "component": ComponentRef,
+}
 
 
 class RefFactory:
@@ -445,8 +377,11 @@ class RefFactory:
 
         return _factory
 
-    def __call__(self, initial_value: Any = None) -> "AnyRef":
-        return AnyRef(initial_value)
+    def __call__(self, initial_value: Any = None) -> "HTMLElement":
+        """Create an untyped ref.  Returns an ``HTMLElement`` that will be
+        auto-upgraded to ``InputElement`` or ``FormElement`` when bound via
+        ``_bind()``."""
+        return HTMLElement()
 
 
 ref: RefFactory = RefFactory()

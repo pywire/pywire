@@ -99,7 +99,6 @@ class TestRouterRuntime(unittest.TestCase):
         self.assertEqual(len(router.routes), 1)
         self.assertEqual(router.routes[0].page_class, PageB)
 
-
     def test_get_all_patterns(self) -> None:
         router = Router()
         router.add_route("/", MockPage)

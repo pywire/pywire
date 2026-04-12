@@ -236,7 +236,9 @@ class TestRestorePageState:
         snap = {
             "attrs": {},
             "wire_tags": {},
-            "await_states": {"a1": {"status": "pending", "result": None, "error": None}},
+            "await_states": {
+                "a1": {"status": "pending", "result": None, "error": None}
+            },
         }
         restore_page_state(page, snap)
         assert page._await_states == {

@@ -1,10 +1,12 @@
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
 from pydantic import BaseModel, Field
 
 from pywire.runtime.page import BasePage
 from pywire.components import Form
 from pywire.core import ref
+from pywire.core.refs import FormElement
 
 
 class UserModel(BaseModel):
@@ -23,18 +25,28 @@ def mock_page(request):
     return page
 
 
+def _bind_form_ref_as_form(form_instance):
+    """Simulate binding the form_ref to a <form> element, triggering auto-upgrade."""
+    fr = form_instance.form_ref
+    mock_page = MagicMock(spec=BasePage)
+    mock_page._refs_by_id = {}
+    fr._bind("form", "test-form-ref", mock_page)
+    assert isinstance(fr, FormElement)
+
+
 @pytest.mark.asyncio
 async def test_form_validation_success():
     """Test that valid data calls submit."""
     submit_mock = AsyncMock()
 
     # Instantiate component
-    # Form(request, params, query, [path, url], model=..., ...)
     form = Form(None, {}, {}, model=UserModel, on_submit=submit_mock)
+
+    # Bind the form_ref so it upgrades to FormElement
+    _bind_form_ref_as_form(form)
 
     # Mock ref data
     form.form_ref._data = {"username": "testuser", "email": "test@example.com"}
-    form.form_ref._bound_type = "form"
 
     # Simulate submit
     await form.handle_submit(AsyncMock())
@@ -54,9 +66,11 @@ async def test_form_validation_failure():
 
     form = Form(None, {}, {}, model=UserModel, on_submit=submit_mock)
 
+    # Bind the form_ref so it upgrades to FormElement
+    _bind_form_ref_as_form(form)
+
     # Invalid data (username too short)
     form.form_ref._data = {"username": "ab", "email": "test@example.com"}
-    form.form_ref._bound_type = "form"
 
     await form.handle_submit(AsyncMock())
 
@@ -95,8 +109,8 @@ async def test_form_html5_rules_validation_failure():
         },
     )
 
+    _bind_form_ref_as_form(form)
     form.form_ref._data = {"username": "te", "email": "bad-email", "age": "15"}
-    form.form_ref._bound_type = "form"
     await form.handle_submit(AsyncMock())
 
     assert "username" in form.errors
@@ -121,12 +135,12 @@ async def test_form_html5_rules_validation_success():
         },
     )
 
+    _bind_form_ref_as_form(form)
     form.form_ref._data = {
         "username": "alice",
         "email": "alice@example.com",
         "age": "25",
     }
-    form.form_ref._bound_type = "form"
     await form.handle_submit(AsyncMock())
 
     assert form.errors == {}
@@ -155,6 +169,7 @@ async def test_form_html5_file_rules_validation():
         },
     )
 
+    _bind_form_ref_as_form(form)
     form.form_ref._data = {
         "avatar": {
             "content": b"0123456789",
@@ -163,7 +178,6 @@ async def test_form_html5_file_rules_validation():
             "size": 10,
         }
     }
-    form.form_ref._bound_type = "form"
     await form.handle_submit(AsyncMock())
 
     assert form.errors.avatar
