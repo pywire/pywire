@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgpack
@@ -14,11 +14,7 @@ from starlette.responses import Response
 class MockPage(BasePage):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.load_called = False
         self.success = False
-
-    async def on_load(self) -> None:
-        self.load_called = True
 
     async def test(self, **kwargs: Any) -> None:
         """Handler for 'test' events."""
@@ -86,7 +82,6 @@ class TestTransportExhaustive:
         assert sid in self.handler.sessions
         assert self.handler.sessions[sid].path == "/test"
         assert isinstance(self.handler.sessions[sid].page, MockPage)
-        assert cast(Any, self.handler.sessions[sid].page).load_called
 
     @pytest.mark.asyncio
     async def test_create_session_json_fallback(self) -> None:

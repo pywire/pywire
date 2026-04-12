@@ -13,6 +13,7 @@ import asyncio
 forecasts = wire([])
 is_loading = wire(False)
 
+@init
 async def on_load():
     # Auto-fetch on initial load
     await refresh_data()
