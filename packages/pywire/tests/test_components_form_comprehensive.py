@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Optional, List
 from unittest.mock import AsyncMock, MagicMock
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from pywire.compiler.parser import PyWireParser
 from pywire.compiler.codegen.generator import CodeGenerator
@@ -45,6 +45,44 @@ def _bind_form_ref_as_form(form_instance):
     mock_page._refs_by_id = {}
     fr._bind("form", "test-form-ref", mock_page)
     assert isinstance(fr, FormElement)
+
+
+class CustomValidatorUser(BaseModel):
+    """Model with custom @field_validator for testing."""
+
+    username: str
+    email: str
+
+    @field_validator("username")
+    @classmethod
+    def username_must_not_contain_spaces(cls, v: str) -> str:
+        if " " in v:
+            raise ValueError("Username must not contain spaces")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_corporate(cls, v: str) -> str:
+        if not v.endswith("@corp.com"):
+            raise ValueError("Only @corp.com emails are allowed")
+        return v
+
+
+class InnerAddress(BaseModel):
+    street: str
+    city: str
+
+    @field_validator("city")
+    @classmethod
+    def city_must_be_uppercase(cls, v: str) -> str:
+        if v != v.upper():
+            raise ValueError("City must be uppercase")
+        return v
+
+
+class NestedUser(BaseModel):
+    name: str
+    address: InnerAddress
 
 
 @pytest.fixture
@@ -211,3 +249,158 @@ async def test_file_upload_handling(form_setup):
     user = submit_mock.call_args[0][0]
     assert isinstance(user.profile_pic, FileUpload)
     assert user.profile_pic.filename == "test.png"
+
+
+# --- Custom Pydantic Validator Tests ---
+
+
+@pytest.fixture
+def custom_validator_form():
+    submit_mock = AsyncMock()
+    form = Form(
+        None,
+        {},
+        {},
+        model=CustomValidatorUser,
+        on_submit=submit_mock,
+    )
+    return form, submit_mock
+
+
+@pytest.mark.asyncio
+async def test_custom_field_validator_error(custom_validator_form):
+    """Test that @field_validator errors flow into ErrorNamespace with source='pydantic'."""
+    form, submit_mock = custom_validator_form
+
+    form.form_ref._data = {
+        "username": "has space",
+        "email": "user@corp.com",
+    }
+    form.form_ref._bound_type = "form"
+
+    await form.handle_submit(AsyncMock())
+
+    # Custom validator should produce an error on username
+    assert form.errors.username
+    assert form.errors.username.source == "pydantic"
+    assert "spaces" in form.errors.username.message.lower()
+    submit_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_custom_field_validator_success(custom_validator_form):
+    """Test that valid data passes custom @field_validator."""
+    form, submit_mock = custom_validator_form
+
+    form.form_ref._data = {
+        "username": "validuser",
+        "email": "user@corp.com",
+    }
+    form.form_ref._bound_type = "form"
+
+    await form.handle_submit(AsyncMock())
+
+    assert form.errors == {}
+    submit_mock.assert_called_once()
+    user = submit_mock.call_args[0][0]
+    assert isinstance(user, CustomValidatorUser)
+    assert user.username == "validuser"
+
+
+@pytest.mark.asyncio
+async def test_custom_validator_email_error(custom_validator_form):
+    """Test that custom email validator produces a pydantic error."""
+    form, submit_mock = custom_validator_form
+
+    form.form_ref._data = {
+        "username": "validuser",
+        "email": "user@gmail.com",
+    }
+    form.form_ref._bound_type = "form"
+
+    await form.handle_submit(AsyncMock())
+
+    assert form.errors.email
+    assert form.errors.email.source == "pydantic"
+    assert "@corp.com" in form.errors.email.message
+    submit_mock.assert_not_called()
+
+
+# --- Nested Model Error Dot-Notation Tests ---
+
+
+@pytest.fixture
+def nested_model_form():
+    submit_mock = AsyncMock()
+    form = Form(
+        None,
+        {},
+        {},
+        model=NestedUser,
+        on_submit=submit_mock,
+    )
+    return form, submit_mock
+
+
+@pytest.mark.asyncio
+async def test_nested_model_error_dot_notation(nested_model_form):
+    """Test that nested model validation errors use dot-notation field names."""
+    form, submit_mock = nested_model_form
+
+    form.form_ref._data = {
+        "name": "Alice",
+        "address.street": "123 Main St",
+        "address.city": "lowercase",  # Custom validator requires uppercase
+    }
+    form.form_ref._bound_type = "form"
+
+    await form.handle_submit(AsyncMock())
+
+    # Nested error should be accessible via dot notation
+    assert form.errors.address
+    assert form.errors.address.city
+    assert form.errors.address.city.source == "pydantic"
+    assert "uppercase" in form.errors.address.city.message.lower()
+    submit_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_nested_model_missing_required_field(nested_model_form):
+    """Test that missing nested required fields produce dot-notation errors."""
+    form, submit_mock = nested_model_form
+
+    form.form_ref._data = {
+        "name": "Alice",
+        "address.street": "123 Main St",
+        # address.city is missing
+    }
+    form.form_ref._bound_type = "form"
+
+    await form.handle_submit(AsyncMock())
+
+    assert form.errors.address
+    assert form.errors.address.city
+    assert form.errors.address.city.source == "pydantic"
+    submit_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_nested_model_success(nested_model_form):
+    """Test that valid nested model data passes validation."""
+    form, submit_mock = nested_model_form
+
+    form.form_ref._data = {
+        "name": "Alice",
+        "address.street": "123 Main St",
+        "address.city": "NYC",
+    }
+    form.form_ref._bound_type = "form"
+
+    await form.handle_submit(AsyncMock())
+
+    assert form.errors == {}
+    submit_mock.assert_called_once()
+    user = submit_mock.call_args[0][0]
+    assert isinstance(user, NestedUser)
+    assert user.address.street == "123 Main St"
+    assert user.address.city == "NYC"

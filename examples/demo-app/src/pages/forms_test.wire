@@ -2,11 +2,86 @@
 
 ---
 import json
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List, Any
 from pywire.components import Form, FileInput
 from pywire.runtime.files import FileUpload
 from pywire import ref
+
+# -------------------------------------------------------
+# Section A: Native <form> with ref
+# -------------------------------------------------------
+native_form = ref()
+native_result = wire("")
+
+async def handle_native_submit(event):
+    data = native_form.data
+    native_result.value = json.dumps(data, indent=2)
+
+def reset_native():
+    native_form.reset()
+    native_result.value = ""
+
+# -------------------------------------------------------
+# Section C: Custom Pydantic validator
+# -------------------------------------------------------
+class RegistrationModel(BaseModel):
+    username: str
+    email: str
+
+    @field_validator("username")
+    @classmethod
+    def username_no_spaces(cls, v: str) -> str:
+        if " " in v:
+            raise ValueError("Username must not contain spaces")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_corporate(cls, v: str) -> str:
+        if not v.endswith("@corp.com"):
+            raise ValueError("Only @corp.com emails are allowed")
+        return v
+
+custom_form_ref = ref()
+custom_success = wire("")
+
+async def handle_custom_submit(user: RegistrationModel):
+    custom_success.value = f"Registered: {user.username} ({user.email})"
+
+def reset_custom():
+    custom_success.value = ""
+
+# -------------------------------------------------------
+# Section D: Nested model
+# -------------------------------------------------------
+class ContactAddress(BaseModel):
+    street: str
+    city: str
+
+    @field_validator("city")
+    @classmethod
+    def city_uppercase(cls, v: str) -> str:
+        if v != v.upper():
+            raise ValueError("City must be uppercase (e.g. NYC, LA)")
+        return v
+
+class ContactModel(BaseModel):
+    name: str
+    address: ContactAddress
+
+nested_form_ref = ref()
+nested_success = wire("")
+
+async def handle_nested_submit(contact: ContactModel):
+    nested_success.value = f"Contact: {contact.name}, {contact.address.street}, {contact.address.city}"
+
+def reset_nested():
+    nested_success.value = ""
+
+# -------------------------------------------------------
+# Existing state (Section B and beyond)
+# -------------------------------------------------------
 
 # State
 success_message = wire("")
@@ -223,7 +298,127 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
 <body>
     <main class="container">
         <h1>Form Validation Demo</h1>
-        
+
+        <!-- =============================================================
+             Section A: Native <form> with ref
+             Use native forms for simple, HTML-first scenarios where you
+             don't need model binding or automatic validation. The ref
+             gives you .data (dict), .reset(), and .submit() — nothing more.
+             ============================================================= -->
+        <h2>A) Native Form (ref only, no model binding)</h2>
+        <form $ref={native_form} @submit.prevent={handle_native_submit}>
+            <label>
+                Username
+                <input name="username" required />
+            </label>
+            <label>
+                Email
+                <input name="email" type="email" required />
+            </label>
+            <button type="submit">Submit</button>
+            <button type="button" @click={reset_native}>Reset</button>
+        </form>
+        <div $if={native_result}>
+            <article>
+                <header>Native form data:</header>
+                <pre>{native_result}</pre>
+            </article>
+        </div>
+
+        <hr>
+
+        <!-- =============================================================
+             Section B: PyWire <Form> with Pydantic model binding
+             Use <Form model={...}> when you want automatic HTML5 +
+             Pydantic dual validation, error display via ref.errors, and
+             typed payloads in your submit handler.
+             ============================================================= -->
+        <h2>B) PyWire Form (model binding + validation)</h2>
+        <!-- This is the existing "Pydantic Integration Test" section below -->
+
+        <hr>
+
+        <!-- =============================================================
+             Section C: Custom @field_validator
+             Pydantic custom validators (things HTML5 can't express) are
+             caught automatically. Errors flow into ErrorNamespace with
+             source="pydantic".
+             ============================================================= -->
+        <h2>C) Custom Pydantic Validators</h2>
+        <p><em>username</em> rejects spaces; <em>email</em> must end with @corp.com.</p>
+        <div $if={custom_success}>
+            <article class="success">
+                <header>Registration Success!</header>
+                {custom_success}
+                <footer><button @click={reset_custom}>Reset</button></footer>
+            </article>
+        </div>
+
+        <Form model={RegistrationModel} @submit={handle_custom_submit} $ref={custom_form_ref} $if={not custom_success}>
+            <label>
+                Username (no spaces)
+                <input name="username" required
+                       aria-invalid={True if custom_form_ref.errors.username else False}>
+                <small class="error" $if={custom_form_ref.errors.username}>{custom_form_ref.errors.username.message}</small>
+            </label>
+            <label>
+                Email (@corp.com only)
+                <input name="email" type="email" required
+                       aria-invalid={True if custom_form_ref.errors.email else False}>
+                <small class="error" $if={custom_form_ref.errors.email}>{custom_form_ref.errors.email.message}</small>
+            </label>
+            <button type="submit">Register</button>
+        </Form>
+
+        <hr>
+
+        <!-- =============================================================
+             Section D: Nested Pydantic Model
+             Nested models use dot-notation field names in the HTML
+             (name="address.street") and errors are accessible via
+             ref.errors.address.street.message.
+             ============================================================= -->
+        <h2>D) Nested Model (dot-notation errors)</h2>
+        <p><em>address.city</em> has a custom validator requiring uppercase.</p>
+        <div $if={nested_success}>
+            <article class="success">
+                <header>Contact Saved!</header>
+                {nested_success}
+                <footer><button @click={reset_nested}>Reset</button></footer>
+            </article>
+        </div>
+
+        <Form model={ContactModel} @submit={handle_nested_submit} $ref={nested_form_ref} $if={not nested_success}>
+            <label>
+                Name
+                <input name="name" required
+                       aria-invalid={True if nested_form_ref.errors.name else False}>
+                <small class="error" $if={nested_form_ref.errors.name}>{nested_form_ref.errors.name.message}</small>
+            </label>
+            <fieldset>
+                <legend>Address (nested model)</legend>
+                <label>
+                    Street
+                    <input name="address.street" required
+                           aria-invalid={True if nested_form_ref.errors.address.street else False}>
+                    <small class="error" $if={nested_form_ref.errors.address.street}>{nested_form_ref.errors.address.street.message}</small>
+                </label>
+                <label>
+                    City (must be UPPERCASE)
+                    <input name="address.city" required
+                           aria-invalid={True if nested_form_ref.errors.address.city else False}>
+                    <small class="error" $if={nested_form_ref.errors.address.city}>{nested_form_ref.errors.address.city.message}</small>
+                </label>
+            </fieldset>
+            <button type="submit">Save Contact</button>
+        </Form>
+
+        <hr>
+
+        <!-- Existing demos continue below -->
+
+        <h2>E) HTML5 Constraints (existing demo)</h2>
+
         <div $if={success_message}>
             <article class="success">
                 <header>Success!</header>
@@ -306,7 +501,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
         
         <hr>
         
-        <h2>Pydantic Integration Test</h2>
+        <h2>F) Pydantic Integration Test</h2>
         <div $if={pydantic_success}>
             <article class="success">
                 <header>Pydantic Success!</header>
