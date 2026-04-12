@@ -1,0 +1,50 @@
+<style>
+#v04-reconnect-panel {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.15);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+}
+
+#v04-reconnect-box {
+  background: white;
+  padding: 2rem 3rem;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  border: 2px solid #6366f1;
+  font-family: system-ui, sans-serif;
+}
+
+#v04-reconnect-box h2 {
+  color: #6366f1;
+  margin-top: 0;
+}
+
+#v04-reconnect-box .spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid #e0e7ff;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 1rem auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+</style>
+
+<div id="v04-reconnect-panel">
+  <div id="v04-reconnect-box">
+    <h2>Reconnecting…</h2>
+    <div class="spinner"></div>
+    <p>v0.4 custom reconnect overlay</p>
+    <p style="font-size:.85rem;color:#6b7280">Attempting to restore connection</p>
+  </div>
+</div>

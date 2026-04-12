@@ -1,0 +1,77 @@
+!path "/lifecycle"
+
+---
+from dataclasses import dataclass, field
+
+@dataclass
+class LogEntry:
+    phase: str
+    message: str
+
+logs = wire([])
+update_count = wire(0)
+
+@before_load
+def check_auth(self):
+    self.logs.append(LogEntry("@before_load", "Ran before any page logic"))
+
+@init
+def init_data(self):
+    self.logs.append(LogEntry("@init", "First @init: data setup complete"))
+
+@init
+def init_data2(self):
+    self.logs.append(LogEntry("@init (2)", "Second @init hook called"))
+
+@mount
+def on_mount(self):
+    # @mount fires AFTER the initial HTML is sent to the client
+    self.logs.append(LogEntry("@mount", "AFTER first render was sent to client"))
+
+@before_update
+def guard(self):
+    self.logs.append(LogEntry("@before_update", f"About to re-render (update #{update_count.value})"))
+    return True
+
+@after_update
+def after(self):
+    self.logs.append(LogEntry("@after_update", f"Re-render #{update_count.value} sent to client"))
+
+def trigger_update(self):
+    update_count.value += 1
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lifecycle Hooks — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    .log { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem; font-family: monospace; }
+    .log li { margin: .3rem 0; }
+    .phase { color: #7c3aed; font-weight: bold; }
+    button { padding: .5rem 1.2rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>Lifecycle Hooks</h1>
+  <p>Expected order on load: <strong>@before_load → @init → @init(2) → render → @mount</strong></p>
+  <p>Expected order on update: <strong>@before_update → render → @after_update</strong></p>
+
+  <div class="log">
+    <h3>Execution Log (id="lifecycle-log")</h3>
+    <ul id="lifecycle-log">
+      <li $for={entry in logs}>
+        <span class="phase">[{entry.phase}]</span> {entry.message}
+      </li>
+    </ul>
+  </div>
+
+  <div style="margin-top:1rem">
+    <button id="trigger-btn" @click={trigger_update}>Trigger Update ({update_count})</button>
+  </div>
+</body>
+</html>

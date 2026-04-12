@@ -1,0 +1,47 @@
+!path "/nav_events_b"
+
+---
+arrived = "Page B loaded"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nav Events — Page B — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem; margin: 1rem 0; font-family: monospace; }
+    .label { font-weight: bold; color: #7c3aed; font-family: system-ui; }
+    a { color: #6366f1; text-decoration: none; }
+    #nav-proof { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Page B</h1>
+  <p>{arrived}</p>
+
+  <div id="nav-proof">
+    <div class="card">
+      <div class="label">pywire:beforenavigate detail:</div>
+      <div id="beforenav-detail">(reading from sessionStorage…)</div>
+    </div>
+    <div class="card">
+      <div class="label">pywire:navigate detail:</div>
+      <div id="nav-detail">(reading from sessionStorage…)</div>
+    </div>
+  </div>
+
+  <a href="/nav_events">← Back to Page A (SPA)</a>
+
+  <script>
+    // Read the event details captured by Page A's listeners.
+    var beforeNav = sessionStorage.getItem('pw_beforenav');
+    var nav = sessionStorage.getItem('pw_nav');
+    document.getElementById('beforenav-detail').textContent =
+      beforeNav ? beforeNav : '(not found — did you navigate via SPA link?)';
+    document.getElementById('nav-detail').textContent =
+      nav ? nav : '(not found — did you navigate via SPA link?)';
+  </script>
+</body>
+</html>

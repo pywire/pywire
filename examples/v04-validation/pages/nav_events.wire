@@ -1,0 +1,43 @@
+!path "/nav_events"
+
+---
+page_note = "Click the SPA link below to navigate to Page B. Events will be captured and shown there."
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nav Events — Page A — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    a.spa-link { display: inline-block; padding: .5rem 1.2rem; background: #6366f1; color: white; border-radius: 4px; text-decoration: none; margin-top: 1rem; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+    code { background: #f3f4f6; padding: .1rem .3rem; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back (full reload)</a>
+  <h1>SPA Navigation Events — Page A</h1>
+  <p>{page_note}</p>
+  <p>
+    This page installs listeners for <code>pywire:beforenavigate</code> and
+    <code>pywire:navigate</code>. Both write their <code>event.detail</code> to
+    <code>sessionStorage</code> so Page B can display them.
+  </p>
+
+  <a class="spa-link" id="spa-link" href="/nav_events_b">Go to Page B (SPA link)</a>
+
+  <script>
+    // Capture nav events and stash in sessionStorage for Page B to read.
+    document.addEventListener('pywire:beforenavigate', function(e) {
+      sessionStorage.setItem('pw_beforenav', JSON.stringify(e.detail));
+      console.log('[nav-events] pywire:beforenavigate', e.detail);
+    });
+    document.addEventListener('pywire:navigate', function(e) {
+      sessionStorage.setItem('pw_nav', JSON.stringify(e.detail));
+      console.log('[nav-events] pywire:navigate', e.detail);
+    });
+  </script>
+</body>
+</html>
