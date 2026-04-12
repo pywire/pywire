@@ -8,6 +8,7 @@ from typing import Any, Optional
 import rich.panel
 import rich_click as click
 from pywire import __version__
+from pywire.cli.config import config_command
 from rich.console import Console
 
 console = Console()
@@ -54,7 +55,11 @@ click.rich_click.COMMAND_GROUPS = {
         {
             "name": "Commands",
             "commands": ["dev", "run", "build", "deploy"],
-        }
+        },
+        {
+            "name": "Configuration",
+            "commands": ["config"],
+        },
     ]
 }
 
@@ -204,6 +209,9 @@ def cli() -> None:
     pass
 
 
+cli.add_command(config_command)
+
+
 @cli.command()
 @click.argument("app", required=False)
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
@@ -211,7 +219,7 @@ def cli() -> None:
 @click.option("--ssl-keyfile", default=None, help="SSL key file")
 @click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.option("--env-file", default=None, help="Environment configuration file")
-@click.option("--no-tui", is_flag=True, help="Disable TUI dashboard")
+@click.option("--tui/--no-tui", default=None, help="Enable/disable TUI dashboard")
 def dev(
     app: Optional[str],
     host: str,
@@ -219,16 +227,24 @@ def dev(
     ssl_keyfile: Optional[str],
     ssl_certfile: Optional[str],
     env_file: Optional[str],
-    no_tui: bool,
+    tui: Optional[bool],
 ) -> None:
     """Start development server."""
     import asyncio
 
+    from pywire.cli.config import get_setting
     from pywire.runtime.dev_server import run_dev_server
+
+    # Resolve TUI setting: CLI flag > settings.toml > default (False)
+    if tui is None:
+        saved = get_setting("tui")
+        use_tui = saved if isinstance(saved, bool) else False
+    else:
+        use_tui = tui
 
     if not app:
         app = _discover_app_str()
-        if no_tui:
+        if not use_tui:
             console.print(f"🔍 Auto-discovered app: [cyan]{app}[/]")
 
     # Verify import
@@ -238,12 +254,12 @@ def dev(
     original_port = port
     port = _find_available_port(host, port)
 
-    if port != original_port and no_tui:
+    if port != original_port and not use_tui:
         console.print(
             f"⚠️  Port {original_port} is busy, using [bold cyan]{port}[/] instead."
         )
 
-    if no_tui:
+    if not use_tui:
         console.print(
             f"🚀 Starting pywire dev server on [link=http://{host}:{port}]http://{host}:{port}[/link]"
         )
