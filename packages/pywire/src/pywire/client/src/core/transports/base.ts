@@ -42,7 +42,7 @@ export interface Command {
 }
 
 export interface ServerMessage {
-  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace' | 'init' | 'navigate' | 'init_ack'
+  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace' | 'init' | 'navigate' | 'init_ack' | 'ping'
   html?: string
   regions?: Array<{ region: string; html: string }>
   error?: string

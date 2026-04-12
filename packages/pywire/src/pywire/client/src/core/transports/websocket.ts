@@ -43,6 +43,11 @@ export class WebSocketTransport extends BaseTransport {
         this.socket.onmessage = (event: MessageEvent) => {
           try {
             const msg = decode(event.data) as ServerMessage
+            if (msg.type === 'ping') {
+              // Respond to server keep-alive ping with pong
+              this.send({ type: 'pong' })
+              return
+            }
             this.notifyHandlers(msg)
           } catch (e) {
             logger.error('PyWire: Error parsing WebSocket message', e)
