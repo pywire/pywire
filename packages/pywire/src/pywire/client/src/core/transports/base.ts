@@ -53,6 +53,7 @@ export interface ServerMessage {
   path?: string
   commands?: Command[]
   session_id?: string
+  session_restored?: boolean
 }
 
 export interface NavigateMessage {

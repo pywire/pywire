@@ -109,6 +109,42 @@ class TestMemorySessionStore:
         assert await store.exists("s3")
 
     @pytest.mark.asyncio
+    async def test_get_extends_ttl(self, store):
+        """get() should reset the TTL to the original value, keeping active sessions alive."""
+        await store.set("s1", {"x": 1}, ttl=60)
+        original_expiry = store._expiry["s1"]
+
+        # Simulate time passing (30 seconds)
+        store._expiry["s1"] = time.monotonic() + 30  # 30s remaining
+
+        await store.get("s1")
+
+        # After get(), expiry should be reset to full 60s from now
+        new_expiry = store._expiry["s1"]
+        assert new_expiry > original_expiry - 1  # approximately now + 60s
+        assert new_expiry >= time.monotonic() + 59  # at least 59s from now
+
+    @pytest.mark.asyncio
+    async def test_get_expired_does_not_extend(self, store):
+        """get() on an expired session returns None and does not extend TTL."""
+        await store.set("s1", {"x": 1}, ttl=60)
+        store._expiry["s1"] = time.monotonic() - 1  # Force expire
+
+        result = await store.get("s1")
+        assert result is None
+        assert "s1" not in store._data
+        assert "s1" not in store._expiry
+        assert "s1" not in store._ttl
+
+    @pytest.mark.asyncio
+    async def test_get_no_ttl_does_not_add_expiry(self, store):
+        """get() on a session without TTL does not add an expiry."""
+        await store.set("s1", {"x": 1})  # No TTL
+        result = await store.get("s1")
+        assert result == {"x": 1}
+        assert "s1" not in store._expiry
+
+    @pytest.mark.asyncio
     async def test_complex_data(self, store):
         data = {
             "attrs": {"count": 5, "items": [1, 2, 3], "name": "test"},

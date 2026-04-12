@@ -35,6 +35,7 @@ class RedisSessionStore:
         self._url = url
         self._prefix = prefix
         self._redis: Any = None
+        self._ttl: Dict[str, int] = {}  # session_id -> original TTL in seconds
 
     async def connect(self) -> None:
         """Initialize the Redis connection pool."""
@@ -54,9 +55,14 @@ class RedisSessionStore:
     async def get(self, session_id: str) -> Optional[Dict[str, Any]]:
         if self._redis is None:
             await self.connect()
-        data = await self._redis.get(self._key(session_id))
+        key = self._key(session_id)
+        data = await self._redis.get(key)
         if data is None:
             return None
+        # Touch TTL on read so active sessions don't expire
+        original_ttl = self._ttl.get(session_id)
+        if original_ttl:
+            await self._redis.expire(key, original_ttl)
         return msgpack.unpackb(data, raw=False)
 
     async def set(
@@ -68,6 +74,7 @@ class RedisSessionStore:
         key = self._key(session_id)
         if ttl:
             await self._redis.setex(key, ttl, packed)
+            self._ttl[session_id] = ttl
         else:
             await self._redis.set(key, packed)
 
@@ -75,6 +82,7 @@ class RedisSessionStore:
         if self._redis is None:
             await self.connect()
         await self._redis.delete(self._key(session_id))
+        self._ttl.pop(session_id, None)
 
     async def exists(self, session_id: str) -> bool:
         if self._redis is None:
@@ -91,4 +99,5 @@ class RedisSessionStore:
         if self._redis is not None:
             await self._redis.aclose()
             self._redis = None
+            self._ttl.clear()
             logger.info("Closed Redis session store connection")
