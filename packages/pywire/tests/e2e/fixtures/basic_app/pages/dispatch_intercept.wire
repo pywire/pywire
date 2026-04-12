@@ -1,0 +1,71 @@
+---
+from pywire import ref, wire, dispatch
+
+# Refs
+target_div = ref()
+
+# State
+intercept_result = wire("")
+dom_dispatch_result = wire("")
+counter = wire(0)
+
+def fire_intercepted(self):
+    """Dispatch with bubbles=False to a ref that has a handler — should be intercepted server-side."""
+    counter.value += 1
+    target_div.dispatch("server-handled", detail={"n": counter.value}, bubbles=False)
+
+def fire_dom(self):
+    """Dispatch with bubbles=True — should go through the DOM, not intercepted."""
+    counter.value += 1
+    target_div.dispatch("dom-handled", detail={"n": counter.value}, bubbles=True)
+
+def on_server_handled(self, detail=None):
+    """Handler registered on the target ref — should be called directly by the server."""
+    n = detail.get("n", "?") if detail else "?"
+    intercept_result.value = f"intercepted:n={n}"
+
+def on_dom_handled(self):
+    """Handler for the bubbling event — reached via DOM round trip.
+
+    Note: CustomEvent.detail is NOT preserved when pywire re-intercepts
+    the DOM event — the event handler extracts ref/field data from the
+    element, not e.detail. So we just verify the handler was called.
+    """
+    dom_dispatch_result.value = "dom:called"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dispatch Intercept Test</title>
+</head>
+<body>
+  <h1 id="title">Dispatch Intercept</h1>
+
+  <div $ref={target_div} id="target"
+       @server-handled={on_server_handled}
+       @dom-handled={on_dom_handled}>
+    Target element
+  </div>
+
+  <button id="fire-intercepted" @click={fire_intercepted}>Fire Intercepted</button>
+  <button id="fire-dom" @click={fire_dom}>Fire DOM</button>
+
+  <div id="intercept-result">{intercept_result}</div>
+  <div id="dom-result">{dom_dispatch_result}</div>
+  <div id="counter">{counter}</div>
+  <div id="js-listener-proof">waiting</div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var target = document.getElementById('target');
+      if (target) {
+        target.addEventListener('server-handled', function(e) {
+          document.getElementById('js-listener-proof').textContent =
+            'js-heard:n=' + (e.detail && e.detail.n);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
