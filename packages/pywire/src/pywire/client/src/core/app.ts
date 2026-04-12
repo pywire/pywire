@@ -49,6 +49,12 @@ export class PyWireApp {
   protected staticPath: string = '/static'
   protected isConnected = false
   protected sessionId: string | null = null
+  /**
+   * Tracks the target path of a pending PJAX navigation.
+   * Set before sending a relocate message, cleared after the resulting
+   * update is applied so we can dispatch `pywire:navigate`.
+   */
+  protected pendingNavigationPath: string | null = null
 
   constructor(config: Partial<PyWireConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -183,9 +189,18 @@ export class PyWireApp {
    * Setup SPA navigation for sibling paths.
    */
   protected setupSPANavigation(): void {
-    // Handle browser back/forward
+    // Handle browser back/forward — dispatch beforenavigate then request new page
     window.addEventListener('popstate', () => {
-      this.sendRelocate(window.location.pathname + window.location.search)
+      const targetPath = window.location.pathname + window.location.search
+      // For popstate the browser has already updated the URL, so "from" is unknown.
+      // We pass the target as both from/to; listeners should use `to` primarily.
+      document.dispatchEvent(
+        new CustomEvent('pywire:beforenavigate', {
+          bubbles: true,
+          detail: { from: targetPath, to: targetPath },
+        })
+      )
+      this.sendRelocate(targetPath)
     })
 
     if (this.siblingPaths.length === 0 && !this.pjaxEnabled) return
@@ -235,6 +250,13 @@ export class PyWireApp {
 
   /**
    * Navigate to a path using SPA navigation.
+   *
+   * Dispatches `pywire:beforenavigate` on `document` before the navigation
+   * fetch starts. Listeners can use this to tear down page-specific state
+   * (e.g., remove global event listeners, cancel timers).
+   *
+   * After the server responds and the DOM is updated, `pywire:navigate` is
+   * dispatched (see {@link handleMessage}).
    */
   navigateTo(path: string): void {
     if (!this.isConnected) {
@@ -242,14 +264,35 @@ export class PyWireApp {
       return
     }
 
+    const currentPath = window.location.pathname + window.location.search
+
+    /**
+     * **pywire:beforenavigate** — fired on `document` before a PJAX navigation fetch.
+     *
+     * @detail.from  The path being navigated away from.
+     * @detail.to    The target path.
+     *
+     * Use cases:
+     * - Remove global event listeners (resize, scroll, keydown) added by the current page.
+     * - Cancel pending timers or animation frames.
+     * - Persist unsaved form data to sessionStorage.
+     */
+    document.dispatchEvent(
+      new CustomEvent('pywire:beforenavigate', {
+        bubbles: true,
+        detail: { from: currentPath, to: path },
+      })
+    )
+
     history.pushState({}, '', path)
     this.sendRelocate(path)
   }
 
   /**
-   * Send relocate message to server.
+   * Send relocate message to server and mark a navigation as pending.
    */
   protected sendRelocate(path: string): void {
+    this.pendingNavigationPath = path
     const message: RelocateMessage = {
       type: 'relocate',
       path,
@@ -275,7 +318,12 @@ export class PyWireApp {
    */
   protected async handleMessage(msg: ServerMessage): Promise<void> {
     switch (msg.type) {
-      case 'update':
+      case 'update': {
+        // Capture and clear pending navigation before applying the update,
+        // so we can dispatch pywire:navigate after the DOM settles.
+        const navPath = this.pendingNavigationPath
+        this.pendingNavigationPath = null
+
         if (msg.commands && msg.commands.length > 0) {
           msg.commands.forEach((cmd: Command) => {
             if (cmd.cmd === 'set_cookie' || cmd.cmd === 'delete_cookie') {
@@ -294,7 +342,35 @@ export class PyWireApp {
           this.updater.update(msg.html)
           this.eventHandler.refreshListeners()
         }
+
+        // If this update was triggered by a PJAX navigation (relocate),
+        // dispatch the post-navigation event after morphdom + scripts complete.
+        if (navPath) {
+          /**
+           * **pywire:navigate** — fired on `document` after a PJAX navigation
+           * completes and the new page is fully rendered (morphdom applied,
+           * scripts executed).
+           *
+           * Unlike `pywire:postupdate`, which fires on ANY DOM update (including
+           * partial state/region updates), this event fires only for full-page
+           * SPA navigations.
+           *
+           * @detail.path  The path that was navigated to.
+           *
+           * Use cases:
+           * - Analytics pageview tracking (e.g., `gtag('event', 'page_view', ...)`).
+           * - Scroll-to-top or focus management after navigation.
+           * - Initializing page-specific libraries or widgets.
+           */
+          document.dispatchEvent(
+            new CustomEvent('pywire:navigate', {
+              bubbles: true,
+              detail: { path: navPath },
+            })
+          )
+        }
         break
+      }
 
       case 'reload':
         logger.log('PyWire: Reloading...')
