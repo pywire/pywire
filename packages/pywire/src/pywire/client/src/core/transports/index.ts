@@ -10,6 +10,7 @@ export {
   StackFrame,
   Command,
   RefSyncMessage,
+  RefPropertySyncMessage,
 } from './base'
 export { WebSocketTransport } from './websocket'
 export { WebTransportTransport } from './webtransport'

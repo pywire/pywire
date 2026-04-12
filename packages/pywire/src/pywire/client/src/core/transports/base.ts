@@ -71,7 +71,12 @@ export interface ConsoleMessage {
   lines: string[]
 }
 
-export type ClientMessage = EventMessage | RelocateMessage | RefSyncMessage | InitClientMessage
+export type ClientMessage =
+  | EventMessage
+  | RelocateMessage
+  | RefSyncMessage
+  | RefPropertySyncMessage
+  | InitClientMessage
 
 export interface InitClientMessage {
   type: 'init'
@@ -94,6 +99,13 @@ export interface RelocateMessage {
 export interface RefSyncMessage {
   type: 'ref_sync'
   refId: string
+  value: unknown
+}
+
+export interface RefPropertySyncMessage {
+  type: 'ref_sync'
+  refId: string
+  property: string
   value: unknown
 }
 

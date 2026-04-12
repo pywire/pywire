@@ -51,7 +51,17 @@ class RefBase(WireBase):
         self._commands: List[Dict[str, Any]] = []
 
     def _bind(self, bound_type: str, ref_id: str, page: "BasePage"):
-        """Bind the ref to a specific HTML element or form."""
+        """Bind the ref to a specific HTML element or form.
+
+        For AnyRef instances, auto-upgrades to a specialized class when the
+        bound_type has an entry in _BOUND_TYPE_TO_CLASS (e.g. media, dialog, canvas).
+        """
+        # Auto-upgrade AnyRef to specialized class when appropriate
+        if type(self) is AnyRef and bound_type in _BOUND_TYPE_TO_CLASS:
+            target_cls = _BOUND_TYPE_TO_CLASS[bound_type]
+            self.__class__ = target_cls
+            target_cls.__init__(self)  # type: ignore[misc]
+
         self._bound_type = bound_type
         self._ref_id = ref_id
         self._page = page
@@ -308,6 +318,103 @@ class ComponentRef(RefBase, Generic[T]):
         self._queue_command("addClass", name=name)
 
 
+class MediaElement(HTMLElement):
+    """Ref for <audio> and <video> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._current_time: float = 0.0
+        self._paused: bool = True
+        self._duration: float = 0.0
+
+    def play(self) -> None:
+        """Queue a play command for the client."""
+        self._queue_command("play")
+
+    def pause(self) -> None:
+        """Queue a pause command for the client."""
+        self._queue_command("pause")
+
+    def load(self) -> None:
+        """Queue a load command for the client."""
+        self._queue_command("load")
+
+    @property
+    def current_time(self) -> float:
+        return self._current_time
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @property
+    def duration(self) -> float:
+        return self._duration
+
+    def _update_media_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs media state."""
+        if "currentTime" in state:
+            self._current_time = float(state["currentTime"])
+        if "paused" in state:
+            self._paused = bool(state["paused"])
+        if "duration" in state:
+            self._duration = float(state["duration"])
+
+
+class DialogElement(HTMLElement):
+    """Ref for <dialog> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._open: bool = False
+
+    def show_modal(self) -> None:
+        """Queue a showModal command for the client."""
+        self._queue_command("showModal")
+
+    def close(self, return_value: str = "") -> None:
+        """Queue a close command for the client."""
+        self._queue_command("close", returnValue=return_value)
+
+    @property
+    def open(self) -> bool:
+        return self._open
+
+    def _update_dialog_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs dialog state."""
+        if "open" in state:
+            self._open = bool(state["open"])
+
+
+class CanvasElement(HTMLElement):
+    """Ref for <canvas> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._data_url: Optional[str] = None
+
+    def request_data_url(self, type: str = "image/png") -> None:
+        """Queue a requestDataUrl command for the client."""
+        self._queue_command("requestDataUrl", type=type)
+
+    @property
+    def data_url(self) -> Optional[str]:
+        return self._data_url
+
+    def _update_canvas_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs canvas state."""
+        if "dataUrl" in state:
+            self._data_url = state["dataUrl"]
+
+
+# Mapping from bound_type string to specialized ref class for auto-upgrade
+_BOUND_TYPE_TO_CLASS: Dict[str, type] = {
+    "media": MediaElement,
+    "dialog": DialogElement,
+    "canvas": CanvasElement,
+}
+
+
 class AnyRef(FormElement, InputElement, ComponentRef):
     """
     Backward compatibility Ref that supports all operations.
@@ -428,6 +535,15 @@ class RefFactory:
 
     @overload
     def __getitem__(self, item: Type[FormElement]) -> Type[FormElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[MediaElement]) -> Type[MediaElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[DialogElement]) -> Type[DialogElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[CanvasElement]) -> Type[CanvasElement]: ...
 
     @overload
     def __getitem__(self, item: Type[HTMLElement]) -> Type[HTMLElement]: ...

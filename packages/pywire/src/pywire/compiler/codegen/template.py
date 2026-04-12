@@ -2792,6 +2792,12 @@ class TemplateCodegen:
                     bound_type = "form"
                 elif tag_lower in ("input", "select", "textarea"):
                     bound_type = "input"
+                elif tag_lower in ("audio", "video"):
+                    bound_type = "media"
+                elif tag_lower == "dialog":
+                    bound_type = "dialog"
+                elif tag_lower == "canvas":
+                    bound_type = "canvas"
 
                 # body.append(ref_expr._bind(bound_type, ref_id, self))
                 body.append(

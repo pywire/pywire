@@ -29,11 +29,16 @@ function debounce(func: (...args: unknown[]) => unknown, wait: number) {
 export class RefManager {
   private pendingRectRequests = new Set<string>()
   private onSync?: (refId: string, value: ElementValue) => void
+  private onPropertySync?: (refId: string, property: string, value: unknown) => void
   private observer: MutationObserver
   private observedElements = new WeakSet<HTMLElement>()
 
-  constructor(onSync?: (refId: string, value: ElementValue) => void) {
+  constructor(
+    onSync?: (refId: string, value: ElementValue) => void,
+    onPropertySync?: (refId: string, property: string, value: unknown) => void
+  ) {
     this.onSync = onSync
+    this.onPropertySync = onPropertySync
     this.observer = new MutationObserver(this.handleMutations.bind(this))
   }
 
@@ -81,7 +86,7 @@ export class RefManager {
     const refId = element.getAttribute('data-pw-ref')
     if (!refId || !this.onSync) return
 
-    // Only attach to input-like elements
+    // Attach to input-like elements
     if (
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||
@@ -96,6 +101,31 @@ export class RefManager {
 
       element.addEventListener('input', handler)
       element.addEventListener('change', handler)
+    }
+
+    // Attach to media elements (<audio>, <video>)
+    if (element instanceof HTMLMediaElement && this.onPropertySync) {
+      const syncProp = this.onPropertySync
+      element.addEventListener('timeupdate', () => {
+        syncProp(refId, 'currentTime', (element as HTMLMediaElement).currentTime)
+      })
+      element.addEventListener('play', () => {
+        syncProp(refId, 'paused', false)
+      })
+      element.addEventListener('pause', () => {
+        syncProp(refId, 'paused', true)
+      })
+      element.addEventListener('loadedmetadata', () => {
+        syncProp(refId, 'duration', (element as HTMLMediaElement).duration)
+      })
+    }
+
+    // Attach to dialog elements
+    if (element instanceof HTMLDialogElement && this.onPropertySync) {
+      const syncProp = this.onPropertySync
+      element.addEventListener('close', () => {
+        syncProp(refId, 'open', false)
+      })
     }
   }
 
@@ -168,6 +198,54 @@ export class RefManager {
             logger.warn(
               'PyWire: \'clearFileInput\' only supported for <input type="file"> elements'
             )
+          }
+          break
+        case 'play':
+          if (element instanceof HTMLMediaElement) {
+            element.play()
+          } else {
+            logger.warn(`PyWire: 'play' command only supported for <audio>/<video> elements`)
+          }
+          break
+        case 'pause':
+          if (element instanceof HTMLMediaElement) {
+            element.pause()
+          } else {
+            logger.warn(`PyWire: 'pause' command only supported for <audio>/<video> elements`)
+          }
+          break
+        case 'load':
+          if (element instanceof HTMLMediaElement) {
+            element.load()
+          } else {
+            logger.warn(`PyWire: 'load' command only supported for <audio>/<video> elements`)
+          }
+          break
+        case 'showModal':
+          if (element instanceof HTMLDialogElement) {
+            element.showModal()
+          } else {
+            logger.warn(`PyWire: 'showModal' command only supported for <dialog> elements`)
+          }
+          break
+        case 'close':
+          if (element instanceof HTMLDialogElement) {
+            element.close(args.returnValue as string)
+          } else {
+            logger.warn(`PyWire: 'close' command only supported for <dialog> elements`)
+          }
+          break
+        case 'requestDataUrl':
+          if (element instanceof HTMLCanvasElement) {
+            const dataUrl = element.toDataURL((args.type as string) || 'image/png')
+            if (this.onPropertySync) {
+              const canvasRefId = element.getAttribute('data-pw-ref')
+              if (canvasRefId) {
+                this.onPropertySync(canvasRefId, 'dataUrl', dataUrl)
+              }
+            }
+          } else {
+            logger.warn(`PyWire: 'requestDataUrl' command only supported for <canvas> elements`)
           }
           break
         default:

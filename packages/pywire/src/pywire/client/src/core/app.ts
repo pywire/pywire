@@ -8,6 +8,7 @@ import {
   RelocateMessage,
   Command,
   RefSyncMessage,
+  RefPropertySyncMessage,
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
@@ -56,16 +57,29 @@ export class PyWireApp {
     this.transport = new TransportManager(this.config)
     this.updater = new DOMUpdater(this.config.debug)
     this.eventHandler = new UnifiedEventHandler(this)
-    this.refManager = new RefManager((refId, value) => {
-      if (this.isConnected) {
-        const msg: RefSyncMessage = {
-          type: 'ref_sync',
-          refId,
-          value,
+    this.refManager = new RefManager(
+      (refId, value) => {
+        if (this.isConnected) {
+          const msg: RefSyncMessage = {
+            type: 'ref_sync',
+            refId,
+            value,
+          }
+          this.transport.send(msg)
         }
-        this.transport.send(msg)
+      },
+      (refId, property, value) => {
+        if (this.isConnected) {
+          const msg: RefPropertySyncMessage = {
+            type: 'ref_sync',
+            refId,
+            property,
+            value,
+          }
+          this.transport.send(msg)
+        }
       }
-    })
+    )
   }
 
   getConfig(): PyWireConfig {

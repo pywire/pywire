@@ -18,7 +18,13 @@ from pywire.core.stores import writable, readable, store_derived
 from pywire.core.props import props
 from pywire.core.expose import expose
 from pywire.core.event_handler import EventHandler
-from pywire.core.refs import ref, Ref
+from pywire.core.refs import (
+    ref,
+    Ref,
+    MediaElement,
+    DialogElement,
+    CanvasElement,
+)
 from pywire.core.wire import WireDict
 from pywire.runtime.importer import install_import_hook
 
@@ -38,6 +44,9 @@ __all__ = [
     "ReactivityError",
     "ref",
     "Ref",
+    "MediaElement",
+    "DialogElement",
+    "CanvasElement",
     "writable",
     "readable",
     "store_derived",
