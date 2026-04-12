@@ -10,6 +10,10 @@ primary_region = "ord"
   auto_stop_machines = "stop"
   auto_start_machines = true
 
+[env]
+  # Session timeout in seconds (default: 1800 = 30 min)
+  SESSION_TTL = "1800"
+
 [[vm]]
   memory = "512mb"
   cpus = 1

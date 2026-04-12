@@ -10,6 +10,8 @@ services:
           name: {{ project_name }}-kv
           type: keyvalue
           property: connectionString
+      - key: SESSION_TTL
+        value: "1800"  # Session timeout in seconds (default: 30 min)
 
   - type: keyvalue
     name: {{ project_name }}-kv
@@ -17,5 +19,7 @@ services:
     ipAllowList: []
 {% else %}
     plan: free
-    envVars: []
+    envVars:
+      - key: SESSION_TTL
+        value: "1800"  # Session timeout in seconds (default: 30 min)
 {% endif %}

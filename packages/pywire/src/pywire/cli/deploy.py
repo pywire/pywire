@@ -12,6 +12,9 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
+# Session timeout in seconds (default: 1800 = 30 min)
+ENV SESSION_TTL=1800
+
 EXPOSE 8000
 CMD ["uv", "run", "pywire", "run", "--host", "0.0.0.0", "--port", "8000", "--workers", "{workers}"]
 """
@@ -22,7 +25,9 @@ services:
     name: {project_name}
     runtime: docker
     plan: free
-    envVars: []
+    envVars:
+      - key: SESSION_TTL
+        value: "1800"  # Session timeout in seconds (default: 30 min)
 """
 
 RENDER_YAML_REDIS_TEMPLATE = """\
@@ -37,6 +42,8 @@ services:
           name: {project_name}-kv
           type: keyvalue
           property: connectionString
+      - key: SESSION_TTL
+        value: "1800"  # Session timeout in seconds (default: 30 min)
 
   - type: keyvalue
     name: {project_name}-kv
@@ -56,6 +63,10 @@ primary_region = "ord"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
+
+[env]
+  # Session timeout in seconds (default: 1800 = 30 min)
+  SESSION_TTL = "1800"
 
 [[vm]]
   memory = "512mb"
