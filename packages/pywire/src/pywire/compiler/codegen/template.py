@@ -2,6 +2,8 @@
 
 import ast
 import dataclasses
+import hashlib
+import os
 import re
 from collections import defaultdict
 
@@ -51,7 +53,7 @@ class TemplateCodegen:
     }
     DOCUMENT_ROOT_ELEMENTS = {"html", "head", "body"}
 
-    def __init__(self) -> None:
+    def __init__(self, *, dev_mode: Optional[bool] = None) -> None:
         self.interpolation_parser = JinjaInterpolationParser()
         self._slot_default_counter = 0
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
@@ -60,6 +62,16 @@ class TemplateCodegen:
         self.region_renderers: Dict[str, str] = {}
         self._expr_id_counter = 0
         self._wire_vars: Set[str] = set()
+        # Dev mode: readable ref IDs vs short hashes.
+        # Defaults to checking PYWIRE_DEBUG env var at compile time.
+        if dev_mode is not None:
+            self._dev_mode = dev_mode
+        else:
+            self._dev_mode = os.environ.get("PYWIRE_DEBUG", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
 
     def generate_render_method(
         self,
@@ -1184,6 +1196,40 @@ class TemplateCodegen:
             outer_values.append(ast.Dict(keys=inner_keys, values=inner_values))
 
         return ast.Dict(keys=outer_keys, values=outer_values)
+
+    # ---- Ref ID helpers ----
+
+    _SIMPLE_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+    def _make_ref_id(
+        self,
+        expr_code: str,
+        scope_id: Optional[str],
+        line: int,
+        col: int,
+    ) -> str:
+        """Generate a stable ref ID from the expression that defines the ref.
+
+        * If *expr_code* is a simple identifier (e.g. ``my_input``):
+          - Dev mode  -> ``pw-ref-my_input``
+          - Prod mode -> ``pw-ref-<8-char hash>`` derived from the variable
+            name + optional scope.
+        * For complex expressions fall back to a hash of
+          ``expr_code:line:col``.
+        """
+        is_simple = self._SIMPLE_IDENT_RE.match(expr_code) is not None
+
+        if is_simple and self._dev_mode:
+            return f"pw-ref-{expr_code}"
+
+        # Build a deterministic seed string
+        if is_simple:
+            seed = f"{expr_code}:{scope_id or ''}"
+        else:
+            seed = f"{expr_code}:{line}:{col}:{scope_id or ''}"
+
+        short_hash = hashlib.sha256(seed.encode()).hexdigest()[:8]
+        return f"pw-ref-{short_hash}"
 
     def _set_line(self, node: ast.AST, template_node: TemplateNode) -> ast.AST:
         """Helper to set line number on AST node."""
@@ -2726,6 +2772,7 @@ class TemplateCodegen:
             # --- Handle $ref for Elements ---
             ref_expr = None
             ref_id = None
+            ref_raw_expr: Optional[str] = None  # raw expression for stable ID
 
             # Check static attributes for $ref
             if "$ref" in node.attributes:
@@ -2737,9 +2784,9 @@ class TemplateCodegen:
                         and v_stripped.endswith("}")
                         and v_stripped.count("{") == 1
                     ):
-                        expr_code = v_stripped[1:-1]
+                        ref_raw_expr = v_stripped[1:-1]
                         ref_expr = self._transform_expr(
-                            expr_code,
+                            ref_raw_expr,
                             local_vars,
                             known_globals,
                             known_imports,
@@ -2755,6 +2802,7 @@ class TemplateCodegen:
             for attr in node.special_attributes:
                 if isinstance(attr, ReactiveAttribute) and attr.name == "$ref":
                     ref_attr = attr
+                    ref_raw_expr = attr.expr
                     ref_expr = self._transform_reactive_expr(
                         attr.expr,
                         local_vars,
@@ -2773,7 +2821,12 @@ class TemplateCodegen:
                 node.special_attributes.remove(ref_attr)
 
             if ref_expr:
-                ref_id = f"pw-ref-{node.line}-{node.column}"
+                ref_id = self._make_ref_id(
+                    ref_raw_expr or "",
+                    scope_id,
+                    node.line,
+                    node.column,
+                )
                 prefixed_ref_id = ast.BinOp(
                     left=ast.Attribute(
                         value=ast.Name(id="self", ctx=ast.Load()),

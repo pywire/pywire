@@ -102,8 +102,8 @@ async def handle_submit(event):
             await res
 
 @expose
-async def submit():
-    await form_ref.submit()
+def submit():
+    form_ref.submit()
 
 @expose
 @property

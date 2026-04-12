@@ -4,14 +4,16 @@ from pathlib import Path
 from datetime import date
 from enum import Enum
 from typing import Optional, List
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from pydantic import BaseModel, Field
 
 from pywire.compiler.parser import PyWireParser
 from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.components import Form
+from pywire.core.refs import FormElement
 from pywire.runtime.files import FileUpload
+from pywire.runtime.page import BasePage
 
 
 # --- Test Models ---
@@ -36,6 +38,15 @@ class AdvancedUser(BaseModel):
     profile_pic: Optional[FileUpload] = None
 
 
+def _bind_form_ref_as_form(form_instance):
+    """Simulate binding the form_ref to a <form> element, triggering auto-upgrade."""
+    fr = form_instance.form_ref
+    mock_page = MagicMock(spec=BasePage)
+    mock_page._refs_by_id = {}
+    fr._bind("form", "test-form-ref", mock_page)
+    assert isinstance(fr, FormElement)
+
+
 @pytest.fixture
 def form_setup():
     # Mock dependencies
@@ -49,6 +60,8 @@ def form_setup():
         model=AdvancedUser,
         on_submit=submit_mock,
     )
+    # Bind form_ref so it auto-upgrades to FormElement
+    _bind_form_ref_as_form(form)
     return form, submit_mock
 
 
@@ -88,7 +101,6 @@ async def test_nested_model_validation(form_setup):
         "address.street": "123 Admin St",
         "address.city": "Adminville",
     }
-    form.form_ref._bound_type = "form"
 
     await form.handle_submit(AsyncMock())
 
@@ -115,7 +127,6 @@ async def test_enum_validation_error(form_setup):
         "address.street": "St",
         "address.city": "City",
     }
-    form.form_ref._bound_type = "form"
 
     await form.handle_submit(AsyncMock())
 
@@ -137,7 +148,6 @@ async def test_date_validation_error(form_setup):
         "address.street": "St",
         "address.city": "City",
     }
-    form.form_ref._bound_type = "form"
 
     await form.handle_submit(AsyncMock())
 
@@ -151,7 +161,6 @@ async def test_error_clearing_lifecycle(form_setup):
 
     # 1. Submit invalid data
     form.form_ref._data = {"username": "ab"}  # Too short
-    form.form_ref._bound_type = "form"
 
     await form.handle_submit(AsyncMock())
 
@@ -195,7 +204,6 @@ async def test_file_upload_handling(form_setup):
         "address.city": "City",
         "profile_pic": mock_file,
     }
-    form.form_ref._bound_type = "form"
 
     await form.handle_submit(AsyncMock())
 

@@ -24,8 +24,8 @@ form_comp = ref()
 def on_comp_submit(user_instance):
     comp_captured.value = f"User: {user_instance.username} (Age: {user_instance.age})"
 
-async def trigger_manual_submit():
-    await form_comp.submit()
+def trigger_manual_submit():
+    form_comp.submit()
 ---
 <div id="form-tests">
     <section id="native-form">
