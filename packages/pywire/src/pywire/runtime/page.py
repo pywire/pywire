@@ -175,6 +175,7 @@ class BasePage:
         self._refs_by_id: Dict[str, Any] = {}  # registry for ref instances
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
         self._pending_navigation: Optional[str] = None
+        self._pending_dispatches: List[Dict[str, Any]] = []
         self._components: Dict[str, "BasePage"] = {}
         self._active_component_keys: Set[str] = set()
         self._component_state_snapshots: Dict[str, Dict[str, Any]] = {}
@@ -392,7 +393,7 @@ class BasePage:
         return instance
 
     def _collect_all_commands(self) -> List[Dict[str, Any]]:
-        """Collect commands from all internal refs and recursive child components."""
+        """Collect commands from all internal refs, pending dispatches, and recursive child components."""
         commands = []
         # 1. Collect from own refs
         for rid, r in self._refs_by_id.items():
@@ -400,7 +401,12 @@ class BasePage:
             if cmds:
                 commands.extend(cmds)
 
-        # 2. Collect from all child components
+        # 2. Collect pending dispatch commands
+        if self._pending_dispatches:
+            commands.extend(self._pending_dispatches)
+            self._pending_dispatches.clear()
+
+        # 3. Collect from all child components
         for key, comp in self._components.items():
             cmds = comp._collect_all_commands()
             if cmds:
@@ -498,15 +504,18 @@ class BasePage:
                     bound_kwargs[name] = call_kwargs[name]
 
         from pywire.shell import _request_ctx
+        from pywire.core.dispatch import _page_context
 
-        token = _request_ctx.set(self.request)
+        request_token = _request_ctx.set(self.request)
+        page_token = _page_context.set(self)
         try:
             if inspect.iscoroutinefunction(handler):
                 await handler(**bound_kwargs)
             else:
                 handler(**bound_kwargs)
         finally:
-            _request_ctx.reset(token)
+            _page_context.reset(page_token)
+            _request_ctx.reset(request_token)
 
     async def _handle_component_event(
         self, event_name: str, event_data: Dict[str, Any]

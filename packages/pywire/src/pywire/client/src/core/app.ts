@@ -280,6 +280,8 @@ export class PyWireApp {
           msg.commands.forEach((cmd: Command) => {
             if (cmd.cmd === 'set_cookie' || cmd.cmd === 'delete_cookie') {
               this.handleCookieCommand(cmd)
+            } else if (cmd.cmd === 'dispatch') {
+              this.handleDispatchCommand(cmd)
             } else {
               this.refManager.executeCommand(cmd)
             }
@@ -367,6 +369,31 @@ export class PyWireApp {
       if (args.path) cookie += `; path=${args.path}`
       if (args.domain) cookie += `; domain=${args.domain}`
       document.cookie = cookie
+    }
+  }
+
+  /**
+   * Handle a dispatch command from the server (custom DOM event).
+   */
+  protected handleDispatchCommand(cmd: Command): void {
+    const { refId } = cmd
+    const event = (cmd as Record<string, unknown>).event as string
+    const detail = (cmd as Record<string, unknown>).detail ?? {}
+    const bubbles = ((cmd as Record<string, unknown>).bubbles as boolean) ?? true
+
+    const target = refId
+      ? document.querySelector(`[data-pw-ref="${refId}"]`)
+      : document.body
+
+    if (target) {
+      target.dispatchEvent(
+        new CustomEvent(event, {
+          bubbles,
+          detail,
+        })
+      )
+    } else {
+      logger.warn(`PyWire: dispatch '${event}' failed - ref '${refId}' not found in DOM`)
     }
   }
 
