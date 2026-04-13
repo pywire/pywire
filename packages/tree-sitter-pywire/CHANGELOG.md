@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.9](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.8...tree-sitter-pywire-v0.3.9) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** allow pre-release deps for pyodide-build==0.29.3 ([585cb90](https://github.com/pywire/pywire/commit/585cb902727e6df6acd67d5c29bc80a4054b6fff))
+
 ## [0.3.8](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.7...tree-sitter-pywire-v0.3.8) (2026-04-13)
 
 
