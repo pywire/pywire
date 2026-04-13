@@ -27,6 +27,6 @@ Homepage = "https://github.com/pywire/pywire"
 core = ["tree-sitter~=0.23"]
 
 [tool.cibuildwheel]
-# Build CPython 3.10+ wheels; WASM wheel built with pyodide-build==0.29.3 and uploaded to R2 CDN
+# Build CPython 3.10+ wheels; WASM wheel built with pinned pyodide-build==0.29.3, uploaded to R2 CDN
 build = "cp310-*"
 build-frontend = "build"
