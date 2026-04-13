@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -72,27 +76,6 @@ jobs:
                 -f description="Skipped for release-please PR" \
                 --silent
             done
-          done
-
-      - name: Auto-approve and auto-merge release-please PRs
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          prs=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --json number,headRefName \
-            --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
-
-          if [ "$prs" = "[]" ] || [ -z "$prs" ]; then
-            echo "No open release-please PRs"
-            exit 0
-          fi
-
-          echo "$prs" | jq -c '.[]' | while read -r pr; do
-            num=$(echo "$pr" | jq -r '.number')
-            echo "Approving and enabling auto-merge on PR #$num"
-            gh pr review "$num" --approve --repo "$GITHUB_REPOSITORY" || true
-            gh pr merge "$num" --auto --squash --repo "$GITHUB_REPOSITORY" || true
           done
 
   # Build pywire wheels across all platforms/architectures
