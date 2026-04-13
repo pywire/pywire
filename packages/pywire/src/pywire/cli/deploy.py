@@ -94,9 +94,19 @@ PAGES_DIR = "pages"
 
 CF_ENTRY_TEMPLATE = """\
 import asgi
+import micropip
 from workers import WorkerEntrypoint
 
 from pywire import PyWire
+
+# Install WASM-only PyWire dependencies from the PyWire CDN.
+# These are C extensions compiled for Pyodide and are not available as native PyPI wheels.
+# To pin a specific version or use a different source, see:
+# https://pywire.dev/docs/deploy/cloudflare-workers#wasm-dependencies
+await micropip.install(
+    "tree-sitter-pywire",
+    index_urls=["https://pywire.dev/cdn/simple", "https://pypi.org/simple"],
+)
 
 app = PyWire(pages_dir="pages")
 

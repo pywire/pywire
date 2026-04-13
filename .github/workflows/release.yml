@@ -208,6 +208,18 @@ jobs:
         env:
           EMCC_SKIP_WASM_OPT: "1"
           EM_IGNORE_WASM_OPT: "1"
+      - name: Upload WASM wheel to R2 CDN
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          wheel=$(ls packages/tree-sitter-pywire/dist/*.whl | head -1)
+          filename=$(basename "$wheel")
+          tag="${{ needs.release-please.outputs['tree-sitter-pywire--tag_name'] }}"
+          version="${tag#tree-sitter-pywire-v}"
+          npx wrangler r2 object put "pywire-cdn/tree-sitter-pywire/v${version}/${filename}" \
+            --file "$wheel" \
+            --content-type "application/zip"
       - uses: actions/upload-artifact@v4
         with:
           name: tree-sitter-pywire-wasm

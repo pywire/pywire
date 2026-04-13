@@ -138,13 +138,17 @@ cache_valid
 
       if (__PYWIRE_INSTALL_SOURCE__ === 'pypi') {
         // ── PyPI mode ──────────────────────────────────────────────
-        // micropip resolves all deps from PyPI (including WASM wheels)
+        // Pure-Python packages come from PyPI; tree-sitter-pywire is a C extension
+        // compiled for Pyodide (WASM) and served from the PyWire CDN simple index.
         console.log('[Worker] PyPI mode: installing pywire from PyPI...')
         postMessage({ type: 'STDOUT', message: 'Installing from PyPI...' })
 
         await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
         await micropip.install('starlette', { target: sitePackages })
-        await micropip.install('tree-sitter-pywire', { target: sitePackages })
+        await micropip.install('tree-sitter-pywire', {
+          target: sitePackages,
+          index_urls: ['https://pywire.dev/cdn/simple', 'https://pypi.org/simple'],
+        })
         await micropip.install('pywire-parser', { target: sitePackages })
         await micropip.install('pywire', { target: sitePackages, deps: false })
         console.log('[Worker] All packages installed from PyPI')
