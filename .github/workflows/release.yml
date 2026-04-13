@@ -78,6 +78,30 @@ jobs:
             done
           done
 
+      # After release-please runs and CI statuses are set, merge main into
+      # any open release-please PR branches so they stay conflict-free.
+      # This resolves .release-please-manifest.json drift when one release
+      # PR merges before others.
+      - name: Update release-please PR branches with latest main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prs=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
+
+          if [ "$prs" = "[]" ] || [ -z "$prs" ]; then
+            echo "No open release-please PRs to update"
+            exit 0
+          fi
+
+          echo "$prs" | jq -c '.[]' | while read -r pr; do
+            num=$(echo "$pr" | jq -r '.number')
+            echo "Updating PR #$num branch with latest main"
+            gh pr update-branch "$num" --repo "$GITHUB_REPOSITORY" || true
+          done
+
   # Build pywire wheels across all platforms/architectures
   build-pywire-wheels:
     name: "Build pywire wheels"
