@@ -238,7 +238,8 @@ jobs:
           version="${tag#tree-sitter-pywire-v}"
           npx wrangler r2 object put "pywire-cdn/tree-sitter-pywire/v${version}/${filename}" \
             --file "$wheel" \
-            --content-type "application/zip"
+            --content-type "application/zip" \
+            --remote
       - uses: actions/upload-artifact@v4
         with:
           name: tree-sitter-pywire-wasm
@@ -256,6 +257,8 @@ jobs:
           pattern: tree-sitter-pywire-*
           path: dist
           merge-multiple: true
+      - name: Remove WASM wheels (PyPI rejects pyemscripten platform tags)
+        run: find dist -name '*pyemscripten*' -delete
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
