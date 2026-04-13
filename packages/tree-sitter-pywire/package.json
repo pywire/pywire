@@ -1,7 +1,10 @@
 {
   "name": "tree-sitter-pywire",
+  "maintainers": [
+    "Reece Holmdahl"
+  ],
   "version": "0.3.1",
-  "description": "",
+  "description": "Tree-sitter grammar for PyWire",
   "main": "index.js",
   "scripts": {
     "test": "tree-sitter test"
