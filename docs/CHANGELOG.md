@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.0...pywire-docs-v0.5.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* **pywire-docs:** convert index_urls to Python list; fix nightly vs production deploy routing ([66eefe4](https://github.com/pywire/pywire/commit/66eefe45a54ff4eed6935a01ff5ff5ec93bcce55))
+* **pywire-docs:** set CDN+PyPI index once before all installs ([25eac33](https://github.com/pywire/pywire/commit/25eac33cb7f91553feb061933b97ccecb9923fea))
+* **pywire-docs:** use set_index_urls for CDN; fix PyPI WASM filter for pyodide tag ([67d10cf](https://github.com/pywire/pywire/commit/67d10cfe330fe3e231376db7e63739153cee5ee7))
+* **pywire-docs:** use set_index_urls with CDN+PyPI for micropip ([062f5a4](https://github.com/pywire/pywire/commit/062f5a4b6f4e0243b5098c9544e433709455aacf))
+* **tree-sitter-pywire:** allow pre-release deps for pyodide-build==0.29.3 ([585cb90](https://github.com/pywire/pywire/commit/585cb902727e6df6acd67d5c29bc80a4054b6fff))
+* **tree-sitter-pywire:** pin pyodide-build==0.29.3 for correct platform tags; fix micropip install ([d32c7f9](https://github.com/pywire/pywire/commit/d32c7f90e8e7d9761a9dafe4eb672fda72087473))
+* **tree-sitter-pywire:** pin wheel&lt;0.44 for auditwheel_emscripten compat ([5d5de0f](https://github.com/pywire/pywire/commit/5d5de0ff12cf1a2469570d7234a562d3c15d11c7))
+
 ## [0.5.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.4.1...pywire-docs-v0.5.0) (2026-04-13)
 
 
