@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.0...tree-sitter-pywire-v0.3.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** trigger 0.3.1 release to publish wheels to PyPI ([4748f46](https://github.com/pywire/pywire/commit/4748f4658886044a5bc2daf9658c79b2be9d2281))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.4...tree-sitter-pywire-v0.3.0) (2026-04-13)
 
 
