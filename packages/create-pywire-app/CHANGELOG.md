@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.3.0...create-pywire-app-v0.4.0) (2026-04-13)
+
+
+### Features
+
+* **pywire:** reconnect overlay, lifecycle hooks, typed refs, dispatch, media refs ([#85](https://github.com/pywire/pywire/issues/85)) ([9a8b43d](https://github.com/pywire/pywire/commit/9a8b43d4868e9a2149f85f597112275ea5425c7b))
+* stores, middleware, context API, deploy CLI, event optimization, and cache busting ([#43](https://github.com/pywire/pywire/issues/43)) ([00e55d1](https://github.com/pywire/pywire/commit/00e55d18a177a9cdb1378eaede2969f30b91f9ff))
+
+
+### Bug Fixes
+
+* adapt internal references for monorepo layout ([a260035](https://github.com/pywire/pywire/commit/a26003572b9ae460ce36f3e4a5e41881ad7115a4))
+* **create-pywire-app:** multi-deployment README only showed first adapter ([1f32d46](https://github.com/pywire/pywire/commit/1f32d46d44815032cc312d8c76d9e7da251ebcd9))
+* **prettier-plugin-pywire:** bump for consistency ([33fc161](https://github.com/pywire/pywire/commit/33fc1613c5a70dfc4e8b00d1da3d99f2dc849925))
+* **pywire-language-server:** bump for release ([88aa449](https://github.com/pywire/pywire/commit/88aa449a1a55ece6145f1f21bc7b1ca807e394ca))
+* **pywire-language-server:** fix PyPI publish by using explicit build output dir ([8dec973](https://github.com/pywire/pywire/commit/8dec97382276ce0f139cc5abd89b0bd54806bc7d))
+* **pywire-language-server:** trigger release PR update ([77491d0](https://github.com/pywire/pywire/commit/77491d02b5f51957b83b1ae3a320cbab53fb56a8))
+* resolve all test failures, xfails, and warnings in pywire core ([371286b](https://github.com/pywire/pywire/commit/371286b8627b375a8e7cce13e4e0a4dc71c14f8e))
+* **tree-sitter-pywire:** bump for consistency ([42b40bd](https://github.com/pywire/pywire/commit/42b40bd3ec2711445865c772573b52774857bbc0))
+* **vscode-pywire:** fix CI publish with --no-dependencies flag ([1ef1d72](https://github.com/pywire/pywire/commit/1ef1d72018f4c02bf29a923dd33e4f96bdf813ac))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.2.0...create-pywire-app-v0.3.0) (2026-04-13)
 
 
