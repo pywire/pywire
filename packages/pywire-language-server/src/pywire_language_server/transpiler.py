@@ -4,8 +4,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from pywire.compiler.parser import PyWireParser
-from pywire.compiler.ast_nodes import (
+from pywire_parser import PyWireParser
+from pywire_parser.ast_nodes import (
     ParsedPyWire,  # noqa: F401
     TemplateNode,
     InterpolationNode,

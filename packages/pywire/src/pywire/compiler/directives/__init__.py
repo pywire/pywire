@@ -1,7 +1,3 @@
-"""Directive parsers."""
+"""Re-export from pywire_parser for backwards compatibility."""
 
-from pywire.compiler.directives.base import DirectiveParser
-from pywire.compiler.directives.no_spa import NoSpaDirectiveParser
-from pywire.compiler.directives.path import PathDirectiveParser
-
-__all__ = ["DirectiveParser", "PathDirectiveParser", "NoSpaDirectiveParser"]
+from pywire_parser.directives.__init__ import *  # noqa: F401,F403

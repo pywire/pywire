@@ -1,7 +1,6 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
-build-backend = "_build_backend"
-backend-path = ["."]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pywire"
@@ -21,24 +20,27 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Rust",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
     "starlette>=0.35.0",
     "python-multipart>=0.0.6",
-    "uvicorn[standard]>=0.27.0",
-    "watchfiles>=0.21.0",
     "jinja2>=3.1.0",
     "msgpack>=1.0.0",
     "pydantic>=2.0.0",
-    "textual>=7.4.0",
-    "rich-click>=1.9.6",
+    "pywire-parser>=0.1.0",
 ]
 
 [project.optional-dependencies]
+cli = [
+    "uvicorn[standard]>=0.27.0",
+    "watchfiles>=0.21.0",
+    "textual>=7.4.0",
+    "rich-click>=1.9.6",
+]
 dev = [
+    "pywire[cli]",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
@@ -69,14 +71,14 @@ Documentation = "https://pywire.dev/docs"
 Repository = "https://github.com/pywire/pywire"
 Issues = "https://github.com/pywire/pywire/issues"
 
-[tool.maturin]
-manifest-path = "Cargo.toml"
-python-source = "src"
-module-name = "pywire._pywire_parser"
-features = ["pyo3/extension-module"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/pywire"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+
+[tool.hatch.build]
 include = [
-    "src/pywire/static/**",
-    "src/pywire/templates/**",
+    "src/pywire/**",
 ]
 
 [tool.ruff.lint]
@@ -90,7 +92,8 @@ exclude = ["docs/public/shim.py", "setup.py"]
 
 [tool.ty.analysis]
 allowed-unresolved-imports = [
-    "pywire._pywire_parser",
+    "pywire_parser",
+    "pywire_parser.**",
     "aioquic.**",
     "cryptography.**",
     "hypercorn.**",

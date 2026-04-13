@@ -1,6 +1,3 @@
-"""Interpolation parsers."""
+"""Re-export from pywire_parser for backwards compatibility."""
 
-from pywire.compiler.interpolation.base import InterpolationParser
-from pywire.compiler.interpolation.jinja import JinjaInterpolationParser
-
-__all__ = ["InterpolationParser", "JinjaInterpolationParser"]
+from pywire_parser.interpolation.__init__ import *  # noqa: F401,F403

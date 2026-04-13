@@ -1,6 +1,3 @@
-"""Attribute parsers."""
+"""Re-export from pywire_parser for backwards compatibility."""
 
-from pywire.compiler.attributes.base import AttributeParser
-from pywire.compiler.attributes.events import EventAttributeParser
-
-__all__ = ["AttributeParser", "EventAttributeParser"]
+from pywire_parser.attributes.__init__ import *  # noqa: F401,F403

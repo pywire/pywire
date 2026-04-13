@@ -1,8 +1,3 @@
-def preprocess_python_code(code: str) -> str:
-    """
-    No-op: Legacy preprocessor for $var syntax.
+"""Re-export from pywire_parser for backwards compatibility."""
 
-    This function used to replace $var with var.value, but that syntax is now removed.
-    It returns the code unchanged.
-    """
-    return code
+from pywire_parser.preprocessor import *  # noqa: F401,F403
