@@ -18,7 +18,11 @@ function run(cmd, cwd) {
 
 const INSTALL_SOURCE = process.env.PYWIRE_PYPI_INSTALL === '1' ? 'pypi' : 'local'
 
-function bundleWorkers({ pywireWheel = 'unknown', parserWheel = 'unknown', tsPywireWheel = 'unknown' } = {}) {
+function bundleWorkers({
+  pywireWheel = 'unknown',
+  parserWheel = 'unknown',
+  tsPywireWheel = 'unknown',
+} = {}) {
   console.log('\n--- Bundling Workers ---')
   const workers = [
     { src: 'src/sw.ts', dest: 'public/sw.js' },
@@ -73,7 +77,9 @@ async function main() {
   const publicDistDir = path.join(DOCS_PUBLIC_DIR, 'dist')
 
   if (INSTALL_SOURCE === 'pypi') {
-    console.log('\n--- PyPI mode: skipping wheel builds (packages installed from PyPI at runtime) ---')
+    console.log(
+      '\n--- PyPI mode: skipping wheel builds (packages installed from PyPI at runtime) ---',
+    )
     fs.mkdirSync(publicDistDir, { recursive: true })
     bundleWorkers({
       pywireWheel: 'NOT_NEEDED',
@@ -152,7 +158,10 @@ async function main() {
     try {
       run(`uv build --wheel --out-dir ${publicDistDir}`, TS_PYWIRE_PKG)
     } catch (e) {
-      console.warn('tree-sitter-pywire native build failed (expected in some environments):', e.message)
+      console.warn(
+        'tree-sitter-pywire native build failed (expected in some environments):',
+        e.message,
+      )
     }
   }
 

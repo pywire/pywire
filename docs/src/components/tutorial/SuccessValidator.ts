@@ -32,8 +32,7 @@ export class SuccessValidator {
 
           case 'file_contains': {
             const content = files[criterion.target || '']
-            passed =
-              content !== undefined && new RegExp(criterion.pattern || '').test(content)
+            passed = content !== undefined && new RegExp(criterion.pattern || '').test(content)
             break
           }
 
