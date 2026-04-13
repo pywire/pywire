@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.10](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.9...tree-sitter-pywire-v0.3.10) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** pin wheel&lt;0.44 for auditwheel_emscripten compat ([5d5de0f](https://github.com/pywire/pywire/commit/5d5de0ff12cf1a2469570d7234a562d3c15d11c7))
+
 ## [0.3.9](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.8...tree-sitter-pywire-v0.3.9) (2026-04-13)
 
 
