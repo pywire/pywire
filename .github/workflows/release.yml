@@ -15,6 +15,11 @@ permissions:
   statuses: write
 
 jobs:
+  # IMPORTANT: Do not use "Re-run all jobs" on this workflow.
+  # Re-running this job after a release was already created causes all downstream
+  # publish jobs to be SKIPPED — release-please sees the release already exists and
+  # emits no release_created output. If a publish job failed, re-run only that specific
+  # job. If jobs were skipped (not failed), make a new bump commit to create a fresh release.
   release-please:
     runs-on: ubuntu-latest
     outputs:
