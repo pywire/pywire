@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.7...tree-sitter-pywire-v0.3.8) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** pin pyodide-build==0.29.3 for correct platform tags; fix micropip install ([d32c7f9](https://github.com/pywire/pywire/commit/d32c7f90e8e7d9761a9dafe4eb672fda72087473))
+
 ## [0.3.7](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.6...tree-sitter-pywire-v0.3.7) (2026-04-13)
 
 
