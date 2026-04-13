@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.2.0...create-pywire-app-v0.3.0) (2026-04-13)
+
+
+### Features
+
+* **pywire:** reconnect overlay, lifecycle hooks, typed refs, dispatch, media refs ([#85](https://github.com/pywire/pywire/issues/85)) ([9a8b43d](https://github.com/pywire/pywire/commit/9a8b43d4868e9a2149f85f597112275ea5425c7b))
+
+
+### Bug Fixes
+
+* **create-pywire-app:** multi-deployment README only showed first adapter ([1f32d46](https://github.com/pywire/pywire/commit/1f32d46d44815032cc312d8c76d9e7da251ebcd9))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.1.7...create-pywire-app-v0.2.0) (2026-04-10)
 
 
