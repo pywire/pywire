@@ -5,3 +5,6 @@ public/
 pnpm-lock.yaml
 *.lock
 CHANGELOG.md
+
+# Build script — not subject to prettier formatting enforcement
+scripts/build-assets.mjs
