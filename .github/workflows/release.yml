@@ -218,7 +218,7 @@ jobs:
           ./emsdk activate "$EMSCRIPTEN_VERSION"
           source ./emsdk_env.sh
           echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
-          echo "EM_CONFIG=$EM_CONFIG" >> "$GITHUB_ENV"
+          [ -n "$EM_CONFIG" ] && echo "EM_CONFIG=$EM_CONFIG" >> "$GITHUB_ENV" || true
           echo "$EMSDK" >> "$GITHUB_PATH"
           echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
       - name: Build WASM wheel
