@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.4...tree-sitter-pywire-v0.3.5) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** install pyodide-build + pyodide-cli in shared venv for plugin discovery ([7c61071](https://github.com/pywire/pywire/commit/7c6107108bac61f62c7bf345cac69949cbc3fe15))
+
 ## [0.3.4](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.3...tree-sitter-pywire-v0.3.4) (2026-04-13)
 
 
