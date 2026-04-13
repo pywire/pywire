@@ -145,10 +145,19 @@ cache_valid
 
         await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
         await micropip.install('starlette', { target: sitePackages })
-        await micropip.install('tree-sitter-pywire', {
-          target: sitePackages,
-          index_urls: pyodide.toPy(['https://pywire.dev/cdn/simple', 'https://pypi.org/simple']),
-        })
+        // tree-sitter-pywire is a C extension — the WASM wheel is on the PyWire CDN, not PyPI.
+        // Use runPythonAsync to call micropip from Python directly: JS arrays passed as
+        // kwargs to Python functions may not convert correctly in Pyodide 0.29.x.
+        pyodide.globals.set('_site_packages', sitePackages)
+        await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(
+    "tree-sitter-pywire",
+    index_urls=["https://pywire.dev/cdn/simple", "https://pypi.org/simple"],
+    target=_site_packages,
+)
+del _site_packages
+`)
         await micropip.install('pywire-parser', { target: sitePackages })
         await micropip.install('pywire', { target: sitePackages, deps: false })
         console.log('[Worker] All packages installed from PyPI')
