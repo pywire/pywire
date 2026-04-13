@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.1...tree-sitter-pywire-v0.3.2) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** add maintainr and description to bump ([e4ac592](https://github.com/pywire/pywire/commit/e4ac59284b4743ec2649b8837b676719ecdf49dd))
+
 ## [0.3.1](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.0...tree-sitter-pywire-v0.3.1) (2026-04-13)
 
 
