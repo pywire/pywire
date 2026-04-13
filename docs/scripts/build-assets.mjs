@@ -125,67 +125,72 @@ async function main() {
   console.log('\n--- Building tree-sitter-pywire wheel ---')
   if (process.env.PYWIRE_WASM_BUILD === '1') {
     try {
-      const env = {
-        ...process.env,
-        PYODIDE_VERSION: '0.29.3',
-        EMCC_SKIP_WASM_OPT: '1',
-        EM_IGNORE_WASM_OPT: '1',
-      }
-      delete env.VIRTUAL_ENV
-      delete env.PYTHONPATH
+      const baseEnv = { ...process.env }
+      delete baseEnv.VIRTUAL_ENV
+      delete baseEnv.PYTHONPATH
 
-      console.log('Building tree-sitter-pywire for Pyodide 0.29.3 with Emscripten')
-
+      // Set up a build venv with pyodide-cli (provides `pyodide` command)
       const venvPath = path.join(TS_PYWIRE_PKG, '.build-venv')
       const pyodideBin = path.join(venvPath, 'bin', 'pyodide')
-      // Look for emsdk in several locations (worktrees may not have it locally)
-      const emsdkCandidates = [
-        path.join(TS_PYWIRE_PKG, 'emsdk', 'emsdk_env.sh'),
-        path.join(PYWIRE_PKG, 'emsdk', 'emsdk_env.sh'),
-        // For git worktrees, check the main repo checkout
-        process.env.EMSDK_ENV_PATH,
-      ].filter(Boolean)
-      const emsdkEnvPath = emsdkCandidates.find((p) => fs.existsSync(p)) || ''
-
-      // Set up the build venv — two sequential commands (no shell chaining needed)
       run('uv', ['venv', venvPath, '--python', '3.13'], TS_PYWIRE_PKG)
       run(
         'uv',
-        [
-          'pip',
-          'install',
-          '--python',
-          path.join(venvPath, 'bin', 'python'),
-          'pyodide-build>=0.32.0,<0.33.0',
-          'wheel>=0.42.0',
-          'pip',
-        ],
+        ['pip', 'install', '--python', path.join(venvPath, 'bin', 'python'), 'pyodide-cli', 'pip'],
         TS_PYWIRE_PKG,
       )
 
-      if (emsdkEnvPath) {
-        console.log(`Using emsdk from: ${emsdkEnvPath}`)
-        // Pass paths as positional args to avoid shell interpolation of env-derived values.
-        // bash -c script receives them via $1, $2, $3 (not interpolated by the shell).
-        execFileSync(
-          'bash',
-          [
-            '-c',
-            'source "$1" && "$2" build . --verbose --outdir "$3"',
-            '--',
-            emsdkEnvPath,
-            pyodideBin,
-            publicDistDir,
-          ],
-          { cwd: TS_PYWIRE_PKG, stdio: 'inherit', env },
-        )
-      } else {
-        run(
-          'uv',
-          ['run', 'pyodide', 'build', '.', '--verbose', '--outdir', publicDistDir],
-          TS_PYWIRE_PKG,
-        )
+      // Set up the Pyodide cross-build environment for the target version
+      run(pyodideBin, ['xbuildenv', 'install', '0.29.3'], TS_PYWIRE_PKG)
+
+      // Ask pyodide-build which Emscripten version is required — avoids hardcoding
+      const { execFileSync: execSync } = await import('node:child_process')
+      const emscriptenVersion = execSync(pyodideBin, ['config', 'get', 'emscripten_version'], {
+        cwd: TS_PYWIRE_PKG,
+        env: baseEnv,
+      })
+        .toString()
+        .trim()
+      console.log(`Required Emscripten version: ${emscriptenVersion}`)
+
+      // Locate or install emsdk: prefer existing activated env, then EMSDK_ENV_PATH, then clone
+      let emsdkEnvPath = ''
+      const emsdkCandidates = [
+        process.env.EMSDK ? path.join(process.env.EMSDK, 'emsdk_env.sh') : null,
+        process.env.EMSDK_ENV_PATH,
+        path.join(TS_PYWIRE_PKG, 'emsdk', 'emsdk_env.sh'),
+        path.join(PYWIRE_PKG, 'emsdk', 'emsdk_env.sh'),
+      ].filter(Boolean)
+      emsdkEnvPath = emsdkCandidates.find((p) => fs.existsSync(p)) || ''
+
+      if (!emsdkEnvPath) {
+        console.log('emsdk not found locally — cloning and installing...')
+        const emsdkDir = path.join(TS_PYWIRE_PKG, 'emsdk')
+        run('git', ['clone', 'https://github.com/emscripten-core/emsdk.git', emsdkDir], TS_PYWIRE_PKG)
+        run('./emsdk', ['install', emscriptenVersion], emsdkDir)
+        run('./emsdk', ['activate', emscriptenVersion], emsdkDir)
+        emsdkEnvPath = path.join(emsdkDir, 'emsdk_env.sh')
       }
+
+      console.log(`Using emsdk from: ${emsdkEnvPath}`)
+      const buildEnv = {
+        ...baseEnv,
+        EMCC_SKIP_WASM_OPT: '1',
+        EM_IGNORE_WASM_OPT: '1',
+      }
+      // Source emsdk_env.sh then run pyodide build. Pass all paths as positional args
+      // to avoid shell interpolation of env-derived values ($1, $2, $3 are not interpolated).
+      execFileSync(
+        'bash',
+        [
+          '-c',
+          'source "$1" && "$2" build . --verbose --outdir "$3"',
+          '--',
+          emsdkEnvPath,
+          pyodideBin,
+          publicDistDir,
+        ],
+        { cwd: TS_PYWIRE_PKG, stdio: 'inherit', env: buildEnv },
+      )
     } catch (e) {
       console.error('Failed to build WASM wheel for tree-sitter-pywire:', e)
       process.exit(1)

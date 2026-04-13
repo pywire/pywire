@@ -199,9 +199,22 @@ jobs:
           python-version: "3.13"
           enable-cache: false
       - name: Install pyodide-build
-        run: uv tool install pyodide-cli --with "pyodide-build>=0.32.0,<0.33.0"
+        run: uv tool install pyodide-cli
       - name: Set up Pyodide cross-build environment
         run: pyodide xbuildenv install 0.29.3
+      - name: Set up Emscripten
+        run: |
+          EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)
+          echo "Using Emscripten $EMSCRIPTEN_VERSION"
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install "$EMSCRIPTEN_VERSION"
+          ./emsdk activate "$EMSCRIPTEN_VERSION"
+          source ./emsdk_env.sh
+          echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
+          echo "EM_CONFIG=$EM_CONFIG" >> "$GITHUB_ENV"
+          echo "$EMSDK" >> "$GITHUB_PATH"
+          echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
       - name: Build WASM wheel
         run: pyodide build . --outdir dist
         working-directory: packages/tree-sitter-pywire
