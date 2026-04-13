@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.4.1...pywire-docs-v0.5.0) (2026-04-13)
+
+
+### Features
+
+* **tree-sitter-pywire:** upload WASM wheel to pywire.dev/cdn/ on release ([d84188a](https://github.com/pywire/pywire/commit/d84188ae58ae5e512b1a85c8d76e7d306fc3755c))
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** pin emsdk via pyodide config get emscripten_version ([21dac35](https://github.com/pywire/pywire/commit/21dac3594cc1967340bb5f88a969ca99a00a5742))
+
 ## [0.4.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.4.0...pywire-docs-v0.4.1) (2026-04-13)
 
 
