@@ -199,7 +199,13 @@ jobs:
           python-version: "3.13"
           enable-cache: false
       - name: Install pyodide-build
-        run: uv tool install pyodide-cli
+        # Install both pyodide-cli and pyodide-build into the same venv so that
+        # pyodide-cli can discover pyodide-build's plugin entry points (xbuildenv, build).
+        # uv tool install --with does not register entry points across packages.
+        run: |
+          uv venv .pyodide-venv --python 3.13
+          uv pip install --python .pyodide-venv/bin/python pyodide-build pyodide-cli
+          echo "$(pwd)/.pyodide-venv/bin" >> "$GITHUB_PATH"
       - name: Set up Pyodide cross-build environment
         run: pyodide xbuildenv install 0.29.3
       - name: Set up Emscripten
