@@ -27,6 +27,6 @@ Homepage = "https://github.com/pywire/pywire"
 core = ["tree-sitter~=0.23"]
 
 [tool.cibuildwheel]
-# Build CPython 3.10+ wheels for all platforms
+# Build CPython 3.10+ wheels for all platforms (native + WASM via separate job)
 build = "cp310-*"
 build-frontend = "build"
