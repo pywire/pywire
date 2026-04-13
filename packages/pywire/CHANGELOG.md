@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/pywire-v0.3.0...pywire-v0.4.0) (2026-04-13)
+
+
+### Features
+
+* **pywire:** reconnect overlay, lifecycle hooks, typed refs, dispatch, media refs ([#85](https://github.com/pywire/pywire/issues/85)) ([9a8b43d](https://github.com/pywire/pywire/commit/9a8b43d4868e9a2149f85f597112275ea5425c7b))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/pywire-v0.2.7...pywire-v0.3.0) (2026-04-10)
 
 
