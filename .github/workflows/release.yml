@@ -187,9 +187,35 @@ jobs:
           name: tree-sitter-pywire-sdist
           path: packages/tree-sitter-pywire/dist/*.tar.gz
 
+  build-tree-sitter-pywire-wasm:
+    name: "Build tree-sitter-pywire WASM wheel"
+    needs: release-please
+    if: needs.release-please.outputs.tree-sitter-pywire--release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: false
+      - name: Install pyodide-build
+        run: uv pip install --system "pyodide-build>=0.32.0,<0.33.0"
+      - name: Set up Pyodide cross-build environment
+        run: pyodide xbuildenv install 0.29.3
+      - name: Build WASM wheel
+        run: pyodide build . --outdir dist
+        working-directory: packages/tree-sitter-pywire
+        env:
+          EMCC_SKIP_WASM_OPT: "1"
+          EM_IGNORE_WASM_OPT: "1"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tree-sitter-pywire-wasm
+          path: packages/tree-sitter-pywire/dist/*.whl
+
   publish-tree-sitter-pywire:
     name: "Publish tree-sitter-pywire to PyPI"
-    needs: [build-tree-sitter-pywire, build-tree-sitter-pywire-sdist]
+    needs: [build-tree-sitter-pywire, build-tree-sitter-pywire-sdist, build-tree-sitter-pywire-wasm]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
