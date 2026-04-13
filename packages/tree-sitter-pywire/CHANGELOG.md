@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.2...tree-sitter-pywire-v0.3.3) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** publish Pyodide WASM wheel to PyPI alongside native wheels ([f98bfa6](https://github.com/pywire/pywire/commit/f98bfa69d9f3f956d205b083d5c19c828fcbcd78))
+
 ## [0.3.2](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.1...tree-sitter-pywire-v0.3.2) (2026-04-13)
 
 
