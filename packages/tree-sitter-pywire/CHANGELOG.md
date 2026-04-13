@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.3...tree-sitter-pywire-v0.2.4) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** separator token incorrectly matches inside strings and comments ([640d4f3](https://github.com/pywire/pywire/commit/640d4f336dbd0b8a365530eebf8c0c6a9c949b7d)), closes [#80](https://github.com/pywire/pywire/issues/80)
+
 ## [0.2.3](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.2.2...tree-sitter-pywire-v0.2.3) (2026-04-08)
 
 
