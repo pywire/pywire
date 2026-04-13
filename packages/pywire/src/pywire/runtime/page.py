@@ -1004,6 +1004,15 @@ class BasePage:
                             region_html = await renderer()
                         else:
                             region_html = renderer()
+                    except Exception:
+                        # Region renderer raised — fall back to a full re-render
+                        # where template-level {$try} blocks can catch the exception.
+                        logger.debug(
+                            "render_update: falling back to FULL update, "
+                            f"region {region_id} raised an exception"
+                        )
+                        has_root_dirty = True
+                        break
                     finally:
                         reset_render_context(token)
 
@@ -1041,7 +1050,28 @@ class BasePage:
         # discarded HTTP Response and clear _pending_cookies)
         cookie_cmds = self._flush_cookie_commands()
 
-        response = await self.render(init=init)
+        try:
+            response = await self.render(init=init)
+        except Exception:
+            if not self._is_debug():
+                raise  # Production: let _handle_event log it, page stays intact
+            # Debug mode: show error page so dev/tutorial users see the traceback
+            import traceback as _tb
+
+            tb_text = _tb.format_exc()
+            error_html = (
+                "<!DOCTYPE html><html><body"
+                " style='font-family:monospace;padding:24px;color:#111'>"
+                "<h2 style='color:#c00;margin:0 0 12px;font-size:1.1em'>"
+                "&#9888; Runtime Error</h2>"
+                "<pre style='background:#fff0f0;border:1px solid #fcc;"
+                "padding:16px;border-radius:4px;overflow:auto;"
+                "white-space:pre-wrap;word-break:break-word;"
+                f"font-size:0.85em;line-height:1.5'>{tb_text}</pre>"
+                "</body></html>"
+            )
+            return {"type": "full", "html": error_html}
+
         html = bytes(response.body).decode("utf-8")
         logger.debug(f"render_update: returning FULL update (len={len(html)})")
 

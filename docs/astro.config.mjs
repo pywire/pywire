@@ -18,6 +18,9 @@ export default defineConfig({
     ssr: {
       noExternal: ['monaco-editor'],
     },
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'react-dom/client'],
+    },
   },
   integrations: [
     tailwind({ applyBaseStyles: false }), // Don't override Starlight's base styles

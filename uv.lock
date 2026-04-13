@@ -11,6 +11,8 @@ members = [
     "pywire",
     "pywire-language-server",
     "pywire-monorepo",
+    "pywire-parser",
+    "tree-sitter-pywire",
     "v04-validation",
 ]
 
@@ -473,7 +475,7 @@ toml = [
 
 [[package]]
 name = "create-pywire-app"
-version = "0.2.0"
+version = "0.4.0"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
@@ -1770,7 +1772,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "jinja2" },
@@ -1887,14 +1889,33 @@ source = { virtual = "." }
 dependencies = [
     { name = "pywire", extra = ["dev"] },
     { name = "pywire-language-server" },
+    { name = "pywire-parser" },
     { name = "tree-sitter" },
+    { name = "tree-sitter-pywire" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pywire", extras = ["dev"], editable = "packages/pywire" },
     { name = "pywire-language-server", editable = "packages/pywire-language-server" },
+    { name = "pywire-parser", editable = "packages/pywire-parser" },
     { name = "tree-sitter", specifier = ">=0.25.2" },
+    { name = "tree-sitter-pywire", editable = "packages/tree-sitter-pywire" },
+]
+
+[[package]]
+name = "pywire-parser"
+version = "0.1.0"
+source = { editable = "packages/pywire-parser" }
+dependencies = [
+    { name = "tree-sitter" },
+    { name = "tree-sitter-pywire" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "tree-sitter", specifier = ">=0.23" },
+    { name = "tree-sitter-pywire", editable = "packages/tree-sitter-pywire" },
 ]
 
 [[package]]
@@ -2257,6 +2278,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/03/87/af9604ebe275a9345d88c3ace0cf2a1341aa3f8ef49dd9fc11662132df8a/tree_sitter-0.25.2-cp314-cp314-win_amd64.whl", hash = "sha256:4973b718fcadfb04e59e746abfbb0288694159c6aeecd2add59320c03368c721", size = 130864, upload-time = "2025-09-25T17:37:57.453Z" },
     { url = "https://files.pythonhosted.org/packages/a6/6e/e64621037357acb83d912276ffd30a859ef117f9c680f2e3cb955f47c680/tree_sitter-0.25.2-cp314-cp314-win_arm64.whl", hash = "sha256:b8d4429954a3beb3e844e2872610d2a4800ba4eb42bb1990c6a4b1949b18459f", size = 117470, upload-time = "2025-09-25T17:37:58.431Z" },
 ]
+
+[[package]]
+name = "tree-sitter-pywire"
+version = "0.3.0"
+source = { editable = "packages/tree-sitter-pywire" }
+
+[package.optional-dependencies]
+core = [
+    { name = "tree-sitter" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tree-sitter", marker = "extra == 'core'", specifier = "~=0.23" }]
+provides-extras = ["core"]
 
 [[package]]
 name = "ty"

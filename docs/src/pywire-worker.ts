@@ -1,4 +1,4 @@
-/* global loadPyodide, __PYWIRE_WHEEL_NAME__ */
+/* global loadPyodide, __PYWIRE_WHEEL_NAME__, __PYWIRE_PARSER_WHEEL_NAME__, __TS_PYWIRE_WHEEL_NAME__, __PYWIRE_INSTALL_SOURCE__ */
 /// <reference lib="webworker" />
 
 // Import type-only since we use importScripts for the actual library
@@ -9,6 +9,10 @@ declare global {
   function importScripts(...urls: string[]): void
   /** Injected at build time via esbuild --define */
   const __PYWIRE_WHEEL_NAME__: string
+  const __PYWIRE_PARSER_WHEEL_NAME__: string
+  const __TS_PYWIRE_WHEEL_NAME__: string
+  /** 'pypi' = install from PyPI at runtime, 'local' = install from /dist/ wheels */
+  const __PYWIRE_INSTALL_SOURCE__: string
 }
 
 importScripts('https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js')
@@ -76,62 +80,113 @@ if PERSISTENT_SITE_PACKAGES not in sys.path:
 importlib.invalidate_caches()
 `)
 
-    // Check if packages are already installed in IDBFS
-    // Check if packages are already installed in IDBFS AND pywire is importable
+    // Cache validation — key format depends on install source
     const markerFile = `${PERSISTENT_DIR}/INSTALLED_MARKER`
+    let cacheKey: string
+
+    if (__PYWIRE_INSTALL_SOURCE__ === 'local') {
+      cacheKey = `local|${[__PYWIRE_WHEEL_NAME__, __PYWIRE_PARSER_WHEEL_NAME__, __TS_PYWIRE_WHEEL_NAME__].join('|')}`
+    } else {
+      // PyPI mode: cache key is checked after install (based on installed versions)
+      cacheKey = ''
+    }
+
+    // Escape for safe interpolation into Python string literals
+    const safeCacheKey = cacheKey.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const safeMarkerFile = markerFile.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
     const checkResult = await pyodide.runPythonAsync(`
 import os, sys, importlib
-marker_exists = os.path.exists("${markerFile}")
-pywire_exists = False
-if marker_exists:
-    try:
-        import pywire
-        pywire_exists = True
-    except ImportError:
-        pass
-(marker_exists and pywire_exists)
+cache_valid = False
+marker_path = "${safeMarkerFile}"
+expected_key = "${safeCacheKey}"
+if expected_key and os.path.exists(marker_path):
+    stored_key = open(marker_path).read().strip()
+    if stored_key == expected_key:
+        try:
+            import pywire
+            from pywire_parser.ts_parser import PYWIRE_LANGUAGE
+            cache_valid = True
+            print("[Python] Cache validated: all packages importable")
+        except Exception as e:
+            print(f"[Python] Cache invalid, import failed: {e}")
+    else:
+        print(f"[Python] Cache key mismatch, will reinstall")
+else:
+    print("[Python] No cache marker found or PyPI mode (will check versions)")
+cache_valid
 `)
 
     if (checkResult) {
       console.log('[Worker] Packages found and verified in IDBFS cache. Skipping installation.')
       postMessage({ type: 'STDOUT', message: 'Packages loaded from cache.' })
     } else {
-      console.log('[Worker] First run: Installing packages...')
-      postMessage({ type: 'STDOUT', message: 'Installing core packages (first time)...' })
+      console.log('[Worker] Installing packages...')
+      postMessage({ type: 'STDOUT', message: 'Installing packages...' })
 
-      await pyodide.loadPackage(['micropip', 'lxml', 'ssl', 'pydantic', 'anyio'])
-      console.log('[Worker] Core packages loaded')
+      // Load core packages from Pyodide's built-in index
+      await pyodide.loadPackage(['micropip', 'ssl', 'pydantic', 'anyio', 'tree-sitter'])
+      console.log('[Worker] Core packages loaded (including tree-sitter)')
 
       const micropip = pyodide.pyimport('micropip')
-      console.log('[Worker] micropip imported')
 
-      // Mock binary or CLI-only dependencies
+      // Mock CLI-only dependencies that aren't available in Pyodide
       micropip.add_mock_package('watchfiles', '0.21.0')
       micropip.add_mock_package('uvicorn', '0.27.0')
       micropip.add_mock_package('textual', '7.4.0')
       micropip.add_mock_package('rich-click', '1.9.6')
 
-      // Install Starlette and Dependencies into persistent target
-      await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
-      await micropip.install('starlette', { target: sitePackages })
-      console.log('[Worker] Base dependencies installed in IDBFS')
+      if (__PYWIRE_INSTALL_SOURCE__ === 'pypi') {
+        // ── PyPI mode ──────────────────────────────────────────────
+        // micropip resolves all deps from PyPI (including WASM wheels)
+        console.log('[Worker] PyPI mode: installing pywire from PyPI...')
+        postMessage({ type: 'STDOUT', message: 'Installing from PyPI...' })
 
-      // Install PyWire
-      // NOTE: __PYWIRE_WHEEL_NAME__ is injected at build time via esbuild --define
-      const pywireWhlUrl = `${baseUrl}dist/${__PYWIRE_WHEEL_NAME__}`
-      const wheelFileName = pywireWhlUrl.split('/').pop()!
-      console.log('[Worker] Installing pywire from:', pywireWhlUrl, 'to', wheelFileName)
+        await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
+        await micropip.install('starlette', { target: sitePackages })
+        await micropip.install('tree-sitter-pywire', { target: sitePackages })
+        await micropip.install('pywire-parser', { target: sitePackages })
+        await micropip.install('pywire', { target: sitePackages, deps: false })
+        console.log('[Worker] All packages installed from PyPI')
 
-      const response = await fetch(pywireWhlUrl)
-      const buffer = await response.arrayBuffer()
-      const filePath = `/${wheelFileName}`
-      pyodide.FS.writeFile(filePath, new Uint8Array(buffer))
-      await micropip.install(`emfs:${filePath}`, { target: sitePackages })
+        // Build cache key from actual installed versions
+        cacheKey = await pyodide.runPythonAsync(`
+import importlib.metadata
+versions = []
+for pkg in ['pywire', 'pywire-parser', 'tree-sitter-pywire']:
+    try:
+        versions.append(f"{pkg}=={importlib.metadata.version(pkg)}")
+    except Exception:
+        versions.append(f"{pkg}==unknown")
+"pypi|" + "|".join(versions)
+`)
+      } else {
+        // ── Local mode ─────────────────────────────────────────────
+        // Install from /dist/ wheels built at build time
+        await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
+        await micropip.install('starlette', { target: sitePackages })
+        console.log('[Worker] Base dependencies installed')
 
-      // Create marker file
-      pyodide.FS.writeFile(`${PERSISTENT_DIR}/INSTALLED_MARKER`, '')
+        async function installLocalWheel(wheelName: string, label: string) {
+          const url = `${baseUrl}dist/${wheelName}`
+          console.log(`[Worker] Installing ${label} from: ${url}`)
+          const resp = await fetch(url)
+          if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`)
+          const buf = await resp.arrayBuffer()
+          pyodide!.FS.writeFile(`/${wheelName}`, new Uint8Array(buf))
+          await micropip.install(`emfs:/${wheelName}`, { target: sitePackages, deps: false })
+          console.log(`[Worker] ${label} installed`)
+        }
 
-      // Sync memory back to IndexedDB
+        await installLocalWheel(__TS_PYWIRE_WHEEL_NAME__, 'tree-sitter-pywire')
+        await installLocalWheel(__PYWIRE_PARSER_WHEEL_NAME__, 'pywire-parser')
+        await installLocalWheel(__PYWIRE_WHEEL_NAME__, 'pywire')
+      }
+
+      // Write cache marker
+      pyodide.FS.writeFile(`${PERSISTENT_DIR}/INSTALLED_MARKER`, cacheKey)
+
+      // Sync to IndexedDB
       await new Promise<void>((resolve, reject) => {
         pyodide!.FS.syncfs(false, (err: any) => {
           if (err) {
@@ -184,6 +239,7 @@ self.onmessage = async (event) => {
   } else if (type === 'UPDATE_FILE') {
     // Write user code to virtual FS
     const path = `/app/${payload.filename}`
+    console.log('[Worker] UPDATE_FILE:', path)
 
     // Ensure parent directory exists
     const dir = path.substring(0, path.lastIndexOf('/'))
@@ -199,7 +255,12 @@ self.onmessage = async (event) => {
     pyodide!.FS.writeFile(path, payload.content)
 
     // Invalidate app cache for this file
-    pyodide!.globals.get('reload_page')(path)
+    try {
+      const result = pyodide!.globals.get('reload_page')(path)
+      console.log('[Worker] reload_page result:', result)
+    } catch (e) {
+      console.error('[Worker] reload_page FAILED:', e)
+    }
   } else if (type === 'RESTART') {
     console.log('[Worker] Restarting pywire server...')
     const { pagesDir } = payload || {}
@@ -233,6 +294,7 @@ self.onmessage = async (event) => {
     }
   } else if (type === 'REQUEST') {
     // Pass to Python shim safely
+    console.log('[Worker] REQUEST:', payload.type, payload.path || payload.id || '')
     pyodide!.globals.set('temp_req_payload', pyodide!.toPy(payload))
     await pyodide!.runPythonAsync(`
 import asyncio

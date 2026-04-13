@@ -6,16 +6,20 @@
     "packages/pywire": {
       "release-type": "python",
       "component": "pywire",
-      "extra-files": ["Cargo.toml", "src/pywire/client/package.json"]
+      "extra-files": ["src/pywire/client/package.json"]
+    },
+    "packages/pywire-parser": {
+      "release-type": "python",
+      "component": "pywire-parser"
     },
     "packages/pywire-language-server": {
       "release-type": "python",
       "component": "pywire-language-server"
     },
     "packages/tree-sitter-pywire": {
-      "release-type": "node",
+      "release-type": "python",
       "component": "tree-sitter-pywire",
-      "extra-files": ["Cargo.toml"]
+      "extra-files": ["package.json", "Cargo.toml"]
     },
     "packages/vscode-pywire": {
       "release-type": "node",

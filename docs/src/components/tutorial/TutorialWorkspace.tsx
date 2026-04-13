@@ -328,6 +328,20 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     }
   }, [isReady, currentStep.slug, currentUrl, debouncedFiles])
 
+  // Live iframe text — read from the actual DOM to capture reactive/interactive state
+  const [liveIframeText, setLiveIframeText] = useState('')
+
+  useEffect(() => {
+    if (!currentStep.successCriteria) return
+    // Poll iframe text content to detect interactive state changes (button clicks, etc.)
+    const interval = setInterval(() => {
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement | null
+      const text = iframe?.contentDocument?.body?.innerText || ''
+      setLiveIframeText((prev) => (prev !== text ? text : prev))
+    }, 500)
+    return () => clearInterval(interval)
+  }, [currentStep.successCriteria])
+
   // Validation Effect
   useEffect(() => {
     if (!currentStep.successCriteria) return
@@ -340,6 +354,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
         currentStep.successCriteria!,
         lastRenderedHtml,
         (path) => engineRef.current?.fetchRouteContent(path) || Promise.resolve(''),
+        liveIframeText,
       )
 
       if (!isMounted) return
@@ -362,7 +377,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     return () => {
       isMounted = false
     }
-  }, [files, lastRenderedHtml, currentStep.successCriteria, isCompleted])
+  }, [files, lastRenderedHtml, liveIframeText, currentStep.successCriteria, isCompleted])
 
   // Reset completion on step change
   useEffect(() => {

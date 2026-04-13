@@ -4,14 +4,18 @@ version = "0.0.0"
 dependencies = [
     "pywire[dev]",
     "pywire-language-server",
+    "pywire-parser",
     "tree-sitter>=0.25.2",
+    "tree-sitter-pywire",
 ]
 
 [tool.uv]
 workspace = { members = [
     "packages/pywire",
     "packages/pywire-language-server",
+    "packages/pywire-parser",
     "packages/create-pywire-app",
+    "packages/tree-sitter-pywire",
     "examples/demo-app",
     "examples/demo-components",
     "examples/demo-routing",
@@ -21,6 +25,8 @@ workspace = { members = [
 [tool.uv.sources]
 pywire = { workspace = true }
 pywire-language-server = { workspace = true }
+pywire-parser = { workspace = true }
+tree-sitter-pywire = { workspace = true }
 
 [tool.ty.environment]
 python-version = "3.11"

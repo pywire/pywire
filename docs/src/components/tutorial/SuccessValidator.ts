@@ -15,6 +15,7 @@ export class SuccessValidator {
     criteria: SuccessCriteria[],
     browserHtml?: string,
     fetchRoute?: (path: string) => Promise<string>,
+    liveIframeText?: string,
   ): Promise<ValidationResult[]> {
     if (!criteria || criteria.length === 0) return []
 
@@ -31,26 +32,38 @@ export class SuccessValidator {
 
           case 'file_contains': {
             const content = files[criterion.target || '']
-            passed = content?.includes(criterion.pattern || '') ?? false
+            passed = content !== undefined && new RegExp(criterion.pattern || '').test(content)
             break
           }
 
           case 'browser_route_text': {
-            let htmlToCheck = browserHtml
-            if (criterion.route && fetchRoute) {
-              try {
-                htmlToCheck = await fetchRoute(criterion.route)
-              } catch (e) {
-                console.warn(`Failed to fetch route ${criterion.route}:`, e)
-                passed = false
-                break
-              }
-            }
+            // Check live iframe text content first (captures reactive state from WS updates).
+            // Fall back to re-fetching the route via HTTP (only sees initial server-rendered state).
             if (criterion.pattern) {
               const regex = new RegExp(criterion.pattern)
-              passed = regex.test(htmlToCheck || '')
-            } else {
-              passed = false
+
+              // First try: live iframe DOM text (includes reactive/interactive state)
+              if (liveIframeText && regex.test(liveIframeText)) {
+                passed = true
+                break
+              }
+
+              // Second try: last rendered HTML from HTTP response
+              if (browserHtml && regex.test(browserHtml)) {
+                passed = true
+                break
+              }
+
+              // Third try: re-fetch the specific route
+              if (criterion.route && fetchRoute) {
+                try {
+                  const fetched = await fetchRoute(criterion.route)
+                  passed = regex.test(fetched || '')
+                } catch (e) {
+                  console.warn(`Failed to fetch route ${criterion.route}:`, e)
+                  passed = false
+                }
+              }
             }
             break
           }
