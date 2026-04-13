@@ -257,8 +257,8 @@ jobs:
           pattern: tree-sitter-pywire-*
           path: dist
           merge-multiple: true
-      - name: Remove WASM wheels (PyPI rejects pyemscripten platform tags)
-        run: find dist -name '*pyemscripten*' -delete
+      - name: Remove WASM wheels (PyPI rejects WASM platform tags)
+        run: find dist -name '*wasm32*' -delete
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
