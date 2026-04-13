@@ -199,7 +199,7 @@ jobs:
           python-version: "3.13"
           enable-cache: false
       - name: Install pyodide-build
-        run: uv tool install "pyodide-build>=0.32.0,<0.33.0"
+        run: uv tool install pyodide-cli --with "pyodide-build>=0.32.0,<0.33.0"
       - name: Set up Pyodide cross-build environment
         run: pyodide xbuildenv install 0.29.3
       - name: Build WASM wheel
