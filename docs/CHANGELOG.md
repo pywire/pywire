@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.4.0...pywire-docs-v0.4.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* **pywire-docs:** fix esbuild --define quoting for execFileSync ([fcbb846](https://github.com/pywire/pywire/commit/fcbb846831b1e0a5dfe69f56ce615c0abb2a88fe))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.3.0...pywire-docs-v0.4.0) (2026-04-13)
 
 
