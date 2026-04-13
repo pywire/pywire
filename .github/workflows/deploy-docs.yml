@@ -51,7 +51,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-          enable-cache: true
+          enable-cache: false
 
       - name: Install dependencies
         run: pnpm install
@@ -59,8 +59,8 @@ jobs:
       - name: Build
         run: cd docs && pnpm run build
         env:
-          PYWIRE_PYPI_INSTALL: ${{ inputs.environment == 'production' && '1' || '' }}
-          PYWIRE_WASM_BUILD: ${{ inputs.environment != 'production' && '1' || '' }}
+          PYWIRE_PYPI_INSTALL: ${{ (inputs.environment || 'production') == 'production' && '1' || '' }}
+          PYWIRE_WASM_BUILD: ${{ (inputs.environment || 'production') != 'production' && '1' || '' }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
@@ -70,4 +70,4 @@ jobs:
           projectName: pywire-docs
           directory: docs/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ inputs.environment == 'production' && 'main' || 'nightly' }}
+          branch: ${{ (inputs.environment || 'production') == 'production' && 'main' || 'nightly' }}
