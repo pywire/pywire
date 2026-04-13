@@ -3,7 +3,7 @@
   "maintainers": [
     "Reece Holmdahl"
   ],
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Tree-sitter grammar for PyWire",
   "main": "index.js",
   "scripts": {

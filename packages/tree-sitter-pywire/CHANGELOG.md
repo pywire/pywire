@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.3...tree-sitter-pywire-v0.3.4) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** install pyodide-cli (not pyodide-build) as uv tool for pyodide CLI ([349fa44](https://github.com/pywire/pywire/commit/349fa44c68d51eb7ce6a2fcc3561cadcb4ec67ca))
+
 ## [0.3.3](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.2...tree-sitter-pywire-v0.3.3) (2026-04-13)
 
 
