@@ -48,15 +48,6 @@ jobs:
         with:
           version: 9
 
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: wasm32-unknown-emscripten
-
-      - uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: 4.0.9
-          actions-cache-folder: 'emsdk-cache'
-
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
@@ -66,10 +57,10 @@ jobs:
         run: pnpm install
 
       - name: Build
-        env:
-          PYWIRE_WASM_BUILD: "1"
-          EMCC_SKIP_WASM_OPT: "1"
         run: cd docs && pnpm run build
+        env:
+          PYWIRE_PYPI_INSTALL: ${{ inputs.environment == 'production' && '1' || '' }}
+          PYWIRE_WASM_BUILD: ${{ inputs.environment != 'production' && '1' || '' }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1

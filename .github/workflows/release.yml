@@ -21,11 +21,14 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       pywire--release_created: ${{ steps.release.outputs['packages/pywire--release_created'] }}
       pywire--tag_name: ${{ steps.release.outputs['packages/pywire--tag_name'] }}
+      pywire-parser--release_created: ${{ steps.release.outputs['packages/pywire-parser--release_created'] }}
+      pywire-parser--tag_name: ${{ steps.release.outputs['packages/pywire-parser--tag_name'] }}
       pywire-language-server--release_created: ${{ steps.release.outputs['packages/pywire-language-server--release_created'] }}
       pywire-language-server--tag_name: ${{ steps.release.outputs['packages/pywire-language-server--tag_name'] }}
       vscode-pywire--release_created: ${{ steps.release.outputs['packages/vscode-pywire--release_created'] }}
       vscode-pywire--tag_name: ${{ steps.release.outputs['packages/vscode-pywire--tag_name'] }}
       tree-sitter-pywire--release_created: ${{ steps.release.outputs['packages/tree-sitter-pywire--release_created'] }}
+      tree-sitter-pywire--tag_name: ${{ steps.release.outputs['packages/tree-sitter-pywire--tag_name'] }}
       prettier-plugin-pywire--release_created: ${{ steps.release.outputs['packages/prettier-plugin-pywire--release_created'] }}
       create-pywire-app--release_created: ${{ steps.release.outputs['packages/create-pywire-app--release_created'] }}
       pywire-docs--release_created: ${{ steps.release.outputs['docs--release_created'] }}
@@ -102,51 +105,9 @@ jobs:
             gh pr update-branch "$num" --repo "$GITHUB_REPOSITORY" || true
           done
 
-  # Build pywire wheels across all platforms/architectures
-  build-pywire-wheels:
-    name: "Build pywire wheels"
-    needs: release-please
-    if: needs.release-please.outputs.pywire--release_created == 'true'
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64
-            manylinux: auto
-          - os: ubuntu-latest
-            target: aarch64
-            manylinux: auto
-          - os: macos-latest
-            target: universal2-apple-darwin
-          - os: windows-latest
-            target: x86_64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Build JS client
-        run: pnpm install && pnpm build
-        working-directory: packages/pywire/src/pywire/client
-      - uses: PyO3/maturin-action@v1
-        with:
-          working-directory: packages/pywire
-          command: build
-          target: ${{ matrix.target }}
-          manylinux: ${{ matrix.manylinux || '' }}
-          args: --release --out dist --find-interpreter
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pywire-wheels-${{ matrix.os }}-${{ matrix.target }}
-          path: packages/pywire/dist/*.whl
-
-  # Build pywire source distribution
-  build-pywire-sdist:
-    name: "Build pywire sdist"
+  # Build pywire (pure Python wheel + sdist)
+  build-pywire:
+    name: "Build pywire"
     needs: release-please
     if: needs.release-please.outputs.pywire--release_created == 'true'
     runs-on: ubuntu-latest
@@ -161,32 +122,98 @@ jobs:
       - name: Build JS client
         run: pnpm install && pnpm build
         working-directory: packages/pywire/src/pywire/client
-      - uses: PyO3/maturin-action@v1
-        with:
-          working-directory: packages/pywire
-          command: sdist
-          args: --out dist
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire
       - uses: actions/upload-artifact@v4
         with:
-          name: pywire-sdist
-          path: packages/pywire/dist/*.tar.gz
+          name: pywire-dist
+          path: packages/pywire/dist/*
 
   # Publish pywire to PyPI
   publish-pywire:
     name: "Publish pywire to PyPI"
-    needs: [build-pywire-wheels, build-pywire-sdist]
+    needs: build-pywire
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: pywire-*
+          name: pywire-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # Build and publish tree-sitter-pywire (C extension wheels)
+  build-tree-sitter-pywire:
+    name: "Build tree-sitter-pywire wheels"
+    needs: release-please
+    if: needs.release-please.outputs.tree-sitter-pywire--release_created == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/cibuildwheel@v2.23
+        with:
+          package-dir: packages/tree-sitter-pywire
+        env:
+          CIBW_BUILD: "cp310-*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tree-sitter-pywire-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build-tree-sitter-pywire-sdist:
+    name: "Build tree-sitter-pywire sdist"
+    needs: release-please
+    if: needs.release-please.outputs.tree-sitter-pywire--release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --sdist --out-dir dist
+        working-directory: packages/tree-sitter-pywire
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tree-sitter-pywire-sdist
+          path: packages/tree-sitter-pywire/dist/*.tar.gz
+
+  publish-tree-sitter-pywire:
+    name: "Publish tree-sitter-pywire to PyPI"
+    needs: [build-tree-sitter-pywire, build-tree-sitter-pywire-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tree-sitter-pywire-*
           path: dist
           merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+  # Build and publish pywire-parser (pure Python)
+  publish-pywire-parser:
+    name: "Publish pywire-parser to PyPI"
+    needs: release-please
+    if: needs.release-please.outputs.pywire-parser--release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-parser
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/pywire-parser/dist/
 
   # Publish language server to PyPI
   publish-language-server:

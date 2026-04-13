@@ -1,23 +1,20 @@
 ---
-title: Wire as a namespace
+title: Wire namespaces
 tutorial: Basic PyWire
 section: Reactivity
-description: Use wire() to manage complex state objects as namespaces.
+description: Use wire() with keyword arguments to create reactive namespaces.
 files:
   - path: pages/index.wire
     initial: |
       ---
-      user = wire({
-        "name": "Anonymous",
-        "clicks": 0
-      })
+      user = wire(name="Anonymous", clicks=0)
 
       def track_click():
         # Update user.clicks
         pass
       ---
       <div>
-        <h1>State Namespaces</h1>
+        <h1>Wire Namespaces</h1>
         <p>User: {user.name}</p>
         <p>Clicks: {user.clicks}</p>
         <button @click={track_click}>
@@ -26,16 +23,13 @@ files:
       </div>
     solution: |
       ---
-      user = wire({
-        "name": "Dev",
-        "clicks": 0
-      })
+      user = wire(name="Dev", clicks=0)
 
       def track_click():
         user.clicks += 1
       ---
       <div>
-        <h1>State Namespaces</h1>
+        <h1>Wire Namespaces</h1>
         <p>User: {user.name}</p>
         <p>Clicks: {user.clicks}</p>
         <button @click={track_click}>
@@ -54,11 +48,11 @@ successCriteria:
 pagesDir: pages
 ---
 
-The `wire()` function can take a dictionary or object, creating a reactive namespace. You can access and mutate nested properties using standard dot notation.
+The `wire()` function accepts keyword arguments to create a reactive namespace. You can access and mutate properties using standard dot notation.
 
 ### Your Task
 
 1.  In the `track_click` function, increment `user.clicks`.
 2.  Click the button 3 times.
 
-Using `wire()` for objects lets you group related state together while keeping everything reactive. Wires automatically unwrap for attribute access and modification.
+Wire namespaces (created with `wire(key=value, ...)`) group related state together while keeping everything reactive. Note: this is different from `wire({"key": "value"})` which creates a `WireDict` — a reactive dictionary. Both support dot-notation access, but namespaces are the preferred pattern for structured state.
