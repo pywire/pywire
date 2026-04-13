@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.5...tree-sitter-pywire-v0.3.6) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** skip EM_CONFIG export when empty to fix emcc -v failure ([f3947ba](https://github.com/pywire/pywire/commit/f3947badada32373eedd8352179e39014ee661e8))
+
 ## [0.3.5](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.4...tree-sitter-pywire-v0.3.5) (2026-04-13)
 
 
