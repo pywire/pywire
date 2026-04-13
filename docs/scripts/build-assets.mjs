@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,9 +11,10 @@ const PYWIRE_PARSER_PKG = path.resolve(__dirname, '../../packages/pywire-parser'
 const TS_PYWIRE_PKG = path.resolve(__dirname, '../../packages/tree-sitter-pywire')
 const CLIENT_DIR = path.resolve(PYWIRE_PKG, 'src/pywire/client')
 
-function run(cmd, cwd) {
-  console.log(`> ${cmd} (in ${cwd})`)
-  execSync(cmd, { cwd, stdio: 'inherit' })
+// Use execFileSync (no shell) so paths with spaces/special chars are safe
+function run(bin, args, cwd) {
+  console.log(`> ${bin} ${args.join(' ')} (in ${cwd})`)
+  execFileSync(bin, args, { cwd, stdio: 'inherit' })
 }
 
 const INSTALL_SOURCE = process.env.PYWIRE_PYPI_INSTALL === '1' ? 'pypi' : 'local'
@@ -29,18 +30,27 @@ function bundleWorkers({
     { src: 'src/pywire-worker.ts', dest: 'public/pywire-worker.js' },
   ]
 
-  const defines = [
+  const defineArgs = [
     `--define:__PYWIRE_WHEEL_NAME__='"${pywireWheel}"'`,
     `--define:__PYWIRE_PARSER_WHEEL_NAME__='"${parserWheel}"'`,
     `--define:__TS_PYWIRE_WHEEL_NAME__='"${tsPywireWheel}"'`,
     `--define:__PYWIRE_INSTALL_SOURCE__='"${INSTALL_SOURCE}"'`,
-  ].join(' ')
+  ]
 
   for (const worker of workers) {
     const swSrc = path.resolve(DOCS_DIR, worker.src)
     const swDest = path.resolve(DOCS_DIR, worker.dest)
     run(
-      `npx esbuild ${swSrc} --bundle --outfile=${swDest} --minify --platform=browser ${defines}`,
+      'npx',
+      [
+        'esbuild',
+        swSrc,
+        '--bundle',
+        `--outfile=${swDest}`,
+        '--minify',
+        '--platform=browser',
+        ...defineArgs,
+      ],
       DOCS_DIR,
     )
   }
@@ -52,9 +62,9 @@ async function main() {
   // 1. Build Client
   console.log('\n--- Building Client ---')
   if (!fs.existsSync(path.join(CLIENT_DIR, 'node_modules'))) {
-    run('pnpm install', CLIENT_DIR)
+    run('pnpm', ['install'], CLIENT_DIR)
   }
-  run('pnpm build', CLIENT_DIR)
+  run('pnpm', ['build'], CLIENT_DIR)
 
   const staticDest = path.join(DOCS_PUBLIC_DIR, '_pywire/static')
   fs.mkdirSync(staticDest, { recursive: true })
@@ -104,7 +114,7 @@ async function main() {
 
   // 2a. Build pywire-parser (pure Python)
   console.log('\n--- Building pywire-parser wheel ---')
-  run(`uv build --wheel --out-dir ${publicDistDir}`, PYWIRE_PARSER_PKG)
+  run('uv', ['build', '--wheel', '--out-dir', publicDistDir], PYWIRE_PARSER_PKG)
 
   // 2b. Build tree-sitter-pywire
   // If PYWIRE_WASM_BUILD is set, use pyodide build for WASM wheel (CI with emsdk)
@@ -134,20 +144,45 @@ async function main() {
       ].filter(Boolean)
       const emsdkEnvPath = emsdkCandidates.find((p) => fs.existsSync(p)) || ''
 
-      const setupCmd = [
-        `uv venv ${venvPath} --python 3.13`,
-        `uv pip install --python ${venvPath}/bin/python "pyodide-build>=0.32.0,<0.33.0" "wheel>=0.42.0" "pip"`,
-      ].join(' && ')
+      // Set up the build venv — two sequential commands (no shell chaining needed)
+      run('uv', ['venv', venvPath, '--python', '3.13'], TS_PYWIRE_PKG)
+      run(
+        'uv',
+        [
+          'pip',
+          'install',
+          '--python',
+          path.join(venvPath, 'bin', 'python'),
+          'pyodide-build>=0.32.0,<0.33.0',
+          'wheel>=0.42.0',
+          'pip',
+        ],
+        TS_PYWIRE_PKG,
+      )
 
-      run(setupCmd, TS_PYWIRE_PKG)
-
-      let buildCommand = `${pyodideBin} build . --verbose --outdir ${publicDistDir}`
       if (emsdkEnvPath) {
         console.log(`Using emsdk from: ${emsdkEnvPath}`)
-        buildCommand = `bash -c "source '${emsdkEnvPath}' && ${buildCommand}"`
+        // Pass paths as positional args to avoid shell interpolation of env-derived values.
+        // bash -c script receives them via $1, $2, $3 (not interpolated by the shell).
+        execFileSync(
+          'bash',
+          [
+            '-c',
+            'source "$1" && "$2" build . --verbose --outdir "$3"',
+            '--',
+            emsdkEnvPath,
+            pyodideBin,
+            publicDistDir,
+          ],
+          { cwd: TS_PYWIRE_PKG, stdio: 'inherit', env },
+        )
+      } else {
+        run(
+          'uv',
+          ['run', 'pyodide', 'build', '.', '--verbose', '--outdir', publicDistDir],
+          TS_PYWIRE_PKG,
+        )
       }
-
-      execSync(buildCommand, { cwd: TS_PYWIRE_PKG, stdio: 'inherit', env })
     } catch (e) {
       console.error('Failed to build WASM wheel for tree-sitter-pywire:', e)
       process.exit(1)
@@ -156,7 +191,7 @@ async function main() {
     // Local dev: build native wheel — the worker will load tree-sitter from Pyodide's
     // built-in packages and mock tree-sitter-pywire if the wheel is not WASM-compatible
     try {
-      run(`uv build --wheel --out-dir ${publicDistDir}`, TS_PYWIRE_PKG)
+      run('uv', ['build', '--wheel', '--out-dir', publicDistDir], TS_PYWIRE_PKG)
     } catch (e) {
       console.warn(
         'tree-sitter-pywire native build failed (expected in some environments):',
@@ -168,14 +203,22 @@ async function main() {
   // 2c. Build pywire (pure Python)
   console.log('\n--- Building pywire wheel ---')
   try {
-    run(`uv build --wheel --out-dir ${publicDistDir}`, PYWIRE_PKG)
+    run('uv', ['build', '--wheel', '--out-dir', publicDistDir], PYWIRE_PKG)
   } catch (_e) {
     console.warn('uv build failed, trying uv run python -m build')
     try {
-      run(`uv run --all-extras python -m build --wheel --outdir ${publicDistDir}`, PYWIRE_PKG)
+      run(
+        'uv',
+        ['run', '--all-extras', 'python', '-m', 'build', '--wheel', '--outdir', publicDistDir],
+        PYWIRE_PKG,
+      )
     } catch (_e2) {
       console.warn('uv run failed, falling back to .venv/bin/python3')
-      run(`.venv/bin/python3 -m build --wheel --outdir ${publicDistDir}`, PYWIRE_PKG)
+      run(
+        path.join(PYWIRE_PKG, '.venv', 'bin', 'python3'),
+        ['-m', 'build', '--wheel', '--outdir', publicDistDir],
+        PYWIRE_PKG,
+      )
     }
   }
 
