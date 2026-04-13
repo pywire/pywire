@@ -147,7 +147,7 @@ cache_valid
         await micropip.install('starlette', { target: sitePackages })
         await micropip.install('tree-sitter-pywire', {
           target: sitePackages,
-          index_urls: ['https://pywire.dev/cdn/simple', 'https://pypi.org/simple'],
+          index_urls: pyodide.toPy(['https://pywire.dev/cdn/simple', 'https://pypi.org/simple']),
         })
         await micropip.install('pywire-parser', { target: sitePackages })
         await micropip.install('pywire', { target: sitePackages, deps: false })
