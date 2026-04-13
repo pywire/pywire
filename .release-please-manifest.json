@@ -2,7 +2,7 @@
   "packages/pywire-language-server": "0.4.0",
   "packages/pywire": "0.5.0",
   "packages/pywire-parser": "0.2.0",
-  "packages/tree-sitter-pywire": "0.3.2",
+  "packages/tree-sitter-pywire": "0.3.3",
   "packages/vscode-pywire": "0.3.0",
   "packages/prettier-plugin-pywire": "0.2.0",
   "packages/create-pywire-app": "0.4.0",
