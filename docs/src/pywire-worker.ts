@@ -143,18 +143,15 @@ cache_valid
         console.log('[Worker] PyPI mode: installing pywire from PyPI...')
         postMessage({ type: 'STDOUT', message: 'Installing from PyPI...' })
 
-        await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
-        await micropip.install('starlette', { target: sitePackages })
-        // tree-sitter-pywire is a C extension — the WASM wheel is on the PyWire CDN, not PyPI.
-        // Set index_urls from Python (JS arrays don't convert reliably as kwargs in Pyodide),
-        // then call install from JS (which supports the Pyodide-specific `target` kwarg).
+        // Add PyWire CDN as an index source alongside PyPI. The CDN hosts the
+        // tree-sitter-pywire WASM wheel (not available on PyPI). Other packages
+        // aren't on the CDN and will fall through to PyPI automatically.
         await pyodide.runPythonAsync(
           'import micropip; micropip.set_index_urls(["https://pywire.dev/cdn/simple", "https://pypi.org/simple"])'
         )
+        await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
+        await micropip.install('starlette', { target: sitePackages })
         await micropip.install('tree-sitter-pywire', { target: sitePackages })
-        await pyodide.runPythonAsync(
-          'micropip.set_index_urls(["https://pypi.org/simple"])'
-        )
         await micropip.install('pywire-parser', { target: sitePackages })
         await micropip.install('pywire', { target: sitePackages, deps: false })
         console.log('[Worker] All packages installed from PyPI')
