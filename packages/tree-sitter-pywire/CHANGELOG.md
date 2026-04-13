@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.6...tree-sitter-pywire-v0.3.7) (2026-04-13)
+
+
+### Bug Fixes
+
+* **tree-sitter-pywire:** add --remote to wrangler R2 upload; exclude WASM from PyPI ([85b10e6](https://github.com/pywire/pywire/commit/85b10e603262c9c7936348e1f0c85aeeea983e79))
+
 ## [0.3.6](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.5...tree-sitter-pywire-v0.3.6) (2026-04-13)
 
 
