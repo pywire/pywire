@@ -30,11 +30,14 @@ function bundleWorkers({
     { src: 'src/pywire-worker.ts', dest: 'public/pywire-worker.js' },
   ]
 
+  // Use JSON.stringify so each value is a valid JS string literal for esbuild --define.
+  // Do NOT wrap in shell-style outer quotes ('"..."') — execFileSync passes args directly
+  // to esbuild without shell processing, so the outer quotes would become part of the value.
   const defineArgs = [
-    `--define:__PYWIRE_WHEEL_NAME__='"${pywireWheel}"'`,
-    `--define:__PYWIRE_PARSER_WHEEL_NAME__='"${parserWheel}"'`,
-    `--define:__TS_PYWIRE_WHEEL_NAME__='"${tsPywireWheel}"'`,
-    `--define:__PYWIRE_INSTALL_SOURCE__='"${INSTALL_SOURCE}"'`,
+    `--define:__PYWIRE_WHEEL_NAME__=${JSON.stringify(pywireWheel)}`,
+    `--define:__PYWIRE_PARSER_WHEEL_NAME__=${JSON.stringify(parserWheel)}`,
+    `--define:__TS_PYWIRE_WHEEL_NAME__=${JSON.stringify(tsPywireWheel)}`,
+    `--define:__PYWIRE_INSTALL_SOURCE__=${JSON.stringify(INSTALL_SOURCE)}`,
   ]
 
   for (const worker of workers) {
