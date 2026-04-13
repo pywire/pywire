@@ -42,7 +42,16 @@ export interface Command {
 }
 
 export interface ServerMessage {
-  type: 'update' | 'reload' | 'error' | 'console' | 'error_trace' | 'init' | 'navigate' | 'init_ack'
+  type:
+    | 'update'
+    | 'reload'
+    | 'error'
+    | 'console'
+    | 'error_trace'
+    | 'init'
+    | 'navigate'
+    | 'init_ack'
+    | 'ping'
   html?: string
   regions?: Array<{ region: string; html: string }>
   error?: string
@@ -53,6 +62,7 @@ export interface ServerMessage {
   path?: string
   commands?: Command[]
   session_id?: string
+  session_restored?: boolean
 }
 
 export interface NavigateMessage {
@@ -71,7 +81,12 @@ export interface ConsoleMessage {
   lines: string[]
 }
 
-export type ClientMessage = EventMessage | RelocateMessage | RefSyncMessage | InitClientMessage
+export type ClientMessage =
+  | EventMessage
+  | RelocateMessage
+  | RefSyncMessage
+  | RefPropertySyncMessage
+  | InitClientMessage
 
 export interface InitClientMessage {
   type: 'init'
@@ -94,6 +109,13 @@ export interface RelocateMessage {
 export interface RefSyncMessage {
   type: 'ref_sync'
   refId: string
+  value: unknown
+}
+
+export interface RefPropertySyncMessage {
+  type: 'ref_sync'
+  refId: string
+  property: string
   value: unknown
 }
 

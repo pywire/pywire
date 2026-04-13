@@ -170,6 +170,14 @@ export class UnifiedEventHandler {
 
     this.debugLog('[Handler] Processing event:', eventType, 'isUpdating=', DOMUpdater.isUpdating)
 
+    // Skip events already handled server-side via dispatch() interception.
+    // The server called the Python handler directly and marked the CustomEvent
+    // so we don't re-send it back to the server (which would double-execute).
+    if ((e as unknown as Record<string, unknown>).__pwServerHandled) {
+      this.debugLog('[Handler] Skipping server-handled dispatch event:', eventType)
+      return
+    }
+
     // 1. Delegated handlers (standard path walk with bubbling)
     const path = e.composedPath ? e.composedPath() : []
     let propagationStopped = false

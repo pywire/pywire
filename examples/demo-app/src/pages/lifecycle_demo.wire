@@ -17,25 +17,54 @@ if not hasattr(self, 'logs'):
 
 self.logs.append(LogEntry("Top Level", "Executed top-level statements."))
 
-# 2. Standard Hooks (Removed)
-# Users should now use Top-Level code or @mount decorators.
+# 2. @before_load — runs before any page logic (auth checks, redirects)
+@before_load
+def check_auth(self):
+    print("--- [Lifecycle] @before_load check_auth ---")
+    self.logs.append(LogEntry("@before_load", "Auth check passed."))
 
-# 3. New @mount Hook
-@mount
+# 3. @init — before first render (data fetching, state setup)
+@init
 def initialize_data(self):
-    print("--- [Lifecycle] @mount initialize_data ---")
-    self.logs.append(LogEntry("@mount", "Custom mount hook called."))
+    print("--- [Lifecycle] @init initialize_data ---")
+    self.logs.append(LogEntry("@init", "Data initialized."))
 
+@init
+def another_init(self):
+    print("--- [Lifecycle] @init another_init ---")
+    self.logs.append(LogEntry("@init (2)", "Second init hook called."))
+
+# 4. @mount — after first render delivered to client (post-DOM)
 @mount
-def another_hook(self):
-    print("--- [Lifecycle] @mount another_hook ---")
-    self.logs.append(LogEntry("@mount (2)", "Second mount hook called."))
+def on_mounted(self):
+    print("--- [Lifecycle] @mount on_mounted ---")
+    # Note: this runs after the page HTML is sent to the client
+
+# 5. @before_update — before re-render (can cancel update by returning False)
+@before_update
+def guard_update(self):
+    print("--- [Lifecycle] @before_update guard_update ---")
+    return True  # Allow update
+
+# 6. @after_update — after re-render sent to client
+@after_update
+def post_update(self):
+    print("--- [Lifecycle] @after_update post_update ---")
+
+# 7. @error — exception in handler or render
+@error
+def handle_error(self, exc):
+    print(f"--- [Lifecycle] @error handle_error: {exc} ---")
+    return False  # Don't suppress, let it propagate
+
+def increment(self):
+    self.logs.append(LogEntry("Handler", "Button clicked!"))
 ---
 
 <div style="padding: 2rem; max-width: 800px; margin: 0 auto; font-family: system-ui;">
     <h1>Lifecycle Hooks Demo</h1>
     <p>This page demonstrates the execution order of PyWire lifecycle hooks.</p>
-    
+
     <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px; font-family: monospace;">
         <h3>Execution Log:</h3>
         <ul>
@@ -44,8 +73,16 @@ def another_hook(self):
             </li>
         </ul>
     </div>
-    
+
+    <div style="margin-top: 1rem;">
+        <button @click={increment} style="padding: 0.5rem 1rem; cursor: pointer;">
+            Add Log Entry
+        </button>
+    </div>
+
     <div style="margin-top: 2rem;">
         <p><strong>Note:</strong> Check your server console to see the real-time print execution order!</p>
+        <p>Lifecycle order: @before_load -> top-level -> @init -> render -> @mount (after sent to client)</p>
+        <p>Update order: @before_update -> render -> @after_update (after sent to client)</p>
     </div>
 </div>

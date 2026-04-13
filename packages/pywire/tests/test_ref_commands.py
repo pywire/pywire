@@ -115,3 +115,106 @@ async def test_command_forwarding_in_websocket_payload():
     decoded_regions = msgpack.unpackb(ws.sent_messages[0])
     assert "commands" in decoded_regions
     assert decoded_regions["commands"][0]["cmd"] == "blur"
+
+
+def test_set_value_queues_setvalue_command():
+    """Setting ref.value programmatically queues a setValue command."""
+    my_ref = ref[InputElement]()
+    my_ref._ref_id = "ref-abc"
+    my_ref._bound_type = "input"
+
+    my_ref.value = "hello"
+
+    cmds = my_ref._collect_commands()
+    assert len(cmds) == 1
+    assert cmds[0]["cmd"] == "setValue"
+    assert cmds[0]["refId"] == "ref-abc"
+    assert cmds[0]["args"]["value"] == "hello"
+
+
+def test_update_value_does_not_queue_setvalue():
+    """_update_value (from client ref_sync) does NOT queue a setValue command."""
+    my_ref = ref[InputElement]()
+    my_ref._ref_id = "ref-abc"
+    my_ref._bound_type = "input"
+
+    my_ref._update_value("from-client")
+
+    cmds = my_ref._collect_commands()
+    assert len(cmds) == 0
+    assert my_ref._value == "from-client"
+
+
+def test_anyref_set_value_queues_setvalue_command():
+    """Setting InputElement.value programmatically queues a setValue command."""
+    my_ref = InputElement()
+    my_ref._ref_id = "ref-xyz"
+    my_ref._bound_type = "input"
+
+    my_ref.value = "server-set"
+
+    cmds = my_ref._collect_commands()
+    assert len(cmds) == 1
+    assert cmds[0]["cmd"] == "setValue"
+    assert cmds[0]["args"]["value"] == "server-set"
+
+
+def test_anyref_update_value_does_not_queue_setvalue():
+    """InputElement._update_value (from client ref_sync) does NOT queue a setValue command."""
+    my_ref = InputElement()
+    my_ref._ref_id = "ref-xyz"
+    my_ref._bound_type = "input"
+
+    my_ref._update_value("from-client")
+
+    cmds = my_ref._collect_commands()
+    assert len(cmds) == 0
+    assert my_ref._value == "from-client"
+
+
+def test_collect_commands_clears_after_collection():
+    """_collect_commands returns commands and clears the queue."""
+    my_ref = ref[InputElement]()
+    my_ref._ref_id = "ref-1"
+    my_ref._bound_type = "input"
+
+    my_ref.value = "first"
+    my_ref.value = "second"
+
+    cmds = my_ref._collect_commands()
+    assert len(cmds) == 2
+    assert cmds[0]["args"]["value"] == "first"
+    assert cmds[1]["args"]["value"] == "second"
+
+    # Second collect should be empty
+    cmds2 = my_ref._collect_commands()
+    assert len(cmds2) == 0
+
+
+@pytest.mark.asyncio
+async def test_ref_sync_does_not_echo_setvalue():
+    """End-to-end: ref_sync from client should not produce a setValue command back."""
+    from pywire.runtime.websocket import WebSocketHandler
+
+    app = Mock()
+    handler = WebSocketHandler(app)
+    ws = MockWebSocket()
+
+    page = BasePage(request=Mock(), params={}, query={}, path={}, url=None)
+    my_ref = ref[InputElement]()
+    my_ref._ref_id = "ref-echo"
+    my_ref._bound_type = "input"
+    page._refs_by_id["ref-echo"] = my_ref
+
+    handler.connection_pages[ws] = page
+
+    # Simulate ref_sync from client
+    data = {"type": "ref_sync", "refId": "ref-echo", "value": "typed-text"}
+    await handler._handle_ref_sync(ws, data)
+
+    # Value should be updated
+    assert my_ref._value == "typed-text"
+
+    # But no setValue command should be queued (no echo)
+    cmds = my_ref._collect_commands()
+    assert len(cmds) == 0

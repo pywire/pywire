@@ -1,0 +1,120 @@
+---
+from pywire import ref, wire
+
+# Refs
+text_input = ref()
+num_input = ref()
+test_form = ref()
+generic_div = ref()
+
+# Display wires
+value_display = wire("")
+num_display = wire("")
+form_data_display = wire("")
+class_status = wire("")
+operation_log = wire([])
+
+def log_op(msg):
+    operation_log.append(msg)
+
+def do_focus():
+    text_input.focus()
+    log_op("focus called")
+
+def do_blur():
+    text_input.blur()
+    log_op("blur called")
+
+def do_add_class():
+    text_input.add_class("highlighted")
+    log_op("add_class highlighted")
+
+def do_remove_class():
+    text_input.remove_class("highlighted")
+    log_op("remove_class highlighted")
+
+def do_toggle_class():
+    generic_div.toggle_class("toggled")
+    log_op("toggle_class toggled")
+
+def do_set_attribute():
+    generic_div.set_attribute("data-custom", "test-value")
+    log_op("set_attribute data-custom=test-value")
+
+def do_remove_attribute():
+    generic_div.remove_attribute("data-custom")
+    log_op("remove_attribute data-custom")
+
+def do_form_reset():
+    test_form.reset()
+    log_op("form reset called")
+
+def read_text_value():
+    value_display.value = str(text_input.value) if text_input.value is not None else "(none)"
+    log_op(f"read text value: {value_display.value}")
+
+def read_num_value():
+    num_display.value = str(num_input.value) if num_input.value is not None else "(none)"
+    log_op(f"read num value: {num_display.value}")
+
+def read_form_data():
+    import json
+    data = test_form.data
+    form_data_display.value = json.dumps(data, indent=2) if data else "{}"
+    log_op(f"read form data: {form_data_display.value}")
+
+def do_scroll_to():
+    generic_div.scroll_to(top=0, behavior="smooth")
+    log_op("scroll_to called")
+---
+<h1 id="ref-test-title">Ref System Test</h1>
+
+<section id="input-section">
+    <h2>Input Refs</h2>
+    <input type="text" id="text-input" $ref={text_input} placeholder="Type here..." />
+    <input type="number" id="num-input" $ref={num_input} placeholder="0" />
+</section>
+
+<section id="form-section">
+    <h2>Form Ref</h2>
+    <form $ref={test_form} id="test-form">
+        <input type="text" name="username" id="form-username" placeholder="Username" />
+        <input type="email" name="email" id="form-email" placeholder="Email" />
+        <input type="number" name="age" id="form-age" placeholder="Age" />
+    </form>
+</section>
+
+<section id="div-section">
+    <h2>Generic Div Ref</h2>
+    <div $ref={generic_div} id="generic-div">Target Div</div>
+</section>
+
+<section id="controls">
+    <h2>Actions</h2>
+    <button id="focus-btn" @click={do_focus}>Focus Text</button>
+    <button id="blur-btn" @click={do_blur}>Blur Text</button>
+    <button id="add-class-btn" @click={do_add_class}>Add Class</button>
+    <button id="remove-class-btn" @click={do_remove_class}>Remove Class</button>
+    <button id="toggle-class-btn" @click={do_toggle_class}>Toggle Class</button>
+    <button id="set-attr-btn" @click={do_set_attribute}>Set Attribute</button>
+    <button id="remove-attr-btn" @click={do_remove_attribute}>Remove Attribute</button>
+    <button id="form-reset-btn" @click={do_form_reset}>Reset Form</button>
+    <button id="read-text-btn" @click={read_text_value}>Read Text Value</button>
+    <button id="read-num-btn" @click={read_num_value}>Read Num Value</button>
+    <button id="read-form-btn" @click={read_form_data}>Read Form Data</button>
+    <button id="scroll-btn" @click={do_scroll_to}>Scroll To</button>
+</section>
+
+<section id="displays">
+    <h2>Results</h2>
+    <div id="value-display">{value_display}</div>
+    <div id="num-display">{num_display}</div>
+    <pre id="form-data-display">{form_data_display}</pre>
+</section>
+
+<section id="log-section">
+    <h2>Operation Log</h2>
+    <ul id="operation-log">
+        <li $for={entry in operation_log} class="log-entry">{entry}</li>
+    </ul>
+</section>

@@ -1,0 +1,8 @@
+[project]
+name = "v04-validation"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["pywire"]
+
+[tool.uv.sources]
+pywire = { workspace = true }

@@ -1,7 +1,6 @@
 """HTTP transport handler for PyWire fallback."""
 
 import asyncio
-import inspect
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -112,12 +111,7 @@ class HTTPTransportHandler:
             if hasattr(self.app, "get_user"):
                 session.page.user = self.app.get_user(request)
 
-            # Run load hook
-            if hasattr(session.page, "on_load"):
-                if inspect.iscoroutinefunction(session.page.on_load):
-                    await session.page.on_load()
-                else:
-                    session.page.on_load()
+            # (Legacy on_load removed — use @init hooks in .wire files)
 
         self.sessions[session_id] = session
         self.start_cleanup_task()
@@ -218,12 +212,7 @@ class HTTPTransportHandler:
                     request, params, query, path=path_info, url=url_helper
                 )
 
-                # Run load hook
-                if hasattr(session.page, "on_load"):
-                    if inspect.iscoroutinefunction(session.page.on_load):
-                        await session.page.on_load()
-                    else:
-                        session.page.on_load()
+                # (Legacy on_load removed — use @init hooks in .wire files)
 
             # Dispatch event
             update = await session.page.handle_event(handler_name, event_data)

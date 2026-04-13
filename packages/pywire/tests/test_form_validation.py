@@ -126,5 +126,115 @@ class TestFormValidation(unittest.TestCase):
         self.assertEqual(result["shipping"]["street"], "123 Main St")
 
 
+class TestPydanticCustomValidators(unittest.TestCase):
+    """Test that custom Pydantic validators produce correct FieldErrors."""
+
+    def test_field_validator_error_maps_to_pydantic_source(self) -> None:
+        """@field_validator errors should have source='pydantic'."""
+        from pydantic import BaseModel, field_validator
+        from pywire.runtime.pydantic_integration import validate_with_model
+
+        class StrictUser(BaseModel):
+            username: str
+
+            @field_validator("username")
+            @classmethod
+            def no_spaces(cls, v: str) -> str:
+                if " " in v:
+                    raise ValueError("No spaces allowed")
+                return v
+
+        instance, errors = validate_with_model({"username": "has space"}, StrictUser)
+        self.assertIsNone(instance)
+        self.assertIn("username", errors)
+        self.assertEqual(errors["username"].source, "pydantic")
+        self.assertIn("No spaces allowed", errors["username"].message)
+
+    def test_field_validator_success(self) -> None:
+        """Valid data should pass custom @field_validator."""
+        from pydantic import BaseModel, field_validator
+        from pywire.runtime.pydantic_integration import validate_with_model
+
+        class StrictUser(BaseModel):
+            username: str
+
+            @field_validator("username")
+            @classmethod
+            def no_spaces(cls, v: str) -> str:
+                if " " in v:
+                    raise ValueError("No spaces allowed")
+                return v
+
+        instance, errors = validate_with_model({"username": "validuser"}, StrictUser)
+        self.assertIsNotNone(instance)
+        self.assertEqual(errors, {})
+        self.assertEqual(instance.username, "validuser")
+
+    def test_nested_model_error_dot_notation(self) -> None:
+        """Nested model errors should produce dot-notation field names."""
+        from pydantic import BaseModel
+        from pywire.runtime.pydantic_integration import validate_with_model
+        from pywire.runtime.form_errors import build_error_namespace
+
+        class Inner(BaseModel):
+            city: str
+
+        class Outer(BaseModel):
+            name: str
+            address: Inner
+
+        # Missing city in nested model
+        instance, errors = validate_with_model(
+            {"name": "Alice", "address.street": "Main"}, Outer
+        )
+        self.assertIsNone(instance)
+        # Should have a dot-notation key like "address.city"
+        nested_keys = [k for k in errors if k.startswith("address.")]
+        self.assertTrue(
+            len(nested_keys) > 0,
+            f"Expected nested error keys, got: {list(errors.keys())}",
+        )
+
+        # Verify ErrorNamespace dot access works
+        ns = build_error_namespace(errors)
+        self.assertTrue(ns.address)
+        # At least one nested field should have an error
+        has_nested = bool(ns.address.city)
+        self.assertTrue(has_nested, "Expected address.city error in namespace")
+
+    def test_nested_model_custom_validator_error(self) -> None:
+        """Custom validator on nested model should produce dot-notation error."""
+        from pydantic import BaseModel, field_validator
+        from pywire.runtime.pydantic_integration import validate_with_model
+        from pywire.runtime.form_errors import build_error_namespace
+
+        class Addr(BaseModel):
+            city: str
+
+            @field_validator("city")
+            @classmethod
+            def must_be_upper(cls, v: str) -> str:
+                if v != v.upper():
+                    raise ValueError("City must be uppercase")
+                return v
+
+        class Person(BaseModel):
+            name: str
+            address: Addr
+
+        instance, errors = validate_with_model(
+            {"name": "Bob", "address.city": "nyc"}, Person
+        )
+        self.assertIsNone(instance)
+        self.assertIn("address.city", errors)
+        self.assertEqual(errors["address.city"].source, "pydantic")
+        self.assertIn("uppercase", errors["address.city"].message.lower())
+
+        # Verify ErrorNamespace dot access
+        ns = build_error_namespace(errors)
+        self.assertTrue(ns.address.city)
+        self.assertEqual(ns.address.city.source, "pydantic")
+
+
 if __name__ == "__main__":
     unittest.main()

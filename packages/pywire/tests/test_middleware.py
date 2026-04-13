@@ -220,9 +220,7 @@ class TestMultipleMiddlewareCombined:
     """Test middleware and add_middleware used together."""
 
     def setup_method(self):
-        self.app = _make_app(
-            middleware=[(OrderMiddleware, {"tag": "constructor"})]
-        )
+        self.app = _make_app(middleware=[(OrderMiddleware, {"tag": "constructor"})])
         self.app.add_middleware(OrderMiddleware, tag="add_method")
         self.client = TestClient(self.app, raise_server_exceptions=False)
 

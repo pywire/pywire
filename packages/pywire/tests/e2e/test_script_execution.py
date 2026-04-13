@@ -54,7 +54,9 @@ def test_script_finds_dom_element_on_spa_return(page: Page, pywire_server: str):
     expect(page.locator("#script-result")).to_have_text("found:Target Element")
 
 
-def test_permanent_element_script_does_not_rerun_on_navigation(page: Page, pywire_server: str):
+def test_permanent_element_script_does_not_rerun_on_navigation(
+    page: Page, pywire_server: str
+):
     """Scripts inside $permanent elements should NOT re-execute on SPA navigation.
 
     Note: Wire state updates only re-render affected regions, not the full page,

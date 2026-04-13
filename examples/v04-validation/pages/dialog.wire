@@ -1,0 +1,64 @@
+!path "/dialog"
+
+---
+from pywire import ref, wire
+from pywire.core.refs import DialogElement
+
+dlg_ref = ref[DialogElement]()
+open_state = wire("(not checked)")
+status = wire("dialog not opened yet")
+
+def do_open(self):
+    dlg_ref.show_modal()
+    status.value = "show_modal() queued"
+
+def do_close(self):
+    dlg_ref.close()
+    status.value = "close() queued"
+
+def do_close_with_value(self):
+    dlg_ref.close(return_value="confirmed")
+    status.value = "close('confirmed') queued"
+
+def read_open(self):
+    open_state.value = f"dlg_ref.open = {dlg_ref.open}"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DialogElement Ref — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    button { padding: .5rem 1.2rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; margin: .3rem; }
+    .result { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: .5rem; margin-top: .5rem; font-family: monospace; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+    dialog { border-radius: 8px; border: none; box-shadow: 0 4px 24px rgba(0,0,0,.2); padding: 2rem; min-width: 280px; }
+    dialog::backdrop { background: rgba(0,0,0,.4); }
+    dialog h2 { margin-top: 0; color: #6366f1; }
+    dialog button { background: #ef4444; }
+    dialog button.confirm { background: #22c55e; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>DialogElement Ref</h1>
+
+  <dialog $ref={dlg_ref} id="test-dialog">
+    <h2>Native Dialog</h2>
+    <p>This dialog was opened via <code>dlg_ref.show_modal()</code> from Python.</p>
+    <button id="dialog-close-btn" @click={do_close}>Close</button>
+    <button class="confirm" id="dialog-confirm-btn" @click={do_close_with_value}>Confirm</button>
+  </dialog>
+
+  <div>
+    <button id="open-btn" @click={do_open}>show_modal()</button>
+    <button id="close-btn" @click={do_close}>close()</button>
+    <button id="read-open-btn" @click={read_open}>Read .open State</button>
+  </div>
+
+  <div class="result" id="dialog-status">Status: {status}</div>
+  <div class="result" id="open-state">Open state: {open_state}</div>
+</body>
+</html>

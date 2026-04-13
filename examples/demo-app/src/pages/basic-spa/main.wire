@@ -14,6 +14,7 @@ import asyncio
 forecasts = []
 is_loading = False
 
+@init
 async def on_load():
 
     # Auto-fetch on initial load

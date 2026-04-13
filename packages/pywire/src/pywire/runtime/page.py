@@ -65,18 +65,27 @@ class BasePage:
         "_component_key",
     }
 
-    # Lifecycle hooks registry (extensible!)
-    INIT_HOOKS = [
-        "on_before_load",
-        "on_load",
-    ]
+    # Lifecycle hooks registry
+    BEFORE_LOAD_HOOKS: ClassVar[
+        List[str]
+    ] = []  # @before_load — pages only, before page setup
+    INIT_HOOKS: ClassVar[List[str]] = []  # @init — before first render (data fetching)
+    MOUNT_HOOKS: ClassVar[
+        List[str]
+    ] = []  # @mount — after first render delivered to client
+    UNMOUNT_HOOKS: ClassVar[
+        List[str]
+    ] = []  # @unmount — component removed from render tree
+    BEFORE_UPDATE_HOOKS: ClassVar[
+        List[str]
+    ] = []  # @before_update — before re-render (can cancel)
+    AFTER_UPDATE_HOOKS: ClassVar[
+        List[str]
+    ] = []  # @after_update — after re-render sent to client
+    ERROR_HOOKS: ClassVar[List[str]] = []  # @error — exception in handler or render
 
-    RENDER_HOOKS = [
-        "on_after_render",
-    ]
-
-    # Legacy support / full list
-    LIFECYCLE_HOOKS = INIT_HOOKS + RENDER_HOOKS
+    # Legacy alias
+    RENDER_HOOKS: ClassVar[List[str]] = []
 
     def __init__(
         self,
@@ -175,6 +184,8 @@ class BasePage:
         self._refs_by_id: Dict[str, Any] = {}  # registry for ref instances
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
         self._pending_navigation: Optional[str] = None
+        self._pending_dispatches: List[Dict[str, Any]] = []
+        self._pending_intercepted_handlers: List[tuple[str, dict]] = []
         self._components: Dict[str, "BasePage"] = {}
         self._active_component_keys: Set[str] = set()
         self._component_state_snapshots: Dict[str, Dict[str, Any]] = {}
@@ -392,7 +403,7 @@ class BasePage:
         return instance
 
     def _collect_all_commands(self) -> List[Dict[str, Any]]:
-        """Collect commands from all internal refs and recursive child components."""
+        """Collect commands from all internal refs, pending dispatches, and recursive child components."""
         commands = []
         # 1. Collect from own refs
         for rid, r in self._refs_by_id.items():
@@ -400,7 +411,12 @@ class BasePage:
             if cmds:
                 commands.extend(cmds)
 
-        # 2. Collect from all child components
+        # 2. Collect pending dispatch commands
+        if self._pending_dispatches:
+            commands.extend(self._pending_dispatches)
+            self._pending_dispatches.clear()
+
+        # 3. Collect from all child components
         for key, comp in self._components.items():
             cmds = comp._collect_all_commands()
             if cmds:
@@ -414,7 +430,16 @@ class BasePage:
             if key not in self._active_component_keys
         ]
         for key in stale_keys:
-            self._components.pop(key, None)
+            component = self._components.pop(key, None)
+            if component is not None:
+                # Schedule @unmount hooks for removed components (async-safe)
+                for hook_name in component.UNMOUNT_HOOKS:
+                    hook = getattr(component, hook_name, None)
+                    if hook is not None:
+                        if inspect.iscoroutinefunction(hook):
+                            asyncio.get_event_loop().create_task(hook())
+                        else:
+                            hook()
         self._active_component_keys.clear()
 
     def _sync_ref_data(self, event_data: Dict[str, Any]) -> None:
@@ -498,15 +523,18 @@ class BasePage:
                     bound_kwargs[name] = call_kwargs[name]
 
         from pywire.shell import _request_ctx
+        from pywire.core.dispatch import _page_context
 
-        token = _request_ctx.set(self.request)
+        request_token = _request_ctx.set(self.request)
+        page_token = _page_context.set(self)
         try:
             if inspect.iscoroutinefunction(handler):
                 await handler(**bound_kwargs)
             else:
                 handler(**bound_kwargs)
         finally:
-            _request_ctx.reset(token)
+            _page_context.reset(page_token)
+            _request_ctx.reset(request_token)
 
     async def _handle_component_event(
         self, event_name: str, event_data: Dict[str, Any]
@@ -580,6 +608,42 @@ class BasePage:
 
         return ""
 
+    async def _run_hooks(self, hook_list: List[str]) -> None:
+        """Run a list of lifecycle hooks by method name."""
+        for hook_name in hook_list:
+            hook = getattr(self, hook_name, None)
+            if hook is not None:
+                if inspect.iscoroutinefunction(hook):
+                    await hook()
+                else:
+                    hook()
+
+    async def _run_before_update_hooks(self) -> bool:
+        """Run @before_update hooks. Returns False if any hook returns False (skip update)."""
+        for hook_name in self.BEFORE_UPDATE_HOOKS:
+            hook = getattr(self, hook_name, None)
+            if hook is not None:
+                if inspect.iscoroutinefunction(hook):
+                    result = await hook()
+                else:
+                    result = hook()
+                if result is False:
+                    return False
+        return True
+
+    async def _run_error_hooks(self, exc: Exception) -> bool:
+        """Run @error hooks. Returns True if any hook returns truthy (suppress error)."""
+        for hook_name in self.ERROR_HOOKS:
+            hook = getattr(self, hook_name, None)
+            if hook is not None:
+                if inspect.iscoroutinefunction(hook):
+                    result = await hook(exc)
+                else:
+                    result = hook(exc)
+                if result:
+                    return True
+        return False
+
     async def render(self, init: bool = True) -> Response:
         """Main render method - calls lifecycle hooks."""
 
@@ -591,15 +655,13 @@ class BasePage:
             self._background_tasks.clear()
             self._await_states.clear()
 
-        # Run init hooks only if requested (new page load)
+        # Run @before_load hooks (pages only, before any page logic)
         if init:
-            for hook_name in self.INIT_HOOKS:
-                if hasattr(self, hook_name):
-                    hook = getattr(self, hook_name)
-                    if inspect.iscoroutinefunction(hook):
-                        await hook()
-                    else:
-                        hook()
+            await self._run_hooks(self.BEFORE_LOAD_HOOKS)
+
+        # Run @init hooks only if requested (new page load — data fetching)
+        if init:
+            await self._run_hooks(self.INIT_HOOKS)
 
         # Render template (may be async for layouts with render_slot calls)
         # Render HTML
@@ -686,12 +748,28 @@ class BasePage:
                 pass  # no router available; SPA navigation will use sibling paths only
 
             if not no_spa and not is_component:
+                # Reconnect overlay config from PyWire app
+                reconnect_max_attempts = 10
+                reconnect_overlay_enabled = True
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    _rma = getattr(pywire_app, "reconnect_max_attempts", 10)
+                    if isinstance(_rma, int):
+                        reconnect_max_attempts = _rma
+                    _roe = getattr(pywire_app, "reconnect_overlay", True)
+                    if isinstance(_roe, bool):
+                        reconnect_overlay_enabled = _roe
+                except (AttributeError, KeyError):
+                    pass
+
                 meta = {
                     "sibling_paths": getattr(self, "__sibling_paths__", []),
                     "all_paths": all_wire_paths,
                     "enable_pjax": pjax_enabled,
                     "debug": debug_mode,
                     "static_path": static_url_path,
+                    "reconnect_max_attempts": reconnect_max_attempts,
+                    "reconnect_overlay": reconnect_overlay_enabled,
                 }
                 import json
 
@@ -710,22 +788,29 @@ class BasePage:
                     pass
 
                 client_script = f'<script src="{script_url}"></script>'
-                injection = f"{meta_script}{client_script}"
+
+                # Inject custom reconnect overlay template if loaded
+                reconnect_injection = ""
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    tmpl_html = getattr(pywire_app, "_reconnect_template_html", None)
+                    tmpl_style = getattr(pywire_app, "_reconnect_template_style", None)
+                    if tmpl_html:
+                        reconnect_injection += (
+                            f'<template id="_pywire_reconnect">{tmpl_html}</template>'
+                        )
+                    if tmpl_style:
+                        reconnect_injection += f"<style>{tmpl_style}</style>"
+                except (AttributeError, KeyError):
+                    pass
+
+                injection = f"{reconnect_injection}{meta_script}{client_script}"
 
                 if "</body>" in html:
                     parts = html.rsplit("</body>", 1)
                     html = parts[0] + f"{injection}</body>" + parts[1]
                 else:
                     html += injection
-
-        # Run post-render hooks (always run on render)
-        for hook_name in self.RENDER_HOOKS:
-            if hasattr(self, hook_name):
-                hook = getattr(self, hook_name)
-                if inspect.iscoroutinefunction(hook):
-                    await hook()
-                else:
-                    hook()
 
         response = Response(html, media_type="text/html")
 
@@ -837,15 +922,34 @@ class BasePage:
         self, event_name: str, event_data: dict[str, Any]
     ) -> Dict[str, Any]:
         """Handle client event (from @click, etc.)."""
-        parsed = self._parse_component_event(event_name)
-        if parsed:
-            comp_key, remainder = parsed
-            component = self._components.get(comp_key)
-            if component is None:
-                raise ValueError(f"Component '{comp_key}' not found")
-            await component._handle_component_event(remainder, event_data)
-        else:
-            await self._dispatch_handler(event_name, event_data)
+        try:
+            parsed = self._parse_component_event(event_name)
+            if parsed:
+                comp_key, remainder = parsed
+                component = self._components.get(comp_key)
+                if component is None:
+                    raise ValueError(f"Component '{comp_key}' not found")
+                await component._handle_component_event(remainder, event_data)
+            else:
+                await self._dispatch_handler(event_name, event_data)
+
+            # Drain server-intercepted dispatch handlers (from dispatch()
+            # with bubbles=False targeting a ref with a registered handler).
+            while self._pending_intercepted_handlers:
+                h_name, h_data = self._pending_intercepted_handlers.pop(0)
+                await self._dispatch_handler(h_name, h_data)
+        except Exception as exc:
+            # Run @error hooks — if any returns truthy, suppress the error
+            if await self._run_error_hooks(exc):
+                logger.debug("Error suppressed by @error hook: %s", exc)
+            else:
+                raise
+
+        # Run @before_update hooks — if any returns False, skip the update
+        should_update = await self._run_before_update_hooks()
+        if not should_update:
+            # Return empty update (no changes sent to client)
+            return {"type": "regions", "regions": []}
 
         # Re-render without re-initializing
         from pywire.shell import _request_ctx

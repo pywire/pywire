@@ -1,0 +1,79 @@
+!path "/dispatch"
+
+---
+from pywire import ref, wire, dispatch
+
+target_div = ref()
+dispatch_counter = wire(0)
+
+def fire_dispatch(self):
+    dispatch_counter.value += 1
+    dispatch(
+        "v04-test",
+        detail={"n": dispatch_counter.value, "msg": "hello from python"},
+        target_ref=target_div,
+        bubbles=True,
+    )
+
+def fire_on_body(self):
+    dispatch_counter.value += 1
+    dispatch(
+        "v04-body-test",
+        detail={"n": dispatch_counter.value, "source": "document.body"},
+        bubbles=False,
+    )
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>dispatch() — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    .result { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: .5rem; margin-top: .5rem; font-family: monospace; min-height: 2rem; }
+    button { padding: .5rem 1.2rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; margin: .3rem; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+    section { margin: 1.5rem 0; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 6px; }
+    h2 { margin-top: 0; font-size: 1rem; color: #374151; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>dispatch() Custom DOM Events</h1>
+
+  <section>
+    <h2>Target-ref dispatch (fires on div element)</h2>
+    <div $ref={target_div} id="event-target">Listening for "v04-test"…</div>
+    <br />
+    <button id="dispatch-btn" @click={fire_dispatch}>Dispatch to Div (n={dispatch_counter})</button>
+    <div class="result" id="dispatch-result">waiting for event…</div>
+  </section>
+
+  <section>
+    <h2>Body dispatch (no target_ref → document.body)</h2>
+    <button id="body-dispatch-btn" @click={fire_on_body}>Dispatch to Body</button>
+    <div class="result" id="body-result">waiting for event…</div>
+  </section>
+
+  <script>
+    // Set up listeners once on initial HTTP load.
+    // dispatch() from the server fires CustomEvents into the DOM.
+    document.addEventListener('DOMContentLoaded', function() {
+      // Target-div listener
+      document.addEventListener('v04-test', function(e) {
+        document.getElementById('dispatch-result').textContent =
+          'Received on div: ' + JSON.stringify(e.detail);
+        console.log('[dispatch-test] v04-test fired', e.detail);
+      });
+
+      // Body listener
+      document.addEventListener('v04-body-test', function(e) {
+        document.getElementById('body-result').textContent =
+          'Received on body: ' + JSON.stringify(e.detail);
+        console.log('[dispatch-test] v04-body-test fired', e.detail);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import pytest
-from pywire.core.refs import ref, InputElement, ComponentRef
+from pywire.core.refs import ref, HTMLElement, InputElement, ComponentRef
 from pywire.core.expose import expose
 from pywire.runtime.page import BasePage
 from unittest.mock import Mock
@@ -34,7 +34,7 @@ class TestRefFactory:
         assert isinstance(r2, ComponentRef)
 
         r3 = ref()
-        assert hasattr(r3, "value")  # AnyRef
+        assert isinstance(r3, HTMLElement)  # bare ref returns HTMLElement
 
 
 class TestComponentRefExpose:

@@ -25,6 +25,8 @@ export class DOMUpdater {
   static isUpdating = false
 
   private debug: boolean
+  /** Tracks module script sources that have already been warned about to avoid log spam. */
+  private warnedModuleSrcs = new Set<string>()
 
   constructor(debug: boolean = false) {
     this.debug = debug
@@ -224,10 +226,28 @@ export class DOMUpdater {
    * - Scripts from data-pw-permanent elements are skipped (they already ran).
    * - External scripts with a src already in <head> are skipped to avoid duplicates.
    * - Inline scripts use indirect eval() for global-scope execution.
+   * - `<script type="module">` tags are warned about in dev mode (they cannot
+   *   re-execute on SPA navigation per the browser spec).
+   * - `defer` on dynamically-inserted scripts is silently ignored by browsers.
    */
   private executeScripts(scripts: { script: HTMLScriptElement; inPermanent: boolean }[]): void {
     for (const { script, inPermanent } of scripts) {
       if (inPermanent) continue
+
+      // Warn about module scripts in dev mode — browsers will not re-execute
+      // a module script with the same specifier, so they silently break on
+      // SPA navigations. Warn once per unique src to avoid log spam.
+      if (this.debug && script.type === 'module') {
+        const key = script.getAttribute('src') || script.textContent || ''
+        if (!this.warnedModuleSrcs.has(key)) {
+          this.warnedModuleSrcs.add(key)
+          logger.warn(
+            '[PyWire] Warning: <script type="module"> tags do not re-execute on SPA navigation ' +
+              '(browser spec limitation). Use the pywire:postupdate event for per-page ' +
+              'initialization instead.'
+          )
+        }
+      }
 
       const srcAttr = script.getAttribute('src')
       if (srcAttr) {
@@ -271,7 +291,15 @@ export class DOMUpdater {
     }
 
     try {
-      // Dispatch pre-update event on target
+      /**
+       * **pywire:preupdate** — fired on the morph target before morphdom runs.
+       *
+       * @detail.target  The DOM element about to be updated.
+       *
+       * Use cases:
+       * - Capture element state (scroll positions, animation progress) before the diff.
+       * - Conditionally cancel or defer expensive side-effects.
+       */
       target.dispatchEvent(
         new CustomEvent('pywire:preupdate', { bubbles: true, detail: { target } })
       )
@@ -318,6 +346,15 @@ export class DOMUpdater {
             getNodeKey: (node: Node) => this.getNodeKey(node),
 
             onElUpdated: (el) => {
+              /**
+               * **pywire:update** — fired on each individual element that morphdom updated.
+               *
+               * @detail.el  The element that was patched.
+               *
+               * Use cases:
+               * - Re-initialize third-party widgets bound to a specific element.
+               * - Trigger CSS transition classes after content changes.
+               */
               el.dispatchEvent(new CustomEvent('pywire:update', { bubbles: true, detail: { el } }))
             },
 
@@ -433,7 +470,19 @@ export class DOMUpdater {
         // DOM elements (critical for SPA/PJAX navigation).
         this.executeScripts(deferredScripts)
 
-        // Dispatch post-update event on target (after scripts have executed)
+        /**
+         * **pywire:postupdate** — fired on the morph target after morphdom completes
+         * and extracted scripts have executed.
+         *
+         * Fires on EVERY update (state changes, region updates, and navigations).
+         * For navigation-only hooks, use `pywire:navigate` instead.
+         *
+         * @detail.target  The DOM element that was updated.
+         *
+         * Use cases:
+         * - Re-bind event listeners on dynamically inserted content.
+         * - Run per-page initialization code that must execute after every render.
+         */
         target.dispatchEvent(
           new CustomEvent('pywire:postupdate', { bubbles: true, detail: { target } })
         )

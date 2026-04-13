@@ -1,0 +1,59 @@
+!path "/reconnect"
+
+---
+from pywire import wire
+
+connection_status = wire("connected")
+ping_count = wire(0)
+
+@after_update
+def track_update(self):
+    ping_count.value += 1
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Reconnect Overlay — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    button { padding: .5rem 1.2rem; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; margin: .3rem; }
+    button.safe { background: #6366f1; }
+    .result { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: .5rem; margin-top: .5rem; font-family: monospace; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+    .instructions { background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+    code { background: #f3f4f6; padding: .1rem .3rem; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>Reconnect Overlay</h1>
+
+  <div class="instructions">
+    <strong>How to test:</strong>
+    <ol>
+      <li>Click "Disconnect WebSocket" — the custom reconnect overlay (<code>#v04-reconnect-panel</code>) should appear</li>
+      <li>Wait ~2–5 seconds — the client will automatically attempt to reconnect</li>
+      <li>Once reconnected, the overlay disappears and the update count resumes</li>
+      <li>Or: use DevTools → Network → throttle to "Offline" and back</li>
+    </ol>
+  </div>
+
+  <div>
+    <button id="disconnect-btn" onclick="window.pywire && window.pywire.disconnect(); console.log('[reconnect-test] disconnect called')">
+      Disconnect WebSocket
+    </button>
+    <button class="safe" id="ping-btn" @click={track_update}>Send Update (update count: {ping_count})</button>
+  </div>
+
+  <div class="result" id="conn-status">Status: {connection_status}</div>
+
+  <div style="margin-top:2rem;padding:1rem;border:1px solid #e2e8f0;border-radius:6px;">
+    <h3 style="margin-top:0">WS Keep-Alive Verification</h3>
+    <p>With <code>ws_ping_interval=5</code>, ping frames are sent every 5 seconds.</p>
+    <p>Check: DevTools → Network → WS connection → Frames tab → look for binary ping/pong frames</p>
+    <p>Or open the Console and look for PyWire debug messages.</p>
+  </div>
+</body>
+</html>

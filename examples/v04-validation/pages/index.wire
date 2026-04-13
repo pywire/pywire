@@ -1,0 +1,39 @@
+---
+title = "PyWire v0.4 Validation Suite"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>v0.4 Validation</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { border-bottom: 2px solid #6366f1; padding-bottom: .5rem; }
+    ul { list-style: none; padding: 0; }
+    li { margin: .5rem 0; }
+    a { color: #6366f1; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+    .desc { color: #6b7280; font-size: .9rem; margin-left: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>PyWire v0.4 Validation Suite</h1>
+  <p>Each page exercises one v0.4 feature cluster. All verifiable via DOM inspection.</p>
+  <ul>
+    <li><a href="/lifecycle">Lifecycle Hooks</a><span class="desc">— @before_load → @init → render → @mount → @before_update → @after_update</span></li>
+    <li><a href="/refs">Refs (Input / Form / HTMLElement)</a><span class="desc">— focus, value read, class manipulation, form data</span></li>
+    <li><a href="/value_sync">Bidirectional Ref Value Sync</a><span class="desc">— server pushes new value to input without user typing</span></li>
+    <li><a href="/dispatch">dispatch() Custom Events</a><span class="desc">— Python fires CustomEvent; JS listener writes to DOM</span></li>
+    <li><a href="/nav_events">SPA Navigation Events</a><span class="desc">— pywire:beforenavigate + pywire:navigate captured and shown on next page</span></li>
+    <li><a href="/media">MediaElement Ref</a><span class="desc">— play() / pause() commands on &lt;video&gt;</span></li>
+    <li><a href="/dialog">DialogElement Ref</a><span class="desc">— show_modal() / close() on native &lt;dialog&gt;</span></li>
+    <li><a href="/canvas">CanvasElement Ref</a><span class="desc">— request_data_url() captures canvas content</span></li>
+    <li><a href="/reconnect">Reconnect Overlay</a><span class="desc">— custom __reconnect__.wire template, JS disconnect test</span></li>
+  </ul>
+  <hr />
+  <p style="font-size:.85rem;color:#9ca3af;">
+    WS ping interval: 5s (check DevTools → Network → WS for ping frames)<br>
+    Session TTL: 30s (reconnect after 30s idle to see expiry toast)
+  </p>
+</body>
+</html>

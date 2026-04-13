@@ -8,10 +8,12 @@ import {
   RelocateMessage,
   Command,
   RefSyncMessage,
+  RefPropertySyncMessage,
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
 import { RefManager } from './ref-manager'
+import { ReconnectOverlay } from './reconnect-overlay'
 import { logger } from './logger'
 
 export interface PyWireConfig extends TransportConfig {
@@ -19,6 +21,10 @@ export interface PyWireConfig extends TransportConfig {
   autoInit?: boolean
   /** Enable verbose debug logging */
   debug?: boolean
+  /** Maximum reconnection attempts before giving up (default 10) */
+  reconnectMaxAttempts?: number
+  /** Show reconnection overlay on disconnect (default true) */
+  reconnectOverlay?: boolean
 }
 
 const DEFAULT_CONFIG: PyWireConfig = {
@@ -39,6 +45,7 @@ export class PyWireApp {
   protected updater: DOMUpdater
   protected eventHandler: UnifiedEventHandler
   protected refManager: RefManager
+  protected reconnectOverlay: ReconnectOverlay
   protected initialized = false
   protected config: PyWireConfig
   protected siblingPaths: string[] = []
@@ -49,6 +56,13 @@ export class PyWireApp {
   protected staticPath: string = '/static'
   protected isConnected = false
   protected sessionId: string | null = null
+  private intentionalDisconnect = false
+  /**
+   * Tracks the target path of a pending PJAX navigation.
+   * Set before sending a relocate message, cleared after the resulting
+   * update is applied so we can dispatch `pywire:navigate`.
+   */
+  protected pendingNavigationPath: string | null = null
 
   constructor(config: Partial<PyWireConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -56,16 +70,33 @@ export class PyWireApp {
     this.transport = new TransportManager(this.config)
     this.updater = new DOMUpdater(this.config.debug)
     this.eventHandler = new UnifiedEventHandler(this)
-    this.refManager = new RefManager((refId, value) => {
-      if (this.isConnected) {
-        const msg: RefSyncMessage = {
-          type: 'ref_sync',
-          refId,
-          value,
-        }
-        this.transport.send(msg)
-      }
+    this.reconnectOverlay = new ReconnectOverlay({
+      maxAttempts: this.config.reconnectMaxAttempts,
+      enabled: this.config.reconnectOverlay,
     })
+    this.refManager = new RefManager(
+      (refId, value) => {
+        if (this.isConnected) {
+          const msg: RefSyncMessage = {
+            type: 'ref_sync',
+            refId,
+            value,
+          }
+          this.transport.send(msg)
+        }
+      },
+      (refId, property, value) => {
+        if (this.isConnected) {
+          const msg: RefPropertySyncMessage = {
+            type: 'ref_sync',
+            refId,
+            property,
+            value,
+          }
+          this.transport.send(msg)
+        }
+      }
+    )
   }
 
   getConfig(): PyWireConfig {
@@ -124,6 +155,9 @@ export class PyWireApp {
         initMsg.session_id = this.sessionId
       }
       this.transport.send(initMsg)
+    } else if (!this.intentionalDisconnect) {
+      // Show reconnect overlay when connection drops unexpectedly
+      this.reconnectOverlay.show()
     }
   }
 
@@ -142,6 +176,19 @@ export class PyWireApp {
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
           logger.setDebug(this.config.debug)
+        }
+        // Apply reconnect config from server metadata
+        if (meta.reconnect_max_attempts !== undefined) {
+          this.config.reconnectMaxAttempts = meta.reconnect_max_attempts
+          this.reconnectOverlay = new ReconnectOverlay({
+            maxAttempts: meta.reconnect_max_attempts,
+            enabled: meta.reconnect_overlay ?? this.config.reconnectOverlay,
+          })
+        } else if (meta.reconnect_overlay !== undefined) {
+          this.reconnectOverlay = new ReconnectOverlay({
+            maxAttempts: this.config.reconnectMaxAttempts,
+            enabled: meta.reconnect_overlay,
+          })
         }
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
@@ -183,9 +230,18 @@ export class PyWireApp {
    * Setup SPA navigation for sibling paths.
    */
   protected setupSPANavigation(): void {
-    // Handle browser back/forward
+    // Handle browser back/forward — dispatch beforenavigate then request new page
     window.addEventListener('popstate', () => {
-      this.sendRelocate(window.location.pathname + window.location.search)
+      const targetPath = window.location.pathname + window.location.search
+      // For popstate the browser has already updated the URL, so "from" is unknown.
+      // We pass the target as both from/to; listeners should use `to` primarily.
+      document.dispatchEvent(
+        new CustomEvent('pywire:beforenavigate', {
+          bubbles: true,
+          detail: { from: targetPath, to: targetPath },
+        })
+      )
+      this.sendRelocate(targetPath)
     })
 
     if (this.siblingPaths.length === 0 && !this.pjaxEnabled) return
@@ -235,6 +291,13 @@ export class PyWireApp {
 
   /**
    * Navigate to a path using SPA navigation.
+   *
+   * Dispatches `pywire:beforenavigate` on `document` before the navigation
+   * fetch starts. Listeners can use this to tear down page-specific state
+   * (e.g., remove global event listeners, cancel timers).
+   *
+   * After the server responds and the DOM is updated, `pywire:navigate` is
+   * dispatched (see {@link handleMessage}).
    */
   navigateTo(path: string): void {
     if (!this.isConnected) {
@@ -242,14 +305,35 @@ export class PyWireApp {
       return
     }
 
+    const currentPath = window.location.pathname + window.location.search
+
+    /**
+     * **pywire:beforenavigate** — fired on `document` before a PJAX navigation fetch.
+     *
+     * @detail.from  The path being navigated away from.
+     * @detail.to    The target path.
+     *
+     * Use cases:
+     * - Remove global event listeners (resize, scroll, keydown) added by the current page.
+     * - Cancel pending timers or animation frames.
+     * - Persist unsaved form data to sessionStorage.
+     */
+    document.dispatchEvent(
+      new CustomEvent('pywire:beforenavigate', {
+        bubbles: true,
+        detail: { from: currentPath, to: path },
+      })
+    )
+
     history.pushState({}, '', path)
     this.sendRelocate(path)
   }
 
   /**
-   * Send relocate message to server.
+   * Send relocate message to server and mark a navigation as pending.
    */
   protected sendRelocate(path: string): void {
+    this.pendingNavigationPath = path
     const message: RelocateMessage = {
       type: 'relocate',
       path,
@@ -275,11 +359,18 @@ export class PyWireApp {
    */
   protected async handleMessage(msg: ServerMessage): Promise<void> {
     switch (msg.type) {
-      case 'update':
+      case 'update': {
+        // Capture and clear pending navigation before applying the update,
+        // so we can dispatch pywire:navigate after the DOM settles.
+        const navPath = this.pendingNavigationPath
+        this.pendingNavigationPath = null
+
         if (msg.commands && msg.commands.length > 0) {
           msg.commands.forEach((cmd: Command) => {
             if (cmd.cmd === 'set_cookie' || cmd.cmd === 'delete_cookie') {
               this.handleCookieCommand(cmd)
+            } else if (cmd.cmd === 'dispatch') {
+              this.handleDispatchCommand(cmd)
             } else {
               this.refManager.executeCommand(cmd)
             }
@@ -294,7 +385,35 @@ export class PyWireApp {
           this.updater.update(msg.html)
           this.eventHandler.refreshListeners()
         }
+
+        // If this update was triggered by a PJAX navigation (relocate),
+        // dispatch the post-navigation event after morphdom + scripts complete.
+        if (navPath) {
+          /**
+           * **pywire:navigate** — fired on `document` after a PJAX navigation
+           * completes and the new page is fully rendered (morphdom applied,
+           * scripts executed).
+           *
+           * Unlike `pywire:postupdate`, which fires on ANY DOM update (including
+           * partial state/region updates), this event fires only for full-page
+           * SPA navigations.
+           *
+           * @detail.path  The path that was navigated to.
+           *
+           * Use cases:
+           * - Analytics pageview tracking (e.g., `gtag('event', 'page_view', ...)`).
+           * - Scroll-to-top or focus management after navigation.
+           * - Initializing page-specific libraries or widgets.
+           */
+          document.dispatchEvent(
+            new CustomEvent('pywire:navigate', {
+              bubbles: true,
+              detail: { path: navPath },
+            })
+          )
+        }
         break
+      }
 
       case 'reload':
         logger.log('PyWire: Reloading...')
@@ -325,10 +444,16 @@ export class PyWireApp {
         break
 
       case 'init_ack':
+        // Detect expired session: client had a session_id but server couldn't restore it
+        if (msg.session_restored === false && this.sessionId !== null) {
+          this.showSessionExpiredNotification()
+        }
         // Store session ID for reconnection state restoration
         if (msg.session_id) {
           this.sessionId = msg.session_id
         }
+        // Hide reconnect overlay — state has been synced successfully
+        this.reconnectOverlay.hide()
         logger.log('PyWire: Application ready')
         break
 
@@ -371,6 +496,76 @@ export class PyWireApp {
   }
 
   /**
+   * Show a non-intrusive toast notification when the session has expired.
+   * Auto-dismisses after 5 seconds or on click.
+   */
+  protected showSessionExpiredNotification(): void {
+    const toast = document.createElement('div')
+    toast.textContent = 'Your session has expired. The page has been reset.'
+    toast.setAttribute('role', 'alert')
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      z-index: 10001;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: auto;
+    `
+    document.body.appendChild(toast)
+
+    // Fade in
+    requestAnimationFrame(() => {
+      toast.style.opacity = '1'
+    })
+
+    const dismiss = () => {
+      toast.style.opacity = '0'
+      setTimeout(() => toast.remove(), 300)
+    }
+
+    toast.addEventListener('click', dismiss)
+    setTimeout(dismiss, 5000)
+  }
+
+  /**
+   * Handle a dispatch command from the server (custom DOM event).
+   */
+  protected handleDispatchCommand(cmd: Command): void {
+    const { refId } = cmd
+    const rawCmd = cmd as unknown as Record<string, unknown>
+    const event = rawCmd.event as string
+    const detail = rawCmd.detail ?? {}
+    const bubbles = (rawCmd.bubbles as boolean) ?? true
+    const serverHandled = (rawCmd.serverHandled as boolean) ?? false
+
+    const target = refId ? document.querySelector(`[data-pw-ref="${refId}"]`) : document.body
+
+    if (target) {
+      const customEvent = new CustomEvent(event, {
+        bubbles,
+        detail,
+      })
+      // Mark the event so pywire's event handler skips re-sending it to the
+      // server — the Python handler was already called server-side.
+      if (serverHandled) {
+        ;(customEvent as unknown as Record<string, unknown>).__pwServerHandled = true
+      }
+      target.dispatchEvent(customEvent)
+    } else {
+      logger.warn(`PyWire: dispatch '${event}' failed - ref '${refId}' not found in DOM`)
+    }
+  }
+
+  /**
    * Get the current transport name.
    */
   getTransport(): string | null {
@@ -381,6 +576,8 @@ export class PyWireApp {
    * Disconnect from the server.
    */
   disconnect(): void {
+    this.intentionalDisconnect = true
+    this.reconnectOverlay.hide()
     this.transport.disconnect()
   }
 }

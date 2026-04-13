@@ -1,0 +1,97 @@
+!path "/refs"
+
+---
+import json
+from pywire import ref, wire
+
+text_input = ref()
+form_ref = ref()
+div_ref = ref()
+
+result = wire("")
+form_data_display = wire("")
+class_status = wire("no class")
+
+def read_value(self):
+    val = text_input.value
+    result.value = f"Server read: {val!r}"
+
+def set_server_value(self):
+    text_input.value = "pushed-from-server"
+    result.value = "Server pushed value to input"
+
+def do_focus(self):
+    text_input.focus()
+    result.value = "focus() queued"
+
+def do_add_class(self):
+    div_ref.add_class("highlighted")
+    class_status.value = "class 'highlighted' added"
+
+def do_remove_class(self):
+    div_ref.remove_class("highlighted")
+    class_status.value = "class 'highlighted' removed"
+
+def do_toggle_class(self):
+    div_ref.toggle_class("highlighted")
+    class_status.value = "class 'highlighted' toggled"
+
+def read_form_data(self):
+    data = form_ref.data
+    form_data_display.value = json.dumps(data, indent=2) if data else "{}"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Refs — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    section { margin: 1.5rem 0; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 6px; }
+    h2 { margin-top: 0; font-size: 1rem; color: #374151; }
+    button { padding: .4rem .9rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; margin: .2rem; }
+    input, select { padding: .4rem; border: 1px solid #d1d5db; border-radius: 4px; }
+    .result { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: .5rem; margin-top: .5rem; font-family: monospace; }
+    #target-div { padding: .5rem 1rem; background: #f3f4f6; border-radius: 4px; display: inline-block; }
+    #target-div.highlighted { background: #fef9c3; border: 2px solid #facc15; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+    pre { background: #f8fafc; padding: .5rem; border-radius: 4px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>Refs</h1>
+
+  <section>
+    <h2>InputElement — value read/write</h2>
+    <input type="text" id="text-input" $ref={text_input} placeholder="Type something..." />
+    <br />
+    <button id="read-value-btn" @click={read_value}>Read Value (server)</button>
+    <button id="set-server-btn" @click={set_server_value}>Push from Server</button>
+    <button id="focus-btn" @click={do_focus}>Focus</button>
+    <div class="result" id="input-result">{result}</div>
+  </section>
+
+  <section>
+    <h2>FormElement — .data capture</h2>
+    <form $ref={form_ref} id="test-form" @submit.prevent={read_form_data}>
+      <input type="text" name="username" placeholder="Username" />
+      <input type="email" name="email" placeholder="Email" />
+      <input type="number" name="age" placeholder="Age" />
+      <button id="read-form-btn" type="submit">Read Form Data</button>
+    </form>
+    <pre id="form-data">{form_data_display}</pre>
+  </section>
+
+  <section>
+    <h2>HTMLElement — class manipulation</h2>
+    <div $ref={div_ref} id="target-div">Target Div (watch this change)</div>
+    <br />
+    <button id="add-class-btn" @click={do_add_class}>Add Class</button>
+    <button id="remove-class-btn" @click={do_remove_class}>Remove Class</button>
+    <button id="toggle-class-btn" @click={do_toggle_class}>Toggle Class</button>
+    <div class="result" id="class-status">{class_status}</div>
+  </section>
+</body>
+</html>

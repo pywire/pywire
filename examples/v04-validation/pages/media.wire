@@ -1,0 +1,65 @@
+!path "/media"
+
+---
+from pywire import ref, wire
+from pywire.core.refs import MediaElement
+
+video_ref = ref[MediaElement]()
+status = wire("idle")
+media_state = wire("(not synced yet)")
+
+def do_play(self):
+    video_ref.play()
+    status.value = "play() queued → sent to client"
+
+def do_pause(self):
+    video_ref.pause()
+    status.value = "pause() queued → sent to client"
+
+def do_load(self):
+    video_ref.load()
+    status.value = "load() queued → sent to client"
+
+def read_state(self):
+    media_state.value = f"paused={video_ref.paused}, current_time={video_ref.current_time:.1f}s, duration={video_ref.duration:.1f}s"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MediaElement Ref — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    video { display: block; margin: 1rem 0; border-radius: 6px; }
+    button { padding: .5rem 1.2rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; margin: .3rem; }
+    .result { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: .5rem; margin-top: .5rem; font-family: monospace; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>MediaElement Ref</h1>
+
+  <video
+    $ref={video_ref}
+    id="test-video"
+    src="https://www.w3schools.com/html/mov_bbb.mp4"
+    controls
+    width="400"
+    preload="metadata"
+  >
+    Your browser does not support HTML5 video.
+  </video>
+
+  <div>
+    <button id="play-btn" @click={do_play}>play()</button>
+    <button id="pause-btn" @click={do_pause}>pause()</button>
+    <button id="load-btn" @click={do_load}>load()</button>
+    <button id="read-state-btn" @click={read_state}>Read State</button>
+  </div>
+
+  <div class="result" id="media-status">Status: {status}</div>
+  <div class="result" id="media-state">Media state: {media_state}</div>
+</body>
+</html>

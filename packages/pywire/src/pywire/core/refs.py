@@ -49,9 +49,24 @@ class RefBase(WireBase):
             None  # The child component instance if bound to one
         )
         self._commands: List[Dict[str, Any]] = []
+        self._event_handlers: Dict[str, str] = {}
 
     def _bind(self, bound_type: str, ref_id: str, page: "BasePage"):
-        """Bind the ref to a specific HTML element or form."""
+        """Bind the ref to a specific HTML element or form.
+
+        If this ref was created as a generic HTMLElement (via bare ``ref()``),
+        it will be automatically upgraded to the appropriate subclass
+        (InputElement / FormElement / MediaElement / etc.) based on *bound_type*.
+        """
+        # Auto-upgrade: if this is a plain HTMLElement (not a subclass), swap
+        # the class to match the element it was actually bound to.
+        if type(self) is HTMLElement:
+            target_cls = _BOUND_TYPE_TO_CLASS.get(bound_type, HTMLElement)
+            if target_cls is not HTMLElement:
+                self.__class__ = target_cls  # type: ignore[assignment]
+                # Re-run the target's __init__ to initialize any extra state
+                target_cls.__init__(self)  # type: ignore[misc]
+
         self._bound_type = bound_type
         self._ref_id = ref_id
         self._page = page
@@ -63,7 +78,17 @@ class RefBase(WireBase):
         self._notify_write()
 
     def _bind_component(self, instance: Any, page: "BasePage"):
-        """Bind the ref to a custom component instance."""
+        """Bind the ref to a custom component instance.
+
+        If this ref was created as a plain ``HTMLElement`` (via bare ``ref()``),
+        it will be automatically upgraded to ``ComponentRef`` so that attribute
+        proxying works correctly.
+        """
+        # Auto-upgrade bare HTMLElement -> ComponentRef
+        if type(self) is HTMLElement:
+            self.__class__ = ComponentRef  # type: ignore[assignment]
+            self._component_type = None  # type: ignore[attr-defined]
+
         self._bound_type = "component"
         self._instance = instance
         self._page = page
@@ -91,6 +116,25 @@ class RefBase(WireBase):
         cmds = list(self._commands)
         self._commands.clear()
         return cmds
+
+    def _register_handler(self, event_type: str, handler_name: str) -> None:
+        """Record that this ref's element has a pywire event handler."""
+        self._event_handlers[event_type] = handler_name
+
+    def dispatch(
+        self,
+        event_name: str,
+        *,
+        detail: Optional[Dict[str, Any]] = None,
+        bubbles: bool = True,
+    ) -> None:
+        """Dispatch a custom DOM event from this element.
+
+        Equivalent to calling ``dispatch(event_name, target_ref=self, ...)``.
+        """
+        from pywire.core.dispatch import dispatch as _dispatch
+
+        _dispatch(event_name, detail=detail, bubbles=bubbles, target_ref=self)
 
     # Hooks for value/data updates (to be overridden or extended)
     def _update_data(self, data: Dict[str, Any]):
@@ -165,6 +209,7 @@ class InputElement(HTMLElement):
     def __init__(self, initial_value: Any = None):
         super().__init__()
         self._value: Any = initial_value
+        self._syncing_from_client: bool = False
 
     @property
     def value(self) -> Any:
@@ -183,9 +228,6 @@ class InputElement(HTMLElement):
 
     @value.setter
     def value(self, value: Any):
-        self._update_value(value)
-
-    def _update_value(self, value: Any):
         if self._bound_type and self._bound_type not in (
             "input",
             "element",
@@ -195,6 +237,26 @@ class InputElement(HTMLElement):
                 f"InputElement bound to '{self._bound_type}' cannot accept value updates"
             )
         self._value = value
+        # Push value to client when set programmatically (not from client sync)
+        if not self._syncing_from_client:
+            self._queue_command("setValue", value=value)
+        self._notify_write()
+
+    def _update_value(self, value: Any):
+        """Update value from client sync (ref_sync message). Does NOT push back."""
+        if self._bound_type and self._bound_type not in (
+            "input",
+            "element",
+            "component",
+        ):
+            raise RefTypeError(
+                f"InputElement bound to '{self._bound_type}' cannot accept value updates"
+            )
+        self._syncing_from_client = True
+        try:
+            self._value = value
+        finally:
+            self._syncing_from_client = False
 
 
 class FormElement(HTMLElement):
@@ -275,11 +337,9 @@ class ComponentRef(RefBase, Generic[T]):
             return
 
         if hasattr(self, "_instance") and self._instance:
-            # print(f"DEBUG: ComponentRef.__setattr__ proxying {name} to {self._instance}") # Removed print
             setattr(self._instance, name, value)
             self._notify_write()
         else:
-            # print(f"DEBUG: ComponentRef.__setattr__ setting {name} on self (unbound)") # Removed print
             super().__setattr__(name, value)
 
     @property
@@ -308,110 +368,118 @@ class ComponentRef(RefBase, Generic[T]):
         self._queue_command("addClass", name=name)
 
 
-class AnyRef(FormElement, InputElement, ComponentRef):
-    """
-    Backward compatibility Ref that supports all operations.
-    Used when `ref()` is called without type arguments.
-    """
+class MediaElement(HTMLElement):
+    """Ref for <audio> and <video> elements."""
 
-    def __init__(self, initial_value: Any = None):
-        # Initialize bases
-        HTMLElement.__init__(self)
-        InputElement.__init__(self, initial_value)
-        FormElement.__init__(self)
-        ComponentRef.__init__(self, None)
+    def __init__(self):
+        super().__init__()
+        self._current_time: float = 0.0
+        self._paused: bool = True
+        self._duration: float = 0.0
 
-    # Re-implement guards to avoid confusion even in "Any" mode
-    def _update_data(self, data: Dict[str, Any]):
-        if self._bound_type == "form":
-            self._data = data
-        else:
-            # Maintain old behavior: mostly silent or specific error?
-            # Old code raised RefTypeError, but AnyRef combines them.
-            pass
+    def play(self) -> None:
+        """Queue a play command for the client."""
+        self._queue_command("play")
 
-    def _update_value(self, value: Any):
-        if self._bound_type in ("input", "element", "component"):
-            self._value = value
+    def pause(self) -> None:
+        """Queue a pause command for the client."""
+        self._queue_command("pause")
+
+    def load(self) -> None:
+        """Queue a load command for the client."""
+        self._queue_command("load")
 
     @property
-    def value(self) -> Any:
-        self._track_read()
-        if (
-            self._bound_type == "component"
-            and self._instance
-            and hasattr(self._instance, "value")
-        ):
-            return self._instance.value
-        return self._value
+    def current_time(self) -> float:
+        return self._current_time
 
-    @value.setter
-    def value(self, val: Any):
-        if (
-            self._bound_type == "component"
-            and self._instance
-            and hasattr(self._instance, "value")
-        ):
-            self._instance.value = val
-        else:
-            self._value = val
-        self._notify_write()
+    @property
+    def paused(self) -> bool:
+        return self._paused
 
-    def submit(self):
-        """
-        Handle submit command.
-        Prioritizes component proxy if available,
-        otherwise falls back to native form submit.
-        """
-        print(f"DEBUG: AnyRef.submit() entered. self={self} instance={self._instance}")
-        if self._instance:
-            handler = getattr(self._instance, "submit", None)
-            exposed_methods = getattr(self._instance, "_exposed_methods", set())
-            is_exposed = ("submit" in exposed_methods) or (
-                handler is not None and getattr(handler, "_pywire_exposed", False)
-            )
+    @property
+    def duration(self) -> float:
+        return self._duration
 
-            print(
-                f"DEBUG: AnyRef.submit() found handler={handler} is_exposed={is_exposed}"
-            )
-            if handler is not None and is_exposed:
-                # Call proxied component method
-                print("DEBUG: AnyRef.submit() calling proxy handler")
-                res = handler()
-                import inspect
+    def _update_media_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs media state."""
+        if "currentTime" in state:
+            self._current_time = float(state["currentTime"])
+        if "paused" in state:
+            self._paused = bool(state["paused"])
+        if "duration" in state:
+            self._duration = float(state["duration"])
 
-                if inspect.iscoroutine(res):
-                    return res
 
-                async def _nop():
-                    pass
+class DialogElement(HTMLElement):
+    """Ref for <dialog> elements."""
 
-                return _nop()
+    def __init__(self):
+        super().__init__()
+        self._open: bool = False
 
-        # If we have a DOM ID, use the native command to ensure data sync
-        if self._ref_id:
-            print(
-                f"DEBUG: AnyRef.submit() using native command for ref_id={self._ref_id}"
-            )
-            super().submit()
+    def show_modal(self) -> None:
+        """Queue a showModal command for the client."""
+        self._queue_command("showModal")
 
-            async def _nop():
-                pass
+    def close(self, return_value: str = "") -> None:
+        """Queue a close command for the client."""
+        self._queue_command("close", returnValue=return_value)
 
-            return _nop()
+    @property
+    def open(self) -> bool:
+        return self._open
 
-        # Default to native command (will raise if unbound)
-        print("DEBUG: AnyRef.submit() falling back to native command (super)")
-        super().submit()
+    def _update_dialog_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs dialog state."""
+        if "open" in state:
+            self._open = bool(state["open"])
 
-        async def _nop():
-            pass
 
-        return _nop()
+class CanvasElement(HTMLElement):
+    """Ref for <canvas> elements."""
+
+    def __init__(self):
+        super().__init__()
+        self._data_url: Optional[str] = None
+
+    def request_data_url(self, type: str = "image/png") -> None:
+        """Queue a requestDataUrl command for the client."""
+        self._queue_command("requestDataUrl", type=type)
+
+    @property
+    def data_url(self) -> Optional[str]:
+        return self._data_url
+
+    def _update_canvas_state(self, state: Dict[str, Any]) -> None:
+        """Called when client syncs canvas state."""
+        if "dataUrl" in state:
+            self._data_url = state["dataUrl"]
 
 
 # Type alias for static analysis ease
-Ref = Union[RefBase, HTMLElement, InputElement, FormElement, ComponentRef, AnyRef]
+Ref = Union[
+    RefBase,
+    HTMLElement,
+    InputElement,
+    FormElement,
+    ComponentRef,
+    MediaElement,
+    DialogElement,
+    CanvasElement,
+]
+
+
+# Mapping from bound_type string to the ref class that should handle it
+_BOUND_TYPE_TO_CLASS: Dict[str, Type[RefBase]] = {
+    "input": InputElement,
+    "form": FormElement,
+    "element": HTMLElement,
+    "component": ComponentRef,
+    "media": MediaElement,
+    "dialog": DialogElement,
+    "canvas": CanvasElement,
+}
 
 
 class RefFactory:
@@ -430,6 +498,15 @@ class RefFactory:
     def __getitem__(self, item: Type[FormElement]) -> Type[FormElement]: ...
 
     @overload
+    def __getitem__(self, item: Type[MediaElement]) -> Type[MediaElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[DialogElement]) -> Type[DialogElement]: ...
+
+    @overload
+    def __getitem__(self, item: Type[CanvasElement]) -> Type[CanvasElement]: ...
+
+    @overload
     def __getitem__(self, item: Type[HTMLElement]) -> Type[HTMLElement]: ...
 
     @overload
@@ -445,8 +522,11 @@ class RefFactory:
 
         return _factory
 
-    def __call__(self, initial_value: Any = None) -> "AnyRef":
-        return AnyRef(initial_value)
+    def __call__(self, initial_value: Any = None) -> "HTMLElement":
+        """Create an untyped ref.  Returns an ``HTMLElement`` that will be
+        auto-upgraded to ``InputElement`` or ``FormElement`` when bound via
+        ``_bind()``."""
+        return HTMLElement()
 
 
 ref: RefFactory = RefFactory()

@@ -2,4 +2,5 @@
 export { PyWireApp, PyWireConfig } from './app'
 export { TransportManager, TransportConfig } from './transport-manager'
 export { DOMUpdater } from './dom-updater'
+export { ReconnectOverlay } from './reconnect-overlay'
 export * from './transports'

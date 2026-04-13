@@ -20,9 +20,6 @@ class MockPage(BasePage):
         self.render_count: int = 0
         self.some_state: Any = None
 
-    async def on_load(self) -> None:
-        self.load_async_called = True
-
     async def render(self, init: bool = True) -> Response:
         self.render_count += 1
         return Response("<html></html>")
@@ -230,14 +227,9 @@ class TestWebSocketExhaustive:
         assert msg["type"] == "reload"
 
     @pytest.mark.asyncio
-    async def test_handle_event_sync_onload(self) -> None:
-        class SyncLoadPage(MockPage):
-            async def on_load(self) -> None:
-                self.load_called = True
-                return None
-
+    async def test_handle_event_creates_page_on_missing(self) -> None:
         ws = self.create_mock_ws()
-        self.app.router.match.return_value = (SyncLoadPage, {}, "main")
+        self.app.router.match.return_value = (MockPage, {}, "main")
         data = {"handler": "click", "path": "/"}
         await self.handler._handle_event(ws, data)
-        assert cast(Any, self.handler.connection_pages[ws]).load_called is True
+        assert ws in self.handler.connection_pages

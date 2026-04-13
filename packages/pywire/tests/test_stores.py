@@ -2,7 +2,14 @@
 
 import pytest
 
-from pywire.core.stores import writable, readable, store_derived, WritableStore, ReadableStore, DerivedStore
+from pywire.core.stores import (
+    writable,
+    readable,
+    store_derived,
+    WritableStore,
+    ReadableStore,
+    DerivedStore,
+)
 from pywire.core.signals import Effect, Derived
 from pywire.core.wire import set_render_context, reset_render_context
 
@@ -350,6 +357,7 @@ class TestStoreEdgeCases:
         unsub()
         unsub()
         assert len(stop_count) == 1
+
 
 class TestPublicAPI:
     def test_imports_from_pywire(self):

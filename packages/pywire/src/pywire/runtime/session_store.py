@@ -56,6 +56,7 @@ class MemorySessionStore:
     def __init__(self) -> None:
         self._data: Dict[str, Dict[str, Any]] = {}
         self._expiry: Dict[str, float] = {}  # session_id -> expiry timestamp
+        self._ttl: Dict[str, int] = {}  # session_id -> original TTL in seconds
         self._cleanup_task: Optional[asyncio.Task[None]] = None
 
     def _start_cleanup(self) -> None:
@@ -70,6 +71,7 @@ class MemorySessionStore:
             for sid in expired:
                 self._data.pop(sid, None)
                 self._expiry.pop(sid, None)
+                self._ttl.pop(sid, None)
             if expired:
                 logger.debug("Cleaned up %d expired sessions", len(expired))
 
@@ -84,7 +86,12 @@ class MemorySessionStore:
             # Clean up expired entry
             self._data.pop(session_id, None)
             self._expiry.pop(session_id, None)
+            self._ttl.pop(session_id, None)
             return None
+        # Touch TTL on read so active sessions don't expire
+        original_ttl = self._ttl.get(session_id)
+        if original_ttl is not None:
+            self._expiry[session_id] = time.monotonic() + original_ttl
         return self._data[session_id]
 
     async def set(
@@ -93,11 +100,13 @@ class MemorySessionStore:
         self._data[session_id] = data
         if ttl is not None:
             self._expiry[session_id] = time.monotonic() + ttl
+            self._ttl[session_id] = ttl
         self._start_cleanup()
 
     async def delete(self, session_id: str) -> None:
         self._data.pop(session_id, None)
         self._expiry.pop(session_id, None)
+        self._ttl.pop(session_id, None)
 
     async def exists(self, session_id: str) -> bool:
         if session_id not in self._data:
@@ -105,6 +114,7 @@ class MemorySessionStore:
         if self._is_expired(session_id):
             self._data.pop(session_id, None)
             self._expiry.pop(session_id, None)
+            self._ttl.pop(session_id, None)
             return False
         return True
 
@@ -122,3 +132,4 @@ class MemorySessionStore:
                 pass  # expected when cleanup task is cancelled during shutdown
         self._data.clear()
         self._expiry.clear()
+        self._ttl.clear()

@@ -7,5 +7,8 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
+# Session timeout in seconds (default: 1800 = 30 min)
+ENV SESSION_TTL=1800
+
 EXPOSE 8000
 CMD ["uv", "run", "pywire", "run", "--host", "0.0.0.0", "--port", "8000", "--workers", "{{ workers }}"]

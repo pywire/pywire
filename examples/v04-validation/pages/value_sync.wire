@@ -1,0 +1,47 @@
+!path "/value_sync"
+
+---
+from pywire import ref, wire
+
+push_input = ref()
+counter = wire(0)
+server_readback = wire("(not read yet)")
+
+def push_value(self):
+    counter.value += 1
+    push_input.value = f"server-push-{counter.value}"
+
+def read_back(self):
+    server_readback.value = f"Server sees: {push_input.value!r}"
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bidirectional Ref Sync — v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #6366f1; }
+    input { padding: .5rem; border: 1px solid #d1d5db; border-radius: 4px; width: 260px; }
+    button { padding: .5rem 1.2rem; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; margin: .3rem; }
+    .result { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: .5rem; margin-top: .5rem; font-family: monospace; }
+    .back { color: #6366f1; text-decoration: none; font-size: .9rem; }
+    p.hint { color: #6b7280; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back</a>
+  <h1>Bidirectional Ref Value Sync</h1>
+  <p class="hint">
+    "Push from Server" calls <code>push_input.value = "server-push-N"</code> — the input DOM
+    should update <em>without any user typing</em> (server→client setValue command).
+  </p>
+
+  <input type="text" id="push-input" $ref={push_input} placeholder="(will be filled by server)" />
+  <br />
+  <button id="push-btn" @click={push_value}>Push from Server (counter={counter})</button>
+  <button id="readback-btn" @click={read_back}>Read Back</button>
+
+  <div class="result" id="readback-result">{server_readback}</div>
+</body>
+</html>

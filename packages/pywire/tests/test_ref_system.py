@@ -128,7 +128,7 @@ def test_ref_request_rect(mock_page):
 
 def test_codegen_ref_binding():
     """Test that codegen generates the correct binding code for elements."""
-    codegen = TemplateCodegen()
+    codegen = TemplateCodegen(dev_mode=True)
     parser = PyWireParser()
 
     template = "<div $ref={my_ref}></div>"
@@ -158,17 +158,55 @@ def test_codegen_ref_binding():
         ast.fix_missing_locations(stmt)
 
     code = ast.unparse(body)
-    assert "my_ref._bind('element', self._handler_prefix + 'pw-ref-1-0', self)" in code
+    # Dev mode: variable-name-based ref ID
     assert (
-        "attrs['data-pw-ref'] = str(unwrap_wire(self._handler_prefix + 'pw-ref-1-0'))"
+        "my_ref._bind('element', self._handler_prefix + 'pw-ref-my_ref', self)" in code
+    )
+    assert (
+        "attrs['data-pw-ref'] = str(unwrap_wire(self._handler_prefix + 'pw-ref-my_ref'))"
         in code
     )
     assert "'$ref'" not in code
 
 
+def test_codegen_ref_binding_prod_mode():
+    """Test that prod mode generates hash-based ref IDs."""
+    codegen = TemplateCodegen(dev_mode=False)
+    parser = PyWireParser()
+
+    template = "<div $ref={my_ref}></div>"
+    parsed = parser.parse(template)
+
+    body = []
+    codegen._add_node(
+        parsed.template[0],
+        body,
+        {"my_ref"},
+        None,
+        "L1",
+        set(),
+        set(),
+        set(),
+        set(),
+        {},
+        "S1",
+    )
+
+    for stmt in body:
+        ast.fix_missing_locations(stmt)
+
+    code = ast.unparse(body)
+    # Prod mode: hash-based ref ID (8 hex chars)
+    assert "pw-ref-" in code
+    assert "pw-ref-my_ref" not in code
+    import re
+
+    assert re.search(r"pw-ref-[0-9a-f]{8}", code)
+
+
 def test_codegen_form_ref_binding():
     """Test that codegen identifies forms correctly for refs."""
-    codegen = TemplateCodegen()
+    codegen = TemplateCodegen(dev_mode=True)
     parser = PyWireParser()
 
     template = "<form $ref={f}></form>"
@@ -193,7 +231,7 @@ def test_codegen_form_ref_binding():
         ast.fix_missing_locations(stmt)
 
     code = ast.unparse(body)
-    assert "f._bind('form', self._handler_prefix + 'pw-ref-1-0', self)" in code
+    assert "f._bind('form', self._handler_prefix + 'pw-ref-f', self)" in code
 
 
 def test_component_ref_binding():
