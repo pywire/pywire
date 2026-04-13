@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/pywire/pywire/compare/pywire-parser-v0.2.0...pywire-parser-v0.2.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* **pywire-parser:** initial PyPI publish — update package description ([490c880](https://github.com/pywire/pywire/commit/490c880b2634b5852994ae9f01575e4b71d79fd4))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.1.0...pywire-parser-v0.2.0) (2026-04-13)
 
 
