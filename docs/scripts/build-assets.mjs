@@ -135,7 +135,7 @@ async function main() {
       run('uv', ['venv', venvPath, '--python', '3.13'], TS_PYWIRE_PKG)
       run(
         'uv',
-        ['pip', 'install', '--python', path.join(venvPath, 'bin', 'python'), '--prerelease=allow', 'pyodide-build==0.29.3', 'pyodide-cli', 'pip'],
+        ['pip', 'install', '--python', path.join(venvPath, 'bin', 'python'), '--prerelease=allow', 'pyodide-build==0.29.3', 'pyodide-cli', 'wheel<0.44', 'pip'],
         TS_PYWIRE_PKG,
       )
 

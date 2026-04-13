@@ -204,7 +204,7 @@ jobs:
         # uv tool install --with does not register entry points across packages.
         run: |
           uv venv .pyodide-venv --python 3.13
-          uv pip install --python .pyodide-venv/bin/python --prerelease=allow pyodide-build==0.29.3 pyodide-cli
+          uv pip install --python .pyodide-venv/bin/python --prerelease=allow pyodide-build==0.29.3 pyodide-cli "wheel<0.44"
           echo "$(pwd)/.pyodide-venv/bin" >> "$GITHUB_PATH"
       - name: Set up Pyodide cross-build environment
         run: pyodide xbuildenv install 0.29.3
