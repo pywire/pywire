@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/pywire/pywire/compare/pywire-v0.4.0...pywire-v0.5.0) (2026-04-13)
+
+
+### Features
+
+* pure Python build — pywire-parser, Pyodide adapter, Cloudflare Workers deploy ([#87](https://github.com/pywire/pywire/issues/87)) ([3c713d2](https://github.com/pywire/pywire/commit/3c713d2c68b6098c51780f3a9820e8bd7536f898))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/pywire-v0.3.0...pywire-v0.4.0) (2026-04-13)
 
 
