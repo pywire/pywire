@@ -165,7 +165,11 @@ async function main() {
       if (!emsdkEnvPath) {
         console.log('emsdk not found locally — cloning and installing...')
         const emsdkDir = path.join(TS_PYWIRE_PKG, 'emsdk')
-        run('git', ['clone', 'https://github.com/emscripten-core/emsdk.git', emsdkDir], TS_PYWIRE_PKG)
+        run(
+          'git',
+          ['clone', 'https://github.com/emscripten-core/emsdk.git', emsdkDir],
+          TS_PYWIRE_PKG,
+        )
         run('./emsdk', ['install', emscriptenVersion], emsdkDir)
         run('./emsdk', ['activate', emscriptenVersion], emsdkDir)
         emsdkEnvPath = path.join(emsdkDir, 'emsdk_env.sh')

@@ -1,0 +1,10 @@
+# Compiled C extension (built locally by uv/pip install -e .)
+bindings/python/tree_sitter_pywire/_binding*.so
+bindings/python/tree_sitter_pywire/_binding*.pyd
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+.build-venv/
+emsdk/
