@@ -82,6 +82,39 @@ RAILWAY_JSON_TEMPLATE = """\
 }
 """
 
+WRANGLER_TOML_TEMPLATE = """\
+name = "{project_name}"
+main = "entry.py"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["python_workers"]
+
+[vars]
+PAGES_DIR = "pages"
+"""
+
+CF_ENTRY_TEMPLATE = """\
+import asgi
+from workers import WorkerEntrypoint
+
+from pywire import PyWire
+
+app = PyWire(pages_dir="pages")
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request):
+        return await asgi.fetch(app, request.js_object, self.env)
+"""
+
+CF_REQUIREMENTS_TEMPLATE = """\
+pywire
+starlette
+pydantic
+anyio
+msgpack
+typing-extensions
+"""
+
 
 def generate_dockerfile(project_root: Path, workers: int = 1) -> str:
     """Generate Dockerfile content for a PyWire project."""
@@ -105,6 +138,21 @@ def generate_fly_toml(project_root: Path, project_name: str) -> str:
 def generate_railway_json(project_root: Path) -> str:
     """Generate railway.json content for a PyWire project."""
     return RAILWAY_JSON_TEMPLATE
+
+
+def generate_wrangler_toml(project_root: Path, project_name: str) -> str:
+    """Generate wrangler.toml content for Cloudflare Workers."""
+    return WRANGLER_TOML_TEMPLATE.format(project_name=project_name)
+
+
+def generate_cf_entry(project_root: Path) -> str:
+    """Generate entry.py for Cloudflare Workers."""
+    return CF_ENTRY_TEMPLATE
+
+
+def generate_cf_requirements(project_root: Path) -> str:
+    """Generate requirements.txt for Cloudflare Workers."""
+    return CF_REQUIREMENTS_TEMPLATE
 
 
 def validate_deploy_config(platform: str, project_root: Path) -> list[str]:

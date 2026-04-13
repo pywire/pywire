@@ -397,7 +397,7 @@ def run(
 @click.argument("app", required=False)
 @click.option(
     "--platform",
-    type=click.Choice(["render", "docker", "fly", "railway"]),
+    type=click.Choice(["render", "docker", "fly", "railway", "cloudflare"]),
     default="docker",
     help="Deployment platform",
 )
@@ -510,6 +510,20 @@ def deploy(
             files_to_write.append(
                 ("Dockerfile", generate_dockerfile(project_root, workers=workers))
             )
+    elif platform == "cloudflare":
+        from pywire.cli.deploy import (
+            generate_wrangler_toml,
+            generate_cf_entry,
+            generate_cf_requirements,
+        )
+
+        files_to_write.append(
+            ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
+        )
+        files_to_write.append(("entry.py", generate_cf_entry(project_root)))
+        files_to_write.append(
+            ("requirements.txt", generate_cf_requirements(project_root))
+        )
     else:
         raise click.UsageError(f"Unknown platform: {platform}")
 
@@ -600,6 +614,17 @@ def deploy(
                 "\n  To enable Redis, add a Redis addon via the Railway dashboard or\n"
                 "  [cyan]railway add[/]. Railway injects [cyan]REDIS_URL[/] automatically."
             )
+    elif platform == "cloudflare":
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. Install Wrangler: [cyan]npm i -g wrangler[/]\n"
+            "  2. Run [cyan]wrangler dev[/] to test locally\n"
+            "  3. Deploy with [cyan]wrangler deploy[/]\n"
+            "\n[bold]Note:[/] Cloudflare Python Workers run on Pyodide (WASM).\n"
+            "  PyWire's core framework works out of the box via the [cyan]asgi[/] bridge.\n"
+            "  WebSocket support for real-time updates requires Durable Objects —\n"
+            "  see [link=https://pywire.dev/docs/deploy/cloudflare-workers]pywire.dev/docs/deploy/cloudflare-workers[/link]"
+        )
 
 
 if __name__ == "__main__":
