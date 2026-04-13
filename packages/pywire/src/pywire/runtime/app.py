@@ -244,9 +244,12 @@ class PyWire:
         self.reconnect_max_attempts = reconnect_max_attempts
         self.reconnect_overlay = reconnect_overlay
 
-        # Custom reconnect template HTML/CSS (loaded from __reconnect__.wire)
+        # Reconnect template HTML/CSS — always populated (built-in default or
+        # user's __reconnect__.wire override).  The server injects this as
+        # <template id="_pywire_reconnect"> so the client has a single code path.
         self._reconnect_template_html: Optional[str] = None
         self._reconnect_template_style: Optional[str] = None
+        self._load_default_reconnect_template()
 
         # Asset fingerprinting cache (prod without build: path -> content hash)
         self._asset_hash_cache: Dict[str, str] = {}
@@ -704,6 +707,38 @@ class PyWire:
         reconnect_page_path = self.pages_dir / "__reconnect__.wire"
         if reconnect_page_path.exists():
             self._load_reconnect_template(reconnect_page_path)
+
+    def _load_default_reconnect_template(self) -> None:
+        """Load the built-in default reconnect overlay from templates/reconnect/default.html.
+
+        This provides the default "Reconnecting..." / "Connection lost" overlay.
+        It can be overridden by a user's ``__reconnect__.wire`` in their pages dir.
+        """
+        import re
+
+        default_path = (
+            Path(__file__).parent.parent / "templates" / "reconnect" / "default.html"
+        )
+        try:
+            content = default_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.warning("Built-in reconnect template not found at %s", default_path)
+            return
+
+        # Extract <style>...</style> blocks
+        style_parts: list[str] = []
+
+        def _collect_style(m: re.Match[str]) -> str:
+            style_parts.append(m.group(1))
+            return ""
+
+        html = re.sub(r"<style>(.*?)</style>", _collect_style, content, flags=re.DOTALL)
+        html = html.strip()
+
+        if html:
+            self._reconnect_template_html = html
+        if style_parts:
+            self._reconnect_template_style = "\n".join(style_parts)
 
     def _load_reconnect_template(self, file_path: Path) -> None:
         """Load __reconnect__.wire as a static HTML template with optional scoped styles.

@@ -53,14 +53,8 @@ def dispatch(
     # so that any JS listeners fire with the correct detail, but it is marked
     # ``serverHandled`` so the client won't re-send it back to the server.
     server_handled = False
-    if (
-        target_ref is not None
-        and not bubbles
-        and _page_context.get() is not None
-    ):
-        handler_name = getattr(target_ref, "_event_handlers", {}).get(
-            event_name
-        )
+    if target_ref is not None and not bubbles and _page_context.get() is not None:
+        handler_name = getattr(target_ref, "_event_handlers", {}).get(event_name)
         if handler_name:
             handler_page = getattr(target_ref, "_page", None) or page
             handler_page._pending_intercepted_handlers.append(
