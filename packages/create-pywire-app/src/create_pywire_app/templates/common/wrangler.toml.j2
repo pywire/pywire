@@ -2,9 +2,11 @@ name = "{{ project_name }}"
 main = "entry.py"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["python_workers"]
-{% if kv_enabled %}
 
-[[kv_namespaces]]
-binding = "PYWIRE_SESSIONS"
-id = "<YOUR_KV_NAMESPACE_ID>"
-{% endif %}
+[[durable_objects.bindings]]
+name = "PYWIRE_SESSION"
+class_name = "PyWireSessionDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PyWireSessionDO"]

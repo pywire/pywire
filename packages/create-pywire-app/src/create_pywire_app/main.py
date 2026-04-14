@@ -496,7 +496,6 @@ class ProjectGenerator:
             app_module = "src.main" if self.use_src else "main"
             context = {
                 "project_name": self.project_name,
-                "kv_enabled": self.redis_enabled,
                 "app_module": app_module,
                 "app_attr": "app",
             }
@@ -505,6 +504,13 @@ class ProjectGenerator:
 
             entry_content = self.renderer.render("common/entry.py.j2", context)
             (self.project_path / "entry.py").write_text(entry_content)
+
+            # Generate Durable Object class for session + WebSocket handling
+            from pywire.cli.deploy import generate_cf_durable_object
+
+            app_string = f"{app_module}:app"
+            do_content = generate_cf_durable_object(self.project_path, app_string)
+            (self.project_path / "pywire_do.py").write_text(do_content)
 
 
 def main():

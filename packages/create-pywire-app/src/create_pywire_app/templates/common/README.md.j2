@@ -184,31 +184,13 @@ uv run pywrangler deploy
 
 > **Note:** `pywire[cli]` (dev dependency) is needed for the build step.
 > The deployed worker only uses `pywire` (base) — no C extensions.
-{% if redis_enabled %}
 
-#### Cloudflare KV (pre-configured)
+#### Architecture
 
-Session state is configured to use **Workers KV** for horizontal scaling. Create a KV
-namespace and update `wrangler.toml`:
-
-```sh
-wrangler kv namespace create PYWIRE_SESSIONS
-```
-
-Then replace `<YOUR_KV_NAMESPACE_ID>` in `wrangler.toml` with the returned ID.
-{% else %}
-
-#### Scaling with Cloudflare KV
-
-To scale horizontally with shared session state, re-generate with KV support:
-
-```sh
-pywire deploy --platform cloudflare --redis
-```
-
-Then create a KV namespace: `wrangler kv namespace create PYWIRE_SESSIONS` and
-update `wrangler.toml` with the returned ID.
-{% endif %}
+Each session runs in a **Durable Object** with persistent storage and WebSocket
+support. Real-time reactivity (DOM diffs over WebSocket) works out of the box —
+no additional configuration needed. Session state persists automatically across
+connections via Durable Object transactional storage.
 {% endif %}
 {% endfor %}
 {% endif %}

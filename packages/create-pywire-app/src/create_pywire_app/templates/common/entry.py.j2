@@ -1,22 +1,20 @@
 import asgi
 from {{ app_module }} import {{ app_attr }}
 import _routes
-{% if kv_enabled %}
-from pywire.runtime.cf_kv_store import CloudflareKVSessionStore
-{% endif %}
+from pywire_do import PyWireSessionDO
 from workers import WorkerEntrypoint
-{% if kv_enabled %}
-
-_kv_initialized = False
-{% endif %}
+from js import URL
+import uuid
 
 
 class Default(WorkerEntrypoint):
     async def on_fetch(self, request):
-{% if kv_enabled %}
-        global _kv_initialized
-        if not _kv_initialized:
-            {{ app_attr }}.session_store = CloudflareKVSessionStore(self.env.PYWIRE_SESSIONS)
-            _kv_initialized = True
-{% endif %}
+        url = URL.new(request.url)
+        upgrade = (request.headers.get("Upgrade") or "").lower()
+
+        if upgrade == "websocket":
+            session_id = url.searchParams.get("session") or str(uuid.uuid4())
+            stub = self.env.PYWIRE_SESSION.getByName(session_id)
+            return await stub.fetch(request)
+
         return await asgi.fetch({{ app_attr }}, request.js_object, self.env)
