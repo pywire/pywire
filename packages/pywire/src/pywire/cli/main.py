@@ -538,12 +538,14 @@ def deploy(
         from pywire.cli.deploy import (
             generate_wrangler_toml,
             generate_cf_entry,
+            generate_cf_durable_object,
         )
 
         files_to_write.append(
-            ("wrangler.toml", generate_wrangler_toml(project_root, project_name, kv=redis))
+            ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
         )
-        files_to_write.append(("entry.py", generate_cf_entry(project_root, app_string=app, kv=redis)))
+        files_to_write.append(("entry.py", generate_cf_entry(project_root, app_string=app)))
+        files_to_write.append(("pywire_do.py", generate_cf_durable_object(project_root, app_string=app)))
     else:
         raise click.UsageError(f"Unknown platform: {platform}")
 
@@ -642,27 +644,16 @@ def deploy(
             "  3. Test locally: [cyan]uv run pywrangler dev[/]\n"
             "  4. Deploy: [cyan]uv run pywrangler deploy[/]\n"
             "\n[bold]Generated:[/]\n"
-            "  • [cyan]wrangler.toml[/] — Cloudflare configuration\n"
-            "  • [cyan]entry.py[/] — Workers entry point\n"
+            "  • [cyan]wrangler.toml[/] — Cloudflare config with Durable Objects binding\n"
+            "  • [cyan]entry.py[/] — Workers entry point (routes WS to Durable Objects)\n"
+            "  • [cyan]pywire_do.py[/] — Durable Object for session + WebSocket handling\n"
+            "\n[bold]Architecture:[/]\n"
+            "  Each session runs in a Durable Object with persistent storage and\n"
+            "  WebSocket support. Real-time reactivity works out of the box.\n"
             "\n[bold]CI/CD:[/]\n"
             "  [cyan]uv sync && uv run pywire build --platform cloudflare "
             "&& uv run pywrangler deploy[/]"
         )
-        if redis:
-            console.print(
-                "\n[bold]Cloudflare KV:[/]\n"
-                "  Session state is configured to use Workers KV for horizontal scaling.\n"
-                "  Create a KV namespace and update [cyan]wrangler.toml[/]:\n"
-                "    [cyan]wrangler kv namespace create PYWIRE_SESSIONS[/]\n"
-                "  Then replace [cyan]<YOUR_KV_NAMESPACE_ID>[/] with the returned ID."
-            )
-        else:
-            console.print(
-                "\n[bold]Scaling:[/]\n"
-                "  Single-worker deploys use in-memory sessions. To scale horizontally,\n"
-                "  re-run with [cyan]--redis[/] to add Cloudflare KV for shared session state:\n"
-                "    [cyan]pywire deploy --platform cloudflare --redis[/]"
-            )
 
 
 if __name__ == "__main__":

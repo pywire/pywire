@@ -134,6 +134,15 @@ export class TransportManager {
   }
 
   /**
+   * Set session ID on the active transport for reconnection routing.
+   */
+  setSessionId(sessionId: string): void {
+    if (this.transport) {
+      this.transport.setSessionId(sessionId)
+    }
+  }
+
+  /**
    * Disconnect the active transport.
    */
   disconnect(): void {

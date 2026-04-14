@@ -87,48 +87,295 @@ name = "{project_name}"
 main = "entry.py"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["python_workers"]
-"""
 
-WRANGLER_TOML_KV_TEMPLATE = """\
-name = "{project_name}"
-main = "entry.py"
-compatibility_date = "2025-01-01"
-compatibility_flags = ["python_workers"]
+[[durable_objects.bindings]]
+name = "PYWIRE_SESSION"
+class_name = "PyWireSessionDO"
 
-[[kv_namespaces]]
-binding = "PYWIRE_SESSIONS"
-id = "<YOUR_KV_NAMESPACE_ID>"
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PyWireSessionDO"]
 """
 
 CF_ENTRY_TEMPLATE = """\
 import asgi
 from {app_module} import {app_attr}
 import _routes
+from pywire_do import PyWireSessionDO
 from workers import WorkerEntrypoint
+from js import URL
+import uuid
 
 
 class Default(WorkerEntrypoint):
     async def on_fetch(self, request):
+        url = URL.new(request.url)
+        upgrade = (request.headers.get("Upgrade") or "").lower()
+
+        if upgrade == "websocket":
+            session_id = url.searchParams.get("session") or str(uuid.uuid4())
+            stub = self.env.PYWIRE_SESSION.getByName(session_id)
+            return await stub.fetch(request)
+
         return await asgi.fetch({app_attr}, request.js_object, self.env)
 """
 
-CF_ENTRY_KV_TEMPLATE = """\
-import asgi
+CF_DURABLE_OBJECT_TEMPLATE = """\
+\"\"\"PyWire Durable Object — manages a single session with WebSocket support.\"\"\"
+
+from workers import DurableObject, Response
+from js import WebSocketPair
 from {app_module} import {app_attr}
 import _routes
-from pywire.runtime.cf_kv_store import CloudflareKVSessionStore
-from workers import WorkerEntrypoint
-
-_kv_initialized = False
+import json
+from urllib.parse import parse_qs, urlparse
 
 
-class Default(WorkerEntrypoint):
+def _make_request(pathname, query_string=""):
+    from starlette.requests import Request
+    scope = {{
+        "type": "http",
+        "asgi": {{"version": "3.0"}},
+        "http_version": "1.1",
+        "path": pathname,
+        "raw_path": pathname.encode("ascii"),
+        "query_string": query_string.encode("ascii") if query_string else b"",
+        "headers": [(b"host", b"localhost")],
+        "method": "GET",
+        "scheme": "https",
+        "server": ("localhost", 443),
+        "root_path": "",
+        "client": ("127.0.0.1", 0),
+    }}
+    return Request(scope)
+
+
+def _parse_query(query_string):
+    if not query_string:
+        return {{}}
+    parsed = parse_qs(query_string)
+    return {{k: v[0] if len(v) == 1 else v for k, v in parsed.items()}}
+
+
+def _create_page(path):
+    parsed = urlparse(path)
+    pathname = parsed.path
+    qs = parsed.query
+
+    match = {app_attr}.router.match(pathname)
+    if not match:
+        return None
+
+    page_class, params, variant_name = match
+    request = _make_request(pathname, qs)
+    query = _parse_query(qs)
+
+    path_info = {{}}
+    if hasattr(page_class, "__routes__"):
+        for name in page_class.__routes__.keys():
+            path_info[name] = name == variant_name
+    elif hasattr(page_class, "__route__"):
+        path_info["main"] = True
+
+    url_helper = None
+    if hasattr(page_class, "__routes__") and page_class.__routes__:
+        from pywire.runtime.router import URLHelper
+        url_helper = URLHelper(page_class.__routes__)
+
+    return page_class(
+        request=request, params=params, query=query,
+        path=path_info, url=url_helper,
+    )
+
+
+def _send_update(ws, update):
+    from starlette.responses import Response as StarletteResponse
+    if isinstance(update, StarletteResponse):
+        html = update.body.decode("utf-8") if isinstance(update.body, bytes) else update.body
+        ws.send(json.dumps({{"type": "update", "html": html}}))
+        return
+    if isinstance(update, dict):
+        if update.get("type") == "regions":
+            payload = {{"type": "update", "regions": update.get("regions", [])}}
+            if "commands" in update:
+                payload["commands"] = update["commands"]
+            ws.send(json.dumps(payload))
+            return
+        if update.get("type") == "full":
+            payload = {{"type": "update", "html": update.get("html", "")}}
+            if "commands" in update:
+                payload["commands"] = update["commands"]
+            ws.send(json.dumps(payload))
+            return
+    ws.send(json.dumps({{"type": "reload"}}))
+
+
+class PyWireSessionDO(DurableObject):
+    def __init__(self, state, env):
+        super().__init__(state, env)
+        self.ctx = state
+        self.page = None
+
     async def on_fetch(self, request):
-        global _kv_initialized
-        if not _kv_initialized:
-            {app_attr}.session_store = CloudflareKVSessionStore(self.env.PYWIRE_SESSIONS)
-            _kv_initialized = True
-        return await asgi.fetch({app_attr}, request.js_object, self.env)
+        upgrade = (request.headers.get("Upgrade") or "").lower()
+        if upgrade == "websocket":
+            pair = WebSocketPair.new()
+            client, server = pair.object_values()
+            self.ctx.acceptWebSocket(server)
+            return Response(None, status=101, web_socket=client)
+
+        # HTTP fallback: return simple status
+        return Response("OK", headers={{"Content-Type": "text/plain"}})
+
+    async def on_webSocketMessage(self, ws, message):
+        try:
+            msg = json.loads(message) if isinstance(message, str) else {{}}
+        except (json.JSONDecodeError, TypeError):
+            msg = {{}}
+
+        msg_type = msg.get("type", "")
+
+        try:
+            if msg_type == "init":
+                await self._handle_init(ws, msg)
+            elif msg_type == "event":
+                await self._handle_event(ws, msg)
+            elif msg_type == "relocate":
+                await self._handle_relocate(ws, msg)
+            elif msg_type == "pong":
+                pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            ws.send(json.dumps({{"type": "error", "error": str(e)}}))
+
+    async def on_webSocketClose(self, ws, code, reason, was_clean):
+        # Persist final state before closing
+        if self.page:
+            await self._persist_state()
+        ws.close(code, reason)
+
+    async def _handle_init(self, ws, msg):
+        path = msg.get("path", "/")
+
+        # Try to restore existing page from storage
+        session_restored = False
+        snapshot = await self.ctx.storage.get("page_state")
+
+        self.page = _create_page(path)
+        if not self.page:
+            ws.send(json.dumps({{"type": "error", "error": "Not Found"}}))
+            return
+
+        if snapshot:
+            try:
+                state = snapshot
+                if hasattr(snapshot, "to_py"):
+                    state = snapshot.to_py()
+                from pywire.runtime.session_serializer import restore_page_state
+                restore_page_state(self.page, state)
+                session_restored = True
+            except Exception:
+                pass  # Fresh page if restore fails
+
+        # Set up update broadcaster
+        page = self.page
+        async def broadcast_update():
+            update = await page.render_update(init=False)
+            _send_update(ws, update)
+        self.page._on_update = broadcast_update
+
+        await self.page.render(init=True)
+
+        # Check pending navigation
+        if self.page._pending_navigation:
+            ws.send(json.dumps({{
+                "type": "navigate", "path": self.page._pending_navigation
+            }}))
+            self.page._pending_navigation = None
+            return
+
+        ws.send(json.dumps({{
+            "type": "init_ack",
+            "session_id": "",
+            "session_restored": session_restored,
+        }}))
+
+        await self.page._run_hooks(self.page.MOUNT_HOOKS)
+        await self._persist_state()
+
+    async def _handle_event(self, ws, msg):
+        handler_name = msg.get("handler")
+        event_data = msg.get("data", {{}})
+
+        if not self.page:
+            path = msg.get("path", "/")
+            self.page = _create_page(path)
+            if not self.page:
+                ws.send(json.dumps({{"type": "error", "error": "No page"}}))
+                return
+            await self.page.render(init=True)
+
+        # Set up update broadcaster
+        page = self.page
+        async def broadcast_update():
+            update = await page.render_update(init=False)
+            _send_update(ws, update)
+        self.page._on_update = broadcast_update
+
+        if handler_name:
+            update = await self.page.handle_event(handler_name, event_data)
+        else:
+            update = await self.page.render_update(init=False)
+
+        if self.page._pending_navigation:
+            ws.send(json.dumps({{
+                "type": "navigate", "path": self.page._pending_navigation
+            }}))
+            self.page._pending_navigation = None
+            return
+
+        _send_update(ws, update)
+        await self.page._run_hooks(self.page.AFTER_UPDATE_HOOKS)
+        await self._persist_state()
+
+    async def _handle_relocate(self, ws, msg):
+        path = msg.get("path", "/")
+        old_page = self.page
+
+        self.page = _create_page(path)
+        if not self.page:
+            ws.send(json.dumps({{"type": "reload"}}))
+            return
+
+        # Migrate user state
+        if old_page:
+            self.page.user = getattr(old_page, "user", None)
+
+        # Set up update broadcaster
+        page = self.page
+        async def broadcast_update():
+            update = await page.render_update(init=False)
+            _send_update(ws, update)
+        self.page._on_update = broadcast_update
+
+        response = await self.page.render(init=False)
+        html = response.body.decode("utf-8") if isinstance(response.body, bytes) else response.body
+        ws.send(json.dumps({{"type": "update", "html": html}}))
+
+        await self.page._run_hooks(self.page.MOUNT_HOOKS)
+        await self._persist_state()
+
+    async def _persist_state(self):
+        if not self.page:
+            return
+        try:
+            from pywire.runtime.session_serializer import snapshot_page_state
+            from pyodide.ffi import to_js
+            snapshot = snapshot_page_state(self.page)
+            await self.ctx.storage.put("page_state", to_js(snapshot))
+        except Exception:
+            pass
 """
 
 def generate_dockerfile(project_root: Path, workers: int = 1) -> str:
@@ -158,29 +405,36 @@ def generate_railway_json(project_root: Path) -> str:
 def generate_wrangler_toml(
     project_root: Path,
     project_name: str,
-    kv: bool = False,
 ) -> str:
-    """Generate wrangler.toml content for Cloudflare Workers."""
-    template = WRANGLER_TOML_KV_TEMPLATE if kv else WRANGLER_TOML_TEMPLATE
-    return template.format(project_name=project_name)
+    """Generate wrangler.toml content for Cloudflare Workers with Durable Objects."""
+    return WRANGLER_TOML_TEMPLATE.format(project_name=project_name)
 
 
-def generate_cf_entry(
-    project_root: Path, app_string: str = "main:app", kv: bool = False
-) -> str:
-    """Generate entry.py for Cloudflare Workers.
-
-    Args:
-        app_string: Module:attribute string like "src.main:app"
-    """
-    # Parse "src.main:app" into module="src.main", attr="app"
+def _parse_app_string(app_string: str) -> tuple[str, str]:
+    """Parse 'src.main:app' into ('src.main', 'app')."""
     if ":" in app_string:
         app_module, app_attr = app_string.rsplit(":", 1)
     else:
         app_module, app_attr = app_string, "app"
+    return app_module, app_attr
 
-    template = CF_ENTRY_KV_TEMPLATE if kv else CF_ENTRY_TEMPLATE
-    return template.format(app_module=app_module, app_attr=app_attr)
+
+def generate_cf_entry(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    """Generate entry.py for Cloudflare Workers with Durable Object routing."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return CF_ENTRY_TEMPLATE.format(app_module=app_module, app_attr=app_attr)
+
+
+def generate_cf_durable_object(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    """Generate pywire_do.py — the Durable Object class for PyWire sessions."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return CF_DURABLE_OBJECT_TEMPLATE.format(
+        app_module=app_module, app_attr=app_attr
+    )
 
 
 def validate_deploy_config(platform: str, project_root: Path) -> list[str]:
