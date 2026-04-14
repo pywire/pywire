@@ -472,9 +472,7 @@ def generate_cf_bundle(
         dst_artifact = cf_bundle_dir / artifact_rel
 
         source = src_artifact.read_text(encoding="utf-8")
-        rewritten = _rewrite_artifact_for_cf(
-            source, artifact_map, bundle_pkg
-        )
+        rewritten = _rewrite_artifact_for_cf(source, artifact_map, bundle_pkg)
         dst_artifact.write_text(rewritten, encoding="utf-8")
 
     # Generate __init__.py files for all directories

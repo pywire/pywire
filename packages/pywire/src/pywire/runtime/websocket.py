@@ -7,7 +7,6 @@ import uuid
 from typing import Any, Dict, Set, cast
 
 import msgpack
-from starlette.responses import Response
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import logging
@@ -232,28 +231,10 @@ class WebSocketHandler:
         )
 
     async def _send_update_payload(self, websocket: WebSocket, update: Any) -> None:
-        if isinstance(update, Response):
-            html = cast(bytes, update.body).decode("utf-8")
-            await websocket.send_bytes(msgpack.packb({"type": "update", "html": html}))
-            return
+        from pywire.runtime.protocol import build_update_payload
 
-        if isinstance(update, dict):
-            if update.get("type") == "regions":
-                payload = {"type": "update", "regions": update.get("regions", [])}
-                if "commands" in update:
-                    payload["commands"] = update["commands"]
-                await websocket.send_bytes(msgpack.packb(payload))
-                return
-            if update.get("type") == "full":
-                html = update.get("html", "")
-                payload = {"type": "update", "html": html}
-                if "commands" in update:
-                    payload["commands"] = update["commands"]
-                await websocket.send_bytes(msgpack.packb(payload))
-                return
-
-        # Fallback: force full reload
-        await websocket.send_bytes(msgpack.packb({"type": "reload"}))
+        payload = build_update_payload(update)
+        await websocket.send_bytes(msgpack.packb(payload))
 
     async def _handle_init(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
         """Handle initial page load."""
@@ -267,77 +248,19 @@ class WebSocketHandler:
         token = log_callback_ctx.set(send_log)
 
         try:
-            # Logic similar to _handle_relocate to create page
-            from urllib.parse import parse_qs, urlparse
-            from starlette.requests import Request
+            from pywire.runtime.page_resolver import resolve_page
 
-            parsed_url = urlparse(path)
-            pathname = parsed_url.path
-            query_string = parsed_url.query
-
-            match = self.app.router.match(pathname)
-            if not match:
-                print(f"Init: No route found for path: {pathname}")
-                # 404 behavior? Just return error
+            result = resolve_page(
+                self.app.router, path, base_scope=dict(websocket.scope)
+            )
+            if not result:
+                print(f"Init: No route found for path: {path}")
                 await websocket.send_bytes(
                     msgpack.packb({"type": "error", "error": "Not Found"})
                 )
                 return
 
-            page_class, params, variant_name = match
-
-            # Create request
-            scope = dict(websocket.scope)
-            scope["type"] = "http"
-            scope["path"] = pathname
-            scope["raw_path"] = pathname.encode("ascii")
-            scope["query_string"] = (
-                query_string.encode("ascii") if query_string else b""
-            )
-            # Ensure minimal requirements for valid Request
-            if "headers" not in scope:
-                scope["headers"] = [(b"host", b"localhost")]
-            if "method" not in scope:
-                scope["method"] = "GET"
-            if "scheme" not in scope:
-                scope["scheme"] = "http"
-            if "server" not in scope:
-                scope["server"] = ("localhost", 80)
-            if "client" not in scope:
-                scope["client"] = ("127.0.0.1", 0)
-
-            request = Request(scope)
-
-            # Parse query params
-
-            if query_string:
-                parsed = parse_qs(query_string)
-                query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-            else:
-                query = {}
-
-            # Build path info
-            path_info = {}
-            if hasattr(page_class, "__routes__"):
-                for name in page_class.__routes__.keys():
-                    path_info[name] = name == variant_name
-            elif hasattr(page_class, "__route__"):
-                path_info["main"] = True
-
-            from pywire.runtime.router import URLHelper
-
-            url_helper = None
-            if hasattr(page_class, "__routes__") and page_class.__routes__:
-                url_helper = URLHelper(page_class.__routes__)
-
-            # Instantiate page
-            page = page_class(
-                request=request,
-                params=params,
-                query=query,
-                path=path_info,
-                url=url_helper,
-            )
+            page, _params, _variant_name = result
 
             # Session ID: reuse from reconnect or generate new
             client_session_id = data.get("session_id")
@@ -437,90 +360,22 @@ class WebSocketHandler:
         try:
             # Get or create page instance
             if websocket not in self.connection_pages:
-                # Find page stuff (logic copied from existing)
-                # ...
-                # Actually, duplicate logic from _handle_relocate is risky.
-                # Do we need to recreate page here?
-                # The original code did have logic to CREATE page if missing.
-                # Let's verify if I can just use self.connection_pages[websocket]
-                # If it's not there, maybe we should return or error?
-                # Original code checked `if websocket not in self.connection_pages`
-                # at start of try block.
+                from pywire.runtime.page_resolver import resolve_page
 
-                # Re-implementing logic from reading Step 777 (which showed start of try)
-                # lines 116-179 in Step 777.
-                # I should just reference specific logic.
-                from urllib.parse import parse_qs, urlparse
-
-                # Create minimal request-like object if needed, or update Page
-                # to accept None/minimal context for WS mode
-                # For now, we'll pass a mock request or the websocket itself if Page supports it
-                from starlette.requests import Request
-
-                from pywire.runtime.router import URLHelper
-
-                parsed_url = urlparse(path)
-                pathname = parsed_url.path
-                query_string = parsed_url.query
-
-                match = self.app.router.match(pathname)
-                if not match:
-                    print(f"No route found for path: {pathname}")
+                result = resolve_page(
+                    self.app.router, path, base_scope=dict(websocket.scope)
+                )
+                if not result:
+                    print(f"No route found for path: {path}")
                     return
 
-                page_class, params, variant_name = match
-
-                # Construct a mock request from the websocket scope
-                # This is a simplification; ideally Page accepts WebSocket or Request
-                # Construct a mock request with the correct page path
-                # We copy scope to avoid mutating the actual WebSocket scope
-                scope = dict(websocket.scope)
-                scope["type"] = "http"
-                scope["path"] = pathname
-                scope["raw_path"] = pathname.encode("ascii")
-                scope["query_string"] = (
-                    query_string.encode("ascii") if query_string else b""
-                )
-                # Ensure minimal requirements for valid Request
-                if "headers" not in scope:
-                    scope["headers"] = [(b"host", b"localhost")]
-                if "method" not in scope:
-                    scope["method"] = "GET"
-                if "scheme" not in scope:
-                    scope["scheme"] = "http"
-                if "server" not in scope:
-                    scope["server"] = ("localhost", 80)
-                if "client" not in scope:
-                    scope["client"] = ("127.0.0.1", 0)
-
-                request = Request(scope)
-
-                if query_string:
-                    parsed = parse_qs(query_string)
-                    query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-                else:
-                    query = {}
-
-                path_info = {}
-                if hasattr(page_class, "__routes__"):
-                    for name in page_class.__routes__.keys():
-                        path_info[name] = name == variant_name
-
-                url_helper = None
-                if hasattr(page_class, "__routes__"):
-                    url_helper = URLHelper(page_class.__routes__)
-
-                page = page_class(
-                    request, params, query, path=path_info, url=url_helper
-                )
+                page, _params, _variant_name = result
                 if hasattr(self.app, "get_user"):
                     page.user = self.app.get_user(websocket)
 
                 self.connection_pages[websocket] = page
 
                 # Force initial render to establish wire tracking
-                # This ensures _track_read is called and regions are registered
-                # so that subsequent writes in handlers trigger updates
                 await page.render(init=True)
             else:
                 page = self.connection_pages[websocket]
@@ -588,78 +443,22 @@ class WebSocketHandler:
         try:
             path = data.get("path", "/")
 
+            from pywire.runtime.page_resolver import resolve_page
+
             # Get existing page instance
             page = self.connection_pages.get(websocket)
             if not page:
-                # No page instance yet - create one for this path
-                # This happens when user navigates via SPA link before any @click
-                from urllib.parse import parse_qs, urlparse
-
-                from starlette.requests import Request
-
-                from pywire.runtime.router import URLHelper
-
-                parsed_url = urlparse(path)
-                pathname = parsed_url.path
-                query_string = parsed_url.query
-
-                match = self.app.router.match(pathname)
-                if not match:
-                    print(f"Relocate: No route found for path: {pathname}")
-                    # Command client to perform a full reload (which will hit the server and 404)
+                # No page instance yet — create one for this path
+                result = resolve_page(
+                    self.app.router, path, base_scope=dict(websocket.scope)
+                )
+                if not result:
+                    print(f"Relocate: No route found for path: {path}")
                     await websocket.send_bytes(msgpack.packb({"type": "reload"}))
                     return
 
-                page_class, params, variant_name = match
+                page, _params, _variant_name = result
 
-                # Create request with correct path
-                scope = dict(websocket.scope)
-                scope["type"] = "http"
-                scope["path"] = pathname
-                scope["raw_path"] = pathname.encode("ascii")
-                scope["query_string"] = (
-                    query_string.encode("ascii") if query_string else b""
-                )
-                # Ensure minimal requirements for valid Request
-                if "headers" not in scope:
-                    scope["headers"] = [(b"host", b"localhost")]
-                if "method" not in scope:
-                    scope["method"] = "GET"
-                if "scheme" not in scope:
-                    scope["scheme"] = "http"
-                if "server" not in scope:
-                    scope["server"] = ("localhost", 80)
-                if "client" not in scope:
-                    scope["client"] = ("127.0.0.1", 0)
-                request = Request(scope)
-
-                # Parse query
-                if query_string:
-                    parsed = parse_qs(query_string)
-                    query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-                else:
-                    query = {}
-
-                # Build path info
-                path_info = {}
-                routes = getattr(page_class, "__routes__", {})
-                if routes:
-                    for name in routes.keys():
-                        path_info[name] = name == variant_name
-                elif hasattr(page_class, "__route__"):
-                    path_info["main"] = True
-
-                # Build URL helper
-                url_helper = None
-                if routes:
-                    url_helper = URLHelper(cast(dict[str, str], routes))
-
-                # Create page instance
-                page = page_class(
-                    request, params, query, path=path_info, url=url_helper
-                )
-
-                # Populate user if hook exists
                 if hasattr(self.app, "get_user"):
                     page.user = self.app.get_user(websocket)
 
@@ -679,113 +478,82 @@ class WebSocketHandler:
                     msgpack.packb({"type": "update", "html": html})
                 )
 
-                # Run @mount hooks after first render delivered to client
                 await page._run_hooks(page.MOUNT_HOOKS)
                 return
 
-            # Parse new URL
-            from urllib.parse import parse_qs, urlparse
+            # Navigate to new path — try direct match, then 404 fallbacks
+            from urllib.parse import urlparse
 
-            parsed_url = urlparse(path)
-            pathname = parsed_url.path
-            query_string = parsed_url.query
+            pathname = urlparse(path).path
 
-            # Match route to get new params and variant
-            match = self.app.router.match(pathname)
-            if not match:
-                # Try custom 404 route
-                # This keeps the SPA alive instead of reloading
-                match = self.app.router.match("/404")
-
-                if match:
-                    print(f"Relocate: Route not found for {pathname}, serving /404")
-                else:
-                    # Try /__error__ fallback
-                    match = self.app.router.match("/__error__")
-
-                    if match:
-                        print(
-                            f"Relocate: Route not found for {pathname}, serving /__error__"
-                        )
-                    else:
-                        # Fallback to generic ErrorPage if no custom 404
-                        # We need to construct a bound ErrorPage class
-                        print(
-                            f"Relocate: Route not found for {pathname}, serving generic 404"
-                        )
-                        from pywire.runtime.error_page import ErrorPage
-
-                        # Create a closure helper
-                        class BoundErrorPage(ErrorPage):
-                            def __init__(
-                                self, request: Any, *args: Any, **kwargs: Any
-                            ) -> None:
-                                super().__init__(
-                                    request,
-                                    "404 Not Found",
-                                    f"The path '{pathname}' could not be found.",
-                                )
-
-                        match = (BoundErrorPage, {}, "main")
-
-            page_class, params, variant_name = match
-
-            # Reset page
-
-            if hasattr(page_class, "__routes__"):
-                pass
-
-            # print(f"Relocate: Loading page {page_class.__name__} for {pathname}")
-
-            # Create request object
-            from starlette.requests import Request
-
-            scope = dict(websocket.scope)
-            scope["type"] = "http"
-            scope["path"] = pathname
-            scope["raw_path"] = pathname.encode("ascii")
-            scope["query_string"] = (
-                query_string.encode("ascii") if query_string else b""
+            result = resolve_page(
+                self.app.router, path, base_scope=dict(websocket.scope)
             )
-            # Ensure minimal requirements for valid Request
-            if "headers" not in scope:
-                scope["headers"] = [(b"host", b"localhost")]
-            if "method" not in scope:
-                scope["method"] = "GET"
-            if "scheme" not in scope:
-                scope["scheme"] = "http"
-            if "server" not in scope:
-                scope["server"] = ("localhost", 80)
-            if "client" not in scope:
-                scope["client"] = ("127.0.0.1", 0)
-            request = Request(scope)
+            if not result:
+                # Try custom 404 route, then /__error__, then generic ErrorPage
+                for fallback_path in ("/404", "/__error__"):
+                    result = resolve_page(
+                        self.app.router,
+                        fallback_path,
+                        base_scope=dict(websocket.scope),
+                    )
+                    if result:
+                        print(
+                            f"Relocate: Route not found for {pathname}, "
+                            f"serving {fallback_path}"
+                        )
+                        break
 
-            # Parse query
-            if query_string:
-                parsed = parse_qs(query_string)
-                query = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-            else:
-                query = {}
+                if not result:
+                    print(
+                        f"Relocate: Route not found for {pathname}, serving generic 404"
+                    )
+                    from pywire.runtime.error_page import ErrorPage
 
-            # Build path info
-            path_info = {}
-            if hasattr(page_class, "__routes__"):
-                for name in page_class.__routes__.keys():
-                    path_info[name] = name == variant_name
+                    class BoundErrorPage(ErrorPage):
+                        def __init__(
+                            self, request: Any, *args: Any, **kwargs: Any
+                        ) -> None:
+                            super().__init__(
+                                request,
+                                "404 Not Found",
+                                f"The path '{pathname}' could not be found.",
+                            )
 
-            # Build URL helper
-            from pywire.runtime.router import URLHelper
+                    result = resolve_page(
+                        self.app.router, "/", base_scope=dict(websocket.scope)
+                    )
+                    # Use the bound error page with a synthetic request
+                    from starlette.requests import Request
 
-            url_helper = None
-            if hasattr(page_class, "__routes__"):
-                url_helper = URLHelper(page_class.__routes__)
+                    scope = dict(websocket.scope)
+                    scope["type"] = "http"
+                    scope["path"] = pathname
+                    new_page = BoundErrorPage(Request(scope))
+                    new_page.error_code = 404
+                    new_page.user = getattr(page, "user", None)
+                    self.connection_pages[websocket] = new_page
 
-            # Instantiate new page
-            new_page = page_class(
-                request, params, query, path=path_info, url=url_helper
-            )
+                    async def broadcast_update_err() -> None:
+                        update = await new_page.render_update(init=False)
+                        await self._send_update_payload(websocket, update)
 
-            # If this is an error page (match failed originally), inject error code
+                    new_page._on_update = broadcast_update_err
+
+                    try:
+                        response = await new_page.render(init=False)
+                        html = cast(bytes, response.body).decode("utf-8")
+                        await websocket.send_bytes(
+                            msgpack.packb({"type": "update", "html": html})
+                        )
+                        await new_page._run_hooks(new_page.MOUNT_HOOKS)
+                    except Exception:
+                        await websocket.send_bytes(msgpack.packb({"type": "reload"}))
+                    return
+
+            new_page, _params, _variant_name = result
+
+            # If this is a 404 fallback, inject error code
             if not self.app.router.match(pathname):
                 new_page.error_code = 404
 

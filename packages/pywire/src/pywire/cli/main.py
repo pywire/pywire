@@ -5,11 +5,20 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import rich.panel
-import rich_click as click
+try:
+    import rich.panel
+    import rich_click as click
+    from rich.console import Console
+except ImportError:
+    print(
+        "Error: pywire CLI requires additional dependencies.\n"
+        "Install them with: uv add pywire[cli]  (or: pip install pywire[cli])",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 from pywire import __version__
 from pywire.cli.config import config_command
-from rich.console import Console
 
 console = Console()
 
@@ -359,6 +368,8 @@ def build(
     console.print(f"✅ Build complete ({', '.join(parts)})")
 
     if platform == "cloudflare":
+        import shutil
+
         from pywire.compiler.build_artifacts import generate_cf_bundle
 
         cf_bundle_dir = Path.cwd() / "_pywire_build"
@@ -367,9 +378,45 @@ def build(
             cf_bundle_dir=cf_bundle_dir,
             app_import=app,
         )
+
+        # Copy static assets to .pywire/deploy/public/ for Cloudflare's
+        # native static assets binding (served from edge CDN, not the Worker).
+        # The wrangler.toml [assets] directive points to .pywire/deploy/public.
+        deploy_public = Path.cwd() / ".pywire" / "deploy" / "public"
+        if deploy_public.exists():
+            shutil.rmtree(deploy_public)
+
+        # PyWire framework JS
+        pywire_static_src = Path(__file__).parent.parent / "static"
+        pywire_static_dest = deploy_public / "_pywire" / "static"
+        if pywire_static_src.exists():
+            pywire_static_dest.mkdir(parents=True, exist_ok=True)
+            for f in pywire_static_src.iterdir():
+                if f.is_file() and (f.suffix in (".js", ".css", ".map")):
+                    shutil.copy2(f, pywire_static_dest / f.name)
+
+        # User static files — respect the app's configured static_url_path
+        user_static = app_instance.static_dir if app_instance else None
+        static_url_path = getattr(app_instance, "static_url_path", "/static")
+        # Strip leading slash to make it a relative path for the deploy dir
+        static_subdir = static_url_path.lstrip("/")
+        if user_static and Path(user_static).exists() and Path(user_static).is_dir():
+            user_static_dest = deploy_public / static_subdir
+            shutil.copytree(user_static, user_static_dest)
+
+        # Regenerate pywire_do.py (contains app import path)
+        from pywire.cli.deploy import generate_cf_durable_object
+
+        do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
+        (Path.cwd() / "pywire_do.py").write_text(do_content)
+
         console.print(
-            f"✅ Generated [cyan]_pywire_build/[/] and [cyan]{routes_path.name}[/] "
-            f"for Cloudflare Workers"
+            f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
+            f"and [cyan]pywire_do.py[/] for Cloudflare Workers"
+        )
+        console.print(
+            "✅ Static assets → [cyan].pywire/deploy/public/[/] "
+            "(served by Cloudflare edge CDN)"
         )
 
 
@@ -544,8 +591,12 @@ def deploy(
         files_to_write.append(
             ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
         )
-        files_to_write.append(("entry.py", generate_cf_entry(project_root, app_string=app)))
-        files_to_write.append(("pywire_do.py", generate_cf_durable_object(project_root, app_string=app)))
+        files_to_write.append(
+            ("entry.py", generate_cf_entry(project_root, app_string=app))
+        )
+        files_to_write.append(
+            ("pywire_do.py", generate_cf_durable_object(project_root, app_string=app))
+        )
     else:
         raise click.UsageError(f"Unknown platform: {platform}")
 

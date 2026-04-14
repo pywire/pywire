@@ -308,16 +308,13 @@ class PyWire:
         # Compile and register all pages
         self._load_pages()
 
-        # Static files (PyWire Internal)
-        internal_static_dir = Path(__file__).parent.parent / "static"
-
         # Prepare exception handlers
         exception_handlers: Dict[int, Any] = {}
         # Always register our handler to check for custom error pages
         exception_handlers[500] = self._handle_500
 
         # Build routes list
-        routes = [
+        routes: list[Route | WebSocketRoute | Mount] = [
             # Capabilities endpoint for transport negotiation
             Route("/_pywire/capabilities", self._handle_capabilities, methods=["GET"]),
             # WebSocket transport
@@ -330,25 +327,14 @@ class PyWire:
             Route("/_pywire/event", self.http_handler.handle_event, methods=["POST"]),
             # Upload endpoint
             Route("/_pywire/upload", self._handle_upload, methods=["POST"]),
-            # Internal Static files
-            *(
-                [
-                    Mount(
-                        "/_pywire/static",
-                        app=StaticFiles(directory=str(internal_static_dir)),
-                        name="internal_static",
-                    )
-                ]
-                if internal_static_dir.exists()
-                else []
+            # Internal static files served via importlib.resources (works on all
+            # platforms including Pyodide/CF Workers where filesystem ops fail)
+            Route(
+                "/_pywire/static/{path:path}",
+                self._serve_internal_static,
+                methods=["GET"],
             ),
         ]
-        if not internal_static_dir.exists():
-            logger.warning(
-                "Internal static assets not found at '%s'. "
-                "Reinstall pywire or verify package data inclusion.",
-                internal_static_dir,
-            )
 
         # Load asset manifest from build output (if pywire build was run)
         build_manifest_path = project_root / ".pywire" / "build" / "asset-manifest.json"
@@ -483,6 +469,38 @@ class PyWire:
         requests. WebTransport connections bypass middleware.
         """
         self.app.add_middleware(middleware_class, **kwargs)
+
+    async def _serve_internal_static(self, request: Request) -> Response:
+        """Serve PyWire's internal JS/CSS assets from package data.
+
+        Uses importlib.resources to read from the installed pywire package,
+        which works on all platforms (standard server, CF Workers, Pyodide).
+        """
+        import importlib.resources
+
+        filename = request.path_params["path"]
+        # Prevent directory traversal
+        if "/" in filename or "\\" in filename or ".." in filename:
+            return Response("Not Found", status_code=404)
+        try:
+            data = (
+                importlib.resources.files("pywire.static")
+                .joinpath(filename)
+                .read_bytes()
+            )
+        except Exception:
+            return Response("Not Found", status_code=404)
+
+        content_types = {
+            "js": "application/javascript",
+            "css": "text/css",
+            "map": "application/json",
+        }
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        ct = content_types.get(ext, "application/octet-stream")
+        return Response(
+            data, media_type=ct, headers={"Cache-Control": "public, max-age=31536000"}
+        )
 
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""

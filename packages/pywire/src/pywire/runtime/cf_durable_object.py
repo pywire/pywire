@@ -70,9 +70,7 @@ def _build_url_helper(page_class: Any) -> Any:
     return None
 
 
-def _instantiate_page(
-    app: Any, pathname: str, query_string: str = ""
-) -> Any:
+def _instantiate_page(app: Any, pathname: str, query_string: str = "") -> Any:
     """Match route and instantiate a page for the given path.
 
     Returns (page, page_class) or raises ValueError if no route matches.
