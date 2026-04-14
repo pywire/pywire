@@ -139,34 +139,8 @@ class ProjectGenerator:
         self.pages_dir = self.app_root / "pages"
 
     def get_dependencies(self) -> List[str]:
-        """Get dependencies for the selected template."""
-        # Docker-based adapters need pywire[cli] for `pywire run` in Dockerfile.
-        # Cloudflare-only projects use base pywire (no C extensions for Pyodide).
-        docker_adapters = {"Render (render.yaml)", "Docker (Dockerfile)", "Fly.io (fly.toml)", "Railway (railway.json)"}
-        has_docker = bool(set(self.adapters) & docker_adapters)
-        has_cf_only = (
-            "Cloudflare Workers (wrangler.toml)" in self.adapters and not has_docker
-        )
-
-        if has_cf_only:
-            # Base pywire dep — version spec may include ==X.Y.Z or @ path
-            pywire_dep = self.pywire_dep
-        else:
-            # Add [cli] extra for Docker-based platforms
-            base = self.pywire_dep
-            if "[" not in base and "@" not in base:
-                # Simple dep like "pywire" or "pywire>=0.5.0"
-                # Insert [cli] before the version spec
-                import re
-                match = re.match(r"^(pywire)(.*)", base)
-                if match:
-                    pywire_dep = f"{match.group(1)}[cli]{match.group(2)}"
-                else:
-                    pywire_dep = base
-            else:
-                pywire_dep = base
-
-        dependencies = [pywire_dep]
+        """Get runtime dependencies for the selected template."""
+        dependencies = [self.pywire_dep]
 
         if self.template == "blog":
             dependencies.append("markdown>=3.6")
@@ -176,22 +150,22 @@ class ProjectGenerator:
         return dependencies
 
     def get_dev_dependencies(self) -> List[str]:
-        """Get dev dependencies based on selected adapters."""
+        """Get dev dependencies — CLI tooling and platform-specific packages."""
         dev_deps: List[str] = []
 
-        has_cloudflare = "Cloudflare Workers (wrangler.toml)" in self.adapters
-        if has_cloudflare:
-            # CF projects need pywire[cli] for build tooling (parser, dev server)
-            base = self.pywire_dep
-            if "[" not in base and "@" not in base:
-                import re
-                match = re.match(r"^(pywire)(.*)", base)
-                if match:
-                    dev_deps.append(f"{match.group(1)}[cli]{match.group(2)}")
-                else:
-                    dev_deps.append(base)
+        # All projects need pywire[cli] for dev/build/deploy commands
+        base = self.pywire_dep
+        if "[" not in base and "@" not in base:
+            import re
+            match = re.match(r"^(pywire)(.*)", base)
+            if match:
+                dev_deps.append(f"{match.group(1)}[cli]{match.group(2)}")
             else:
                 dev_deps.append(base)
+        else:
+            dev_deps.append(base)
+
+        if "Cloudflare Workers (wrangler.toml)" in self.adapters:
             dev_deps.append("workers-py>=1.9.2")
 
         return dev_deps
@@ -814,7 +788,21 @@ def main():
                 ]
             )
 
+            if "Cloudflare Workers (wrangler.toml)" in adapters:
+                commands.extend(
+                    [
+                        "",
+                        "# Cloudflare Workers",
+                        "pywire build --platform cloudflare",
+                        "pywrangler dev",
+                    ]
+                )
+
             cmd_text = "\n    ".join(commands)
+
+            cf_tip = ""
+            if "Cloudflare Workers (wrangler.toml)" in adapters:
+                cf_tip = "\n> **Deploy:** `pywire build --platform cloudflare && pywrangler deploy`"
 
             console.print(
                 Panel(
@@ -827,6 +815,7 @@ Run the following commands to enter the environment:
     {cmd_text}
 
 > **Tip:** Install the **PyWire** extension (id: `pywire.pywire`) in VS Code for syntax highlighting and snippets.
+{cf_tip}
             """
                     ),
                     border_style="cyan",

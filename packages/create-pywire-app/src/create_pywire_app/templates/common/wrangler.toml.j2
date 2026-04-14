@@ -3,6 +3,10 @@ main = "entry.py"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["python_workers"]
 
+[assets]
+directory = "./.pywire/deploy/public"
+binding = "ASSETS"
+
 [[durable_objects.bindings]]
 name = "PYWIRE_SESSION"
 class_name = "PyWireSessionDO"
