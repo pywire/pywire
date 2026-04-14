@@ -558,6 +558,9 @@ def _rewrite_artifact_for_cf(
                 dep_path = node.value.args[0].value
                 var_name = target.id  # e.g. "_LayoutBase"
 
+                if not isinstance(dep_path, str):
+                    continue
+
                 # Find this dependency in the artifact map
                 dep_info = artifact_map.get(dep_path)
                 if dep_info:
