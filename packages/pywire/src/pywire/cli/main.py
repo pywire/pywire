@@ -305,8 +305,18 @@ def dev(
     default=None,
     help="Override pages directory (default: app.pages_dir).",
 )
+@click.option(
+    "--platform",
+    type=click.Choice(["cloudflare"]),
+    default=None,
+    help="Generate platform-specific build output.",
+)
 def build(
-    app: Optional[str], optimize: bool, out_dir: str, pages_dir: Optional[str]
+    app: Optional[str],
+    optimize: bool,
+    out_dir: str,
+    pages_dir: Optional[str],
+    platform: Optional[str],
 ) -> None:
     """Build the application for production."""
     if not app:
@@ -347,6 +357,20 @@ def build(
     parts.append(f"out={summary.out_dir}")
 
     console.print(f"✅ Build complete ({', '.join(parts)})")
+
+    if platform == "cloudflare":
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        cf_bundle_dir = Path.cwd() / "_pywire_build"
+        routes_path = generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=cf_bundle_dir,
+            app_import=app,
+        )
+        console.print(
+            f"✅ Generated [cyan]_pywire_build/[/] and [cyan]{routes_path.name}[/] "
+            f"for Cloudflare Workers"
+        )
 
 
 @cli.command()
@@ -514,16 +538,12 @@ def deploy(
         from pywire.cli.deploy import (
             generate_wrangler_toml,
             generate_cf_entry,
-            generate_cf_requirements,
         )
 
         files_to_write.append(
-            ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
+            ("wrangler.toml", generate_wrangler_toml(project_root, project_name, kv=redis))
         )
-        files_to_write.append(("entry.py", generate_cf_entry(project_root)))
-        files_to_write.append(
-            ("requirements.txt", generate_cf_requirements(project_root))
-        )
+        files_to_write.append(("entry.py", generate_cf_entry(project_root, app_string=app, kv=redis)))
     else:
         raise click.UsageError(f"Unknown platform: {platform}")
 
@@ -617,14 +637,32 @@ def deploy(
     elif platform == "cloudflare":
         console.print(
             "\n[bold]Next steps:[/]\n"
-            "  1. Install Wrangler: [cyan]npm i -g wrangler[/]\n"
-            "  2. Run [cyan]wrangler dev[/] to test locally\n"
-            "  3. Deploy with [cyan]wrangler deploy[/]\n"
-            "\n[bold]Note:[/] Cloudflare Python Workers run on Pyodide (WASM).\n"
-            "  PyWire's core framework works out of the box via the [cyan]asgi[/] bridge.\n"
-            "  WebSocket support for real-time updates requires Durable Objects —\n"
-            "  see [link=https://pywire.dev/docs/deploy/cloudflare-workers]pywire.dev/docs/deploy/cloudflare-workers[/link]"
+            "  1. Add workers-py if not present: [cyan]uv add --dev workers-py[/]\n"
+            "  2. Build for Cloudflare: [cyan]uv run pywire build --platform cloudflare[/]\n"
+            "  3. Test locally: [cyan]uv run pywrangler dev[/]\n"
+            "  4. Deploy: [cyan]uv run pywrangler deploy[/]\n"
+            "\n[bold]Generated:[/]\n"
+            "  • [cyan]wrangler.toml[/] — Cloudflare configuration\n"
+            "  • [cyan]entry.py[/] — Workers entry point\n"
+            "\n[bold]CI/CD:[/]\n"
+            "  [cyan]uv sync && uv run pywire build --platform cloudflare "
+            "&& uv run pywrangler deploy[/]"
         )
+        if redis:
+            console.print(
+                "\n[bold]Cloudflare KV:[/]\n"
+                "  Session state is configured to use Workers KV for horizontal scaling.\n"
+                "  Create a KV namespace and update [cyan]wrangler.toml[/]:\n"
+                "    [cyan]wrangler kv namespace create PYWIRE_SESSIONS[/]\n"
+                "  Then replace [cyan]<YOUR_KV_NAMESPACE_ID>[/] with the returned ID."
+            )
+        else:
+            console.print(
+                "\n[bold]Scaling:[/]\n"
+                "  Single-worker deploys use in-memory sessions. To scale horizontally,\n"
+                "  re-run with [cyan]--redis[/] to add Cloudflare KV for shared session state:\n"
+                "    [cyan]pywire deploy --platform cloudflare --redis[/]"
+            )
 
 
 if __name__ == "__main__":

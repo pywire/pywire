@@ -29,11 +29,14 @@ dependencies = [
     "jinja2>=3.1.0",
     "msgpack>=1.0.0",
     "pydantic>=2.0.0",
-    "pywire-parser>=0.1.0",
 ]
 
 [project.optional-dependencies]
+build = [
+    "pywire-parser>=0.1.0",
+]
 cli = [
+    "pywire[build]",
     "uvicorn[standard]>=0.27.0",
     "watchfiles>=0.21.0",
     "textual>=7.4.0",

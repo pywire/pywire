@@ -12,8 +12,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, Optional, Set, Type, cast
 
-from pywire.compiler.codegen.generator import CodeGenerator
-from pywire.compiler.parser import PyWireParser
 from pywire.runtime.page import BasePage
 
 logger = logging.getLogger(__name__)
@@ -26,11 +24,27 @@ class PageLoader:
     """Loads and compiles .pywire files into page classes."""
 
     def __init__(self) -> None:
-        self.parser = PyWireParser()
-        self.codegen = CodeGenerator()
+        self._parser = None  # Lazy — avoids importing tree-sitter on Pyodide/WASM
+        self._codegen = None  # Lazy
         self._cache: Dict[str, Type[BasePage]] = {}  # path -> compiled class
         self._reverse_deps: Dict[str, set[str]] = {}  # dependency -> set of dependents
         self._manifest_cache: Dict[str, tuple[float, dict]] = {}
+
+    @property
+    def parser(self):
+        if self._parser is None:
+            from pywire.compiler.parser import PyWireParser
+
+            self._parser = PyWireParser()
+        return self._parser
+
+    @property
+    def codegen(self):
+        if self._codegen is None:
+            from pywire.compiler.codegen.generator import CodeGenerator
+
+            self._codegen = CodeGenerator()
+        return self._codegen
 
     def load(
         self,

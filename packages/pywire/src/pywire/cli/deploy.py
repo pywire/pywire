@@ -87,44 +87,49 @@ name = "{project_name}"
 main = "entry.py"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["python_workers"]
+"""
 
-[vars]
-PAGES_DIR = "pages"
+WRANGLER_TOML_KV_TEMPLATE = """\
+name = "{project_name}"
+main = "entry.py"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["python_workers"]
+
+[[kv_namespaces]]
+binding = "PYWIRE_SESSIONS"
+id = "<YOUR_KV_NAMESPACE_ID>"
 """
 
 CF_ENTRY_TEMPLATE = """\
 import asgi
-import micropip
+from {app_module} import {app_attr}
+import _routes
 from workers import WorkerEntrypoint
-
-from pywire import PyWire
-
-# Install WASM-only PyWire dependencies from the PyWire CDN.
-# These are C extensions compiled for Pyodide and are not available as native PyPI wheels.
-# To pin a specific version or use a different source, see:
-# https://pywire.dev/docs/deploy/cloudflare-workers#wasm-dependencies
-await micropip.install(
-    "tree-sitter-pywire",
-    index_urls=["https://pywire.dev/cdn/simple", "https://pypi.org/simple"],
-)
-
-app = PyWire(pages_dir="pages")
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
-        return await asgi.fetch(app, request.js_object, self.env)
+    async def on_fetch(self, request):
+        return await asgi.fetch({app_attr}, request.js_object, self.env)
 """
 
-CF_REQUIREMENTS_TEMPLATE = """\
-pywire
-starlette
-pydantic
-anyio
-msgpack
-typing-extensions
-"""
+CF_ENTRY_KV_TEMPLATE = """\
+import asgi
+from {app_module} import {app_attr}
+import _routes
+from pywire.runtime.cf_kv_store import CloudflareKVSessionStore
+from workers import WorkerEntrypoint
 
+_kv_initialized = False
+
+
+class Default(WorkerEntrypoint):
+    async def on_fetch(self, request):
+        global _kv_initialized
+        if not _kv_initialized:
+            {app_attr}.session_store = CloudflareKVSessionStore(self.env.PYWIRE_SESSIONS)
+            _kv_initialized = True
+        return await asgi.fetch({app_attr}, request.js_object, self.env)
+"""
 
 def generate_dockerfile(project_root: Path, workers: int = 1) -> str:
     """Generate Dockerfile content for a PyWire project."""
@@ -150,19 +155,32 @@ def generate_railway_json(project_root: Path) -> str:
     return RAILWAY_JSON_TEMPLATE
 
 
-def generate_wrangler_toml(project_root: Path, project_name: str) -> str:
+def generate_wrangler_toml(
+    project_root: Path,
+    project_name: str,
+    kv: bool = False,
+) -> str:
     """Generate wrangler.toml content for Cloudflare Workers."""
-    return WRANGLER_TOML_TEMPLATE.format(project_name=project_name)
+    template = WRANGLER_TOML_KV_TEMPLATE if kv else WRANGLER_TOML_TEMPLATE
+    return template.format(project_name=project_name)
 
 
-def generate_cf_entry(project_root: Path) -> str:
-    """Generate entry.py for Cloudflare Workers."""
-    return CF_ENTRY_TEMPLATE
+def generate_cf_entry(
+    project_root: Path, app_string: str = "main:app", kv: bool = False
+) -> str:
+    """Generate entry.py for Cloudflare Workers.
 
+    Args:
+        app_string: Module:attribute string like "src.main:app"
+    """
+    # Parse "src.main:app" into module="src.main", attr="app"
+    if ":" in app_string:
+        app_module, app_attr = app_string.rsplit(":", 1)
+    else:
+        app_module, app_attr = app_string, "app"
 
-def generate_cf_requirements(project_root: Path) -> str:
-    """Generate requirements.txt for Cloudflare Workers."""
-    return CF_REQUIREMENTS_TEMPLATE
+    template = CF_ENTRY_KV_TEMPLATE if kv else CF_ENTRY_TEMPLATE
+    return template.format(app_module=app_module, app_attr=app_attr)
 
 
 def validate_deploy_config(platform: str, project_root: Path) -> list[str]:
