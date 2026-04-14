@@ -62,29 +62,13 @@ function bundleWorkers({
 async function main() {
   console.log('Building Assets for Docs...')
 
-  // 1. Build Client
+  // 1. Build Client (bundled into the pywire wheel — the preview iframe loads
+  //    them at runtime via importlib.resources + blob URLs, so no copy needed)
   console.log('\n--- Building Client ---')
   if (!fs.existsSync(path.join(CLIENT_DIR, 'node_modules'))) {
     run('pnpm', ['install'], CLIENT_DIR)
   }
   run('pnpm', ['build'], CLIENT_DIR)
-
-  const staticDest = path.join(DOCS_PUBLIC_DIR, '_pywire/static')
-  fs.mkdirSync(staticDest, { recursive: true })
-
-  const clientSrcDir = path.resolve(CLIENT_DIR, '../static')
-  if (fs.existsSync(clientSrcDir)) {
-    const files = fs.readdirSync(clientSrcDir)
-    for (const file of files) {
-      if (file.endsWith('.js') || file.endsWith('.js.map')) {
-        console.log(`Copying ${file} to ${staticDest}`)
-        fs.copyFileSync(path.join(clientSrcDir, file), path.join(staticDest, file))
-      }
-    }
-  } else {
-    console.error(`Client build directory not found: ${clientSrcDir}`)
-    process.exit(1)
-  }
 
   // 2. Build Python Wheels (skipped in PyPI mode — packages come from PyPI at runtime)
   const publicDistDir = path.join(DOCS_PUBLIC_DIR, 'dist')

@@ -322,10 +322,33 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
   // Helper to get processed HTML and styles
   const getProcessedContent = useCallback(
     (html: string) => {
-      const baseUrl = import.meta.env.BASE_URL.endsWith('/')
-        ? import.meta.env.BASE_URL
-        : `${import.meta.env.BASE_URL}/`
-      const processedHtml = html.replace(/src="\/_pywire\//g, `src="${baseUrl}_pywire/`)
+      // Rewrite /_pywire/static/ script srcs to blob URLs extracted from the
+      // installed pywire package (sent by the worker via STATIC_FILES message).
+      // This eliminates the need to pre-copy client JS into docs/public/.
+      const blobUrls = (window as any).__PYWIRE_STATIC_BLOB_URLS__ as
+        | Record<string, string>
+        | undefined
+      let processedHtml = html
+      if (blobUrls) {
+        processedHtml = processedHtml.replace(
+          /src="\/_pywire\/static\/([^"?]+)(\?[^"]*)?"/g,
+          (_match, filename: string) => {
+            const blobUrl = blobUrls[filename]
+            if (blobUrl) return `src="${blobUrl}"`
+            // Fallback: serve from Astro public dir (shouldn't happen)
+            const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+              ? import.meta.env.BASE_URL
+              : `${import.meta.env.BASE_URL}/`
+            return `src="${baseUrl}_pywire/static/${filename}"`
+          },
+        )
+      } else {
+        // Blob URLs not ready yet — fall back to Astro public dir
+        const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+          ? import.meta.env.BASE_URL
+          : `${import.meta.env.BASE_URL}/`
+        processedHtml = processedHtml.replace(/src="\/_pywire\//g, `src="${baseUrl}_pywire/`)
+      }
       const isFullDocument = /<html/i.test(processedHtml) || /<!DOCTYPE/i.test(processedHtml)
 
       const styles = `

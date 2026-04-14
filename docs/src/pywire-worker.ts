@@ -212,6 +212,26 @@ for pkg in ['pywire', 'pywire-parser', 'tree-sitter-pywire']:
 
     postMessage({ type: 'STDOUT', message: 'PyWire ready.' })
 
+    // Extract bundled client JS from the installed pywire package so the
+    // preview iframe can load them without a separate static-file copy step.
+    console.log('[Worker] Extracting bundled client JS from pywire package...')
+    const staticFilesJson = await pyodide.runPythonAsync(`
+import importlib.resources, json
+_files = {}
+for _name in ['pywire.core.min.js', 'pywire.dev.min.js']:
+    try:
+        _files[_name] = importlib.resources.files("pywire.static").joinpath(_name).read_text()
+    except Exception as _e:
+        print(f"[Python] Failed to read {_name}: {_e}")
+json.dumps(_files)
+`)
+    const staticFiles: Record<string, string> = JSON.parse(staticFilesJson)
+    console.log(
+      '[Worker] Extracted static files:',
+      Object.keys(staticFiles).map((k) => `${k} (${staticFiles[k].length} chars)`),
+    )
+    postMessage({ type: 'STATIC_FILES', files: staticFiles })
+
     // Initialize File System
     if (!pyodide.FS.analyzePath('/app').exists) {
       pyodide.FS.mkdir('/app')

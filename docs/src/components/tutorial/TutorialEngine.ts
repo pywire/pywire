@@ -24,6 +24,8 @@ export class TutorialEngine {
   private onLog: (msg: string) => void
   private _isReady: boolean = false
   private pendingRequests = new Map<string, (html: string) => void>()
+  /** Blob URLs for pywire's bundled client JS files (extracted from the Pyodide package) */
+  private _staticBlobUrls = new Map<string, string>()
 
   constructor(options: {
     onReady: () => void
@@ -96,8 +98,30 @@ export class TutorialEngine {
     return this._isReady
   }
 
+  /**
+   * Get the blob URL for a bundled pywire static file (e.g. 'pywire.core.min.js').
+   * Returns undefined if the file hasn't been received from the worker yet.
+   */
+  public getStaticBlobUrl(filename: string): string | undefined {
+    return this._staticBlobUrls.get(filename)
+  }
+
   private handleWorkerMessage(event: MessageEvent) {
     const { type, message, id } = event.data
+
+    if (type === 'STATIC_FILES') {
+      // Client JS extracted from the installed pywire package — create blob URLs
+      const files = event.data.files as Record<string, string>
+      for (const [name, content] of Object.entries(files)) {
+        const blob = new Blob([content], { type: 'application/javascript' })
+        const url = URL.createObjectURL(blob)
+        this._staticBlobUrls.set(name, url)
+        console.log(`[TutorialEngine] Created blob URL for ${name}: ${url}`)
+      }
+      // Expose blob URL map on window so the Preview iframe can rewrite script srcs
+      ;(self as any).__PYWIRE_STATIC_BLOB_URLS__ = Object.fromEntries(this._staticBlobUrls)
+      return
+    }
 
     if (type === 'READY') {
       this._isReady = true
