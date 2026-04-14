@@ -157,6 +157,7 @@ class ProjectGenerator:
         base = self.pywire_dep
         if "[" not in base and "@" not in base:
             import re
+
             match = re.match(r"^(pywire)(.*)", base)
             if match:
                 dev_deps.append(f"{match.group(1)}[cli]{match.group(2)}")
@@ -480,10 +481,10 @@ class ProjectGenerator:
             (self.project_path / "entry.py").write_text(entry_content)
 
             # Generate Durable Object class for session + WebSocket handling
-            from pywire.cli.deploy import generate_cf_durable_object
-
-            app_string = f"{app_module}:app"
-            do_content = generate_cf_durable_object(self.project_path, app_string)
+            do_content = self.renderer.render(
+                "common/pywire_do.py.j2",
+                {"app_module": app_module, "app_attr": "app"},
+            )
             (self.project_path / "pywire_do.py").write_text(do_content)
 
 
