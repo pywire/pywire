@@ -152,6 +152,63 @@ uv add pywire[redis]
 
 Then increase `--workers` in the `CMD` line of your `Dockerfile`. PyWire auto-detects
 `REDIS_URL` — no code changes needed.
+{% elif adapter == "cloudflare" %}
+### Cloudflare Workers
+
+This project is configured for **Cloudflare Workers** (Python Workers).
+
+#### Local development
+
+```sh
+uv run pywire dev          # dev server with hot reload
+```
+
+#### Deploy
+
+```sh
+uv run pywire build --platform cloudflare   # compile pages for CF Workers
+uv run pywrangler dev                        # test locally in workerd
+uv run pywrangler deploy                     # ship to Cloudflare
+```
+
+`pywire build --platform cloudflare` compiles `.wire` pages and rewrites them for
+the Cloudflare Python Workers runtime, generating `_pywire_build/` and `_routes.py`.
+
+#### CI/CD
+
+```sh
+uv sync
+uv run pywire build --platform cloudflare
+uv run pywrangler deploy
+```
+
+> **Note:** `pywire[cli]` (dev dependency) is needed for the build step.
+> The deployed worker only uses `pywire` (base) — no C extensions.
+{% if redis_enabled %}
+
+#### Cloudflare KV (pre-configured)
+
+Session state is configured to use **Workers KV** for horizontal scaling. Create a KV
+namespace and update `wrangler.toml`:
+
+```sh
+wrangler kv namespace create PYWIRE_SESSIONS
+```
+
+Then replace `<YOUR_KV_NAMESPACE_ID>` in `wrangler.toml` with the returned ID.
+{% else %}
+
+#### Scaling with Cloudflare KV
+
+To scale horizontally with shared session state, re-generate with KV support:
+
+```sh
+pywire deploy --platform cloudflare --redis
+```
+
+Then create a KV namespace: `wrangler kv namespace create PYWIRE_SESSIONS` and
+update `wrangler.toml` with the returned ID.
+{% endif %}
 {% endif %}
 {% endfor %}
 {% endif %}

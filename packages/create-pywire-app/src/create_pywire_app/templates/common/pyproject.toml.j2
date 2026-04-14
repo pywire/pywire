@@ -8,6 +8,15 @@ dependencies = [
     "{{ dep }}",
 {% endfor %}
 ]
+{% if dev_dependencies %}
+
+[dependency-groups]
+dev = [
+{% for dep in dev_dependencies %}
+    "{{ dep }}",
+{% endfor %}
+]
+{% endif %}
 {% if deploy_adapters %}
 
 [tool.pywire.deploy]
@@ -22,4 +31,9 @@ region = "oregon"
 
 [tool.pywire.deploy.fly]
 primary_region = "ord"
+{% if "cloudflare" in deploy_adapters %}
+
+[tool.pywire.deploy.cloudflare]
+kv = false
+{% endif %}
 {% endif %}

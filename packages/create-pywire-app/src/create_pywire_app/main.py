@@ -140,7 +140,33 @@ class ProjectGenerator:
 
     def get_dependencies(self) -> List[str]:
         """Get dependencies for the selected template."""
-        dependencies = [self.pywire_dep]
+        # Docker-based adapters need pywire[cli] for `pywire run` in Dockerfile.
+        # Cloudflare-only projects use base pywire (no C extensions for Pyodide).
+        docker_adapters = {"Render (render.yaml)", "Docker (Dockerfile)", "Fly.io (fly.toml)", "Railway (railway.json)"}
+        has_docker = bool(set(self.adapters) & docker_adapters)
+        has_cf_only = (
+            "Cloudflare Workers (wrangler.toml)" in self.adapters and not has_docker
+        )
+
+        if has_cf_only:
+            # Base pywire dep — version spec may include ==X.Y.Z or @ path
+            pywire_dep = self.pywire_dep
+        else:
+            # Add [cli] extra for Docker-based platforms
+            base = self.pywire_dep
+            if "[" not in base and "@" not in base:
+                # Simple dep like "pywire" or "pywire>=0.5.0"
+                # Insert [cli] before the version spec
+                import re
+                match = re.match(r"^(pywire)(.*)", base)
+                if match:
+                    pywire_dep = f"{match.group(1)}[cli]{match.group(2)}"
+                else:
+                    pywire_dep = base
+            else:
+                pywire_dep = base
+
+        dependencies = [pywire_dep]
 
         if self.template == "blog":
             dependencies.append("markdown>=3.6")
@@ -148,6 +174,27 @@ class ProjectGenerator:
             dependencies.extend(["stripe>=7.0.0", "sqlalchemy>=2.0.0"])
 
         return dependencies
+
+    def get_dev_dependencies(self) -> List[str]:
+        """Get dev dependencies based on selected adapters."""
+        dev_deps: List[str] = []
+
+        has_cloudflare = "Cloudflare Workers (wrangler.toml)" in self.adapters
+        if has_cloudflare:
+            # CF projects need pywire[cli] for build tooling (parser, dev server)
+            base = self.pywire_dep
+            if "[" not in base and "@" not in base:
+                import re
+                match = re.match(r"^(pywire)(.*)", base)
+                if match:
+                    dev_deps.append(f"{match.group(1)}[cli]{match.group(2)}")
+                else:
+                    dev_deps.append(base)
+            else:
+                dev_deps.append(base)
+            dev_deps.append("workers-py>=1.9.2")
+
+        return dev_deps
 
     def get_template_description(self) -> str:
         """Get description for the selected template."""
@@ -166,6 +213,7 @@ class ProjectGenerator:
             "Railway (Dockerfile)": "railway",
             "Docker (Dockerfile)": "docker",
             "Render (render.yaml)": "render",
+            "Cloudflare Workers (wrangler.toml)": "cloudflare",
         }
         return [adapter_map[a] for a in self.adapters if a in adapter_map]
 
@@ -210,6 +258,7 @@ class ProjectGenerator:
         context = {
             "project_name": self.project_name,
             "dependencies": self.get_dependencies(),
+            "dev_dependencies": self.get_dev_dependencies(),
             "deploy_adapters": self.get_deploy_adapters(),
         }
         content = self.renderer.render("common/pyproject.toml.j2", context)
@@ -442,6 +491,21 @@ class ProjectGenerator:
             if not (self.project_path / "Dockerfile").exists():
                 self._generate_dockerfile()
 
+        if "Cloudflare Workers (wrangler.toml)" in self.adapters:
+            # Determine module path based on project layout
+            app_module = "src.main" if self.use_src else "main"
+            context = {
+                "project_name": self.project_name,
+                "kv_enabled": self.redis_enabled,
+                "app_module": app_module,
+                "app_attr": "app",
+            }
+            wrangler_content = self.renderer.render("common/wrangler.toml.j2", context)
+            (self.project_path / "wrangler.toml").write_text(wrangler_content)
+
+            entry_content = self.renderer.render("common/entry.py.j2", context)
+            (self.project_path / "entry.py").write_text(entry_content)
+
 
 def main():
     # Fix for macOS when running with redirected stdin (e.g. via pipe)
@@ -582,6 +646,7 @@ def main():
                 "Render (render.yaml)",
                 "Fly.io (fly.toml + Dockerfile)",
                 "Railway (Dockerfile)",
+                "Cloudflare Workers (wrangler.toml)",
             ],
         ).unsafe_ask()
 

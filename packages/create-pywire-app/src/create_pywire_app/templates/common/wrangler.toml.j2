@@ -1,0 +1,10 @@
+name = "{{ project_name }}"
+main = "entry.py"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["python_workers"]
+{% if kv_enabled %}
+
+[[kv_namespaces]]
+binding = "PYWIRE_SESSIONS"
+id = "<YOUR_KV_NAMESPACE_ID>"
+{% endif %}
