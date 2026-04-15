@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/pywire/pywire/compare/create-pywire-app-v0.5.0...create-pywire-app-v0.5.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* **create-pywire-app:** pass workers to pyproject.toml template context ([17ad3f7](https://github.com/pywire/pywire/commit/17ad3f74241c6bcef0c501a8b269f7028f780dd1))
+
 ## [0.5.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.4.0...create-pywire-app-v0.5.0) (2026-04-15)
 
 
