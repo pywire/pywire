@@ -28,16 +28,6 @@ export class PyWireDevApp extends PyWireApp {
   }
 
   /**
-   * Handle connection status changes with UI overlay.
-   */
-  protected handleStatusChange(connected: boolean): void {
-    super.handleStatusChange(connected)
-    if (this.overlay) {
-      this.overlay.update(connected)
-    }
-  }
-
-  /**
    * Navigate with offline feedback.
    */
   navigateTo(path: string): void {
