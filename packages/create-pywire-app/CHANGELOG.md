@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.4.0...create-pywire-app-v0.5.0) (2026-04-15)
+
+
+### Features
+
+* Cloudflare Python Workers support ([#110](https://github.com/pywire/pywire/issues/110)) ([9866d10](https://github.com/pywire/pywire/commit/9866d1096b31cf34758d33b8728ae318b0bc1566))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.3.0...create-pywire-app-v0.4.0) (2026-04-13)
 
 
