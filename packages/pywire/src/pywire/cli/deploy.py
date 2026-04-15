@@ -108,8 +108,8 @@ import asgi
 from {app_module} import {app_attr}
 import _routes  # noqa: F401 — registers routes as a side effect
 from pywire_do import PyWireSessionDO
-from workers import WorkerEntrypoint
-from js import URL
+from workers import WorkerEntrypoint, Response
+from js import URL, Request as JsRequest
 import uuid
 
 
@@ -123,7 +123,22 @@ class Default(WorkerEntrypoint):
             stub = self.env.PYWIRE_SESSION.getByName(session_id)
             return await stub.fetch(request)
 
-        return await asgi.fetch({app_attr}, request.js_object, self.env)
+        # Pre-warm a Durable Object so it's ready when the client opens a WS.
+        # The DO cold start overlaps with the browser loading HTML + JS.
+        session_id = str(uuid.uuid4())
+        stub = self.env.PYWIRE_SESSION.getByName(session_id)
+        self.ctx.waitUntil(stub.fetch(JsRequest.new("http://do/warm")))
+
+        # Serve the page via ASGI
+        response = await asgi.fetch({app_attr}, request.js_object, self.env)
+
+        # Inject pre-assigned session into the HTML so the client
+        # connects to the already-warming DO instead of creating a new one.
+        body = await response.text()
+        meta = '<meta name="pywire-session" content="' + session_id + '">'
+        body = body.replace("</head>", meta + "</head>", 1)
+
+        return Response.new(body, status=response.status, headers=response.headers)
 """
 
 CF_DURABLE_OBJECT_TEMPLATE = """\

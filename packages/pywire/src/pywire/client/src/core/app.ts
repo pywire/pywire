@@ -115,6 +115,16 @@ export class PyWireApp {
     if (this.initialized) return
     this.initialized = true
 
+    // Read pre-assigned session from server (e.g. Cloudflare DO pre-warm)
+    const sessionMeta = document.querySelector('meta[name="pywire-session"]')
+    if (sessionMeta) {
+      const preSession = sessionMeta.getAttribute('content')
+      if (preSession) {
+        this.sessionId = preSession
+        this.transport.setSessionId(preSession)
+      }
+    }
+
     // Setup message handling
     this.transport.onMessage((msg) => this.handleMessage(msg))
     this.transport.onStatusChange((connected) => this.handleStatusChange(connected))

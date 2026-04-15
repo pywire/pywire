@@ -188,6 +188,14 @@ uv run pywrangler deploy
 > **Note:** `pywire[cli]` (dev dependency) is needed for the build step.
 > The deployed worker only uses `pywire` (base) — no C extensions.
 
+#### Cold starts
+
+Cloudflare Python Workers + Durable Objects have inherent cold start latency
+(~2-4 seconds for the first connection). Subsequent interactions are fast.
+PyWire pre-warms the Durable Object during the initial page load to minimize
+this delay. Pages are server-rendered, so content is visible immediately —
+the cold start only affects interactivity.
+
 #### Architecture
 
 Each session runs in a **Durable Object** with persistent storage and WebSocket
