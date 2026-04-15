@@ -1,7 +1,10 @@
 ---
 from typing import Type, Any, Optional, Dict
 import inspect
-from pydantic import BaseModel
+try:
+    from pydantic import BaseModel as _PydanticBase
+except ImportError:
+    _PydanticBase = None  # type: ignore[assignment,misc]
 from pywire import ref, props, expose, EventHandler
 from pywire.core.wire import WirePrimitive, unwrap_wire
 from pywire.runtime.pydantic_integration import validate_with_model, extract_field_rules
@@ -11,7 +14,7 @@ import logging as _logging
 
 @props
 class Props:
-    model: Optional[Type[BaseModel]] = None
+    model: Optional[Type[Any]] = None
     on_submit: Optional[EventHandler] = None
     _field_rules: Optional[Dict[str, Dict[str, Any]]] = None
 

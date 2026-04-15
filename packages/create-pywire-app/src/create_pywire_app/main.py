@@ -140,7 +140,27 @@ class ProjectGenerator:
 
     def get_dependencies(self) -> List[str]:
         """Get runtime dependencies for the selected template."""
-        dependencies = [self.pywire_dep]
+        import re
+
+        deploy_adapters = self.get_deploy_adapters()
+        docker_adapters = {"docker", "render", "fly", "railway"}
+        has_docker = bool(set(deploy_adapters) & docker_adapters)
+
+        # Include pydantic (forms extra) for non-CF-only projects
+        if has_docker or not deploy_adapters:
+            base = self.pywire_dep
+            if "[" not in base and "@" not in base:
+                match = re.match(r"^(pywire)(.*)", base)
+                if match:
+                    pywire_dep = f"{match.group(1)}[forms]{match.group(2)}"
+                else:
+                    pywire_dep = base
+            else:
+                pywire_dep = base
+        else:
+            pywire_dep = self.pywire_dep
+
+        dependencies = [pywire_dep]
 
         if self.template == "blog":
             dependencies.append("markdown>=3.6")
@@ -478,6 +498,11 @@ class ProjectGenerator:
             wrangler_content = self.renderer.render("common/wrangler.toml.j2", context)
             (self.project_path / "wrangler.toml").write_text(wrangler_content)
 
+            # Exclude local .venv from CF bundle to avoid duplicate packages
+            (self.project_path / ".wranglerignore").write_text(
+                ".venv/\n.git/\n__pycache__/\n.pywire/build/\n"
+            )
+
             entry_content = self.renderer.render("common/entry.py.j2", context)
             (self.project_path / "entry.py").write_text(entry_content)
 
@@ -631,6 +656,14 @@ def main():
                 "Cloudflare Workers (wrangler.toml)",
             ],
         ).unsafe_ask()
+
+        if "Cloudflare Workers (wrangler.toml)" in adapters:
+            console.print(
+                "\n[bold yellow]Note:[/] Cloudflare Python Workers requires a "
+                "[bold]Workers Paid plan[/] ($5/month).\n"
+                "  The free plan's size and startup limits are incompatible with "
+                "Python frameworks.\n"
+            )
 
         # Redis/workers scaling options (not applicable to Cloudflare-only setups)
         redis_enabled = False

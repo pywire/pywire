@@ -28,10 +28,12 @@ dependencies = [
     "python-multipart>=0.0.6",
     "jinja2>=3.1.0",
     "msgpack>=1.0.0",
-    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
+forms = [
+    "pydantic>=2.0.0",
+]
 build = [
     "pywire-parser>=0.1.0",
 ]
@@ -43,7 +45,7 @@ cli = [
     "rich-click>=1.9.6",
 ]
 dev = [
-    "pywire[cli]",
+    "pywire[cli,forms]",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
@@ -117,6 +119,10 @@ rules = { no-matching-overload = "ignore", invalid-argument-type = "ignore" }
 [[tool.ty.overrides]]
 include = ["src/pywire/runtime/redis_store.py"]
 rules = { unresolved-import = "ignore", invalid-await = "ignore" }
+
+[[tool.ty.overrides]]
+include = ["src/pywire/runtime/pydantic_integration.py"]
+rules = { invalid-assignment = "ignore" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

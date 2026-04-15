@@ -57,6 +57,7 @@ export class PyWireApp {
   protected isConnected = false
   protected sessionId: string | null = null
   private intentionalDisconnect = false
+  private connectStartTime: number | null = null
   /**
    * Tracks the target path of a pending PJAX navigation.
    * Set before sending a relocate message, cleared after the resulting
@@ -119,6 +120,7 @@ export class PyWireApp {
     this.transport.onStatusChange((connected) => this.handleStatusChange(connected))
 
     // Connect transport with fallback
+    this.connectStartTime = performance.now()
     try {
       await this.transport.connect()
     } catch (e) {
@@ -455,6 +457,11 @@ export class PyWireApp {
         }
         // Hide reconnect overlay — state has been synced successfully
         this.reconnectOverlay.hide()
+        if (this.connectStartTime !== null) {
+          const elapsed = Math.round(performance.now() - this.connectStartTime)
+          logger.log(`PyWire: Connected in ${elapsed}ms`)
+          this.connectStartTime = null
+        }
         logger.log('PyWire: Application ready')
         break
 

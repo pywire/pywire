@@ -557,6 +557,17 @@ def deploy(
     # Derive project name from directory
     project_name = project_root.name
 
+    # Cloudflare Workers requires a paid plan
+    if platform == "cloudflare":
+        console.print(
+            "\n[bold yellow]Note:[/] Cloudflare Python Workers requires a "
+            "[bold]Workers Paid plan[/] ($5/month).\n"
+            "  The free plan's size and startup limits are incompatible with "
+            "Python frameworks.\n"
+            "  [link=https://dash.cloudflare.com/workers/plans]"
+            "https://dash.cloudflare.com/workers/plans[/link]\n"
+        )
+
     # Cloudflare uses Durable Objects — workers/redis flags don't apply
     if platform == "cloudflare" and (workers > 1 or redis):
         console.print(
@@ -630,6 +641,13 @@ def deploy(
         )
         files_to_write.append(
             ("pywire_do.py", generate_cf_durable_object(project_root, app_string=app))
+        )
+        # Exclude local .venv from CF bundle to avoid duplicate packages
+        files_to_write.append(
+            (
+                ".wranglerignore",
+                ".venv/\n.git/\n__pycache__/\n.pywire/build/\n",
+            )
         )
     else:
         raise click.UsageError(f"Unknown platform: {platform}")

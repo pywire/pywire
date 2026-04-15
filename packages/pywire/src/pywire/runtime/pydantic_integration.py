@@ -1,9 +1,22 @@
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, get_args, get_origin
+from typing import Any, Dict, List, Tuple, Type, Union, get_args, get_origin
 
-from pydantic import BaseModel, ValidationError
+try:
+    from pydantic import BaseModel, ValidationError
+except ImportError:
+    BaseModel = None  # type: ignore[assignment,misc]
+    ValidationError = None  # type: ignore[assignment,misc]
+
 from pywire.runtime.form_errors import FieldError
 from pywire.runtime.files import FileUpload
 from pywire.runtime.upload_manager import upload_manager
+
+
+def _require_pydantic() -> None:
+    if BaseModel is None:
+        raise ImportError(
+            "Pydantic is required for form validation. "
+            "Install it with: pip install pywire[forms]"
+        )
 
 
 class UploadResolutionError(ValueError):
@@ -31,8 +44,8 @@ def _normalize_pydantic_rule(err_type: str) -> str:
 
 
 def validate_with_model(
-    data: Dict[str, Any], model_class: Type[BaseModel]
-) -> Tuple[Optional[BaseModel], Dict[str, FieldError]]:
+    data: Dict[str, Any], model_class: "Type[Any]"
+) -> "Tuple[Any, Dict[str, FieldError]]":
     """
     Attempt to instantiate and validate a Pydantic model.
 
@@ -45,6 +58,7 @@ def validate_with_model(
         (model_instance, {}) on success.
         (None, {field_name: FieldError}) on validation failure.
     """
+    _require_pydantic()
     try:
         # Pydantic v2 use model_validate, v1 use parse_obj.
         # Let's support v2 primarily, but fallback if needed.
@@ -74,7 +88,7 @@ def validate_with_model(
                 )
             },
         )
-    except ValidationError as e:
+    except ValidationError as e:  # type: ignore[misc]
         errors: Dict[str, FieldError] = {}
         for err in e.errors():
             # Extract field name. 'loc' is a tuple like ('field',).
@@ -143,7 +157,7 @@ def _expand_dots(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def extract_field_rules(model_class: Type[BaseModel]) -> Dict[str, Dict[str, Any]]:
+def extract_field_rules(model_class: "Type[Any]") -> Dict[str, Dict[str, Any]]:
     """
     Extract HTML5 validation rules from a Pydantic model.
     Returns: {field_name: {attribute_name: value}}
