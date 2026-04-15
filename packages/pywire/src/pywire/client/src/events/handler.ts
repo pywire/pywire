@@ -28,6 +28,7 @@ export class UnifiedEventHandler {
   private app: Application
   private debouncers = new Map<string, number>()
   private throttlers = new Map<string, number>()
+  private firedOnce = new Set<string>()
 
   private defaultEvents = ['click', 'submit', 'input', 'change']
   private attachedEvents = new Set<string>()
@@ -269,6 +270,14 @@ export class UnifiedEventHandler {
       if (e.target !== element) return
     }
 
+    // .once
+    if (modifiers.includes('once')) {
+      const elementId = element.id || this.getUniqueId(element)
+      const onceKey = `${elementId}-${eventType}-${handlerName}`
+      if (this.firedOnce.has(onceKey)) return
+      this.firedOnce.add(onceKey)
+    }
+
     // --- 2. Filter Modifiers ---
 
     // System modifiers (Shift, Ctrl, Alt, Meta) - supported on Keyboard and Mouse events
@@ -293,6 +302,7 @@ export class UnifiedEventHandler {
         'prevent',
         'stop',
         'self',
+        'once',
         'debounce',
         'throttle',
       ]
