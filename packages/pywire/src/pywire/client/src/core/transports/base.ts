@@ -20,6 +20,9 @@ export interface Transport {
   /** Check if connected */
   isConnected(): boolean
 
+  /** Set session ID for reconnection routing (e.g. Durable Objects) */
+  setSessionId(sessionId: string): void
+
   /** Transport name for debugging */
   readonly name: string
 }
@@ -166,6 +169,10 @@ export abstract class BaseTransport implements Transport {
   abstract connect(): Promise<void>
   abstract send(message: object): void
   abstract disconnect(): void
+
+  setSessionId(_sessionId: string): void {
+    // Default no-op; WebSocketTransport overrides to append ?session= to URL
+  }
 
   onMessage(handler: MessageHandler): void {
     this.messageHandlers.push(handler)

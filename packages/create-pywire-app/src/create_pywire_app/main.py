@@ -139,7 +139,7 @@ class ProjectGenerator:
         self.pages_dir = self.app_root / "pages"
 
     def get_dependencies(self) -> List[str]:
-        """Get dependencies for the selected template."""
+        """Get runtime dependencies for the selected template."""
         dependencies = [self.pywire_dep]
 
         if self.template == "blog":
@@ -148,6 +148,28 @@ class ProjectGenerator:
             dependencies.extend(["stripe>=7.0.0", "sqlalchemy>=2.0.0"])
 
         return dependencies
+
+    def get_dev_dependencies(self) -> List[str]:
+        """Get dev dependencies — CLI tooling and platform-specific packages."""
+        dev_deps: List[str] = []
+
+        # All projects need pywire[cli] for dev/build/deploy commands
+        base = self.pywire_dep
+        if "[" not in base and "@" not in base:
+            import re
+
+            match = re.match(r"^(pywire)(.*)", base)
+            if match:
+                dev_deps.append(f"{match.group(1)}[cli]{match.group(2)}")
+            else:
+                dev_deps.append(base)
+        else:
+            dev_deps.append(base)
+
+        if "Cloudflare Workers (wrangler.toml)" in self.adapters:
+            dev_deps.append("workers-py>=1.9.2")
+
+        return dev_deps
 
     def get_template_description(self) -> str:
         """Get description for the selected template."""
@@ -166,6 +188,7 @@ class ProjectGenerator:
             "Railway (Dockerfile)": "railway",
             "Docker (Dockerfile)": "docker",
             "Render (render.yaml)": "render",
+            "Cloudflare Workers (wrangler.toml)": "cloudflare",
         }
         return [adapter_map[a] for a in self.adapters if a in adapter_map]
 
@@ -210,6 +233,7 @@ class ProjectGenerator:
         context = {
             "project_name": self.project_name,
             "dependencies": self.get_dependencies(),
+            "dev_dependencies": self.get_dev_dependencies(),
             "deploy_adapters": self.get_deploy_adapters(),
         }
         content = self.renderer.render("common/pyproject.toml.j2", context)
@@ -442,6 +466,27 @@ class ProjectGenerator:
             if not (self.project_path / "Dockerfile").exists():
                 self._generate_dockerfile()
 
+        if "Cloudflare Workers (wrangler.toml)" in self.adapters:
+            # Determine module path based on project layout
+            app_module = "src.main" if self.use_src else "main"
+            context = {
+                "project_name": self.project_name,
+                "app_module": app_module,
+                "app_attr": "app",
+            }
+            wrangler_content = self.renderer.render("common/wrangler.toml.j2", context)
+            (self.project_path / "wrangler.toml").write_text(wrangler_content)
+
+            entry_content = self.renderer.render("common/entry.py.j2", context)
+            (self.project_path / "entry.py").write_text(entry_content)
+
+            # Generate Durable Object class for session + WebSocket handling
+            do_content = self.renderer.render(
+                "common/pywire_do.py.j2",
+                {"app_module": app_module, "app_attr": "app"},
+            )
+            (self.project_path / "pywire_do.py").write_text(do_content)
+
 
 def main():
     # Fix for macOS when running with redirected stdin (e.g. via pipe)
@@ -582,6 +627,7 @@ def main():
                 "Render (render.yaml)",
                 "Fly.io (fly.toml + Dockerfile)",
                 "Railway (Dockerfile)",
+                "Cloudflare Workers (wrangler.toml)",
             ],
         ).unsafe_ask()
 
@@ -743,7 +789,21 @@ def main():
                 ]
             )
 
+            if "Cloudflare Workers (wrangler.toml)" in adapters:
+                commands.extend(
+                    [
+                        "",
+                        "# Cloudflare Workers",
+                        "pywire build --platform cloudflare",
+                        "pywrangler dev",
+                    ]
+                )
+
             cmd_text = "\n    ".join(commands)
+
+            cf_tip = ""
+            if "Cloudflare Workers (wrangler.toml)" in adapters:
+                cf_tip = "\n> **Deploy:** `pywire build --platform cloudflare && pywrangler deploy`"
 
             console.print(
                 Panel(
@@ -756,6 +816,7 @@ Run the following commands to enter the environment:
     {cmd_text}
 
 > **Tip:** Install the **PyWire** extension (id: `pywire.pywire`) in VS Code for syntax highlighting and snippets.
+{cf_tip}
             """
                     ),
                     border_style="cyan",

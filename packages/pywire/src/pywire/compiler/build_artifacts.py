@@ -402,3 +402,256 @@ def build_artifacts(
 
     builder = ArtifactBuilder(pages_dir=pages_dir, out_dir=out_dir)
     return builder.build(optimize=optimize)
+
+
+def generate_cf_bundle(
+    build_dir: Path,
+    cf_bundle_dir: Path,
+    app_import: str = "src.main:app",
+) -> Path:
+    """Generate a Cloudflare Workers-compatible bundle from precompiled artifacts.
+
+    Rewrites artifacts to use direct Python imports instead of load_layout() calls,
+    and generates a _routes.py that registers all routes with the app.
+
+    Args:
+        build_dir: Path to .pywire/build/ directory containing manifest.json
+        cf_bundle_dir: Output directory for the CF bundle (e.g. project_root/_pywire_build)
+        app_import: Module:attribute string like "src.main:app"
+
+    Returns:
+        Path to the generated _routes.py file (in cf_bundle_dir's parent).
+    """
+    manifest_path = build_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    entries = manifest.get("entries", {})
+
+    # Parse app import string
+    if ":" in app_import:
+        app_module, app_attr = app_import.rsplit(":", 1)
+    else:
+        app_module, app_attr = app_import, "app"
+
+    # Determine the bundle package name from the output dir name
+    bundle_pkg = cf_bundle_dir.name  # e.g. "_pywire_build"
+
+    # Build mapping: absolute source path -> {artifact_rel, module_path, class_name, routes, kind}
+    artifact_map: Dict[str, dict] = {}
+
+    # First pass: copy artifacts and extract class names
+    if cf_bundle_dir.exists():
+        shutil.rmtree(cf_bundle_dir)
+    cf_bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    for abs_path, entry in entries.items():
+        artifact_rel = entry["artifact"]  # e.g. "pages/__layout__.py"
+        src_artifact = build_dir / artifact_rel
+        dst_artifact = cf_bundle_dir / artifact_rel
+
+        dst_artifact.parent.mkdir(parents=True, exist_ok=True)
+        source = src_artifact.read_text(encoding="utf-8")
+
+        # Extract class name from __page_class__ = ClassName
+        class_name = _extract_page_class_name(source)
+
+        # Build module path: "pages/__layout__.py" -> "pages.__layout__"
+        module_path = str(Path(artifact_rel).with_suffix("")).replace("/", ".")
+
+        artifact_map[abs_path] = {
+            "artifact_rel": artifact_rel,
+            "module_path": module_path,  # e.g. "pages.__layout__"
+            "class_name": class_name,  # e.g. "LayoutPage"
+            "routes": entry.get("routes", []),
+            "kind": entry.get("kind", "page"),
+        }
+
+    # Second pass: rewrite artifacts (replace load_layout calls with direct imports)
+    for abs_path, info in artifact_map.items():
+        artifact_rel = info["artifact_rel"]
+        src_artifact = build_dir / artifact_rel
+        dst_artifact = cf_bundle_dir / artifact_rel
+
+        source = src_artifact.read_text(encoding="utf-8")
+        rewritten = _rewrite_artifact_for_cf(source, artifact_map, bundle_pkg)
+        dst_artifact.write_text(rewritten, encoding="utf-8")
+
+    # Generate __init__.py files for all directories
+    for dirpath in cf_bundle_dir.rglob("*"):
+        if dirpath.is_dir():
+            init_file = dirpath / "__init__.py"
+            if not init_file.exists():
+                init_file.write_text("", encoding="utf-8")
+    # Root __init__.py
+    root_init = cf_bundle_dir / "__init__.py"
+    if not root_init.exists():
+        root_init.write_text("", encoding="utf-8")
+
+    # Generate _routes.py in the bundle dir's parent (project root)
+    routes_path = cf_bundle_dir.parent / "_routes.py"
+    routes_source = _generate_routes_module(
+        artifact_map, bundle_pkg, app_module, app_attr
+    )
+    routes_path.write_text(routes_source, encoding="utf-8")
+
+    return routes_path
+
+
+def _extract_page_class_name(source: str) -> str:
+    """Extract class name from __page_class__ = ClassName in artifact source."""
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__page_class__":
+                    if isinstance(node.value, ast.Name):
+                        return node.value.id
+    return "Page"
+
+
+def _rewrite_artifact_for_cf(
+    source: str,
+    artifact_map: Dict[str, dict],
+    bundle_pkg: str,
+) -> str:
+    """Rewrite a precompiled artifact for Cloudflare Workers.
+
+    - Replaces load_layout('/abs/path', ...) with direct import from layout module
+    - Replaces load_component('/abs/path', ...) with direct import from component module
+    - Clears __file_path__ assignments
+    - Removes unused load_layout/load_component imports
+    """
+    tree = ast.parse(source)
+    removals = []  # indices in tree.body to remove
+    insertions = []  # (index, node) to insert
+
+    for i, node in enumerate(tree.body):
+        # Remove: from pywire.runtime.loader import load_layout
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "pywire.runtime.loader"
+            and node.names
+        ):
+            import_names = [alias.name for alias in node.names]
+            if "load_layout" in import_names or "load_component" in import_names:
+                # Remove only load_layout/load_component, keep others
+                remaining = [
+                    alias
+                    for alias in node.names
+                    if alias.name not in ("load_layout", "load_component")
+                ]
+                if remaining:
+                    node.names = remaining
+                else:
+                    removals.append(i)
+
+        # Rewrite: _LayoutBase = load_layout('abs_path', 'base_path')
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if (
+                isinstance(target, ast.Name)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id in ("load_layout", "load_component")
+                and len(node.value.args) >= 1
+                and isinstance(node.value.args[0], ast.Constant)
+            ):
+                dep_path = node.value.args[0].value
+                var_name = target.id  # e.g. "_LayoutBase"
+
+                if not isinstance(dep_path, str):
+                    continue
+
+                # Find this dependency in the artifact map
+                dep_info = artifact_map.get(dep_path)
+                if dep_info:
+                    # Replace with: from _pywire_build.pages.__layout__ import LayoutPage as _LayoutBase
+                    import_module = f"{bundle_pkg}.{dep_info['module_path']}"
+                    import_node = ast.ImportFrom(
+                        module=import_module,
+                        names=[
+                            ast.alias(
+                                name=dep_info["class_name"],
+                                asname=var_name
+                                if var_name != dep_info["class_name"]
+                                else None,
+                            )
+                        ],
+                        level=0,
+                    )
+                    ast.fix_missing_locations(import_node)
+                    removals.append(i)
+                    insertions.append((i, import_node))
+
+    # Apply removals and insertions
+    new_body = []
+    for i, node in enumerate(tree.body):
+        if i in removals:
+            # Check if there's an insertion at this index
+            for ins_idx, ins_node in insertions:
+                if ins_idx == i:
+                    new_body.append(ins_node)
+            continue
+        new_body.append(node)
+
+    tree.body = new_body
+
+    # Clear __file_path__ and __sibling_paths__ inside class bodies
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if (
+                    isinstance(item, ast.Assign)
+                    and len(item.targets) == 1
+                    and isinstance(item.targets[0], ast.Name)
+                ):
+                    name = item.targets[0].id
+                    if name == "__file_path__":
+                        item.value = ast.Constant(value="")
+                    elif name == "__sibling_paths__":
+                        item.value = ast.List(elts=[], ctx=ast.Load())
+
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree)
+
+
+def _generate_routes_module(
+    artifact_map: Dict[str, dict],
+    bundle_pkg: str,
+    app_module: str,
+    app_attr: str,
+) -> str:
+    """Generate _routes.py that imports page classes and registers routes."""
+    lines = [
+        '"""Auto-generated by pywire deploy --platform cloudflare."""',
+        f"from {app_module} import {app_attr}",
+        "",
+    ]
+
+    # Sort: layouts first (they're dependencies), then pages/components
+    layout_imports = []
+    page_imports = []
+    registrations = []
+
+    for info in artifact_map.values():
+        module_path = f"{bundle_pkg}.{info['module_path']}"
+        class_name = info["class_name"]
+        imp = f"from {module_path} import {class_name}"
+
+        if info["kind"] == "layout":
+            layout_imports.append(imp)
+        else:
+            page_imports.append(imp)
+
+        if info["kind"] == "page" and info["routes"]:
+            for route in info["routes"]:
+                registrations.append(
+                    f'{app_attr}.router.add_route("{route}", {class_name})'
+                )
+
+    lines.extend(layout_imports)
+    lines.extend(page_imports)
+    lines.append("")
+    lines.extend(registrations)
+    lines.append("")
+
+    return "\n".join(lines)

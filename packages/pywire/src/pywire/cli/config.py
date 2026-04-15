@@ -4,8 +4,18 @@ import tomllib
 from pathlib import Path
 from typing import Any, Optional
 
-import rich_click as click
-from rich.console import Console
+try:
+    import rich_click as click
+    from rich.console import Console
+except ImportError:
+    import sys
+
+    print(
+        "Error: pywire CLI requires additional dependencies.\n"
+        "Install them with: uv add pywire[cli]  (or: pip install pywire[cli])",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 console = Console()
 

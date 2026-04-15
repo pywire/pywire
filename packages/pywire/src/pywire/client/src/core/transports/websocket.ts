@@ -14,11 +14,12 @@ export class WebSocketTransport extends BaseTransport {
   private reconnectAttempts = 0
   private maxReconnectDelay = 5000
   private shouldReconnect = true
-  private readonly url: string
+  private readonly baseUrl: string
+  private sessionId: string | null = null
 
   constructor(url?: string) {
     super()
-    this.url = url || this.getDefaultUrl()
+    this.baseUrl = url || this.getDefaultUrl()
   }
 
   private getDefaultUrl(): string {
@@ -26,11 +27,23 @@ export class WebSocketTransport extends BaseTransport {
     return `${protocol}//${window.location.host}/_pywire/ws`
   }
 
+  private getConnectUrl(): string {
+    if (this.sessionId) {
+      return `${this.baseUrl}?session=${encodeURIComponent(this.sessionId)}`
+    }
+    return this.baseUrl
+  }
+
+  setSessionId(sessionId: string): void {
+    this.sessionId = sessionId
+  }
+
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        if (DEBUG_CONNECTION) logger.log(`PyWire: Connecting WebSocket to ${this.url}`)
-        this.socket = new WebSocket(this.url)
+        const url = this.getConnectUrl()
+        if (DEBUG_CONNECTION) logger.log(`PyWire: Connecting WebSocket to ${url}`)
+        this.socket = new WebSocket(url)
         this.socket.binaryType = 'arraybuffer'
 
         this.socket.onopen = () => {

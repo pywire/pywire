@@ -1,3 +1,11 @@
 .venv/
+.venv-workers/
 __pycache__/
 *.pyc
+
+# PyWire build outputs
+.pywire/
+_pywire_build/
+_routes.py
+pywire_do.py
+_pywire_version.py

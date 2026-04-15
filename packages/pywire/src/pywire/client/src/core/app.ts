@@ -451,6 +451,7 @@ export class PyWireApp {
         // Store session ID for reconnection state restoration
         if (msg.session_id) {
           this.sessionId = msg.session_id
+          this.transport.setSessionId(msg.session_id)
         }
         // Hide reconnect overlay — state has been synced successfully
         this.reconnectOverlay.hide()

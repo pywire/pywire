@@ -5,11 +5,20 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import rich.panel
-import rich_click as click
+try:
+    import rich.panel
+    import rich_click as click
+    from rich.console import Console
+except ImportError:
+    print(
+        "Error: pywire CLI requires additional dependencies.\n"
+        "Install them with: uv add pywire[cli]  (or: pip install pywire[cli])",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 from pywire import __version__
 from pywire.cli.config import config_command
-from rich.console import Console
 
 console = Console()
 
@@ -305,8 +314,18 @@ def dev(
     default=None,
     help="Override pages directory (default: app.pages_dir).",
 )
+@click.option(
+    "--platform",
+    type=click.Choice(["cloudflare"]),
+    default=None,
+    help="Generate platform-specific build output.",
+)
 def build(
-    app: Optional[str], optimize: bool, out_dir: str, pages_dir: Optional[str]
+    app: Optional[str],
+    optimize: bool,
+    out_dir: str,
+    pages_dir: Optional[str],
+    platform: Optional[str],
 ) -> None:
     """Build the application for production."""
     if not app:
@@ -347,6 +366,58 @@ def build(
     parts.append(f"out={summary.out_dir}")
 
     console.print(f"✅ Build complete ({', '.join(parts)})")
+
+    if platform == "cloudflare":
+        import shutil
+
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        cf_bundle_dir = Path.cwd() / "_pywire_build"
+        routes_path = generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=cf_bundle_dir,
+            app_import=app,
+        )
+
+        # Copy static assets to .pywire/deploy/public/ for Cloudflare's
+        # native static assets binding (served from edge CDN, not the Worker).
+        # The wrangler.toml [assets] directive points to .pywire/deploy/public.
+        deploy_public = Path.cwd() / ".pywire" / "deploy" / "public"
+        if deploy_public.exists():
+            shutil.rmtree(deploy_public)
+
+        # PyWire framework JS
+        pywire_static_src = Path(__file__).parent.parent / "static"
+        pywire_static_dest = deploy_public / "_pywire" / "static"
+        if pywire_static_src.exists():
+            pywire_static_dest.mkdir(parents=True, exist_ok=True)
+            for f in pywire_static_src.iterdir():
+                if f.is_file() and (f.suffix in (".js", ".css", ".map")):
+                    shutil.copy2(f, pywire_static_dest / f.name)
+
+        # User static files — respect the app's configured static_url_path
+        user_static = app_instance.static_dir if app_instance else None
+        static_url_path = getattr(app_instance, "static_url_path", "/static")
+        # Strip leading slash to make it a relative path for the deploy dir
+        static_subdir = static_url_path.lstrip("/")
+        if user_static and Path(user_static).exists() and Path(user_static).is_dir():
+            user_static_dest = deploy_public / static_subdir
+            shutil.copytree(user_static, user_static_dest)
+
+        # Regenerate pywire_do.py (contains app import path)
+        from pywire.cli.deploy import generate_cf_durable_object
+
+        do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
+        (Path.cwd() / "pywire_do.py").write_text(do_content)
+
+        console.print(
+            f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
+            f"and [cyan]pywire_do.py[/] for Cloudflare Workers"
+        )
+        console.print(
+            "✅ Static assets → [cyan].pywire/deploy/public/[/] "
+            "(served by Cloudflare edge CDN)"
+        )
 
 
 @cli.command()
@@ -514,15 +585,17 @@ def deploy(
         from pywire.cli.deploy import (
             generate_wrangler_toml,
             generate_cf_entry,
-            generate_cf_requirements,
+            generate_cf_durable_object,
         )
 
         files_to_write.append(
             ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
         )
-        files_to_write.append(("entry.py", generate_cf_entry(project_root)))
         files_to_write.append(
-            ("requirements.txt", generate_cf_requirements(project_root))
+            ("entry.py", generate_cf_entry(project_root, app_string=app))
+        )
+        files_to_write.append(
+            ("pywire_do.py", generate_cf_durable_object(project_root, app_string=app))
         )
     else:
         raise click.UsageError(f"Unknown platform: {platform}")
@@ -617,13 +690,20 @@ def deploy(
     elif platform == "cloudflare":
         console.print(
             "\n[bold]Next steps:[/]\n"
-            "  1. Install Wrangler: [cyan]npm i -g wrangler[/]\n"
-            "  2. Run [cyan]wrangler dev[/] to test locally\n"
-            "  3. Deploy with [cyan]wrangler deploy[/]\n"
-            "\n[bold]Note:[/] Cloudflare Python Workers run on Pyodide (WASM).\n"
-            "  PyWire's core framework works out of the box via the [cyan]asgi[/] bridge.\n"
-            "  WebSocket support for real-time updates requires Durable Objects —\n"
-            "  see [link=https://pywire.dev/docs/deploy/cloudflare-workers]pywire.dev/docs/deploy/cloudflare-workers[/link]"
+            "  1. Add workers-py if not present: [cyan]uv add --dev workers-py[/]\n"
+            "  2. Build for Cloudflare: [cyan]uv run pywire build --platform cloudflare[/]\n"
+            "  3. Test locally: [cyan]uv run pywrangler dev[/]\n"
+            "  4. Deploy: [cyan]uv run pywrangler deploy[/]\n"
+            "\n[bold]Generated:[/]\n"
+            "  • [cyan]wrangler.toml[/] — Cloudflare config with Durable Objects binding\n"
+            "  • [cyan]entry.py[/] — Workers entry point (routes WS to Durable Objects)\n"
+            "  • [cyan]pywire_do.py[/] — Durable Object for session + WebSocket handling\n"
+            "\n[bold]Architecture:[/]\n"
+            "  Each session runs in a Durable Object with persistent storage and\n"
+            "  WebSocket support. Real-time reactivity works out of the box.\n"
+            "\n[bold]CI/CD:[/]\n"
+            "  [cyan]uv sync && uv run pywire build --platform cloudflare "
+            "&& uv run pywrangler deploy[/]"
         )
 
 

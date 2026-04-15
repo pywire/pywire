@@ -37,7 +37,7 @@ export default defineConfig({
       },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/pywire/pywire' },
-        { icon: 'discord', label: 'Discord', href: 'https://discord.gg/pywire' },
+        { icon: 'discord', label: 'Discord', href: '#' },
       ],
       expressiveCode: {
         themes: ['catppuccin-latte', 'catppuccin-mocha'],

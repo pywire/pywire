@@ -8,18 +8,38 @@ dependencies = [
     "{{ dep }}",
 {% endfor %}
 ]
+{% if dev_dependencies %}
+
+[dependency-groups]
+dev = [
+{% for dep in dev_dependencies %}
+    "{{ dep }}",
+{% endfor %}
+]
+{% endif %}
 {% if deploy_adapters %}
 
 [tool.pywire.deploy]
 adapters = [{% for a in deploy_adapters %}"{{ a }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 
+{% if "docker" in deploy_adapters or "render" in deploy_adapters or "fly" in deploy_adapters or "railway" in deploy_adapters %}
 [tool.pywire.deploy.docker]
 port = 8000
-workers = 4
+workers = {{ workers }}
+{% endif %}
+{% if "render" in deploy_adapters %}
 
 [tool.pywire.deploy.render]
 region = "oregon"
+{% endif %}
+{% if "fly" in deploy_adapters %}
 
 [tool.pywire.deploy.fly]
 primary_region = "ord"
+{% endif %}
+{% if "cloudflare" in deploy_adapters %}
+
+[tool.pywire.deploy.cloudflare]
+kv = false
+{% endif %}
 {% endif %}

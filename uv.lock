@@ -1772,21 +1772,27 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "jinja2" },
     { name = "msgpack" },
     { name = "pydantic" },
     { name = "python-multipart" },
-    { name = "rich-click" },
     { name = "starlette" },
+]
+
+[package.optional-dependencies]
+build = [
+    { name = "pywire-parser" },
+]
+cli = [
+    { name = "pywire-parser" },
+    { name = "rich-click" },
     { name = "textual" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
 ]
-
-[package.optional-dependencies]
 dev = [
     { name = "black" },
     { name = "build" },
@@ -1798,8 +1804,13 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-playwright" },
+    { name = "pywire-parser" },
+    { name = "rich-click" },
     { name = "ruff" },
+    { name = "textual" },
     { name = "ty" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "watchfiles" },
 ]
 http3 = [
     { name = "aioquic" },
@@ -1832,27 +1843,31 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-playwright", marker = "extra == 'dev'" },
     { name = "python-multipart", specifier = ">=0.0.6" },
+    { name = "pywire", extras = ["build"], marker = "extra == 'cli'", editable = "packages/pywire" },
+    { name = "pywire", extras = ["cli"], marker = "extra == 'dev'", editable = "packages/pywire" },
+    { name = "pywire-parser", marker = "extra == 'build'", editable = "packages/pywire-parser" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.0" },
-    { name = "rich-click", specifier = ">=1.9.6" },
+    { name = "rich-click", marker = "extra == 'cli'", specifier = ">=1.9.6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "starlette", specifier = ">=0.35.0" },
-    { name = "textual", specifier = ">=7.4.0" },
+    { name = "textual", marker = "extra == 'cli'", specifier = ">=7.4.0" },
     { name = "ty", marker = "extra == 'dev'" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
-    { name = "watchfiles", specifier = ">=0.21.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'cli'", specifier = ">=0.27.0" },
+    { name = "watchfiles", marker = "extra == 'cli'", specifier = ">=0.21.0" },
 ]
-provides-extras = ["dev", "http3", "redis"]
+provides-extras = ["build", "cli", "dev", "http3", "redis"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "mypy", specifier = ">=1.19.1" }]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
     { name = "pywire" },
+    { name = "pywire-parser" },
     { name = "ty" },
 ]
 
@@ -1876,6 +1891,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pywire", editable = "packages/pywire" },
+    { name = "pywire-parser", editable = "packages/pywire-parser" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "ty", specifier = ">=0.0.15" },
     { name = "ty", marker = "extra == 'dev'" },
@@ -1905,7 +1921,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.1.0"
+version = "0.2.1"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
@@ -2281,7 +2297,7 @@ wheels = [
 
 [[package]]
 name = "tree-sitter-pywire"
-version = "0.3.0"
+version = "0.3.10"
 source = { editable = "packages/tree-sitter-pywire" }
 
 [package.optional-dependencies]
