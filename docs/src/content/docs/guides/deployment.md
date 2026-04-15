@@ -109,12 +109,12 @@ For latency-sensitive applications, container-based deployments (Docker, Railway
 
 ### Options
 
-| Flag         | Description                                                                                          |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| `--platform` | Target platform: `docker`, `render`, `fly`, `railway`, or `cloudflare` (default: `docker`)           |
-| `--workers`  | Number of worker processes — not applicable to `cloudflare` (default: `1`)                           |
-| `--redis`    | Include Redis/Valkey KV store in deployment config — not applicable to `cloudflare`                  |
-| `--out-dir`  | Output directory for generated files (default: `.`)                                                  |
+| Flag         | Description                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| `--platform` | Target platform: `docker`, `render`, `fly`, `railway`, or `cloudflare` (default: `docker`) |
+| `--workers`  | Number of worker processes — not applicable to `cloudflare` (default: `1`)                 |
+| `--redis`    | Include Redis/Valkey KV store in deployment config — not applicable to `cloudflare`        |
+| `--out-dir`  | Output directory for generated files (default: `.`)                                        |
 
 Use `--redis --workers 4` to generate configs pre-configured for multi-worker scaling. See [Horizontal Scaling](/guides/scaling/) for details.
 
