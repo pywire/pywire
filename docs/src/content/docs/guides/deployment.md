@@ -62,14 +62,59 @@ railway login && railway init
 railway up
 ```
 
+**Cloudflare Workers** — generates `wrangler.toml`, `entry.py`, and `pywire_do.py`:
+
+```sh
+pywire deploy --platform cloudflare
+```
+
+:::caution[Paid plan required]
+Cloudflare Python Workers requires a [Workers Paid plan](https://dash.cloudflare.com/workers/plans) ($5/month). The free plan's 3 MiB size limit and startup CPU limits are incompatible with Python frameworks.
+:::
+
+Cloudflare Workers use a fundamentally different architecture from container-based platforms. Instead of a long-running server, each user session runs in a **Durable Object** with persistent storage and WebSocket hibernation support. Static assets are served from Cloudflare's edge CDN.
+
+**Local development:**
+
+```sh
+# Standard PyWire dev server (fast hot-reload, recommended for daily dev)
+pywire dev
+
+# Cloudflare Workers local runtime (tests workerd compatibility)
+pywire build --platform cloudflare
+uv run pywrangler dev
+```
+
+**Deploy:**
+
+```sh
+pywire build --platform cloudflare
+uv run pywrangler deploy
+```
+
+**Architecture notes:**
+
+- Each session gets its own Durable Object instance with persistent storage
+- Real-time reactivity works out of the box via WebSocket hibernation
+- No Redis needed — Durable Objects handle session state
+- `--workers` and `--redis` flags are not applicable (Durable Objects replace both)
+
+**Current limitations:**
+
+- **Cold starts (2-4 seconds):** Cloudflare Python Workers + Durable Objects have inherent cold start latency due to Pyodide (WebAssembly Python) snapshot restoration and DO initialization. PyWire mitigates this by pre-warming the Durable Object during the initial HTTP request — the DO starts initializing while the browser loads HTML and JavaScript. Pages are server-rendered, so content is visible immediately; the cold start only affects interactivity.
+- **No pydantic support:** The `pywire[forms]` extra (pydantic form validation) is excluded from Cloudflare deployments because `pydantic_core` (4.3 MiB WASM binary) would exceed the bundle size limit. Standard HTML form validation still works.
+- **Platform maturity:** Cloudflare Python Workers launched in late 2024 and is actively being improved. Cold start performance is expected to improve as Cloudflare optimizes Pyodide snapshot restoration and Durable Object initialization. Follow [Cloudflare's Python Workers changelog](https://developers.cloudflare.com/changelog/) for updates.
+
+For latency-sensitive applications, container-based deployments (Docker, Railway, Render, Fly.io) provide sub-100ms WebSocket connections with no cold start penalty.
+
 ### Options
 
-| Flag         | Description                                                                  |
-| ------------ | ---------------------------------------------------------------------------- |
-| `--platform` | Target platform: `docker`, `render`, `fly`, or `railway` (default: `docker`) |
-| `--workers`  | Number of worker processes (default: `1`)                                    |
-| `--redis`    | Include Redis/Valkey KV store in deployment config                           |
-| `--out-dir`  | Output directory for generated files (default: `.`)                          |
+| Flag         | Description                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------- |
+| `--platform` | Target platform: `docker`, `render`, `fly`, `railway`, or `cloudflare` (default: `docker`)           |
+| `--workers`  | Number of worker processes — not applicable to `cloudflare` (default: `1`)                           |
+| `--redis`    | Include Redis/Valkey KV store in deployment config — not applicable to `cloudflare`                  |
+| `--out-dir`  | Output directory for generated files (default: `.`)                                                  |
 
 Use `--redis --workers 4` to generate configs pre-configured for multi-worker scaling. See [Horizontal Scaling](/guides/scaling/) for details.
 
