@@ -9,20 +9,20 @@ This skill allows you to easily enable or disable debug logging for both the PyW
 
 ## Usage
 
-### Enable Debug Mode
-To enable debug mode, set the `PYWIRE_DEBUG` environment variable to `1` when starting the server.
+### Enable Internal Framework Logging
+To enable internal framework debug logging (wire tracking, render regions, page init), set `PYWIRE_LOG_LEVEL`:
 
 ```bash
-PYWIRE_DEBUG=1 uv run pywire dev src.main:app
+PYWIRE_LOG_LEVEL=DEBUG uv run pywire dev src.main:app
 ```
 
-### Disable Debug Mode
-To disable debug mode, either unset `PYWIRE_DEBUG` or set it to `0`.
+### App-Developer Debug Mode
+The `debug=True` constructor flag controls app-developer UX: error screens, stack traces, source endpoints. It does NOT control internal framework logging.
 
-```bash
-PYWIRE_DEBUG=0 uv run pywire dev src.main:app
+```python
+app = PyWire(debug=True)
 ```
 
 ## How it Works
-- **Server-Side**: The `PyWire` app constructor checks the `PYWIRE_DEBUG` environment variable. If set to `1`, `true`, or `yes`, `self.debug` is set to `True`. `BasePage` then uses this flag to gate `DEBUG` print statements.
+- **Server-Side**: `PYWIRE_LOG_LEVEL` env var controls the `pywire` logger level (default: WARNING). This is separate from `debug=True` which controls app-developer features like error detail pages and source code endpoints.
 - **Client-Side**: The server injects the `debug` flag into the SPA metadata. The client-side `Logger` class respects this flag, hiding `console.log` and `console.warn` statements when debug mode is off.

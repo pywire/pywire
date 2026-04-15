@@ -31,18 +31,14 @@ class WebTransportHandler:
 
     async def handle(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         """Handle ASGI webtransport scope."""
-        if self.app.debug:
-            logger.debug("WebTransport handler started")
+        logger.debug("WebTransport handler started")
         # Active streams buffer: stream_id -> bytes
         streams: Dict[int, bytearray] = {}
 
         # 1. Wait for connection request
         try:
             message = await receive()
-            if self.app.debug:
-                logger.debug(
-                    f"WebTransport received initial message: {message['type']}"
-                )
+            logger.debug(f"WebTransport received initial message: {message['type']}")
             if message["type"] != "webtransport.connect":
                 logger.debug(f"Unexpected message type: {message['type']}")
                 return
@@ -52,8 +48,7 @@ class WebTransportHandler:
 
         # 2. Accept connection
         await send({"type": "webtransport.accept"})
-        if self.app.debug:
-            logger.debug("WebTransport connection accepted")
+        logger.debug("WebTransport connection accepted")
 
         # Register connection (using the receive channel as ID or scope object)
         # Since scope is mutable dictionary, we use its id() or just the object if stable

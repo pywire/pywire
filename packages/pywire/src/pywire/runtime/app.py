@@ -213,19 +213,17 @@ class PyWire:
         self.path_based_routing = path_based_routing
         self.enable_pjax = enable_pjax
 
-        # Support environment variable override for debug
-        env_debug = os.environ.get("PYWIRE_DEBUG", "").lower()
-        if env_debug in ("1", "true", "yes"):
-            self.debug = True
-        elif env_debug in ("0", "false", "no"):
-            self.debug = False
-        else:
-            self.debug = debug
+        self.debug = debug
 
-        if self.debug:
-            logging.getLogger("pywire").setLevel(logging.DEBUG)
+        # Internal framework logging — controlled separately from debug flag.
+        # debug=True is for app-developer UX (error screens, source endpoints).
+        # PYWIRE_LOG_LEVEL is for framework-developer diagnostics (wire tracking, etc.).
+        pywire_logger = logging.getLogger("pywire")
+        log_level = os.environ.get("PYWIRE_LOG_LEVEL", "").upper()
+        if log_level and hasattr(logging, log_level):
+            pywire_logger.setLevel(getattr(logging, log_level))
         else:
-            logging.getLogger("pywire").setLevel(logging.WARNING)
+            pywire_logger.setLevel(logging.WARNING)
 
         self.enable_webtransport = enable_webtransport
         self.max_upload_size = max(1, int(max_upload_size))
@@ -526,8 +524,7 @@ class PyWire:
 
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""
-        if self.debug:
-            logger.debug(f"Handling upload request for {request.url}")
+        logger.debug(f"Handling upload request for {request.url}")
         try:
             # Check for upload token
             token = request.headers.get("X-Upload-Token")
@@ -636,8 +633,7 @@ class PyWire:
             content = path.read_text(encoding="utf-8")
             return Response(content, media_type="text/plain")
         except Exception as e:
-            if self.debug:
-                logger.debug(f"_handle_source exception: {e}")
+            logger.debug(f"_handle_source exception: {e}")
             return Response(str(e), status_code=500)
 
     async def _handle_file(self, request: Request) -> Response:
@@ -675,8 +671,7 @@ class PyWire:
             # Return as JavaScript so browser DevTools can parse it
             return Response(content, media_type="text/plain")
         except Exception as e:
-            if self.debug:
-                logger.debug(f"_handle_file exception: {e}")
+            logger.debug(f"_handle_file exception: {e}")
             return Response(str(e), status_code=500)
 
     async def _handle_devtools_json(self, request: Request) -> JSONResponse:
