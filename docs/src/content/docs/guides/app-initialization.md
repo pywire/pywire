@@ -39,6 +39,14 @@ app = PyWire(
 
     # ASGI middleware (default: None). See the Middleware guide.
     middleware=[CORSMiddleware],
+
+    # Disable WebSocket for HTTP-only deployments (default: True).
+    # See the Deployment guide for details.
+    interactive_server_mode=True,
+
+    # Return bare 404 for unmatched paths when mounted in a host framework
+    # (default: False). See the Framework Integration guide.
+    fallthrough_404=False,
 )
 ```
 

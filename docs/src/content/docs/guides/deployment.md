@@ -120,6 +120,51 @@ Use `--redis --workers 4` to generate configs pre-configured for multi-worker sc
 
 The command validates your project before generating configs. If `pyproject.toml` or `uv.lock` is missing, you'll see a warning.
 
+## Non-Interactive Server Mode
+
+For environments that can't maintain persistent WebSocket connections — serverless functions, edge workers, or deployments that need simple horizontal scaling — PyWire offers a non-interactive HTTP-only mode.
+
+```python
+from pywire import PyWire
+
+app = PyWire(interactive_server_mode=False)
+```
+
+### How It Works
+
+When `interactive_server_mode=False`:
+
+- **No WebSocket endpoint** is registered. No persistent connections.
+- **SPA navigation uses `fetch()`** — the client fetches new page HTML via HTTP and applies it with morphdom (same smooth transitions).
+- **Session state** is persisted via a signed httponly cookie and the session store (in-memory or Redis). State survives across requests.
+- **`@submit` handlers** work via standard form POST. The server calls the handler, re-renders the page, and returns HTML.
+- **`@click`, `@input`, etc.** are silently inactive — a dev-mode console warning lists which handlers won't work.
+
+### When to Use It
+
+| Scenario | Mode |
+| --- | --- |
+| Traditional server deployment (VPS, containers) | `interactive_server_mode=True` (default) |
+| Serverless functions (AWS Lambda, Vercel) | `interactive_server_mode=False` |
+| Edge workers (Cloudflare Workers) | `interactive_server_mode=False` |
+| Horizontal scaling without Redis | `interactive_server_mode=False` |
+| Static/content sites with forms | `interactive_server_mode=False` |
+
+### Session Configuration
+
+In non-interactive mode, sessions use the same Redis/memory store as interactive mode. For multi-worker deployments, use Redis:
+
+```sh
+export REDIS_URL=redis://localhost:6379
+```
+
+```python
+app = PyWire(interactive_server_mode=False)
+# Redis detected automatically from REDIS_URL
+```
+
+With `workers=1` and the default in-memory store, sessions work without Redis — similar to a Django/Rails setup.
+
 ## Preparing for Production
 
 1. **Build artifacts**: Run `pywire build` to compile `.wire` files into optimized Python bytecode.
