@@ -175,7 +175,7 @@ class TestDeployCommand:
             assert "fly deploy" in result.output
 
     @patch("pywire.compiler.build.build_project")
-    def test_fly_skips_dockerfile_if_exists(self, mock_build: MagicMock) -> None:
+    def test_fly_prompts_when_dockerfile_exists(self, mock_build: MagicMock) -> None:
         mock_build.return_value = MagicMock(
             pages=0, layouts=0, components=0, out_dir=".pywire/build"
         )
@@ -183,11 +183,16 @@ class TestDeployCommand:
         with runner.isolated_filesystem() as tmpdir:
             _make_app_dir(tmpdir)
             Path("Dockerfile").write_text("# custom dockerfile")
-            result = runner.invoke(cli, ["deploy", "--platform", "fly"])
+            # Decline the overwrite prompt for the existing Dockerfile
+            result = runner.invoke(
+                cli, ["deploy", "--platform", "fly"], input="n\n"
+            )
             assert result.exit_code == 0, result.output
             assert Path("fly.toml").exists()
-            # Existing Dockerfile should not be overwritten (not in files_to_write)
+            # Declined overwrite — existing Dockerfile preserved, skip hint shown
             assert Path("Dockerfile").read_text() == "# custom dockerfile"
+            assert "Skipped" in result.output
+            assert "--workers" in result.output  # skip hint mentions workers
 
     @patch("pywire.compiler.build.build_project")
     def test_existing_file_asks_overwrite(self, mock_build: MagicMock) -> None:
@@ -235,3 +240,70 @@ class TestDeployCommand:
                 result = runner.invoke(cli, ["deploy", "--platform", "docker"])
                 assert result.exit_code == 0, result.output
                 assert "pyproject.toml" in result.output
+
+    @patch("pywire.compiler.build.build_project")
+    def test_cloudflare_rejects_workers_flag(self, mock_build: MagicMock) -> None:
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            _make_app_dir(tmpdir)
+            result = runner.invoke(
+                cli, ["deploy", "--platform", "cloudflare", "--workers", "4"]
+            )
+            assert result.exit_code == 1
+            assert "--workers" in result.output
+            assert "not applicable" in result.output
+
+    @patch("pywire.compiler.build.build_project")
+    def test_cloudflare_rejects_redis_flag(self, mock_build: MagicMock) -> None:
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            _make_app_dir(tmpdir)
+            result = runner.invoke(
+                cli, ["deploy", "--platform", "cloudflare", "--redis"]
+            )
+            assert result.exit_code == 1
+            assert "--redis" in result.output
+            assert "not applicable" in result.output
+
+    @patch("pywire.compiler.build.build_project")
+    def test_railway_next_steps_includes_railway_link(
+        self, mock_build: MagicMock
+    ) -> None:
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            _make_app_dir(tmpdir)
+            result = runner.invoke(cli, ["deploy", "--platform", "railway"])
+            assert result.exit_code == 0, result.output
+            assert "railway link" in result.output
+
+    @patch("pywire.compiler.build.build_project")
+    def test_railway_prompts_when_dockerfile_exists(
+        self, mock_build: MagicMock
+    ) -> None:
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            _make_app_dir(tmpdir)
+            Path("Dockerfile").write_text("# custom dockerfile")
+            # Decline overwrite for railway.json (doesn't exist, so no prompt),
+            # then decline Dockerfile overwrite
+            result = runner.invoke(
+                cli,
+                ["deploy", "--platform", "railway", "--workers", "4"],
+                input="n\n",
+            )
+            assert result.exit_code == 0, result.output
+            assert Path("Dockerfile").read_text() == "# custom dockerfile"
+            assert "Skipped" in result.output
+            assert "--workers" in result.output  # skip hint shown

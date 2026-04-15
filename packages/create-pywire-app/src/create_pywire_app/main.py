@@ -632,10 +632,17 @@ def main():
             ],
         ).unsafe_ask()
 
-        # Redis/workers scaling options
+        # Redis/workers scaling options (not applicable to Cloudflare-only setups)
         redis_enabled = False
         workers = 1
-        if adapters:
+        _docker_platforms = {
+            "Docker (Dockerfile)",
+            "Render (render.yaml)",
+            "Fly.io (fly.toml + Dockerfile)",
+            "Railway (Dockerfile)",
+        }
+        has_docker_platform = bool(set(adapters or []) & _docker_platforms)
+        if adapters and has_docker_platform:
             redis_enabled = questionary.confirm(
                 "Enable Redis/Valkey for multi-worker scaling?\n"
                 "  (Increases resource usage and may cost more on paid hosting tiers)",
@@ -794,7 +801,9 @@ def main():
                 commands.extend(
                     [
                         "",
-                        "# Cloudflare Workers",
+                        "# Cloudflare Workers — fast local dev (standard hot-reload):",
+                        "pywire dev",
+                        "# Cloudflare Workers — workerd local dev (matches CF production):",
                         "pywire build --platform cloudflare",
                         "pywrangler dev",
                     ]

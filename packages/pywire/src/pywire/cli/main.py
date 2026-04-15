@@ -464,6 +464,31 @@ def run(
     )
 
 
+def _print_skip_hint(
+    filename: str,
+    platform: str,
+    workers: int,
+    redis: bool,
+    project_name: str,
+) -> None:
+    """Print manual instructions when a file overwrite is declined."""
+    if filename == "Dockerfile":
+        console.print(
+            f"  [dim]To apply [cyan]--workers {workers}[/], update your Dockerfile CMD:[/]\n"
+            f'  [dim]  CMD ["uv", "run", "pywire", "run", "--host", "0.0.0.0",'
+            f' "--port", "8000", "--workers", "{workers}"][/]'
+        )
+    elif filename == "render.yaml" and redis:
+        console.print(
+            "  [dim]To add Redis manually, add to [cyan]render.yaml[/]:[/]\n"
+            "  [dim]  - type: keyvalue[/]\n"
+            f"  [dim]    name: {project_name}-kv[/]\n"
+            "  [dim]    plan: starter[/]\n"
+            "  [dim]    ipAllowList: [][/]\n"
+            "  [dim]And bind REDIS_URL in your web service envVars.[/]"
+        )
+
+
 @cli.command()
 @click.argument("app", required=False)
 @click.option(
@@ -532,20 +557,31 @@ def deploy(
     # Derive project name from directory
     project_name = project_root.name
 
-    # Warn about workers vs redis
-    if workers > 1 and not redis:
+    # Cloudflare uses Durable Objects — workers/redis flags don't apply
+    if platform == "cloudflare" and (workers > 1 or redis):
         console.print(
-            "\n[bold yellow]⚠️  Warning:[/] Running multiple workers without Redis "
-            "will break session state.\n"
-            "  Add [cyan]--redis[/] or set [cyan]REDIS_URL[/] at runtime.\n"
+            "[bold red]Error:[/] [cyan]--workers[/] and [cyan]--redis[/] are not applicable "
+            "to Cloudflare Workers.\n"
+            "  Cloudflare uses Durable Objects for session state — no Redis or worker "
+            "processes needed."
         )
+        raise SystemExit(1)
 
-    if redis:
-        console.print(
-            "\n[bold yellow]⚠️  Note:[/] Adding a Redis/Valkey store will increase "
-            "resource usage and may\n"
-            "  incur additional costs depending on your hosting provider.\n"
-        )
+    # Warn about workers vs redis (not applicable to Cloudflare)
+    if platform != "cloudflare":
+        if workers > 1 and not redis:
+            console.print(
+                "\n[bold yellow]⚠️  Warning:[/] Running multiple workers without Redis "
+                "will break session state.\n"
+                "  Add [cyan]--redis[/] or set [cyan]REDIS_URL[/] at runtime.\n"
+            )
+
+        if redis:
+            console.print(
+                "\n[bold yellow]⚠️  Note:[/] Adding a Redis/Valkey store will increase "
+                "resource usage and may\n"
+                "  incur additional costs depending on your hosting provider.\n"
+            )
 
     # Generate config files
     files_to_write: list[tuple[str, str]] = []
@@ -561,26 +597,24 @@ def deploy(
                 generate_render_yaml(project_root, project_name, redis=redis),
             )
         )
-        # Render uses Docker — generate a Dockerfile
-        if not (out_path / "Dockerfile").exists():
-            files_to_write.append(
-                ("Dockerfile", generate_dockerfile(project_root, workers=workers))
-            )
+        # Render uses Docker — always include Dockerfile so workers changes are picked up
+        files_to_write.append(
+            ("Dockerfile", generate_dockerfile(project_root, workers=workers))
+        )
     elif platform == "fly":
         files_to_write.append(
             ("fly.toml", generate_fly_toml(project_root, project_name))
         )
-        # Fly.io uses Docker — generate a Dockerfile if one doesn't already exist
-        if not (out_path / "Dockerfile").exists():
-            files_to_write.append(
-                ("Dockerfile", generate_dockerfile(project_root, workers=workers))
-            )
+        # Fly.io uses Docker — always include Dockerfile so workers changes are picked up
+        files_to_write.append(
+            ("Dockerfile", generate_dockerfile(project_root, workers=workers))
+        )
     elif platform == "railway":
         files_to_write.append(("railway.json", generate_railway_json(project_root)))
-        if not (out_path / "Dockerfile").exists():
-            files_to_write.append(
-                ("Dockerfile", generate_dockerfile(project_root, workers=workers))
-            )
+        # Always include Dockerfile so workers changes are picked up
+        files_to_write.append(
+            ("Dockerfile", generate_dockerfile(project_root, workers=workers))
+        )
     elif platform == "cloudflare":
         from pywire.cli.deploy import (
             generate_wrangler_toml,
@@ -605,6 +639,7 @@ def deploy(
         if target.exists():
             if not click.confirm(f"'{target}' already exists. Overwrite?"):
                 console.print(f"Skipped [cyan]{target}[/]")
+                _print_skip_hint(filename, platform, workers, redis, project_name)
                 continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
@@ -673,34 +708,45 @@ def deploy(
             "\n[bold]Next steps:[/]\n"
             "  1. Install the Railway CLI: [cyan]npm i -g @railway/cli[/]\n"
             "  2. Run [cyan]railway login[/] and [cyan]railway init[/]\n"
-            "  3. Deploy with [cyan]railway up[/]\n"
+            "  3. Run [cyan]railway link[/] to connect to your Railway project\n"
+            "  4. Deploy with [cyan]railway up[/]\n"
             "\n  Railway auto-detects the Dockerfile and builds your app."
         )
-        if not redis:
+        if redis or workers > 1:
             console.print(
                 redis_hint + "\n"
-                "  Add a Redis addon via the Railway dashboard or [cyan]railway add[/].\n"
-                "  Railway injects [cyan]REDIS_URL[/] automatically."
+                "  [bold]Note:[/] Redis cannot be provisioned via [cyan]railway.json[/].\n"
+                "  Add it with [cyan]railway add[/] (select Redis/Valkey) or via the\n"
+                "  Railway dashboard. Railway injects [cyan]REDIS_URL[/] automatically.\n"
+                "  Then install the Redis extra: [cyan]uv add pywire[redis][/]"
             )
         else:
             console.print(
-                "\n  To enable Redis, add a Redis addon via the Railway dashboard or\n"
-                "  [cyan]railway add[/]. Railway injects [cyan]REDIS_URL[/] automatically."
+                redis_hint + "\n"
+                "  Add a Redis addon via [cyan]railway add[/] or the Railway dashboard.\n"
+                "  Railway injects [cyan]REDIS_URL[/] automatically.\n"
+                "  Then install the Redis extra: [cyan]uv add pywire[redis][/]"
             )
     elif platform == "cloudflare":
         console.print(
-            "\n[bold]Next steps:[/]\n"
+            "\n[bold]Local development:[/]\n"
+            "  • [bold]Fast mode[/] (standard hot-reload, no build step needed):\n"
+            "      [cyan]uv run pywire dev[/]\n"
+            "  • [bold]Workers mode[/] (runs in local workerd — matches CF production):\n"
+            "      [cyan]uv run pywire build --platform cloudflare[/]\n"
+            "      [cyan]uv run pywrangler dev[/]\n"
+            "\n[bold]Deploy to Cloudflare:[/]\n"
             "  1. Add workers-py if not present: [cyan]uv add --dev workers-py[/]\n"
-            "  2. Build for Cloudflare: [cyan]uv run pywire build --platform cloudflare[/]\n"
-            "  3. Test locally: [cyan]uv run pywrangler dev[/]\n"
-            "  4. Deploy: [cyan]uv run pywrangler deploy[/]\n"
-            "\n[bold]Generated:[/]\n"
+            "  2. Build: [cyan]uv run pywire build --platform cloudflare[/]\n"
+            "  3. Deploy: [cyan]uv run pywrangler deploy[/]\n"
+            "\n[bold]Generated files:[/]\n"
             "  • [cyan]wrangler.toml[/] — Cloudflare config with Durable Objects binding\n"
             "  • [cyan]entry.py[/] — Workers entry point (routes WS to Durable Objects)\n"
             "  • [cyan]pywire_do.py[/] — Durable Object for session + WebSocket handling\n"
             "\n[bold]Architecture:[/]\n"
             "  Each session runs in a Durable Object with persistent storage and\n"
             "  WebSocket support. Real-time reactivity works out of the box.\n"
+            "  No Redis or worker processes needed — Durable Objects handle state.\n"
             "\n[bold]CI/CD:[/]\n"
             "  [cyan]uv sync && uv run pywire build --platform cloudflare "
             "&& uv run pywrangler deploy[/]"
