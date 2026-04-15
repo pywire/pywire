@@ -235,6 +235,7 @@ class ProjectGenerator:
             "dependencies": self.get_dependencies(),
             "dev_dependencies": self.get_dev_dependencies(),
             "deploy_adapters": self.get_deploy_adapters(),
+            "workers": self.workers,
         }
         content = self.renderer.render("common/pyproject.toml.j2", context)
         (self.project_path / "pyproject.toml").write_text(content)
