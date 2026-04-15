@@ -224,6 +224,8 @@ class PyWire:
 
         if self.debug:
             logging.getLogger("pywire").setLevel(logging.DEBUG)
+        else:
+            logging.getLogger("pywire").setLevel(logging.WARNING)
 
         self.enable_webtransport = enable_webtransport
         self.max_upload_size = max(1, int(max_upload_size))
