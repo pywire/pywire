@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/pywire/pywire/compare/pywire-v0.7.0...pywire-v0.8.0) (2026-04-15)
+
+
+### Features
+
+* **pywire:** make pydantic optional, fix CF Workers cold start and deployment ([b891602](https://github.com/pywire/pywire/commit/b891602f92fd7bedee721884e5eaf8cd14dd81c2))
+
 ## [0.7.0](https://github.com/pywire/pywire/compare/pywire-v0.6.0...pywire-v0.7.0) (2026-04-15)
 
 
