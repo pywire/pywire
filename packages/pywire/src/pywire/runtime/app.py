@@ -508,10 +508,12 @@ class PyWire:
         """Return the ASGI app for internal request dispatch."""
         return self._root_app or self.app
 
-    def as_asgi(self) -> "PyWire":
+    def as_asgi(self, host: Any = None) -> "PyWire":
         """Return this app as an ASGI application for mounting.
 
-        Use with FastAPI or Starlette::
+        Pass the host application so that internal request dispatch
+        (SPA navigation via WebSocket) goes through the host's full
+        middleware stack::
 
             from fastapi import FastAPI
             from pywire import PyWire
@@ -519,28 +521,13 @@ class PyWire:
             api = FastAPI()
             pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
 
-            api.mount("/", pywire.as_asgi())
+            api.mount("/", pywire.as_asgi(api))
 
-        When ``fallthrough_404=True``, unmatched paths return a bare 404
-        so the host framework can try other routes.
+        Without ``host``, internal dispatch only traverses PyWire's own
+        middleware — suitable for standalone deployments.
         """
-        return self
-
-    def mount_in(self, root_app: Any) -> "PyWire":
-        """Set the root ASGI app for internal request dispatch.
-
-        When PyWire is mounted inside a host framework (FastAPI, etc.),
-        internal ASGI replay requests should go through the host's
-        middleware stack. Call this after mounting::
-
-            api = FastAPI()
-            pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
-            api.mount("/app", pywire.as_asgi())
-            pywire.mount_in(api)
-
-        Returns self for chaining.
-        """
-        self._root_app = root_app
+        if host is not None:
+            self._root_app = host
         return self
 
     def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:

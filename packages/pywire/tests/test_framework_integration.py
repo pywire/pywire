@@ -1,4 +1,4 @@
-"""Tests for framework integration (as_asgi, mount_in, fallthrough_404).
+"""Tests for framework integration (as_asgi, fallthrough_404).
 
 Tests mounting PyWire inside a host Starlette app (which is what FastAPI
 does under the hood). Verifies path prefix handling, fallthrough 404,
@@ -176,7 +176,7 @@ class TestFallthrough404:
 
 
 # ---------------------------------------------------------------------------
-# mount_in — root app reference for internal dispatch
+# as_asgi(host) — root app reference for internal dispatch
 # ---------------------------------------------------------------------------
 
 
@@ -189,33 +189,38 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class TestMountIn:
+class TestAsAsgiHost:
     def setup_method(self):
         self.pywire = _make_pywire(fallthrough_404=True)
 
     def teardown_method(self):
         shutil.rmtree(self.pywire._test_dir, ignore_errors=True)
 
-    def test_mount_in_sets_root_app(self):
-        """mount_in should store the root app reference."""
+    def test_as_asgi_with_host_sets_root_app(self):
+        """as_asgi(host) should store the root app reference."""
         host = Starlette()
-        self.pywire.mount_in(host)
+        self.pywire.as_asgi(host)
         assert self.pywire._root_app is host
 
-    def test_mount_in_returns_self(self):
-        """mount_in should return self for chaining."""
+    def test_as_asgi_without_host_no_root_app(self):
+        """as_asgi() without host should leave _root_app as None."""
+        self.pywire.as_asgi()
+        assert self.pywire._root_app is None
+
+    def test_as_asgi_returns_self(self):
+        """as_asgi() should return self for mounting."""
         host = Starlette()
-        result = self.pywire.mount_in(host)
+        result = self.pywire.as_asgi(host)
         assert result is self.pywire
 
     def test_dispatch_target_uses_root(self):
-        """After mount_in, _get_dispatch_target should return root app."""
+        """After as_asgi(host), _get_dispatch_target should return host."""
         host = Starlette()
-        self.pywire.mount_in(host)
+        self.pywire.as_asgi(host)
         assert self.pywire._get_dispatch_target() is host
 
-    def test_dispatch_target_without_mount(self):
-        """Without mount_in, _get_dispatch_target returns Starlette app."""
+    def test_dispatch_target_without_host(self):
+        """Without host, _get_dispatch_target returns Starlette app."""
         assert self.pywire._get_dispatch_target() is self.pywire.app
 
     @pytest.mark.asyncio
@@ -227,7 +232,8 @@ class TestMountIn:
             ],
         )
         host.add_middleware(HostHeaderMiddleware)
-        self.pywire.mount_in(host)
+        # Set host after construction (can't reference host in its own constructor)
+        self.pywire.as_asgi(host)
 
         response = await dispatch_internal(
             self.pywire._get_dispatch_target(),

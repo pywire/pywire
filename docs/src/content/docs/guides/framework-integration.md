@@ -15,10 +15,10 @@ api = FastAPI()
 pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
 
 # Mount at root — PyWire handles page routes, unmatched paths fall through
-api.mount("/", pywire.as_asgi())
+api.mount("/", pywire.as_asgi(api))
 
 # Or mount at a prefix
-api.mount("/app", pywire.as_asgi())
+api.mount("/app", pywire.as_asgi(api))
 ```
 
 Your existing FastAPI routes continue to work:
@@ -49,6 +49,8 @@ app = Starlette(routes=[
     Route("/api/health", health_handler),
     Mount("/", app=pywire.as_asgi()),
 ])
+# Set host after construction so SPA navigations go through Starlette middleware
+pywire.as_asgi(app)
 ```
 
 ## Key Options
@@ -67,23 +69,15 @@ app = PyWire()
 pywire = PyWire(fallthrough_404=True)
 ```
 
-### `as_asgi()`
+### `as_asgi(host=None)`
 
-Returns the PyWire instance as an ASGI application. Since `PyWire` already implements `__call__`, this is primarily a semantic method — it signals intent to mount.
-
-### `mount_in(root_app)`
-
-When PyWire is mounted inside a host framework, internal request dispatch (used for SPA middleware parity) should go through the **host's** middleware stack. Call `mount_in()` to set this up:
+Returns the PyWire instance as an ASGI application for mounting. Pass the host application so that SPA navigations (via WebSocket) go through the host's full middleware stack:
 
 ```python
-api = FastAPI()
-pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
-
-api.mount("/app", pywire.as_asgi())
-pywire.mount_in(api)  # Internal dispatch goes through FastAPI middleware
+api.mount("/app", pywire.as_asgi(api))
 ```
 
-Without `mount_in()`, internal dispatch only goes through PyWire's own middleware. This means host-level auth, CORS, or rate limiting middleware won't apply to SPA navigations.
+Without `host`, internal dispatch only goes through PyWire's own middleware — suitable for standalone deployments. When a host is provided, every SPA navigation is replayed as an internal HTTP request through the host's middleware stack, so auth, CORS, and rate limiting apply uniformly.
 
 ## Middleware Parity
 
@@ -98,8 +92,7 @@ api = FastAPI()
 api.add_middleware(CORSMiddleware, allow_origins=["*"])
 
 pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
-api.mount("/", pywire.as_asgi())
-pywire.mount_in(api)
+api.mount("/", pywire.as_asgi(api))
 
 # CORS middleware now applies to both:
 # - FastAPI API routes (direct HTTP)
