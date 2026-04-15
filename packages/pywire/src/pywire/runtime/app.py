@@ -131,6 +131,7 @@ class PyWire:
         reconnect_max_attempts: int = 10,
         reconnect_overlay: bool = True,
         interactive_server_mode: bool = True,
+        fallthrough_404: bool = False,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -289,6 +290,7 @@ class PyWire:
                 self.session_store = MemorySessionStore()
 
         self.interactive_server_mode = interactive_server_mode
+        self.fallthrough_404 = fallthrough_404
         self.ws_ping_interval = max(0, int(ws_ping_interval))
         self.ws_ping_timeout = max(1, int(ws_ping_timeout))
 
@@ -505,6 +507,41 @@ class PyWire:
     def _get_dispatch_target(self) -> Any:
         """Return the ASGI app for internal request dispatch."""
         return self._root_app or self.app
+
+    def as_asgi(self) -> "PyWire":
+        """Return this app as an ASGI application for mounting.
+
+        Use with FastAPI or Starlette::
+
+            from fastapi import FastAPI
+            from pywire import PyWire
+
+            api = FastAPI()
+            pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
+
+            api.mount("/", pywire.as_asgi())
+
+        When ``fallthrough_404=True``, unmatched paths return a bare 404
+        so the host framework can try other routes.
+        """
+        return self
+
+    def mount_in(self, root_app: Any) -> "PyWire":
+        """Set the root ASGI app for internal request dispatch.
+
+        When PyWire is mounted inside a host framework (FastAPI, etc.),
+        internal ASGI replay requests should go through the host's
+        middleware stack. Call this after mounting::
+
+            api = FastAPI()
+            pywire = PyWire(pages_dir="./pages", fallthrough_404=True)
+            api.mount("/app", pywire.as_asgi())
+            pywire.mount_in(api)
+
+        Returns self for chaining.
+        """
+        self._root_app = root_app
+        return self
 
     def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
         """Add ASGI middleware to the application.
@@ -1279,8 +1316,17 @@ class PyWire:
         )
 
         path = request.url.path
+        # When mounted at a prefix (e.g. /app), strip the root_path
+        # so PyWire's router matches against local paths (/ not /app/)
+        root_path = request.scope.get("root_path", "")
+        if root_path and path.startswith(root_path):
+            path = path[len(root_path):] or "/"
         match = self.router.match(path)
         if not match:
+            # Fallthrough mode: return bare 404 so host framework tries next
+            if self.fallthrough_404 and not is_internal_relocate:
+                return Response(status_code=404)
+
             # Try custom __error__
             match_error = self.router.match("/__error__")
 
