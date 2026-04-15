@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.5.1...create-pywire-app-v0.6.0) (2026-04-15)
+
+
+### Features
+
+* **pywire:** improve deploy CLI platform UX ([2aa64ec](https://github.com/pywire/pywire/commit/2aa64ec9b33260495fd073d709ad6ba70b01a399))
+
+
+### Bug Fixes
+
+* **create-pywire-app:** add railway link step before railway up ([78b1393](https://github.com/pywire/pywire/commit/78b13936bf730985a203b32f1fe7b1611b93468e))
+
 ## [0.5.1](https://github.com/pywire/pywire/compare/create-pywire-app-v0.5.0...create-pywire-app-v0.5.1) (2026-04-15)
 
 
