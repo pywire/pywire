@@ -130,6 +130,7 @@ class PyWire:
         ws_ping_timeout: int = 10,
         reconnect_max_attempts: int = 10,
         reconnect_overlay: bool = True,
+        interactive_server_mode: bool = True,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -287,16 +288,22 @@ class PyWire:
 
                 self.session_store = MemorySessionStore()
 
+        self.interactive_server_mode = interactive_server_mode
         self.ws_ping_interval = max(0, int(ws_ping_interval))
         self.ws_ping_timeout = max(1, int(ws_ping_timeout))
 
-        self.ws_handler = WebSocketHandler(self)
-        self.http_handler = HTTPTransportHandler(self)
+        # Transport handlers — only instantiate when interactive mode is on
+        if self.interactive_server_mode:
+            self.ws_handler = WebSocketHandler(self)
+            self.http_handler = HTTPTransportHandler(self)
 
-        # Initialize WebTransport handler
-        from pywire.runtime.webtransport_handler import WebTransportHandler
+            from pywire.runtime.webtransport_handler import WebTransportHandler
 
-        self.web_transport_handler = WebTransportHandler(self)
+            self.web_transport_handler = WebTransportHandler(self)
+        else:
+            self.ws_handler = None  # type: ignore[assignment]
+            self.http_handler = None  # type: ignore[assignment]
+            self.web_transport_handler = None  # type: ignore[assignment]
 
         # Backward-compatible token allowlist
         self.upload_tokens: Set[str] = set()
@@ -317,16 +324,6 @@ class PyWire:
         routes: list[Route | WebSocketRoute | Mount] = [
             # Capabilities endpoint for transport negotiation
             Route("/_pywire/capabilities", self._handle_capabilities, methods=["GET"]),
-            # WebSocket transport
-            WebSocketRoute("/_pywire/ws", self.ws_handler.handle),
-            # HTTP transport endpoints
-            Route(
-                "/_pywire/session", self.http_handler.create_session, methods=["POST"]
-            ),
-            Route("/_pywire/poll", self.http_handler.poll, methods=["GET"]),
-            Route("/_pywire/event", self.http_handler.handle_event, methods=["POST"]),
-            # Upload endpoint
-            Route("/_pywire/upload", self._handle_upload, methods=["POST"]),
             # Internal static files served via importlib.resources (works on all
             # platforms including Pyodide/CF Workers where filesystem ops fail)
             Route(
@@ -335,6 +332,33 @@ class PyWire:
                 methods=["GET"],
             ),
         ]
+
+        if self.interactive_server_mode:
+            # WebSocket transport
+            routes.append(WebSocketRoute("/_pywire/ws", self.ws_handler.handle))
+            # HTTP long-poll transport endpoints
+            routes.append(
+                Route(
+                    "/_pywire/session",
+                    self.http_handler.create_session,
+                    methods=["POST"],
+                )
+            )
+            routes.append(
+                Route("/_pywire/poll", self.http_handler.poll, methods=["GET"])
+            )
+            routes.append(
+                Route(
+                    "/_pywire/event",
+                    self.http_handler.handle_event,
+                    methods=["POST"],
+                )
+            )
+
+        # Upload endpoint (available in both modes — form file uploads)
+        routes.append(
+            Route("/_pywire/upload", self._handle_upload, methods=["POST"])
+        )
 
         # Load asset manifest from build output (if pywire build was run)
         build_manifest_path = project_root / ".pywire" / "build" / "asset-manifest.json"
@@ -434,6 +458,7 @@ class PyWire:
         self.app.state.enable_pjax = self.enable_pjax
         self.app.state.debug = self.debug
         self.app.state.pywire = self
+        self.app.state.interactive_server_mode = self.interactive_server_mode
 
         # Add Middleware to set request context for shell API
         from starlette.middleware.base import BaseHTTPMiddleware
@@ -461,6 +486,16 @@ class PyWire:
                     self.app.add_middleware(cls, **options)
                 else:
                     self.app.add_middleware(mw)
+
+        # In non-interactive mode, add session middleware for HTTP state
+        if not self.interactive_server_mode:
+            from pywire.runtime.session_middleware import SessionMiddleware
+
+            self.app.add_middleware(
+                SessionMiddleware,
+                session_store=self.session_store,
+                session_ttl=self.session_ttl,
+            )
 
         # Internal dispatch target — set by as_asgi() when mounted in
         # a host framework (e.g. FastAPI). When None, internal requests
@@ -513,9 +548,14 @@ class PyWire:
 
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
+        if self.interactive_server_mode:
+            transports = ["websocket", "http"]
+        else:
+            transports = ["http-only"]
         return JSONResponse(
             {
-                "transports": ["websocket", "http"],
+                "transports": transports,
+                "interactive": self.interactive_server_mode,
                 # WebTransport requires HTTP/3 - only available when running with Hypercorn
                 "webtransport": False,
                 "version": __version__,
@@ -1321,7 +1361,16 @@ class PyWire:
         # Instantiate page
         page = page_class(request, params, query, path=path_info, url=url_helper)
 
-        # Check if this is an event request
+        # In non-interactive mode, restore session state if available
+        session_id = request.scope.get("pywire_session_id")
+        if not self.interactive_server_mode and session_id:
+            session_data = request.scope.get("pywire_session_data")
+            if session_data:
+                from pywire.runtime.session_serializer import restore_page_state
+
+                restore_page_state(page, session_data)
+
+        # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
             # Handle event
             try:
@@ -1334,12 +1383,28 @@ class PyWire:
                 response = cast(Response, update)
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
+        elif (
+            request.method == "POST"
+            and not self.interactive_server_mode
+            and "X-PyWire-Event" not in request.headers
+        ):
+            # Non-interactive mode: standard form POST → @submit handler
+            response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
             # Internal ASGI replay from WS handler — body-only, no client scripts
             response = await page.render(init=False)
         else:
             # Normal render
             response = await page.render()
+
+        # In non-interactive mode, persist session state after handling
+        if not self.interactive_server_mode and session_id:
+            from pywire.runtime.session_serializer import snapshot_page_state
+
+            snapshot = snapshot_page_state(page, warn_size=self.session_warn_size)
+            await self.session_store.set(
+                session_id, snapshot, ttl=self.session_ttl
+            )
 
         # Script injection is now handled by the compiler (generator.py)
         # to ensure it's present in both dev and production.
@@ -1377,6 +1442,50 @@ class PyWire:
                 response = Response(body, media_type="text/html")
 
         return response
+
+    async def _handle_form_post(self, request: Request, page: Any) -> Response:
+        """Handle a standard HTML form POST in non-interactive mode.
+
+        Parses form data, calls the page's ``@submit`` handler (named
+        ``handle_submit``), re-renders the page, and returns the HTML.
+        If no submit handler exists, just re-renders with the form data
+        available via ``request.form()``.
+        """
+        try:
+            form_data = await request.form()
+            # Build event data dict from form fields
+            event_data: Dict[str, Any] = {
+                str(k): v for k, v in form_data.multi_items()
+            }
+
+            # Look for a submit handler on the page
+            handler = getattr(page, "handle_submit", None)
+            if handler and callable(handler):
+                await handler(event_data)
+
+            # Re-render the page with updated state
+            response = await page.render()
+
+            # Check for pending navigation (e.g. redirect after form submit)
+            if hasattr(page, "_pending_navigation") and page._pending_navigation:
+                from starlette.responses import RedirectResponse
+
+                redirect_path = page._pending_navigation
+                page._pending_navigation = None
+                return RedirectResponse(redirect_path, status_code=303)
+
+            return response
+        except Exception as e:
+            logger.error("Form POST error: %s", e, exc_info=True)
+            # Re-render with error state
+            if hasattr(page, "_form_error"):
+                page._form_error = str(e)
+            try:
+                return await page.render()
+            except Exception:
+                return PlainTextResponse(
+                    "Internal Server Error", status_code=500
+                )
 
     def _cleanup_upload_tokens(self) -> None:
         cutoff = time.time() - self.upload_token_ttl_seconds
@@ -1437,7 +1546,11 @@ class PyWire:
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""
         logger.debug("Scope type: %s", scope["type"])
-        if scope["type"] == "webtransport":
+        if (
+            scope["type"] == "webtransport"
+            and self.interactive_server_mode
+            and self.web_transport_handler is not None
+        ):
             await self.web_transport_handler.handle(scope, receive, send)
             return
 

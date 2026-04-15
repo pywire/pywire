@@ -25,6 +25,8 @@ export interface PyWireConfig extends TransportConfig {
   reconnectMaxAttempts?: number
   /** Show reconnection overlay on disconnect (default true) */
   reconnectOverlay?: boolean
+  /** When false, no WebSocket/transport is used — SPA navigation via HTTP fetch */
+  interactive?: boolean
 }
 
 const DEFAULT_CONFIG: PyWireConfig = {
@@ -33,6 +35,7 @@ const DEFAULT_CONFIG: PyWireConfig = {
   enableWebSocket: true,
   enableHTTP: true,
   debug: false,
+  interactive: true,
 }
 
 /**
@@ -125,28 +128,39 @@ export class PyWireApp {
       }
     }
 
-    // Setup message handling
-    this.transport.onMessage((msg) => this.handleMessage(msg))
-    this.transport.onStatusChange((connected) => this.handleStatusChange(connected))
+    // Load SPA metadata first — it may set interactive mode
+    this.loadSPAMetadata()
 
-    // Connect transport with fallback
-    this.connectStartTime = performance.now()
-    try {
-      await this.transport.connect()
-    } catch (e) {
-      logger.error('PyWire: Failed to connect:', e)
+    if (this.config.interactive !== false) {
+      // Interactive mode: connect transport for real-time updates
+      this.transport.onMessage((msg) => this.handleMessage(msg))
+      this.transport.onStatusChange((connected) => this.handleStatusChange(connected))
+
+      this.connectStartTime = performance.now()
+      try {
+        await this.transport.connect()
+      } catch (e) {
+        logger.error('PyWire: Failed to connect:', e)
+      }
+    } else {
+      // Non-interactive mode: no WebSocket, SPA nav via HTTP fetch
+      this.isConnected = true // Always "connected" for navigation gating
+      logger.log('PyWire: Non-interactive mode — HTTP-only')
     }
 
-    // Load SPA metadata and setup navigation
-    this.loadSPAMetadata()
     this.setupSPANavigation()
 
-    // Setup event interception via UnifiedEventHandler
-    this.eventHandler.init()
-    this.refManager.init()
+    // Event interception and refs only in interactive mode
+    if (this.config.interactive !== false) {
+      this.eventHandler.init()
+      this.refManager.init()
+    }
 
+    const transport = this.config.interactive !== false
+      ? this.transport.getActiveTransport()
+      : 'http-only'
     logger.log(
-      `PyWire: Initialized (transport: ${this.transport.getActiveTransport()}, spa_paths: ${this.siblingPaths.length}, pjax: ${this.pjaxEnabled})`
+      `PyWire: Initialized (transport: ${transport}, spa_paths: ${this.siblingPaths.length}, pjax: ${this.pjaxEnabled})`
     )
   }
 
@@ -185,6 +199,9 @@ export class PyWireApp {
         this.allPaths = meta.all_paths || []
         this.pjaxEnabled = !!meta.enable_pjax
         this.staticPath = meta.static_path || '/static'
+        if (meta.interactive !== undefined) {
+          this.config.interactive = !!meta.interactive
+        }
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
           logger.setDebug(this.config.debug)
@@ -253,7 +270,11 @@ export class PyWireApp {
           detail: { from: targetPath, to: targetPath },
         })
       )
-      this.sendRelocate(targetPath)
+      if (this.config.interactive === false) {
+        this.httpNavigate(targetPath)
+      } else {
+        this.sendRelocate(targetPath)
+      }
     })
 
     if (this.siblingPaths.length === 0 && !this.pjaxEnabled) return
@@ -338,7 +359,12 @@ export class PyWireApp {
     )
 
     history.pushState({}, '', path)
-    this.sendRelocate(path)
+
+    if (this.config.interactive === false) {
+      this.httpNavigate(path)
+    } else {
+      this.sendRelocate(path)
+    }
   }
 
   /**
@@ -351,6 +377,43 @@ export class PyWireApp {
       path,
     }
     this.transport.send(message)
+  }
+
+  /**
+   * Navigate via HTTP fetch (non-interactive mode).
+   * Fetches the page HTML and applies it with morphdom.
+   */
+  protected async httpNavigate(path: string): Promise<void> {
+    try {
+      const response = await fetch(path, {
+        headers: {
+          'X-PyWire-Internal': 'relocate',
+          'Accept': 'text/html',
+        },
+        credentials: 'same-origin',
+      })
+
+      if (response.redirected) {
+        // Follow redirect — update URL and re-navigate
+        const redirectPath = new URL(response.url).pathname
+        history.replaceState({}, '', redirectPath)
+      }
+
+      const html = await response.text()
+      this.updater.update(html)
+      this.eventHandler?.refreshListeners()
+
+      document.dispatchEvent(
+        new CustomEvent('pywire:navigate', {
+          bubbles: true,
+          detail: { path },
+        })
+      )
+    } catch (e) {
+      logger.error('PyWire: HTTP navigation failed:', e)
+      // Fallback to full page load
+      window.location.href = path
+    }
   }
 
   /**

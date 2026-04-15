@@ -770,6 +770,15 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
+                # Check interactive server mode
+                interactive_mode = True
+                try:
+                    interactive_mode = getattr(
+                        self.request.app.state, "interactive_server_mode", True
+                    )
+                except (AttributeError, KeyError):
+                    pass
+
                 meta = {
                     "sibling_paths": getattr(self, "__sibling_paths__", []),
                     "all_paths": all_wire_paths,
@@ -778,6 +787,7 @@ class BasePage:
                     "static_path": static_url_path,
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
+                    "interactive": interactive_mode,
                 }
                 import json
 
@@ -812,7 +822,25 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
-                injection = f"{reconnect_injection}{meta_script}{client_script}"
+                # Non-interactive mode: warn about unsupported event handlers
+                event_warning = ""
+                if not interactive_mode and debug_mode:
+                    # Check for event handler attributes in the rendered HTML
+                    import re
+
+                    event_attrs = re.findall(r'data-on-(\w+)=', html)
+                    # Filter out @submit which works via form POST
+                    unsupported = [e for e in event_attrs if e != "submit"]
+                    if unsupported:
+                        unique = sorted(set(unsupported))
+                        handlers_str = ", ".join(f"@{e}" for e in unique)
+                        event_warning = (
+                            f'<script>console.warn("PyWire: Non-interactive mode — '
+                            f"these event handlers are inactive: {handlers_str}. "
+                            f'Only @submit works via form POST.")</script>'
+                        )
+
+                injection = f"{reconnect_injection}{meta_script}{client_script}{event_warning}"
 
                 if "</body>" in html:
                     parts = html.rsplit("</body>", 1)
