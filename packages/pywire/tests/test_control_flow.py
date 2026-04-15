@@ -113,3 +113,89 @@ class TestControlFlow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Runtime tests for $if attribute-form behaviour
+# ---------------------------------------------------------------------------
+
+import pytest
+from textwrap import dedent
+from types import SimpleNamespace
+from pywire.runtime.loader import PageLoader
+
+
+def _make_page(tmp_path, source):
+    file_path = tmp_path / "page.wire"
+    file_path.write_text(dedent(source))
+    loader = PageLoader()
+    page_class = loader.load(file_path)
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False)
+        )
+    )
+    return page_class(request, {}, {}, {}, None)
+
+
+@pytest.mark.asyncio
+async def test_if_attribute_form_renders_tag_when_true(tmp_path):
+    """<p $if={True}>text</p> — both the tag and its text must appear."""
+    page = _make_page(
+        tmp_path,
+        """
+        <p $if={True}>hello</p>
+        """,
+    )
+    html = await page._render_template()
+    assert "<p" in html
+    assert "hello" in html
+
+
+@pytest.mark.asyncio
+async def test_if_attribute_form_omits_tag_when_false(tmp_path):
+    """<p $if={False}>text</p> — neither tag nor text should appear."""
+    page = _make_page(
+        tmp_path,
+        """
+        <p $if={False}>hidden</p>
+        """,
+    )
+    html = await page._render_template()
+    assert "<p" not in html
+    assert "hidden" not in html
+
+
+@pytest.mark.asyncio
+async def test_if_attribute_form_sibling_not_affected(tmp_path):
+    """$if on one element must not remove sibling elements without their own $if."""
+    page = _make_page(
+        tmp_path,
+        """
+        <p $if={False}>gone</p>
+        <button>stays</button>
+        """,
+    )
+    html = await page._render_template()
+    assert "gone" not in html
+    assert "stays" in html
+    assert "<button" in html
+
+
+@pytest.mark.asyncio
+async def test_if_attribute_form_wrapper_groups_siblings(tmp_path):
+    """Wrapper div with $if controls all its children as a unit."""
+    page = _make_page(
+        tmp_path,
+        """
+        <div $if={False}>
+            <p>text 1</p>
+            <p>text 2</p>
+            <button>click</button>
+        </div>
+        """,
+    )
+    html = await page._render_template()
+    assert "text 1" not in html
+    assert "text 2" not in html
+    assert "click" not in html

@@ -252,3 +252,110 @@ async def test_loop_click_handler_id_based_runtime(tmp_path) -> None:
     assert page.deleted_ids.value == ["a"]
     assert len(page.items.value) == 1
     assert page.items.value[0].get("id") == "b"
+
+
+# ---------------------------------------------------------------------------
+# WireList / WireDict equality — regression tests for infinite recursion bug
+# ---------------------------------------------------------------------------
+
+
+def test_wirelist_eq_plain_list():
+    """Regression: WireList == plain list must not recurse infinitely."""
+    from pywire.core.wire import wire
+
+    w = wire([1, 2, 3])
+    assert w == [1, 2, 3]
+    assert [1, 2, 3] == w
+
+
+def test_wirelist_eq_plain_list_different():
+    """WireList != different plain list."""
+    from pywire.core.wire import wire
+
+    w = wire([1, 2])
+    assert not (w == [1, 2, 3])
+
+
+def test_wirelist_eq_nested_list():
+    """Regression: WireList containing plain lists must compare without recursion."""
+    from pywire.core.wire import wire
+
+    w = wire([[1, 2], [3, 4]])
+    assert w == [[1, 2], [3, 4]]
+
+
+def test_wiredict_eq_plain_dict():
+    """Regression: WireDict == plain dict must not recurse."""
+    from pywire.core.wire import wire
+
+    w = wire({"a": 1, "b": 2})
+    assert w == {"a": 1, "b": 2}
+    assert {"a": 1, "b": 2} == w
+
+
+def test_wirelist_setitem_no_recursion():
+    """Accessing items[i] when items is a WireList of lists does not recurse."""
+    import sys
+    from pywire.core.wire import wire
+
+    items = wire([[1, 2, 3], [4, 5, 6]])
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(200)
+    try:
+        _ = items[0]  # Triggers proxy creation + __setitem__ equality check
+        _ = items[1]
+    finally:
+        sys.setrecursionlimit(old_limit)
+
+
+@pytest.mark.asyncio
+async def test_button_in_for_nested_list_no_recursion(tmp_path):
+    """Regression: button in $for over a list-of-lists must not cause RecursionError."""
+    import sys
+    from types import SimpleNamespace
+
+    source = dedent(
+        """
+        ---
+        items = wire([[1, 2], [3, 4], [5, 6]])
+        removed = wire([])
+
+        def remove_first(row):
+            if row in self.items.value:
+                self.items.remove(row)
+            self.removed.append(str(row))
+        ---
+
+        <div>
+            <div $for={row in items.value}>
+                <span>{row}</span>
+                <button @click={remove_first(row)}>Remove</button>
+            </div>
+        </div>
+        """
+    )
+    file_path = tmp_path / "page.wire"
+    file_path.write_text(source)
+
+    loader = PageLoader()
+    page_class = loader.load(file_path)
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(sibling_paths=[], enable_pjax=False, debug=False)
+        )
+    )
+    page = page_class(request, {}, {}, {}, None)
+
+    html = await page._render_template()
+    assert "Remove" in html
+
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(200)
+    try:
+        update = await page.handle_event(
+            "_handler_0", {"type": "click", "args": {"arg0": [1, 2]}}
+        )
+    finally:
+        sys.setrecursionlimit(old_limit)
+
+    assert update["type"] in ("regions", "full")

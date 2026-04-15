@@ -1151,3 +1151,9 @@ class BasePage:
     async def _render_template(self) -> str:
         """Render template - implemented by codegen."""
         return ""
+
+    async def _render_and_cleanup(self) -> str:
+        """Render template and remove stale child component instances."""
+        html = await self._render_template()
+        self._cleanup_components()
+        return html

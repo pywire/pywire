@@ -50,8 +50,24 @@ def _import_app(app_str: str) -> Any:
 
     import importlib
 
-    module = importlib.import_module(module_name)
-    return getattr(module, app_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as e:
+        console.print(
+            f"[bold red]PyWire Error[/]: Could not import module '[bold]{module_name}[/]': {e}"
+        )
+        console.print(
+            "[dim]Check that your app module and all its dependencies are installed and importable.[/]"
+        )
+        raise SystemExit(1) from e
+
+    try:
+        return getattr(module, app_name)
+    except AttributeError:
+        console.print(
+            f"[bold red]PyWire Error[/]: Module '[bold]{module_name}[/]' has no attribute '[bold]{app_name}[/]'"
+        )
+        raise SystemExit(1)
 
 
 def _generate_cert() -> Tuple[str, str, bytes]:

@@ -2544,11 +2544,11 @@ class TemplateCodegen:
                     )
                 )
 
-            # 9. Finally, render the component template
+            # 9. Finally, render the component template (and clean up its stale children)
             render_call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id=comp_var, ctx=ast.Load()),
-                    attr="_render_template",
+                    attr="_render_and_cleanup",
                     ctx=ast.Load(),
                 ),
                 args=[],

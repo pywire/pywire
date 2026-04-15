@@ -219,7 +219,11 @@ class WirePrimitive(WireBase, Generic[T]):
         # Avoid recursion if comparing two wires
         if isinstance(other, WireBase):
             return self is other
-        return self.value == other
+        # WireList/WireDict/WireSet override this with their container's __eq__.
+        # For WirePrimitive, delegate to the wrapped scalar value.
+        if hasattr(self, "_value"):
+            return self._value == other  # type: ignore[attr-defined]
+        return NotImplemented
 
     def __ne__(self, other: Any) -> bool:
         if isinstance(other, WireBase):
@@ -356,6 +360,11 @@ class WireList(WireBase, list, Generic[T]):
     def __ge__(self, other):
         self._track_read()
         return super().__ge__(other)
+
+    __hash__ = WireBase.__hash__  # type: ignore[assignment]
+
+    def __eq__(self, other: Any) -> bool:
+        return list.__eq__(self, other)
 
     def __ne__(self, other):
         self._track_read()
@@ -496,6 +505,11 @@ class WireDict(WireBase, dict, Generic[K, V]):
         self._track_read()
         return super().__len__() > 0
 
+    __hash__ = WireBase.__hash__  # type: ignore[assignment]
+
+    def __eq__(self, other: Any) -> bool:
+        return dict.__eq__(self, other)
+
     def __ne__(self, other) -> bool:
         self._track_read()
         return super().__ne__(other)
@@ -613,6 +627,11 @@ class WireSet(WireBase, set, Generic[T]):
     def __ge__(self, other) -> bool:
         self._track_read()
         return super().__ge__(other)
+
+    __hash__ = WireBase.__hash__  # type: ignore[assignment]
+
+    def __eq__(self, other: Any) -> bool:
+        return set.__eq__(self, other)
 
     def __ne__(self, other) -> bool:
         self._track_read()
