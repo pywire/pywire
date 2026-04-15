@@ -1,6 +1,6 @@
 [project]
 name = "create-pywire-app"
-version = "0.4.0"
+version = "0.5.0"
 description = "Init wizard for new pywire projects"
 readme = "README.md"
 requires-python = ">=3.11"
