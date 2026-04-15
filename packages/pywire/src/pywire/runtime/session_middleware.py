@@ -25,7 +25,9 @@ SESSION_ID_BYTES = 24  # 32 chars in urlsafe base64
 
 def _sign_session_id(session_id: str, secret: str) -> str:
     """Produce ``session_id.signature`` for tamper detection."""
-    sig = hmac.new(secret.encode(), session_id.encode(), hashlib.sha256).hexdigest()[:16]
+    sig = hmac.new(secret.encode(), session_id.encode(), hashlib.sha256).hexdigest()[
+        :16
+    ]
     return f"{session_id}.{sig}"
 
 

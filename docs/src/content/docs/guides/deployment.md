@@ -142,13 +142,13 @@ When `interactive_server_mode=False`:
 
 ### When to Use It
 
-| Scenario | Mode |
-| --- | --- |
+| Scenario                                        | Mode                                     |
+| ----------------------------------------------- | ---------------------------------------- |
 | Traditional server deployment (VPS, containers) | `interactive_server_mode=True` (default) |
-| Serverless functions (AWS Lambda, Vercel) | `interactive_server_mode=False` |
-| Edge workers (Cloudflare Workers) | `interactive_server_mode=False` |
-| Horizontal scaling without Redis | `interactive_server_mode=False` |
-| Static/content sites with forms | `interactive_server_mode=False` |
+| Serverless functions (AWS Lambda, Vercel)       | `interactive_server_mode=False`          |
+| Edge workers (Cloudflare Workers)               | `interactive_server_mode=False`          |
+| Horizontal scaling without Redis                | `interactive_server_mode=False`          |
+| Static/content sites with forms                 | `interactive_server_mode=False`          |
 
 ### Session Configuration
 

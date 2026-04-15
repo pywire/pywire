@@ -67,8 +67,7 @@ async def dispatch_internal(
 
     # Build headers as ASGI byte tuples
     header_list: list[tuple[bytes, bytes]] = [
-        (k.lower().encode("latin-1"), v.encode("latin-1"))
-        for k, v in headers.items()
+        (k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in headers.items()
     ]
 
     scope.update(
@@ -111,8 +110,7 @@ async def dispatch_internal(
             raw = message.get("headers", [])
             response.raw_headers = [(k, v) for k, v in raw]
             response.headers = {
-                k.decode("latin-1").lower(): v.decode("latin-1")
-                for k, v in raw
+                k.decode("latin-1").lower(): v.decode("latin-1") for k, v in raw
             }
         elif message["type"] == "http.response.body":
             chunk = message.get("body", b"")
@@ -152,9 +150,7 @@ def get_set_cookie_headers(
 ) -> list[tuple[bytes, bytes]]:
     """Extract all ``Set-Cookie`` headers from raw ASGI headers."""
     return [
-        (name, value)
-        for name, value in raw_headers
-        if name.lower() == b"set-cookie"
+        (name, value) for name, value in raw_headers if name.lower() == b"set-cookie"
     ]
 
 

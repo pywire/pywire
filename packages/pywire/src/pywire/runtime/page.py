@@ -828,7 +828,7 @@ class BasePage:
                     # Check for event handler attributes in the rendered HTML
                     import re
 
-                    event_attrs = re.findall(r'data-on-(\w+)=', html)
+                    event_attrs = re.findall(r"data-on-(\w+)=", html)
                     # Filter out @submit which works via form POST
                     unsupported = [e for e in event_attrs if e != "submit"]
                     if unsupported:
@@ -840,7 +840,9 @@ class BasePage:
                             f'Only @submit works via form POST.")</script>'
                         )
 
-                injection = f"{reconnect_injection}{meta_script}{client_script}{event_warning}"
+                injection = (
+                    f"{reconnect_injection}{meta_script}{client_script}{event_warning}"
+                )
 
                 if "</body>" in html:
                     parts = html.rsplit("</body>", 1)

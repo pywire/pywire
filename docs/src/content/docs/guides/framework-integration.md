@@ -30,6 +30,7 @@ async def get_users():
 ```
 
 When a request arrives:
+
 1. FastAPI checks its own routes first (`/api/users`, etc.)
 2. If no match, the request falls through to PyWire
 3. PyWire renders the matching `.wire` page

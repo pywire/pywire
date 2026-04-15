@@ -358,9 +358,7 @@ class PyWire:
             )
 
         # Upload endpoint (available in both modes — form file uploads)
-        routes.append(
-            Route("/_pywire/upload", self._handle_upload, methods=["POST"])
-        )
+        routes.append(Route("/_pywire/upload", self._handle_upload, methods=["POST"]))
 
         # Load asset manifest from build output (if pywire build was run)
         build_manifest_path = project_root / ".pywire" / "build" / "asset-manifest.json"
@@ -1311,16 +1309,14 @@ class PyWire:
         when ``X-PyWire-Internal: relocate`` is present. In that case, renders
         body-only HTML (init=False) to avoid re-injecting client scripts.
         """
-        is_internal_relocate = (
-            request.headers.get("x-pywire-internal") == "relocate"
-        )
+        is_internal_relocate = request.headers.get("x-pywire-internal") == "relocate"
 
         path = request.url.path
         # When mounted at a prefix (e.g. /app), strip the root_path
         # so PyWire's router matches against local paths (/ not /app/)
         root_path = request.scope.get("root_path", "")
         if root_path and path.startswith(root_path):
-            path = path[len(root_path):] or "/"
+            path = path[len(root_path) :] or "/"
         match = self.router.match(path)
         if not match:
             # Fallthrough mode: return bare 404 so host framework tries next
@@ -1362,9 +1358,7 @@ class PyWire:
                     )
                     # Inject error code
                     page.error_code = 404
-                    response = await page.render(
-                        init=not is_internal_relocate
-                    )
+                    response = await page.render(init=not is_internal_relocate)
                     response.status_code = 404
                     return response
                 except Exception as e:
@@ -1448,9 +1442,7 @@ class PyWire:
             from pywire.runtime.session_serializer import snapshot_page_state
 
             snapshot = snapshot_page_state(page, warn_size=self.session_warn_size)
-            await self.session_store.set(
-                session_id, snapshot, ttl=self.session_ttl
-            )
+            await self.session_store.set(session_id, snapshot, ttl=self.session_ttl)
 
         # Script injection is now handled by the compiler (generator.py)
         # to ensure it's present in both dev and production.
@@ -1500,9 +1492,7 @@ class PyWire:
         try:
             form_data = await request.form()
             # Build event data dict from form fields
-            event_data: Dict[str, Any] = {
-                str(k): v for k, v in form_data.multi_items()
-            }
+            event_data: Dict[str, Any] = {str(k): v for k, v in form_data.multi_items()}
 
             # Look for a submit handler on the page
             handler = getattr(page, "handle_submit", None)
@@ -1529,9 +1519,7 @@ class PyWire:
             try:
                 return await page.render()
             except Exception:
-                return PlainTextResponse(
-                    "Internal Server Error", status_code=500
-                )
+                return PlainTextResponse("Internal Server Error", status_code=500)
 
     def _cleanup_upload_tokens(self) -> None:
         cutoff = time.time() - self.upload_token_ttl_seconds
