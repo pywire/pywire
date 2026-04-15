@@ -1,6 +1,7 @@
 """WebSocket handler for PyWire."""
 
 import asyncio
+import re
 import sys
 import traceback
 import uuid
@@ -720,9 +721,6 @@ class WebSocketHandler:
                                 component_snapshots
                             )
 
-                        # Update our reference
-                        self.connection_pages[connection] = new_page
-
                         # Set update hook (needed for background tasks / await blocks)
                         ws = connection
 
@@ -737,16 +735,33 @@ class WebSocketHandler:
                         # Render with new code but preserved state (init=False avoids re-injecting client scripts)
                         response = await new_page.render(init=False)
                         html = cast(bytes, response.body).decode("utf-8")
+                        logger.debug(
+                            "Hot reload update for %s — handler attrs: %s",
+                            type(new_page).__name__,
+                            re.findall(r'data-on-\w+="([^"]+)"', html),
+                        )
                         await connection.send_bytes(
                             msgpack.packb({"type": "update", "html": html})
                         )
+
+                        # Update page reference AFTER sending the new HTML to
+                        # the client. This prevents a race where events from
+                        # the old DOM dispatch against the new page instance
+                        # (which may have different handler names).
+                        self.connection_pages[connection] = new_page
+
                         logger.info(
                             "Hot reload (state preserved) for %s",
                             type(new_page).__name__,
                         )
 
                     except Exception as e:
-                        # Anything failed, fall back to hard reload
+                        # Anything failed, fall back to hard reload.
+                        # Ensure old page stays in connection_pages so events
+                        # using old handler names still work until the client
+                        # completes its hard reload.
+                        if old_page:
+                            self.connection_pages[connection] = old_page
                         logger.warning(
                             "Hot reload failed, falling back to hard reload: %s",
                             e,

@@ -4,10 +4,41 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Optional, Tuple
+import logging
+
 from rich.console import Console
+from rich.text import Text
 
 # Force terminal to ensure ANSI codes are generated even when piped to TUI
 console = Console(force_terminal=True, markup=True)
+
+
+class _PyWireDevHandler(logging.Handler):
+    """Logging handler: uvicorn-style levelprefix + Rich markup in message body."""
+
+    _LEVEL_STYLES = {
+        logging.DEBUG: "cyan",
+        logging.INFO: "green",
+        logging.WARNING: "yellow",
+        logging.ERROR: "red",
+        logging.CRITICAL: "bold red",
+    }
+
+    def __init__(self, con: Console) -> None:
+        super().__init__()
+        self._console = con
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            levelname = record.levelname
+            separator = " " * (8 - len(levelname))
+            style = self._LEVEL_STYLES.get(record.levelno, "white")
+            prefix = Text(f"{levelname}:{separator}", style=style)
+            body = Text.from_markup(record.getMessage())
+            prefix.append_text(body)
+            self._console.print(prefix)
+        except Exception:
+            self.handleError(record)
 
 
 def _import_app(app_str: str) -> Any:
@@ -102,14 +133,12 @@ async def run_dev_server(
 ) -> None:
     """Run development server with hot reload."""
     import asyncio
-    import logging
     import signal
 
     from watchfiles import awatch
     from rich.logging import RichHandler
 
-    # Configure logging to see Hypercorn/aioquic debug output
-    # Use RichHandler to ensure colored logs for Uvicorn/Hypercorn
+    # Configure root logger with RichHandler (catches any non-uvicorn loggers)
     logging.basicConfig(
         level=logging.INFO,
         format="%(message)s",
@@ -117,6 +146,13 @@ async def run_dev_server(
         handlers=[RichHandler(console=console, show_path=False, markup=True)],
     )
     logging.getLogger("hypercorn").setLevel(logging.INFO)
+
+    # pywire.dev logger: uvicorn-aligned levelprefix + Rich markup in message body
+    _dev_logger = logging.getLogger("pywire.dev")
+    if not _dev_logger.handlers:
+        _dev_logger.addHandler(_PyWireDevHandler(console))
+    _dev_logger.setLevel(logging.INFO)
+    _dev_logger.propagate = False
 
     # Load app to get config
     pywire_app = _import_app(app_str)
@@ -132,9 +168,7 @@ async def run_dev_server(
     pywire_app.app = DevErrorMiddleware(pywire_app.app)
 
     if not pages_dir.exists():
-        console.print(
-            f"[bold yellow]Warning[/]: Pages directory '{pages_dir}' does not exist."
-        )
+        _dev_logger.warning(f"PyWire: Pages directory '{pages_dir}' does not exist.")
 
     # Try to import Hypercorn for HTTP/3 support
     try:
@@ -167,7 +201,7 @@ async def run_dev_server(
         logging.getLogger(_logger_name).addFilter(_shutdown_filter)
 
     async def _handle_signal() -> None:
-        console.print("[bold]PyWire: Shutting down...[/]")
+        _dev_logger.info("PyWire: Shutting down...")
         shutdown_event.set()
 
     # Register signal handlers
@@ -192,14 +226,12 @@ async def run_dev_server(
             install_logging_interceptor()
 
             if not pages_dir.exists():
-                console.print(
-                    f"[bold yellow]Warning[/]: Pages directory '{pages_dir}' does not exist."
+                _dev_logger.warning(
+                    f"PyWire: Pages directory '{pages_dir}' does not exist."
                 )
 
             # Use pages_dir from app
-            console.print(
-                f"[bold cyan]PyWire[/]: Watching [bold]{pages_dir}[/] for changes..."
-            )
+            _dev_logger.info(f"PyWire: Watching [bold]{pages_dir}[/] for changes...")
 
             # Also watch the file defining the app if possible?
             # app_str "main:app" -> main.py
@@ -231,8 +263,8 @@ async def run_dev_server(
                         app_config_changed = True
 
                 if library_changed or app_config_changed:
-                    console.print(
-                        "[bold magenta]PyWire[/]: Core/Config change detected. Please restart server manually."
+                    _dev_logger.warning(
+                        "PyWire: Core/Config change detected. Please restart server manually."
                     )
                     # We can't easily auto-restart from within the process unless we wrap it
                     # But the TUI can handle restarts.
@@ -246,12 +278,12 @@ async def run_dev_server(
                             try:
                                 pywire_app.reload_page(Path(file_path))
                             except Exception as e:
-                                console.print(f"[bold red]Error[/] reloading page: {e}")
+                                _dev_logger.error(f"PyWire: Error reloading page: {e}")
 
                 # Then broadcast reload if needed
                 if should_reload:
-                    console.print(
-                        f"[bold green]PyWire[/]: Changes detected in {pages_dir}, reloading clients..."
+                    _dev_logger.info(
+                        f"PyWire: Changes detected in {pages_dir}, reloading clients..."
                     )
 
                     # Broadcast reload to WebSocket clients
@@ -268,7 +300,7 @@ async def run_dev_server(
 
         except Exception as e:
             if not shutdown_event.is_set():
-                console.print(f"Watcher error: {e}")
+                _dev_logger.error(f"PyWire: Watcher error: {e}")
                 import traceback
 
                 traceback.print_exc()
@@ -294,8 +326,8 @@ async def run_dev_server(
         found = False
         for c_file, k_file in potential_certs:
             if c_file.exists() and k_file.exists():
-                console.print(
-                    f"[bold cyan]PyWire[/]: Found local certificates ([bold]{c_file.name}[/]), using them."
+                _dev_logger.info(
+                    f"PyWire: Found local certificates ([bold]{c_file.name}[/]), using them."
                 )
                 cert_path = str(c_file)
                 key_path = str(k_file)
@@ -311,8 +343,8 @@ async def run_dev_server(
             import subprocess
 
             if shutil.which("mkcert"):
-                console.print(
-                    "[bold cyan]PyWire[/]: 'mkcert' detected. Generating trusted local certificates..."
+                _dev_logger.info(
+                    "PyWire: 'mkcert' detected. Generating trusted local certificates..."
                 )
                 try:
                     # Generate certs in .pywire directory
@@ -333,12 +365,11 @@ async def run_dev_server(
                         check=True,
                         capture_output=True,  # Don't spam stdout unless error?
                     )
-                    console.print(
-                        f"[bold cyan]PyWire[/]: Certificates generated ({pem_file.name})."
+                    _dev_logger.info(
+                        f"PyWire: Certificates generated ({pem_file.name})."
                     )
-                    console.print(
-                        "[bold cyan]PyWire[/]: Note: Run 'mkcert -install' once if your browser doesn't "
-                        "trust the certificate."
+                    _dev_logger.info(
+                        "PyWire: Run 'mkcert -install' once if your browser doesn't trust the certificate."
                     )
 
                     cert_path = str(pem_file)
@@ -349,15 +380,15 @@ async def run_dev_server(
                         del pywire_app.app.state.webtransport_cert_hash
 
                 except subprocess.CalledProcessError as e:
-                    console.print(f"[bold red]PyWire Error[/]: mkcert failed: {e}")
+                    _dev_logger.error(f"PyWire: mkcert failed: {e}")
             else:
                 # No mkcert, will fallback to ephemeral logic downstream
-                console.print(
-                    "[bold yellow]PyWire Tip[/]: Install 'mkcert' for trusted local HTTPS "
+                _dev_logger.warning(
+                    "PyWire: Install 'mkcert' for trusted local HTTPS "
                     "(e.g. 'brew install mkcert')."
                 )
-                console.print(
-                    "[bold yellow]PyWire Warning[/]: Using ephemeral self-signed certificates (browser will warn)."
+                _dev_logger.warning(
+                    "PyWire: Using ephemeral self-signed certificates (browser will warn)."
                 )
 
     async with asyncio.TaskGroup() as tg:
@@ -385,8 +416,8 @@ async def run_dev_server(
                 config.use_reloader = False
 
                 display_host = "localhost" if host == "127.0.0.1" else host
-                console.print(
-                    f"🚀 [bold cyan]PyWire[/]: Running on [link=https://{display_host}:{port}][bold cyan]https://{display_host}:{port}[/][/link] (HTTP/3 + WebSocket)"
+                _dev_logger.info(
+                    f"🚀 PyWire: Running on [link=https://{display_host}:{port}][bold cyan]https://{display_host}:{port}[/][/link] (HTTP/3 + WebSocket)"
                 )
 
                 # Serve the starlette app wrapped in PyWire
@@ -394,14 +425,12 @@ async def run_dev_server(
                     serve(pywire_app.app, config, shutdown_trigger=shutdown_event.wait)
                 )
             except Exception as e:
-                console.print(
-                    f"[bold red]PyWire Error[/]: Failed to start Hypercorn: {e}"
-                )
+                _dev_logger.error(f"PyWire: Failed to start Hypercorn: {e}")
                 import traceback
 
                 traceback.print_exc()
-                console.print(
-                    "[bold yellow]PyWire[/]: Falling back to Uvicorn (HTTP/2 + WebSocket only)"
+                _dev_logger.warning(
+                    "PyWire: Falling back to Uvicorn (HTTP/2 + WebSocket only)"
                 )
                 has_http3 = False
 
@@ -448,8 +477,8 @@ async def run_dev_server(
 
             protocol = "https" if cert_path else "http"
             display_host = "localhost" if host == "127.0.0.1" else host
-            console.print(
-                f"🚀 [bold cyan]PyWire[/]: Running on [link={protocol}://{display_host}:{port}][bold cyan]{protocol}://{display_host}:{port}[/][/link]"
+            _dev_logger.info(
+                f"🚀 PyWire: Running on [link={protocol}://{display_host}:{port}][bold cyan]{protocol}://{display_host}:{port}[/][/link]"
             )
             tg.create_task(server.serve())
             tg.create_task(stop_uvicorn())
