@@ -156,9 +156,8 @@ export class PyWireApp {
       this.refManager.init()
     }
 
-    const transport = this.config.interactive !== false
-      ? this.transport.getActiveTransport()
-      : 'http-only'
+    const transport =
+      this.config.interactive !== false ? this.transport.getActiveTransport() : 'http-only'
     logger.log(
       `PyWire: Initialized (transport: ${transport}, spa_paths: ${this.siblingPaths.length}, pjax: ${this.pjaxEnabled})`
     )
@@ -388,7 +387,7 @@ export class PyWireApp {
       const response = await fetch(path, {
         headers: {
           'X-PyWire-Internal': 'relocate',
-          'Accept': 'text/html',
+          Accept: 'text/html',
         },
         credentials: 'same-origin',
       })
