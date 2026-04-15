@@ -1,6 +1,6 @@
 import asgi
 from {{ app_module }} import {{ app_attr }}
-import _routes
+import _routes  # noqa: F401 — registers routes as a side effect
 from pywire_do import PyWireSessionDO
 from workers import WorkerEntrypoint, Response
 from js import URL, Request as JsRequest
