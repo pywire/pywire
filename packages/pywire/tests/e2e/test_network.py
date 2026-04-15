@@ -30,7 +30,7 @@ def test_websocket_disconnect_issue_8(page: Page, pywire_server: str):
         }
     """)
 
-    # PyWire should show the overlay with specific text
-    expect(page.locator("body")).to_contain_text(
-        "Connection Lost - Reconnecting...", timeout=2000
+    # PyWire should show the reconnect overlay (ReconnectOverlay, not StatusOverlay toast)
+    expect(page.locator("#_pywire_reconnect_overlay .pw-reconnect-backdrop")).to_be_visible(
+        timeout=2000
     )

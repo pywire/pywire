@@ -620,6 +620,23 @@ class WebSocketHandler:
         except Exception:
             logger.warning("Failed to persist session %s", session_id, exc_info=True)
 
+    async def broadcast_shutdown(self) -> None:
+        """Notify all connected clients the server is shutting down.
+
+        Sends a server_shutdown message then closes each WebSocket with code
+        1001 (Going Away) so clients suppress auto-reconnect before uvicorn
+        stops. The 0.1s sleep gives close frames time to flush.
+        """
+        if not self.active_connections:
+            return
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_bytes(msgpack.packb({"type": "server_shutdown"}))
+                await connection.close(code=1001)
+            except Exception:
+                pass
+        await asyncio.sleep(0.1)
+
     async def broadcast_reload(self) -> None:
         """Broadcast reload to all clients, preserving state where possible.
 

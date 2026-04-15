@@ -486,6 +486,13 @@ export class PyWireApp {
         }
         break
 
+      case 'server_shutdown':
+        logger.log('PyWire: Server is shutting down.')
+        this.intentionalDisconnect = true
+        this.reconnectOverlay.hide()
+        this.transport.disconnect()
+        break
+
       default:
         logger.warn('PyWire: Unknown message type', msg)
     }

@@ -224,7 +224,9 @@ cli.add_command(config_command)
 @cli.command()
 @click.argument("app", required=False)
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=None, type=int, help="Port to bind to (default: 3000 or config)")
+@click.option(
+    "--port", default=None, type=int, help="Port to bind to (default: 3000 or config)"
+)
 @click.option("--ssl-keyfile", default=None, help="SSL key file")
 @click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.option("--env-file", default=None, help="Environment configuration file")

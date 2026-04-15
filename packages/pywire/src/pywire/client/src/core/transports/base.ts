@@ -55,6 +55,7 @@ export interface ServerMessage {
     | 'navigate'
     | 'init_ack'
     | 'ping'
+    | 'server_shutdown'
   html?: string
   regions?: Array<{ region: string; html: string }>
   error?: string

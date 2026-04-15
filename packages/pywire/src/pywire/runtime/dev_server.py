@@ -155,8 +155,19 @@ async def run_dev_server(
     # Create shutdown event
     shutdown_event = asyncio.Event()
 
+    class _SuppressCancelledOnShutdown(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if shutdown_event.is_set() and record.exc_info:
+                if isinstance(record.exc_info[1], asyncio.CancelledError):
+                    return False
+            return True
+
+    _shutdown_filter = _SuppressCancelledOnShutdown()
+    for _logger_name in ("uvicorn.error", "uvicorn", "asyncio"):
+        logging.getLogger(_logger_name).addFilter(_shutdown_filter)
+
     async def _handle_signal() -> None:
-        console.print("\n[bold]PyWire: Shutting down...[/]")
+        console.print("[bold]PyWire: Shutting down...[/]")
         shutdown_event.set()
 
     # Register signal handlers
@@ -420,8 +431,20 @@ async def run_dev_server(
 
             async def stop_uvicorn() -> None:
                 await shutdown_event.wait()
+                # Send shutdown signal to all connected clients so they close
+                # their WebSocket connections before uvicorn tries to stop.
+                if hasattr(pywire_app, "ws_handler"):
+                    await pywire_app.ws_handler.broadcast_shutdown()
                 server.should_exit = True
-                server.force_exit = True  # skip waiting for open browser connections
+                # Watchdog: last-resort force-exit if something stalls (0.5s —
+                # connections should already be drained by broadcast_shutdown)
+                import os
+                import threading
+                import time
+
+                threading.Thread(
+                    target=lambda: (time.sleep(0.5), os._exit(0)), daemon=True
+                ).start()
 
             protocol = "https" if cert_path else "http"
             display_host = "localhost" if host == "127.0.0.1" else host
