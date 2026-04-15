@@ -18,6 +18,7 @@ def mock_app() -> MagicMock:
     app.state = MagicMock()
     app.state.webtransport_cert_hash = None
     app.state.enable_pjax = False
+    app.state.interactive_server_mode = True
     return app
 
 

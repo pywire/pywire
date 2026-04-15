@@ -31,7 +31,7 @@ class MockPage(BasePage):
 class TestWebSocketExhaustive:
     def setup_method(self) -> None:
         # Use spec=object so it doesn't have every attribute
-        self.app = MagicMock(spec=["router", "get_user"])
+        self.app = MagicMock(spec=["router", "get_user", "_get_dispatch_target"])
         self.handler = WebSocketHandler(self.app)
 
     def create_mock_ws(self) -> AsyncMock:
@@ -98,11 +98,31 @@ class TestWebSocketExhaustive:
         ws = self.create_mock_ws()
         ws.scope = {"type": "websocket", "path": "/ws"}
 
-        self.app.router.match.return_value = (MockPage, {}, "main")
+        # Mock internal dispatch to return a successful response
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.body = b"<html></html>"
+        mock_response.raw_headers = []
+
+        # Mock resolve_page to return a new page instance
+        new_page = MockPage(MagicMock(), {}, {})
+
+        self.app._get_dispatch_target.return_value = MagicMock()
 
         data = {"path": "/about"}
 
-        await self.handler._handle_relocate(ws, data)
+        with (
+            patch(
+                "pywire.runtime.internal_request.dispatch_internal",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "pywire.runtime.page_resolver.resolve_page",
+                return_value=(new_page, {}, "main"),
+            ),
+        ):
+            await self.handler._handle_relocate(ws, data)
 
         assert ws in self.handler.connection_pages
         page = self.handler.connection_pages[ws]
@@ -154,9 +174,33 @@ class TestWebSocketExhaustive:
         ws.scope = {"type": "websocket", "path": "/"}
         old_page = MockPage(MagicMock(), {}, {})
         self.handler.connection_pages[ws] = old_page
-        self.app.router.match.return_value = (MockPage, {"id": "2"}, "main")
+
+        # Mock internal dispatch to return a successful response
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.body = b"<html></html>"
+        mock_response.raw_headers = []
+
+        # Mock resolve_page to return a new page instance with params
+        new_page_instance = MockPage(MagicMock(), {"id": "2"}, {})
+
+        self.app._get_dispatch_target.return_value = MagicMock()
+
         data = {"path": "/item/2"}
-        await self.handler._handle_relocate(ws, data)
+
+        with (
+            patch(
+                "pywire.runtime.internal_request.dispatch_internal",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "pywire.runtime.page_resolver.resolve_page",
+                return_value=(new_page_instance, {"id": "2"}, "main"),
+            ),
+        ):
+            await self.handler._handle_relocate(ws, data)
+
         new_page = self.handler.connection_pages[ws]
         assert new_page != old_page
         assert new_page.params == {"id": "2"}

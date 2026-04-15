@@ -174,6 +174,7 @@ class TestAppExhaustive:
             request = AsyncMock(spec=Request)
             request.method = "GET"
             request.url.path = "/test"
+            request.scope = {"type": "http"}
             request.app.state.webtransport_cert_hash = [1]
             request.query_params = {}
 
@@ -298,6 +299,7 @@ class TestAppExhaustive:
         request = AsyncMock(spec=Request)
         request.method = method
         request.url.path = path
+        request.scope = {"type": "http"}
         request.headers = headers or {}
         request.json.return_value = json_data or {}
         request.query_params = {}
@@ -344,6 +346,7 @@ class TestAppExhaustive:
             request = AsyncMock(spec=Request)
             request.method = "GET"
             request.url.path = "/test"
+            request.scope = {"type": "http"}
             request.app.state.webtransport_cert_hash = [10, 20]
             request.query_params = {}
 

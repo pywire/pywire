@@ -336,6 +336,8 @@ class PyWire:
         ]
 
         if self.interactive_server_mode:
+            assert self.ws_handler is not None
+            assert self.http_handler is not None
             # WebSocket transport
             routes.append(WebSocketRoute("/_pywire/ws", self.ws_handler.handle))
             # HTTP long-poll transport endpoints

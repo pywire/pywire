@@ -502,7 +502,7 @@ class WebSocketHandler:
 
             # 5. Success (200) — send body HTML and set up local page instance
             html = response.body.decode("utf-8")
-            payload = {"type": "update", "html": html}
+            payload: Dict[str, Any] = {"type": "update", "html": html}
             if cookie_commands:
                 payload["commands"] = cookie_commands
             await websocket.send_bytes(msgpack.packb(payload))

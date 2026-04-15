@@ -43,6 +43,7 @@ def my_init(self):
         request = MagicMock()
         # Mock app state
         request.app.state.enable_pjax = False
+        request.app.state.interactive_server_mode = True
         request.app.state.wire._get_client_script_url.return_value = "/static/pywire.js"
 
         page = page_class(request, {}, {})

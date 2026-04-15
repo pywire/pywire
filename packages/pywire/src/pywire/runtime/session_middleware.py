@@ -101,6 +101,7 @@ class SessionMiddleware:
 
         # Wrap send to inject Set-Cookie header for new sessions
         if is_new_session:
+            assert session_id is not None
             send = self._wrap_send(send, session_id)
 
         await self.app(scope, receive, send)
