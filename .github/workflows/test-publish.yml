@@ -1,0 +1,195 @@
+name: Test Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      pywire:
+        description: "Publish pywire"
+        type: boolean
+        default: false
+      pywire-parser:
+        description: "Publish pywire-parser"
+        type: boolean
+        default: false
+      pywire-language-server:
+        description: "Publish pywire-language-server"
+        type: boolean
+        default: false
+      tree-sitter-pywire:
+        description: "Publish tree-sitter-pywire"
+        type: boolean
+        default: false
+      create-pywire-app:
+        description: "Publish create-pywire-app"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Build pywire (pure Python wheel + sdist)
+  build-pywire:
+    name: "Build pywire"
+    if: inputs.pywire
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append dev version suffix
+        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
+        working-directory: packages/pywire
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Build JS client
+        run: pnpm install && pnpm build
+        working-directory: packages/pywire/src/pywire/client
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pywire-dist
+          path: packages/pywire/dist/*
+
+  # Publish pywire to Test PyPI
+  publish-pywire:
+    name: "Publish pywire to Test PyPI"
+    needs: build-pywire
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pywire-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  # Build tree-sitter-pywire wheels (C extension, cross-platform)
+  build-tree-sitter-pywire:
+    name: "Build tree-sitter-pywire wheels"
+    if: inputs.tree-sitter-pywire
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append dev version suffix
+        shell: python
+        run: |
+          import re, pathlib
+          p = pathlib.Path("packages/tree-sitter-pywire/pyproject.toml")
+          p.write_text(re.sub(r'(?m)^version = "(.*)"', r'version = "\1.dev${{ github.run_number }}"', p.read_text()))
+      - uses: pypa/cibuildwheel@v2.23
+        with:
+          package-dir: packages/tree-sitter-pywire
+        env:
+          CIBW_BUILD: "cp310-*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tree-sitter-pywire-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  # Build tree-sitter-pywire sdist
+  build-tree-sitter-pywire-sdist:
+    name: "Build tree-sitter-pywire sdist"
+    if: inputs.tree-sitter-pywire
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append dev version suffix
+        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
+        working-directory: packages/tree-sitter-pywire
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --sdist --out-dir dist
+        working-directory: packages/tree-sitter-pywire
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tree-sitter-pywire-sdist
+          path: packages/tree-sitter-pywire/dist/*.tar.gz
+
+  # Publish tree-sitter-pywire to Test PyPI
+  publish-tree-sitter-pywire:
+    name: "Publish tree-sitter-pywire to Test PyPI"
+    needs: [build-tree-sitter-pywire, build-tree-sitter-pywire-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tree-sitter-pywire-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  # Publish pywire-parser to Test PyPI
+  publish-pywire-parser:
+    name: "Publish pywire-parser to Test PyPI"
+    if: inputs.pywire-parser
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append dev version suffix
+        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
+        working-directory: packages/pywire-parser
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-parser
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: packages/pywire-parser/dist/
+
+  # Publish pywire-language-server to Test PyPI
+  publish-language-server:
+    name: "Publish pywire-language-server to Test PyPI"
+    if: inputs.pywire-language-server
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append dev version suffix
+        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
+        working-directory: packages/pywire-language-server
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-language-server
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: packages/pywire-language-server/dist/
+
+  # Publish create-pywire-app to Test PyPI
+  publish-create-app:
+    name: "Publish create-pywire-app to Test PyPI"
+    if: inputs.create-pywire-app
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append dev version suffix
+        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
+        working-directory: packages/create-pywire-app
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/create-pywire-app
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: packages/create-pywire-app/dist/
