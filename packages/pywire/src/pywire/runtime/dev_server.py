@@ -375,7 +375,7 @@ async def run_dev_server(
 
                 display_host = "localhost" if host == "127.0.0.1" else host
                 console.print(
-                    f"[bold cyan]PyWire[/]: Running on [bold cyan]https://{display_host}:{port}[/] (HTTP/3 + WebSocket)"
+                    f"🚀 [bold cyan]PyWire[/]: Running on [link=https://{display_host}:{port}][bold cyan]https://{display_host}:{port}[/][/link] (HTTP/3 + WebSocket)"
                 )
 
                 # Serve the starlette app wrapped in PyWire
@@ -421,10 +421,12 @@ async def run_dev_server(
             async def stop_uvicorn() -> None:
                 await shutdown_event.wait()
                 server.should_exit = True
+                server.force_exit = True  # skip waiting for open browser connections
 
             protocol = "https" if cert_path else "http"
+            display_host = "localhost" if host == "127.0.0.1" else host
             console.print(
-                f"[bold cyan]PyWire[/]: Running on [bold cyan]{protocol}://{host}:{port}[/]"
+                f"🚀 [bold cyan]PyWire[/]: Running on [link={protocol}://{display_host}:{port}][bold cyan]{protocol}://{display_host}:{port}[/][/link]"
             )
             tg.create_task(server.serve())
             tg.create_task(stop_uvicorn())
