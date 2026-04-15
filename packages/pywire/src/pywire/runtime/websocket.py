@@ -33,6 +33,8 @@ class WebSocketHandler:
         self._ping_tasks: Dict[WebSocket, asyncio.Task[None]] = {}
         # Track pending pong events per connection
         self._pong_events: Dict[WebSocket, asyncio.Event] = {}
+        # Virtual cookie jar — tracks cookies set during WS session
+        self._connection_cookies: Dict[WebSocket, Dict[str, str]] = {}
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
@@ -87,6 +89,7 @@ class WebSocketHandler:
         self.connection_pages.pop(websocket, None)
         # Keep session in store (TTL handles cleanup) — enables reconnect
         self.session_ids.pop(websocket, None)
+        self._connection_cookies.pop(websocket, None)
 
     async def _ping_loop(self, websocket: WebSocket) -> None:
         """Send periodic pings and close the connection if pong is not received."""
@@ -235,6 +238,12 @@ class WebSocketHandler:
         from pywire.runtime.protocol import build_update_payload
 
         payload = build_update_payload(update)
+
+        # Keep virtual cookie jar in sync with cookie commands sent to client
+        commands = payload.get("commands", [])
+        if commands:
+            self._update_cookie_jar_from_commands(websocket, commands)
+
         await websocket.send_bytes(msgpack.packb(payload))
 
     async def _handle_init(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
@@ -431,9 +440,17 @@ class WebSocketHandler:
     async def _handle_relocate(
         self, websocket: WebSocket, data: Dict[str, Any]
     ) -> None:
-        """Handle SPA navigation between sibling paths."""
+        """Handle SPA navigation via internal ASGI request replay.
 
-        # Define callback for log streaming
+        Instead of directly instantiating the target page, dispatches an
+        internal HTTP request through the full ASGI middleware stack. This
+        ensures auth, rate limiting, CORS, and other middleware apply to
+        SPA navigations just as they do to regular HTTP requests.
+
+        After the internal dispatch, a local page instance is still created
+        for ongoing WebSocket state management (event handling, refs, etc.).
+        """
+
         # Define callback for log streaming
         async def send_log(msg: str, level: str = "info") -> None:
             if msg and msg.strip():
@@ -444,168 +461,223 @@ class WebSocketHandler:
         try:
             path = data.get("path", "/")
 
+            from pywire.runtime.internal_request import dispatch_internal
             from pywire.runtime.page_resolver import resolve_page
 
-            # Get existing page instance
-            page = self.connection_pages.get(websocket)
-            if not page:
-                # No page instance yet — create one for this path
-                result = resolve_page(
-                    self.app.router, path, base_scope=dict(websocket.scope)
-                )
-                if not result:
-                    print(f"Relocate: No route found for path: {path}")
-                    await websocket.send_bytes(msgpack.packb({"type": "reload"}))
-                    return
+            # 1. Build merged cookies and headers for internal dispatch
+            cookies = self._get_merged_cookies(websocket)
+            headers = self._build_internal_headers(websocket, cookies)
 
-                page, _params, _variant_name = result
+            # 2. Dispatch through the full ASGI middleware stack
+            dispatch_target = self.app._get_dispatch_target()
+            response = await dispatch_internal(
+                dispatch_target,
+                path=path,
+                headers=headers,
+                base_scope=dict(websocket.scope),
+            )
 
-                if hasattr(self.app, "get_user"):
-                    page.user = self.app.get_user(websocket)
+            # 3. Sync cookies from the internal response
+            cookie_commands = self._sync_cookies_from_response(
+                websocket, response.raw_headers
+            )
 
-                self.connection_pages[websocket] = page
-
-                # Set update hook
-                async def broadcast_update() -> None:
-                    update = await page.render_update(init=False)
-                    await self._send_update_payload(websocket, update)
-
-                page._on_update = broadcast_update
-
-                # Render and send body-only HTML (init=False avoids re-injecting client scripts)
-                response = await page.render(init=False)
-                html = cast(bytes, response.body).decode("utf-8")
+            # 4. Handle response based on status code
+            if 300 <= response.status < 400:
+                # Redirect — tell client to navigate to the new location
+                location = response.headers.get("location", "/")
                 await websocket.send_bytes(
-                    msgpack.packb({"type": "update", "html": html})
+                    msgpack.packb({"type": "navigate", "path": location})
                 )
-
-                await page._run_hooks(page.MOUNT_HOOKS)
                 return
 
-            # Navigate to new path — try direct match, then 404 fallbacks
-            from urllib.parse import urlparse
+            if response.status >= 400:
+                # Error response — send the error page HTML
+                html = response.body.decode("utf-8")
+                payload: Dict[str, Any] = {"type": "update", "html": html}
+                if cookie_commands:
+                    payload["commands"] = cookie_commands
+                await websocket.send_bytes(msgpack.packb(payload))
+                return
 
-            pathname = urlparse(path).path
+            # 5. Success (200) — send body HTML and set up local page instance
+            html = response.body.decode("utf-8")
+            payload = {"type": "update", "html": html}
+            if cookie_commands:
+                payload["commands"] = cookie_commands
+            await websocket.send_bytes(msgpack.packb(payload))
+
+            # 6. Create local page instance for WS state management
+            #    (The internal dispatch already rendered the page — this instance
+            #    is for handling subsequent events on the new page.)
+            old_page = self.connection_pages.get(websocket)
 
             result = resolve_page(
                 self.app.router, path, base_scope=dict(websocket.scope)
             )
-            if not result:
-                # Try custom 404 route, then /__error__, then generic ErrorPage
-                for fallback_path in ("/404", "/__error__"):
-                    result = resolve_page(
-                        self.app.router,
-                        fallback_path,
-                        base_scope=dict(websocket.scope),
-                    )
-                    if result:
-                        print(
-                            f"Relocate: Route not found for {pathname}, "
-                            f"serving {fallback_path}"
-                        )
-                        break
+            if result:
+                new_page, _params, _variant_name = result
 
-                if not result:
-                    print(
-                        f"Relocate: Route not found for {pathname}, serving generic 404"
-                    )
-                    from pywire.runtime.error_page import ErrorPage
+                # Migrate persistent user state from old page
+                if old_page:
+                    new_page.user = getattr(old_page, "user", None)
+                elif hasattr(self.app, "get_user"):
+                    new_page.user = self.app.get_user(websocket)
 
-                    class BoundErrorPage(ErrorPage):
-                        def __init__(
-                            self, request: Any, *args: Any, **kwargs: Any
-                        ) -> None:
-                            super().__init__(
-                                request,
-                                "404 Not Found",
-                                f"The path '{pathname}' could not be found.",
-                            )
+                # Replace page instance for this connection
+                self.connection_pages[websocket] = new_page
 
-                    result = resolve_page(
-                        self.app.router, "/", base_scope=dict(websocket.scope)
-                    )
-                    # Use the bound error page with a synthetic request
-                    from starlette.requests import Request
+                # Set update hook for async state changes
+                async def broadcast_update() -> None:
+                    update = await new_page.render_update(init=False)
+                    await self._send_update_payload(websocket, update)
 
-                    scope = dict(websocket.scope)
-                    scope["type"] = "http"
-                    scope["path"] = pathname
-                    new_page = BoundErrorPage(Request(scope))
-                    new_page.error_code = 404
-                    new_page.user = getattr(page, "user", None)
-                    self.connection_pages[websocket] = new_page
+                new_page._on_update = broadcast_update
 
-                    async def broadcast_update_err() -> None:
-                        update = await new_page.render_update(init=False)
-                        await self._send_update_payload(websocket, update)
-
-                    new_page._on_update = broadcast_update_err
-
-                    try:
-                        response = await new_page.render(init=False)
-                        html = cast(bytes, response.body).decode("utf-8")
-                        await websocket.send_bytes(
-                            msgpack.packb({"type": "update", "html": html})
-                        )
-                        await new_page._run_hooks(new_page.MOUNT_HOOKS)
-                    except Exception:
-                        await websocket.send_bytes(msgpack.packb({"type": "reload"}))
-                    return
-
-            new_page, _params, _variant_name = result
-
-            # If this is a 404 fallback, inject error code
-            if not self.app.router.match(pathname):
-                new_page.error_code = 404
-
-            # Migrate persistent user state
-            new_page.user = getattr(page, "user", None)
-
-            # Replace page instance
-            self.connection_pages[websocket] = new_page
-
-            # Set update hook
-            async def broadcast_update() -> None:
-                update = await new_page.render_update(init=False)
-                await self._send_update_payload(websocket, update)
-
-            new_page._on_update = broadcast_update
-
-            try:
-                # Render and send body-only HTML (init=False avoids re-injecting client scripts)
-                response = await new_page.render(init=False)
-                html = cast(bytes, response.body).decode("utf-8")
-
-                # Check for pending navigation
-                if new_page._pending_navigation:
-                    await websocket.send_bytes(
-                        msgpack.packb(
-                            {"type": "navigate", "path": new_page._pending_navigation}
-                        )
-                    )
-                    new_page._pending_navigation = None
-                    return
-
-                await websocket.send_bytes(
-                    msgpack.packb({"type": "update", "html": html})
-                )
-
-                # Run @mount hooks after first render delivered to client
+                # Run @mount hooks
                 await new_page._run_hooks(new_page.MOUNT_HOOKS)
 
-                # Persist session state after navigation
+                # Persist session state
                 session_id = self.session_ids.get(websocket)
                 if session_id:
                     self._persist_session(session_id, new_page)
-            except Exception:
-                raise
+
         except Exception as e:
-            # If relocation fails (e.g. 500 error), force a full reload
-            # This ensures the browser hits the server and gets the proper error page (or 500 page)
+            # If relocation fails, force a full reload so the browser
+            # hits the server and gets the proper error page
             print(f"Error handling relocate: {e}", file=sys.stderr)
             await websocket.send_bytes(msgpack.packb({"type": "reload"}))
         finally:
             log_callback_ctx.reset(token)
+
+    # ------------------------------------------------------------------
+    # Cookie helpers for internal ASGI replay
+    # ------------------------------------------------------------------
+
+    def _get_handshake_cookies(self, websocket: WebSocket) -> dict[str, str]:
+        """Parse cookies from the original WebSocket handshake."""
+        from pywire.runtime.internal_request import parse_cookie_header
+
+        for name, value in websocket.scope.get("headers", []):
+            if name == b"cookie":
+                return parse_cookie_header(value.decode("latin-1"))
+        return {}
+
+    def _get_merged_cookies(self, websocket: WebSocket) -> dict[str, str]:
+        """Merge handshake cookies with any cookies set during the WS session."""
+        baseline = self._get_handshake_cookies(websocket)
+        virtual = self._connection_cookies.get(websocket, {})
+        return {**baseline, **virtual}
+
+    def _build_internal_headers(
+        self, websocket: WebSocket, cookies: dict[str, str]
+    ) -> dict[str, str]:
+        """Build HTTP headers for an internal request from WS handshake scope."""
+        from pywire.runtime.internal_request import encode_cookie_header
+
+        headers: dict[str, str] = {}
+
+        # Copy relevant headers from the WS handshake
+        for name_bytes, value_bytes in websocket.scope.get("headers", []):
+            name = name_bytes.decode("latin-1").lower()
+            # Skip headers that don't apply to internal HTTP requests
+            if name in (
+                "connection",
+                "upgrade",
+                "sec-websocket-key",
+                "sec-websocket-version",
+                "sec-websocket-extensions",
+                "sec-websocket-protocol",
+                "cookie",  # replaced with merged cookies below
+            ):
+                continue
+            headers[name] = value_bytes.decode("latin-1")
+
+        # Set merged cookies
+        if cookies:
+            headers["cookie"] = encode_cookie_header(cookies)
+
+        # Mark as internal relocate request
+        headers["x-pywire-internal"] = "relocate"
+
+        return headers
+
+    def _sync_cookies_from_response(
+        self,
+        websocket: WebSocket,
+        raw_headers: list[tuple[bytes, bytes]],
+    ) -> list[dict[str, Any]]:
+        """Update virtual cookie jar and build WS cookie commands from response.
+
+        Returns list of cookie commands to send to the client.
+        """
+        from pywire.runtime.internal_request import (
+            get_set_cookie_headers,
+            parse_set_cookie_value,
+        )
+
+        commands: list[dict[str, Any]] = []
+        virtual = self._connection_cookies.setdefault(websocket, {})
+
+        for _name, value in get_set_cookie_headers(raw_headers):
+            parsed = parse_set_cookie_value(value.decode("latin-1"))
+            if not parsed:
+                continue
+
+            key = parsed["key"]
+            max_age = parsed.get("max_age")
+
+            # Check if this is a deletion (max-age=0 or negative)
+            if max_age is not None and max_age <= 0:
+                virtual.pop(key, None)
+                commands.append(
+                    {
+                        "cmd": "delete_cookie",
+                        "refId": "__page__",
+                        "args": {
+                            "key": key,
+                            "path": parsed.get("path", "/"),
+                        },
+                    }
+                )
+            else:
+                virtual[key] = parsed["value"]
+                args: dict[str, Any] = {
+                    "key": key,
+                    "value": parsed["value"],
+                }
+                if "path" in parsed:
+                    args["path"] = parsed["path"]
+                if "max_age" in parsed:
+                    args["max_age"] = parsed["max_age"]
+                if parsed.get("secure"):
+                    args["secure"] = True
+                if parsed.get("samesite"):
+                    args["samesite"] = parsed["samesite"]
+                commands.append(
+                    {
+                        "cmd": "set_cookie",
+                        "refId": "__page__",
+                        "args": args,
+                    }
+                )
+
+        return commands
+
+    def _update_cookie_jar_from_commands(
+        self, websocket: WebSocket, cookie_commands: list[dict[str, Any]]
+    ) -> None:
+        """Update virtual cookie jar when page sets cookies via WS commands."""
+        virtual = self._connection_cookies.setdefault(websocket, {})
+        for cmd in cookie_commands:
+            if cmd.get("cmd") == "set_cookie":
+                args = cmd.get("args", {})
+                if "key" in args and "value" in args:
+                    virtual[args["key"]] = args["value"]
+            elif cmd.get("cmd") == "delete_cookie":
+                args = cmd.get("args", {})
+                if "key" in args:
+                    virtual.pop(args["key"], None)
 
     def _persist_session(self, session_id: str, page: BasePage) -> None:
         """Schedule non-blocking session persistence."""

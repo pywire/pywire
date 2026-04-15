@@ -462,6 +462,15 @@ class PyWire:
                 else:
                     self.app.add_middleware(mw)
 
+        # Internal dispatch target — set by as_asgi() when mounted in
+        # a host framework (e.g. FastAPI). When None, internal requests
+        # dispatch through self.app (the Starlette instance).
+        self._root_app: Optional[Any] = None
+
+    def _get_dispatch_target(self) -> Any:
+        """Return the ASGI app for internal request dispatch."""
+        return self._root_app or self.app
+
     def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
         """Add ASGI middleware to the application.
 
@@ -1219,9 +1228,15 @@ class PyWire:
         return PlainTextResponse("Internal Server Error", status_code=500)
 
     async def _handle_request(self, request: Request) -> Response:
-        """Handle HTTP request."""
-        # Check for uploads first
-        # (This was handled in Route declarations, but uploads go to /_pywire/upload)
+        """Handle HTTP request.
+
+        Also serves internal ASGI replay requests from the WebSocket handler
+        when ``X-PyWire-Internal: relocate`` is present. In that case, renders
+        body-only HTML (init=False) to avoid re-injecting client scripts.
+        """
+        is_internal_relocate = (
+            request.headers.get("x-pywire-internal") == "relocate"
+        )
 
         path = request.url.path
         match = self.router.match(path)
@@ -1261,7 +1276,9 @@ class PyWire:
                     )
                     # Inject error code
                     page.error_code = 404
-                    response = await page.render()
+                    response = await page.render(
+                        init=not is_internal_relocate
+                    )
                     response.status_code = 404
                     return response
                 except Exception as e:
@@ -1275,7 +1292,7 @@ class PyWire:
             page = ErrorPage(
                 request, "404 Not Found", f"The path '{path}' could not be found."
             )
-            response = await page.render()
+            response = await page.render(init=not is_internal_relocate)
             response.status_code = 404
             return response
 
@@ -1317,6 +1334,9 @@ class PyWire:
                 response = cast(Response, update)
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
+        elif is_internal_relocate:
+            # Internal ASGI replay from WS handler — body-only, no client scripts
+            response = await page.render(init=False)
         else:
             # Normal render
             response = await page.render()

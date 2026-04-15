@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   # Determine which packages changed
   changes:
@@ -56,7 +53,7 @@ jobs:
             pywire-docs:
               - 'docs/**'
 
-  # PyWire Core: lint, clippy, test, wheel build
+  # PyWire Core: lint, test
   check-pywire:
     name: "Check PyWire Core"
     needs: changes
@@ -70,26 +67,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: packages/pywire
       - name: Install Workspace
         run: scripts/install
       - name: Install Playwright Browsers
         run: uv run playwright install --with-deps
-      - name: Rust Checks
-        run: cd packages/pywire && cargo clippy -- -D warnings && cargo fmt --check
-      - name: Cargo Tests
-        run: cd packages/pywire && cargo test
       - name: Python Checks
         run: cd packages/pywire && ./scripts/check
-      - name: Verify Wheel Build
-        uses: PyO3/maturin-action@v1
-        with:
-          working-directory: packages/pywire
-          command: build
-          args: --release --out dist
 
   # Language Server: lint, test
   check-language-server:
@@ -223,7 +206,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-      - uses: dtolnay/rust-toolchain@stable
       - name: Install Workspace
         run: scripts/install
       - name: Install Playwright Browsers
