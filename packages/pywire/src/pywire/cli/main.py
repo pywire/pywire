@@ -224,7 +224,7 @@ cli.add_command(config_command)
 @cli.command()
 @click.argument("app", required=False)
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=3000, type=int, help="Port to bind to")
+@click.option("--port", default=None, type=int, help="Port to bind to (default: 3000 or config)")
 @click.option("--ssl-keyfile", default=None, help="SSL key file")
 @click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.option("--env-file", default=None, help="Environment configuration file")
@@ -232,7 +232,7 @@ cli.add_command(config_command)
 def dev(
     app: Optional[str],
     host: str,
-    port: int,
+    port: Optional[int],
     ssl_keyfile: Optional[str],
     ssl_certfile: Optional[str],
     env_file: Optional[str],
@@ -250,6 +250,12 @@ def dev(
         use_tui = saved if isinstance(saved, bool) else False
     else:
         use_tui = tui
+
+    # Resolve port: CLI flag > settings.toml > default (3000)
+    if port is None:
+        saved_port = get_setting("port")
+        port = int(saved_port) if saved_port is not None else 3000
+    assert port is not None
 
     if not app:
         app = _discover_app_str()
@@ -269,12 +275,6 @@ def dev(
         )
 
     if not use_tui:
-        console.print(
-            f"🚀 Starting pywire dev server on [link=http://{host}:{port}]http://{host}:{port}[/link]"
-        )
-        if ssl_certfile:
-            console.print("🔒 SSL enabled")
-
         asyncio.run(
             run_dev_server(
                 app_str=app,  # Pass string for reloadability hooks if needed

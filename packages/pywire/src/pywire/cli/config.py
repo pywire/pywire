@@ -30,6 +30,10 @@ VALID_SETTINGS: dict[str, dict[str, Any]] = {
         "off_values": {"off", "false", "0", "no"},
         "description": "Enable TUI dashboard for dev server",
     },
+    "port": {
+        "type": "int",
+        "description": "Default port for dev server (default: 3000)",
+    },
 }
 
 
@@ -123,6 +127,14 @@ def config_command(key: Optional[str], value: Optional[str]) -> None:
     meta = VALID_SETTINGS[key]
     if meta["type"] == "bool":
         parsed = _parse_bool_value(key, value)
+    elif meta["type"] == "int":
+        try:
+            parsed = int(value)
+        except ValueError:
+            raise click.BadParameter(
+                f"Invalid value '{value}' for '{key}'. Must be an integer.",
+                param_hint="VALUE",
+            )
     else:
         parsed = value
 
