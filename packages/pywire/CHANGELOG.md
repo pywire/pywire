@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/pywire/pywire/compare/pywire-v0.6.0...pywire-v0.7.0) (2026-04-15)
+
+
+### Features
+
+* **pywire:** improve deploy CLI platform UX ([2aa64ec](https://github.com/pywire/pywire/commit/2aa64ec9b33260495fd073d709ad6ba70b01a399))
+
+
+### Bug Fixes
+
+* **pywire:** defer heavy imports in CF Workers templates to avoid startup CPU limit ([2dd41df](https://github.com/pywire/pywire/commit/2dd41df0331e2c368ece41dd174bbcfb49972944))
+* **pywire:** suppress debug logs by default ([4aeffed](https://github.com/pywire/pywire/commit/4aeffed55fa7e2b2c81911a0b8010534276d74fa))
+
 ## [0.6.0](https://github.com/pywire/pywire/compare/pywire-v0.5.0...pywire-v0.6.0) (2026-04-15)
 
 
