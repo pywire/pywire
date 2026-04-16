@@ -802,15 +802,19 @@ class PyWire:
         This provides the default "Reconnecting..." / "Connection lost" overlay.
         It can be overridden by a user's ``__reconnect__.wire`` in their pages dir.
         """
+        import importlib.resources
         import re
 
-        default_path = (
-            Path(__file__).parent.parent / "templates" / "reconnect" / "default.html"
-        )
         try:
-            content = default_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            logger.warning("Built-in reconnect template not found at %s", default_path)
+            content = (
+                importlib.resources.files("pywire")
+                .joinpath("templates")
+                .joinpath("reconnect")
+                .joinpath("default.html")
+                .read_text(encoding="utf-8")
+            )
+        except Exception:
+            logger.warning("Built-in reconnect template not found in package data")
             return
 
         # Extract <style>...</style> blocks
