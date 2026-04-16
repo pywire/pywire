@@ -154,7 +154,7 @@ class TestBroadcastReloadOrdering(unittest.TestCase):
         mock_app.router.match.return_value = (new_page_class, {}, None)
         handler.app = mock_app
 
-        asyncio.get_event_loop().run_until_complete(handler.broadcast_reload())
+        asyncio.run(handler.broadcast_reload())
 
         # send_bytes should have been called while old page was still active
         self.assertEqual(send_order, ["old"])
@@ -193,7 +193,7 @@ class TestBroadcastReloadOrdering(unittest.TestCase):
         mock_app.router.match.return_value = (new_page_class, {}, None)
         handler.app = mock_app
 
-        asyncio.get_event_loop().run_until_complete(handler.broadcast_reload())
+        asyncio.run(handler.broadcast_reload())
 
         # Old page should be restored after failure
         self.assertIs(handler.connection_pages[mock_ws], old_page)
