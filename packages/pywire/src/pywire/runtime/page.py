@@ -483,16 +483,15 @@ class BasePage:
 
         handler = getattr(self, event_name, None)
         if not handler:
-            if event_name.startswith("_handler_"):
-                # Stale framework-generated handler from pre-reload DOM.
-                # Silently ignore — the client will receive updated HTML
-                # with the correct handler names momentarily.
-                logger.debug(
-                    "Ignoring stale handler '%s' (likely from hot reload)",
-                    event_name,
-                )
-                return
-            raise ValueError(f"Handler {event_name} not found")
+            # Handler not found — likely a stale reference from pre-reload
+            # DOM (client hasn't applied morphdom update yet).  Silently
+            # ignore; the client will receive updated HTML with the correct
+            # handler names momentarily.
+            logger.debug(
+                "Ignoring missing handler '%s' (likely stale from hot reload)",
+                event_name,
+            )
+            return
 
         if event_name.startswith("_handle_bind_"):
             if inspect.iscoroutinefunction(handler):

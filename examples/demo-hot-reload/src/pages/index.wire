@@ -1,0 +1,13 @@
+---
+count = wire(0)
+
+def increment():
+    print(f"Test: {count.value}")
+    count.value += 1
+
+---
+<div>
+    <h1>Counter</h1>
+    <p>Count is: {count.value}</p>
+    <button @click={increment}>Increment</button>
+</div>

@@ -676,7 +676,10 @@ class WebSocketHandler:
                         )
 
                         # Migrate user state: copy all non-framework attributes
-                        # Framework attrs to skip
+                        # Framework attrs to skip — slots/head_slots contain
+                        # bound methods referencing the old page instance; the
+                        # new page already has correct slot registrations from
+                        # __init__ → _init_slots().
                         skip_attrs = {
                             "request",
                             "params",
@@ -686,6 +689,9 @@ class WebSocketHandler:
                             "user",
                             "errors",
                             "loading",
+                            "slots",
+                            "head_slots",
+                            "attrs",
                         }
                         for attr, value in old_page.__dict__.items():
                             if attr not in skip_attrs and not attr.startswith("_"):

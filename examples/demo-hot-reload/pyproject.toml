@@ -1,0 +1,10 @@
+[project]
+name = "demo-hot-reload"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pywire[cli]",
+]
+
+[tool.uv.sources]
+pywire = { path = "../../packages/pywire", editable = true }
