@@ -773,8 +773,8 @@ class BasePage:
                 # Check interactive server mode
                 interactive_mode = True
                 try:
-                    interactive_mode = getattr(
-                        self.request.app.state, "interactive_server_mode", True
+                    interactive_mode = bool(
+                        getattr(self.request.app.state, "interactive_server_mode", True)
                     )
                 except (AttributeError, KeyError):
                     pass

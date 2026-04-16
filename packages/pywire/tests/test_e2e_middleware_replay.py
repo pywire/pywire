@@ -148,7 +148,9 @@ class TestAuthMiddlewareReplay:
 
     def test_http_allowed_with_auth(self):
         """Baseline: HTTP GET with auth cookie → 200."""
-        response = self.client.get("/", cookies={"auth_token": "valid"})
+        self.client.cookies.set("auth_token", "valid")
+        response = self.client.get("/")
+        self.client.cookies.clear()
         assert response.status_code == 200
         assert "Home" in response.text
 

@@ -351,9 +351,9 @@ class TestAuthMiddlewareWithInternalDispatch:
 
     def test_http_allows_with_auth(self):
         """Regular HTTP request with auth cookie succeeds."""
-        response = self.client.get(
-            "/", cookies={"auth_token": "valid"}, follow_redirects=False
-        )
+        self.client.cookies.set("auth_token", "valid")
+        response = self.client.get("/", follow_redirects=False)
+        self.client.cookies.clear()
         assert response.status_code == 200
 
     @pytest.mark.asyncio

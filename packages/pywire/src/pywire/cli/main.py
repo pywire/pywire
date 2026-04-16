@@ -261,8 +261,6 @@ def dev(
 
     if not app:
         app = _discover_app_str()
-        if not use_tui:
-            console.print(f"🔍 Auto-discovered app: [cyan]{app}[/]")
 
     # Verify import
     import_app(app)
@@ -270,11 +268,6 @@ def dev(
     # Find available port
     original_port = port
     port = _find_available_port(host, port)
-
-    if port != original_port and not use_tui:
-        console.print(
-            f"⚠️  Port {original_port} is busy, using [bold cyan]{port}[/] instead."
-        )
 
     if not use_tui:
         asyncio.run(
@@ -284,6 +277,7 @@ def dev(
                 port=port,
                 ssl_keyfile=ssl_keyfile,
                 ssl_certfile=ssl_certfile,
+                original_port=original_port,
             )
         )
     else:

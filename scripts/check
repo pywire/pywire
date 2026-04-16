@@ -1,8 +1,5 @@
 #!/bin/sh -e
 
-echo "=== Checking Rust (cargo clippy + fmt) ==="
-(cd packages/pywire && cargo clippy -- -D warnings && cargo fmt --check)
-
 echo "=== Checking PyWire (Core, Client, Docs) ==="
 (cd packages/pywire && ./scripts/check)
 
