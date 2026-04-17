@@ -13,6 +13,7 @@ Public API:
 from pywire_auth._protocols import AuthStore, OIDCProvider
 from pywire_auth.integration import connect_auth
 from pywire_auth.middleware import AuthMiddleware
+from pywire_auth.local import LocalIdP, TokenIssuer
 from pywire_auth.providers import (
     Auth0Provider,
     BaseOAuth2Provider,
@@ -35,8 +36,10 @@ __all__ = [
     "GenericOIDCProvider",
     "GitHubProvider",
     "GoogleProvider",
+    "LocalIdP",
     "MemoryAuthStore",
     "MicrosoftProvider",
     "OIDCProvider",
+    "TokenIssuer",
     "connect_auth",
 ]
