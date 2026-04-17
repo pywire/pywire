@@ -8,7 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from pywire_auth import GitHubProvider, GoogleProvider, GenericOIDCProvider
+from pywire_auth import (
+    Auth0Provider,
+    FacebookProvider,
+    GenericOIDCProvider,
+    GitHubProvider,
+    GoogleProvider,
+    MicrosoftProvider,
+)
 
 
 def test_google_defaults() -> None:
@@ -100,6 +107,76 @@ def test_generic_with_explicit_endpoints() -> None:
 
     asyncio.new_event_loop().run_until_complete(p._ensure_discovered())
     assert p.authorize_endpoint == "https://idp/authorize"
+
+
+def test_microsoft_defaults_to_common_tenant() -> None:
+    p = MicrosoftProvider(client_id="cid", client_secret="sec")
+    assert p.name == "microsoft"
+    assert p.tenant == "common"
+    assert p.issuer.endswith("/common/v2.0")
+    assert "login.microsoftonline.com/common" in p.authorize_endpoint
+
+
+def test_microsoft_single_tenant() -> None:
+    p = MicrosoftProvider(
+        client_id="cid", client_secret="sec", tenant="myorg.onmicrosoft.com"
+    )
+    assert "myorg.onmicrosoft.com" in p.issuer
+    assert "myorg.onmicrosoft.com" in p.token_endpoint
+
+
+def test_microsoft_claim_mapping() -> None:
+    p = MicrosoftProvider(client_id="cid", client_secret="sec")
+    claims = {
+        c.type: c.value
+        for c in p.map_claims(
+            {"sub": "s", "email": "a@b", "tid": "tenant-id", "oid": "obj-id"}
+        )
+    }
+    assert claims == {
+        "sub": "s",
+        "email": "a@b",
+        "tid": "tenant-id",
+        "oid": "obj-id",
+    }
+
+
+def test_facebook_claim_mapping_nested_picture() -> None:
+    p = FacebookProvider(client_id="cid", client_secret="sec")
+    raw = {
+        "id": "42",
+        "name": "Alice",
+        "email": "a@b.c",
+        "picture": {"data": {"url": "https://fb/a.png", "width": 200}},
+    }
+    claims = {c.type: c.value for c in p.map_claims(raw)}
+    assert claims["sub"] == "42"
+    assert claims["picture"] == "https://fb/a.png"
+
+
+def test_auth0_derives_discovery_from_domain() -> None:
+    p = Auth0Provider(
+        client_id="cid", client_secret="sec", domain="myapp.auth0.com"
+    )
+    assert p.discovery_url == (
+        "https://myapp.auth0.com/.well-known/openid-configuration"
+    )
+
+
+def test_auth0_requires_domain_or_discovery_url() -> None:
+    with pytest.raises(ValueError):
+        Auth0Provider(client_id="cid", client_secret="sec")
+
+
+def test_auth0_maps_roles_claim() -> None:
+    p = Auth0Provider(
+        client_id="cid", client_secret="sec", domain="myapp.auth0.com"
+    )
+    raw = {"sub": "x", "roles": ["admin", "editor"]}
+    claims = [(c.type, c.value) for c in p.map_claims(raw)]
+    assert ("sub", "x") in claims
+    assert ("role", "admin") in claims
+    assert ("role", "editor") in claims
 
 
 def test_generic_claim_mapping() -> None:

@@ -14,23 +14,29 @@ from pywire_auth._protocols import AuthStore, OIDCProvider
 from pywire_auth.integration import connect_auth
 from pywire_auth.middleware import AuthMiddleware
 from pywire_auth.providers import (
+    Auth0Provider,
     BaseOAuth2Provider,
     BaseOIDCProvider,
+    FacebookProvider,
     GenericOIDCProvider,
     GitHubProvider,
     GoogleProvider,
+    MicrosoftProvider,
 )
 from pywire_auth.stores import MemoryAuthStore
 
 __all__ = [
+    "Auth0Provider",
     "AuthMiddleware",
     "AuthStore",
     "BaseOAuth2Provider",
     "BaseOIDCProvider",
+    "FacebookProvider",
     "GenericOIDCProvider",
     "GitHubProvider",
     "GoogleProvider",
     "MemoryAuthStore",
+    "MicrosoftProvider",
     "OIDCProvider",
     "connect_auth",
 ]
