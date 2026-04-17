@@ -1,6 +1,7 @@
 """WebSocket handler for PyWire."""
 
 import asyncio
+import inspect
 import re
 import sys
 import traceback
@@ -84,6 +85,19 @@ class WebSocketHandler:
             traceback.print_exc()
         finally:
             self._cleanup_connection(websocket)
+
+    async def _resolve_user(self, websocket: WebSocket) -> Any:
+        """Invoke ``app.get_user``, awaiting if it returns a coroutine.
+
+        ``get_user`` is sync by default but ``pywire-auth`` overrides it
+        with an async implementation that reads from the session store.
+        """
+        if not hasattr(self.app, "get_user"):
+            return None
+        maybe = self.app.get_user(websocket)
+        if inspect.isawaitable(maybe):
+            maybe = await maybe
+        return maybe
 
     def _cleanup_connection(self, websocket: WebSocket) -> None:
         """Clean up all state associated with a WebSocket connection."""
@@ -305,6 +319,11 @@ class WebSocketHandler:
             if session_id is None:
                 session_id = str(uuid.uuid4())
 
+            # Populate principal on initial page (parity with _handle_event and
+            # _handle_relocate — previously missed here so the first render
+            # always saw user=None).
+            page.user = await self._resolve_user(websocket)
+
             self.connection_pages[websocket] = page
             self.session_ids[websocket] = session_id
 
@@ -389,8 +408,7 @@ class WebSocketHandler:
                     return
 
                 page, _params, _variant_name = result
-                if hasattr(self.app, "get_user"):
-                    page.user = self.app.get_user(websocket)
+                page.user = await self._resolve_user(websocket)
 
                 self.connection_pages[websocket] = page
 
@@ -537,8 +555,8 @@ class WebSocketHandler:
                 # Migrate persistent user state from old page
                 if old_page:
                     new_page.user = getattr(old_page, "user", None)
-                elif hasattr(self.app, "get_user"):
-                    new_page.user = self.app.get_user(websocket)
+                else:
+                    new_page.user = await self._resolve_user(websocket)
 
                 # Replace page instance for this connection
                 self.connection_pages[websocket] = new_page

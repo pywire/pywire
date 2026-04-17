@@ -814,6 +814,22 @@ class BasePage:
             self._background_tasks.clear()
             self._await_states.clear()
 
+        # Auth guard — must short-circuit before any user code runs so
+        # unauthorized requests never trigger side effects. Lazy-imported
+        # so unprotected pages don't pull in the auth submodule.
+        if init and getattr(self.__class__, "__auth_required__", False):
+            from pywire.auth.guard import run_auth_guard
+
+            guard_response = await run_auth_guard(self)
+            if guard_response is not None:
+                location = guard_response.headers.get("location")
+                if location:
+                    # Mirror on _pending_navigation so the WS transport's
+                    # existing drain sends a navigate message instead of
+                    # update HTML.
+                    self._pending_navigation = location
+                return guard_response
+
         # Run @before_load hooks (pages only, before any page logic)
         if init:
             await self._run_hooks(self.BEFORE_LOAD_HOOKS)
