@@ -61,6 +61,28 @@ class PropsDirective(Directive):
 
 
 @dataclass
+class AuthDirective(Directive):
+    """!auth — gate page on authentication/policy.
+
+    Forms:
+        !auth                                        # require authenticated
+        !auth "PolicyName"                           # named policy
+        !auth {"policy":"X","claims":[...],"redirect":"/login"}
+    """
+
+    policy: Optional[str] = None
+    # Each claim is (type, value). An empty value matches any value for that type.
+    claims: Optional[List[Tuple[str, str]]] = None
+    redirect: Optional[str] = None
+
+    def __str__(self) -> str:
+        return (
+            f"AuthDirective(policy={self.policy}, "
+            f"claims={self.claims}, redirect={self.redirect})"
+        )
+
+
+@dataclass
 class SpecialAttribute(ASTNode):
     """Base for special attributes ($, @, :)."""
 

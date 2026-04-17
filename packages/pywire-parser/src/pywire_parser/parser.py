@@ -33,6 +33,7 @@ from pywire_parser.attributes.conditional import ConditionalAttributeParser
 from pywire_parser.attributes.events import EventAttributeParser
 
 from pywire_parser.attributes.loop import KeyAttributeParser, LoopAttributeParser
+from pywire_parser.directives.auth import AuthDirectiveParser
 from pywire_parser.directives.base import DirectiveParser
 from pywire_parser.directives.layout import LayoutDirectiveParser
 from pywire_parser.directives.no_spa import NoSpaDirectiveParser
@@ -112,6 +113,7 @@ class PyWireParser:
             PathDirectiveParser(),
             NoSpaDirectiveParser(),
             LayoutDirectiveParser(),
+            AuthDirectiveParser(),
         ]
 
         # Attribute parser chain
