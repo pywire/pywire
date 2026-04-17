@@ -12,7 +12,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, Optional, Set, Type, cast
 
-from pywire.runtime.page import BasePage
+from pywire.runtime.page import BasePage, ErrorBasePage
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +61,16 @@ class PageLoader:
         # file content + layout dep determines it)
         # Actually if implicit layout changes, we might need to recompile,
         # but for now assume strict mapping
+        is_error_page = pywire_file.name.endswith("__error__.wire")
+
         if use_cache and path_key in self._cache:
             return self._cache[path_key]
 
         # Try precompiled artifact
         precompiled = self._load_precompiled(pywire_file)
         if precompiled:
+            if is_error_page:
+                precompiled.__bases__ = (ErrorBasePage,)
             self._cache[path_key] = precompiled
             precompiled.__file_path__ = str(pywire_file)
             return precompiled
@@ -112,10 +116,11 @@ class PageLoader:
             _loading_file.reset(token)
 
         page_class = self._find_page_class(module, pywire_file)
+        if is_error_page:
+            page_class.__bases__ = (ErrorBasePage,)
         self._cache[path_key] = page_class
         page_class.__file_path__ = str(pywire_file)
         return page_class
-        raise ValueError(f"No page class found in {pywire_file}")
 
     def _find_page_class(self, module: ModuleType, pywire_file: Path) -> Type[BasePage]:
         if hasattr(module, "__page_class__"):

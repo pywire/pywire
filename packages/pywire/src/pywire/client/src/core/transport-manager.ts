@@ -143,6 +143,17 @@ export class TransportManager {
   }
 
   /**
+   * Force an immediate reconnect (used by offline/online event handlers).
+   */
+  forceReconnect(): void {
+    if (this.transport?.forceReconnect) {
+      this.transport.forceReconnect()
+    } else if (!this.transport) {
+      this.connect().catch(() => {})
+    }
+  }
+
+  /**
    * Disconnect the active transport.
    */
   disconnect(): void {

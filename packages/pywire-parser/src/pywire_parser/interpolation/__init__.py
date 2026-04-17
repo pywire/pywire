@@ -1,6 +1,6 @@
 """Interpolation parsers."""
 
 from pywire_parser.interpolation.base import InterpolationParser
-from pywire_parser.interpolation.jinja import JinjaInterpolationParser
+from pywire_parser.interpolation.brace import BraceInterpolationParser
 
-__all__ = ["InterpolationParser", "JinjaInterpolationParser"]
+__all__ = ["InterpolationParser", "BraceInterpolationParser"]

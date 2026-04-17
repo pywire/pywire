@@ -23,6 +23,9 @@ export interface Transport {
   /** Set session ID for reconnection routing (e.g. Durable Objects) */
   setSessionId(sessionId: string): void
 
+  /** Force an immediate reconnect attempt (e.g. triggered by window.online). No-op if already connected. */
+  forceReconnect?(): void
+
   /** Transport name for debugging */
   readonly name: string
 }
@@ -174,6 +177,8 @@ export abstract class BaseTransport implements Transport {
   setSessionId(_sessionId: string): void {
     // Default no-op; WebSocketTransport overrides to append ?session= to URL
   }
+
+  forceReconnect(): void {}
 
   onMessage(handler: MessageHandler): void {
     this.messageHandlers.push(handler)

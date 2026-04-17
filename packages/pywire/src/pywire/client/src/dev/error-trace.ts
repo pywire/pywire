@@ -1,4 +1,5 @@
 import { StackFrame } from '../core/transports'
+import { getMountPath } from '../core/mount-path'
 
 /**
  * Handles error traces from the server in development mode.
@@ -13,7 +14,8 @@ export class ErrorTraceHandler {
   private getVirtualUrl(filename: string): string {
     const encoded = btoa(filename).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     const cleanName = filename.split(/[/\\]/).pop() || 'unknown'
-    return `${window.location.origin}/_pywire/file/${encoded}/${cleanName}`
+    const mount = getMountPath()
+    return `${window.location.origin}${mount}/_pywire/file/${encoded}/${cleanName}`
   }
 
   /**
@@ -34,7 +36,7 @@ export class ErrorTraceHandler {
           const virtualUrl = this.getVirtualUrl(filename)
 
           // Fetch content
-          const url = `/_pywire/source?path=${encodeURIComponent(filename)}`
+          const url = `${getMountPath()}/_pywire/source?path=${encodeURIComponent(filename)}`
           const resp = await fetch(url)
           if (resp.ok) {
             const content = await resp.text()

@@ -4,6 +4,15 @@
 import morphdom from 'morphdom'
 import { logger } from './logger'
 
+// Alpine.js integration — if the user loads `@alpinejs/morph`, we hand Alpine
+// subtrees to `Alpine.morph` so reactive state survives server renders.
+// Without the plugin, morphdom strips Alpine's internal `_x_dataStack` and
+// bindings like `x-show` silently stop working (wizard-collapse bug).
+interface AlpineWithMorph {
+  morph?: (from: Element, to: Element) => void
+}
+let warnedAboutAlpineMorph = false
+
 interface FocusState {
   /** CSS selector to find the element */
   selector: string
@@ -359,6 +368,29 @@ export class DOMUpdater {
             },
 
             onBeforeElUpdated: (fromEl, toEl) => {
+              // Alpine.js integration — preserve reactive state across morph.
+              // Alpine stashes its reactive proxy on `_x_dataStack`; morphdom's
+              // attribute copy would discard it. Hand the subtree to
+              // `Alpine.morph` (from `@alpinejs/morph`) when available.
+              const fromAny = fromEl as unknown as { _x_dataStack?: unknown[] }
+              if (fromAny._x_dataStack) {
+                const alpine = (window as unknown as { Alpine?: AlpineWithMorph }).Alpine
+                if (alpine && typeof alpine.morph === 'function') {
+                  alpine.morph(fromEl, toEl)
+                  return false
+                }
+                if (!warnedAboutAlpineMorph) {
+                  warnedAboutAlpineMorph = true
+                  logger.warn(
+                    'PyWire: detected Alpine.js x-data without `@alpinejs/morph` — ' +
+                      'Alpine state will be lost on DOM morph. Add ' +
+                      '`<script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/morph@3/dist/cdn.min.js"></script>` ' +
+                      'before the Alpine core tag.'
+                  )
+                }
+                // Fall through — let morphdom run; Alpine bindings may break.
+              }
+
               // Transfer ALL relevant state from old element to new element
 
               // Input/Textarea: preserve value ONLY if they are broadly similar

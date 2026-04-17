@@ -62,11 +62,9 @@ def test_app_mode_gating_dev(tmp_path) -> None:
     assert response.status_code == 200
     assert "test_app_mode_gating_dev" in response.text
 
-    # Script URL should be dev bundle
-    assert (
-        app._get_client_script_url()
-        == f"/_pywire/static/pywire.dev.min.js?v={__version__}"
-    )
+    # Script URL should be dev bundle (buster is bundle mtime)
+    url = app._get_client_script_url()
+    assert url.startswith("/_pywire/static/pywire.dev.min.js?v=")
 
 
 def test_capabilities_endpoint(tmp_path) -> None:

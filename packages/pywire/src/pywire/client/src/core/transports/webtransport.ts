@@ -1,5 +1,6 @@
 import { BaseTransport, ServerMessage } from './base'
 import { logger } from '../logger'
+import { getMountPath } from '../mount-path'
 
 /**
  * WebTransport implementation using the browser's native WebTransport API.
@@ -21,7 +22,8 @@ export class WebTransportTransport extends BaseTransport {
 
   private getDefaultUrl(): string {
     // WebTransport requires HTTPS
-    return `https://${window.location.host}/_pywire/webtransport`
+    const mount = getMountPath()
+    return `https://${window.location.host}${mount}/_pywire/webtransport`
   }
 
   /**

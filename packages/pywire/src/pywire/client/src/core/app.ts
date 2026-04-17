@@ -57,6 +57,12 @@ export class PyWireApp {
   protected allPathRegexes: RegExp[] = []
   protected pjaxEnabled = false
   protected staticPath: string = '/static'
+  /**
+   * ASGI mount prefix (e.g. "/app") when PyWire is mounted inside a host
+   * FastAPI/Starlette app. Empty when running at "/". All framework-internal
+   * URLs (script, /_pywire/*, static assets) are prefixed with this.
+   */
+  public mountPath: string = ''
   protected isConnected = false
   protected sessionId: string | null = null
   private intentionalDisconnect = false
@@ -80,7 +86,10 @@ export class PyWireApp {
     })
     this.refManager = new RefManager(
       (refId, value) => {
-        if (this.isConnected) {
+        // Ref sync only has a destination when the WebSocket transport is
+        // up. In SSR mode there is no persistent channel — skip silently
+        // instead of warning on every keystroke.
+        if (this.isConnected && this.config.interactive !== false) {
           const msg: RefSyncMessage = {
             type: 'ref_sync',
             refId,
@@ -90,7 +99,7 @@ export class PyWireApp {
         }
       },
       (refId, property, value) => {
-        if (this.isConnected) {
+        if (this.isConnected && this.config.interactive !== false) {
           const msg: RefPropertySyncMessage = {
             type: 'ref_sync',
             refId,
@@ -130,6 +139,7 @@ export class PyWireApp {
 
     // Load SPA metadata first — it may set interactive mode
     this.loadSPAMetadata()
+    this.setupNetworkListeners()
 
     if (this.config.interactive !== false) {
       // Interactive mode: connect transport for real-time updates
@@ -150,11 +160,10 @@ export class PyWireApp {
 
     this.setupSPANavigation()
 
-    // Event interception and refs only in interactive mode
-    if (this.config.interactive !== false) {
-      this.eventHandler.init()
-      this.refManager.init()
-    }
+    // Event delegation runs in both modes — SSR needs it so `@submit`
+    // handlers swap the form submit for `httpFormSubmit` (fetch + morph).
+    this.eventHandler.init()
+    this.refManager.init()
 
     const transport =
       this.config.interactive !== false ? this.transport.getActiveTransport() : 'http-only'
@@ -187,6 +196,28 @@ export class PyWireApp {
   }
 
   /**
+   * Listen for browser online/offline events to catch internet drops that
+   * don't immediately fire a WebSocket onclose (zombie connections).
+   */
+  private setupNetworkListeners(): void {
+    if (this.config.interactive === false) return
+
+    window.addEventListener('offline', () => {
+      if (this.intentionalDisconnect) return
+      logger.warn('PyWire: Network offline')
+      if (!this.isConnected) return
+      this.handleStatusChange(false)
+      this.transport.forceReconnect()
+    })
+
+    window.addEventListener('online', () => {
+      if (this.intentionalDisconnect || this.isConnected) return
+      logger.log('PyWire: Network back online, reconnecting...')
+      this.transport.forceReconnect()
+    })
+  }
+
+  /**
    * Load SPA navigation metadata from injected script tag.
    */
   protected loadSPAMetadata(): void {
@@ -198,6 +229,7 @@ export class PyWireApp {
         this.allPaths = meta.all_paths || []
         this.pjaxEnabled = !!meta.enable_pjax
         this.staticPath = meta.static_path || '/static'
+        this.mountPath = typeof meta.mount_path === 'string' ? meta.mount_path : ''
         if (meta.interactive !== undefined) {
           this.config.interactive = !!meta.interactive
         }
@@ -221,9 +253,41 @@ export class PyWireApp {
         // Convert path patterns to regexes for matching
         this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
         this.allPathRegexes = this.allPaths.map((p) => this.patternToRegex(p))
+
+        // Dev-only SSE reload channel for non-interactive mode. The server
+        // only populates this field when running under `pywire dev` with
+        // interactive_server_mode=False, so it is a no-op in production.
+        if (typeof meta.dev_reload_url === 'string' && meta.dev_reload_url) {
+          this.connectDevReload(meta.dev_reload_url)
+        }
       } catch (e) {
         logger.warn('PyWire: Failed to parse SPA metadata', e)
       }
+    }
+  }
+
+  /**
+   * Subscribe to dev-only SSE reload channel. Triggers a full page reload
+   * when the server pushes a `reload` event (after a .wire file change).
+   * Non-interactive mode has no persistent transport, so this is the only
+   * hot reload signal available.
+   */
+  private connectDevReload(url: string): void {
+    if (typeof EventSource === 'undefined') return
+    try {
+      const es = new EventSource(url)
+      es.addEventListener('reload', () => {
+        logger.log('PyWire: Dev reload signal — reloading page')
+        window.location.reload()
+      })
+      es.addEventListener('shutdown', () => {
+        logger.log('PyWire: Dev server shutting down')
+      })
+      es.onerror = () => {
+        // Browser auto-retries. Nothing to do.
+      }
+    } catch (e) {
+      logger.warn('PyWire: Dev reload channel failed', e)
     }
   }
 
@@ -305,7 +369,8 @@ export class PyWireApp {
       if (this.staticPath.length > 1 && link.pathname.startsWith(this.staticPath + '/')) {
         shouldIntercept = false
       }
-      if (link.pathname.startsWith('/_pywire/')) {
+      const pywireInternalPrefix = (this.mountPath || '') + '/_pywire/'
+      if (link.pathname.startsWith(pywireInternalPrefix)) {
         shouldIntercept = false
       }
 
@@ -412,6 +477,57 @@ export class PyWireApp {
       logger.error('PyWire: HTTP navigation failed:', e)
       // Fallback to full page load
       window.location.href = path
+    }
+  }
+
+  /**
+   * Whether the app is running in interactive (WebSocket) mode.
+   * False in SSR-only mode — use HTTP form submits + morph.
+   */
+  public get isInteractive(): boolean {
+    return this.config.interactive !== false
+  }
+
+  /**
+   * Submit a form via fetch and morph the fragment response into the page.
+   * Non-interactive-mode equivalent of `sendEvent` for `@submit` handlers —
+   * avoids the browser POST-reload "confirm resubmission" UX.
+   */
+  public async httpFormSubmit(form: HTMLFormElement, handlerName: string): Promise<void> {
+    const fd = new FormData(form)
+    const path = window.location.pathname + window.location.search
+    try {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'X-PyWire-Internal': 'form-submit',
+          'X-PyWire-Handler': handlerName,
+          Accept: 'text/html',
+        },
+        body: fd,
+        credentials: 'same-origin',
+        redirect: 'follow',
+      })
+
+      if (response.redirected) {
+        const redirectPath = new URL(response.url).pathname
+        history.pushState({}, '', redirectPath)
+      }
+
+      const html = await response.text()
+      this.updater.update(html)
+      this.eventHandler?.refreshListeners()
+
+      document.dispatchEvent(
+        new CustomEvent('pywire:navigate', {
+          bubbles: true,
+          detail: { path },
+        })
+      )
+    } catch (e) {
+      logger.error('PyWire: HTTP form submit failed:', e)
+      // Fallback to native browser POST so the user isn't stranded.
+      form.submit()
     }
   }
 

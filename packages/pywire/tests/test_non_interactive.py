@@ -71,6 +71,93 @@ class TestSessionSigning:
         assert _verify_session_id(signed, "secret-b") is None
 
 
+class TestSessionSecretEnvWiring:
+    """PYWIRE_SESSION_SECRET must flow through to the SessionMiddleware so
+    sessions survive across workers / process restarts."""
+
+    def test_shared_secret_accepts_cross_instance_cookie(self, monkeypatch):
+        """Two apps started with the same PYWIRE_SESSION_SECRET should
+        validate each other's session cookies — multi-worker deploy."""
+        monkeypatch.setenv("PYWIRE_SESSION_SECRET", "shared-deploy-secret")
+        app_a = _make_non_interactive_app()
+        app_b = _make_non_interactive_app()
+        try:
+            client_a = TestClient(app_a, raise_server_exceptions=False)
+            # Issue a cookie from worker A.
+            res_a = client_a.get("/")
+            assert res_a.status_code == 200
+            cookie = res_a.cookies.get("pywire_session")
+            assert cookie is not None
+
+            # Hand-carry it to worker B. If the secret were not shared, the
+            # middleware would reject the signature and re-issue a new cookie.
+            client_b = TestClient(app_b, raise_server_exceptions=False)
+            res_b = client_b.get("/", cookies={"pywire_session": cookie})
+            # B must NOT issue a new cookie — it recognized A's signature.
+            assert "pywire_session" not in res_b.cookies
+        finally:
+            shutil.rmtree(app_a._test_dir, ignore_errors=True)
+            shutil.rmtree(app_b._test_dir, ignore_errors=True)
+
+    def test_random_secret_rejects_cross_instance_cookie(self, monkeypatch):
+        """Without PYWIRE_SESSION_SECRET each app gets its own random key —
+        A's cookie is invalid on B. This is the documented failure mode we
+        warn about."""
+        monkeypatch.delenv("PYWIRE_SESSION_SECRET", raising=False)
+        monkeypatch.delenv("PYWIRE_DEV_MODE", raising=False)
+        app_a = _make_non_interactive_app()
+        app_b = _make_non_interactive_app()
+        try:
+            client_a = TestClient(app_a, raise_server_exceptions=False)
+            res_a = client_a.get("/")
+            cookie = res_a.cookies.get("pywire_session")
+            assert cookie is not None
+
+            client_b = TestClient(app_b, raise_server_exceptions=False)
+            res_b = client_b.get("/", cookies={"pywire_session": cookie})
+            # B rejects A's signature → re-issues its own cookie.
+            assert res_b.cookies.get("pywire_session") is not None
+            assert res_b.cookies.get("pywire_session") != cookie
+        finally:
+            shutil.rmtree(app_a._test_dir, ignore_errors=True)
+            shutil.rmtree(app_b._test_dir, ignore_errors=True)
+
+    def test_dev_mode_persists_secret_across_restarts(self, monkeypatch):
+        """`pywire dev` sets PYWIRE_DEV_MODE=1. First launch generates a
+        secret and writes it to `{pages_dir}/../.pywire/dev-session-secret`;
+        later launches reuse it. This keeps sessions alive across hot
+        reloads without forcing users to set PYWIRE_SESSION_SECRET."""
+        monkeypatch.delenv("PYWIRE_SESSION_SECRET", raising=False)
+        monkeypatch.setenv("PYWIRE_DEV_MODE", "1")
+
+        app_a = _make_non_interactive_app()
+        app_root = Path(str(app_a.pages_dir)).parent
+        secret_file = app_root / ".pywire" / "dev-session-secret"
+
+        # First instance creates the file.
+        assert secret_file.exists()
+        first_secret = secret_file.read_text().strip()
+        assert len(first_secret) >= 32
+
+        client_a = TestClient(app_a, raise_server_exceptions=False)
+        res_a = client_a.get("/")
+        cookie = res_a.cookies.get("pywire_session")
+        assert cookie is not None
+
+        # Second instance, same pages_dir — must reuse the same secret so
+        # cookies from the first instance still validate.
+        app_b = PyWire(pages_dir=str(app_a.pages_dir))
+        app_b._test_dir = app_a._test_dir  # piggyback for teardown parity
+        try:
+            assert secret_file.read_text().strip() == first_secret
+            client_b = TestClient(app_b, raise_server_exceptions=False)
+            res_b = client_b.get("/", cookies={"pywire_session": cookie})
+            # Same secret → signature accepted → no new cookie issued.
+            assert "pywire_session" not in res_b.cookies
+        finally:
+            shutil.rmtree(app_a._test_dir, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # Non-interactive mode: route gating
 # ---------------------------------------------------------------------------
@@ -170,7 +257,13 @@ class TestNonInteractiveFormPost:
         pages_dir.mkdir()
         # Simple page with a form
         (pages_dir / "counter.wire").write_text(
-            "<p>Counter Page</p>\n<form method='post'><button type='submit'>Submit</button></form>"
+            "---\n"
+            "async def handle_submit(data):\n"
+            "    pass\n"
+            "---\n"
+            "<p>Counter Page</p>\n"
+            "<form method='post' @submit={handle_submit}>"
+            "<button type='submit'>Submit</button></form>"
         )
         self.app = PyWire(
             pages_dir=str(pages_dir),
@@ -184,9 +277,21 @@ class TestNonInteractiveFormPost:
 
     def test_form_post_returns_html(self):
         """Form POST should return rendered HTML, not JSON."""
-        response = self.client.post("/counter", data={"action": "increment"})
+        response = self.client.post(
+            "/counter",
+            data={"action": "increment"},
+            headers={"X-PyWire-Handler": "handle_submit"},
+        )
         assert response.status_code == 200
         assert response.headers.get("content-type", "").startswith("text/html")
+
+    def test_form_post_missing_submit_binding_returns_400(self):
+        """POST without handler signal (no header, no hidden field) must
+        surface a loud 400 so users notice the missing
+        `@submit={handler}` binding."""
+        response = self.client.post("/counter", data={"action": "increment"})
+        assert response.status_code == 400
+        assert "X-PyWire-Handler" in response.text
 
 
 # ---------------------------------------------------------------------------

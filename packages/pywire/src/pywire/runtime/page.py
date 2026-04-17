@@ -755,6 +755,22 @@ class BasePage:
             except (AttributeError, KeyError):
                 pass  # no router available; SPA navigation will use sibling paths only
 
+            # ASGI mount prefix — when PyWire is mounted under e.g. /app on a
+            # host FastAPI/Starlette app, every URL we emit must be prefixed
+            # with it. Starlette sets scope["root_path"] on mounted sub-apps.
+            root_path: str = ""
+            try:
+                root_path = str(self.request.scope.get("root_path", "") or "")
+            except (AttributeError, KeyError):
+                pass
+
+            def _prefix(p: str) -> str:
+                if not root_path or not isinstance(p, str) or not p.startswith("/"):
+                    return p
+                if p.startswith(root_path + "/") or p == root_path:
+                    return p
+                return root_path + p
+
             if not no_spa and not is_component:
                 # Reconnect overlay config from PyWire app
                 reconnect_max_attempts = 10
@@ -779,15 +795,31 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
+                # Dev-only SSE reload channel for non-interactive mode. The
+                # dev server mounts /_pywire/dev/reload when both conditions
+                # hold; client subscribes via EventSource if this is set.
+                dev_reload_url = None
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    if not interactive_mode and getattr(
+                        pywire_app, "_is_dev_mode", False
+                    ):
+                        dev_reload_url = _prefix("/_pywire/dev/reload")
+                except (AttributeError, KeyError):
+                    pass
+
+                sibling_paths_raw = getattr(self, "__sibling_paths__", []) or []
                 meta = {
-                    "sibling_paths": getattr(self, "__sibling_paths__", []),
-                    "all_paths": all_wire_paths,
+                    "sibling_paths": [_prefix(p) for p in sibling_paths_raw],
+                    "all_paths": [_prefix(p) for p in all_wire_paths],
                     "enable_pjax": pjax_enabled,
                     "debug": debug_mode,
-                    "static_path": static_url_path,
+                    "static_path": _prefix(static_url_path),
+                    "mount_path": root_path,
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
                     "interactive": interactive_mode,
+                    "dev_reload_url": dev_reload_url,
                 }
                 import json
 
@@ -797,10 +829,12 @@ class BasePage:
                 # Determine client script URL
                 from pywire import __version__ as _pywire_version
 
-                script_url = f"/_pywire/static/pywire.core.min.js?v={_pywire_version}"
+                script_url = (
+                    f"{root_path}/_pywire/static/pywire.core.min.js?v={_pywire_version}"
+                )
                 try:
                     pywire_app = self.request.app.state.pywire
-                    script_url = pywire_app._get_client_script_url()
+                    script_url = pywire_app._get_client_script_url(root_path=root_path)
                 except (AttributeError, KeyError):
                     # Fallback to dev if we can't detect, or keep core default
                     pass
@@ -1186,3 +1220,11 @@ class BasePage:
         html = await self._render_template()
         self._cleanup_components()
         return html
+
+
+class ErrorBasePage(BasePage):
+    """Base class for __error__.wire pages. Provides typed error context attributes."""
+
+    error_code: int
+    error_message: str
+    error_trace: str

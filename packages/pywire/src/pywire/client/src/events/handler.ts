@@ -427,6 +427,22 @@ export class UnifiedEventHandler {
     e: Event,
     explicitArgs?: unknown[]
   ): Promise<void> {
+    // Non-interactive mode: a form submit always goes through httpFormSubmit
+    // (fetch + morph), regardless of any event-data field mask. The mask
+    // controls what gets sent over a persistent channel via `sendEvent`;
+    // it should not block the actual form POST.
+    if (
+      this.app.isInteractive === false &&
+      eventType === 'submit' &&
+      element instanceof HTMLFormElement
+    ) {
+      if (!this.validateFileInputs(element)) {
+        return
+      }
+      await this.app.httpFormSubmit(element, handler)
+      return
+    }
+
     // Merge explicit args (from JSON) into args payload
     let args: Record<string, unknown> = {}
     if (explicitArgs && explicitArgs.length > 0) {
@@ -562,6 +578,15 @@ export class UnifiedEventHandler {
         }
       }
       eventData.formData = data
+
+      // Non-interactive (SSR) mode: form POST → fetch + morph instead of
+      // a browser POST, so reload doesn't surface the "confirm resubmission"
+      // dialog and the swap feels SPA-like. Treat missing flag as interactive
+      // (matches the server-side default and the existing mock-app pattern).
+      if (this.app.isInteractive === false) {
+        await this.app.httpFormSubmit(element, handler)
+        return
+      }
     }
 
     this.app.sendEvent(handler, eventData)
@@ -659,7 +684,8 @@ export class UnifiedEventHandler {
       headers['X-PyWire-Session'] = httpSession
     }
 
-    const response = await fetch('/_pywire/upload', {
+    const uploadUrl = `${this.app.mountPath || ''}/_pywire/upload`
+    const response = await fetch(uploadUrl, {
       method: 'POST',
       headers,
       body: fileData,

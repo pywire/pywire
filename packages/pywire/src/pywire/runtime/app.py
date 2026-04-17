@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+import secrets
 import traceback
 import inspect
 import hashlib
@@ -19,8 +20,8 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
 from pywire import __version__
-from pywire.runtime.error_page import ErrorPage
 from pywire.runtime.http_transport import HTTPTransportHandler
+from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
 from pywire.runtime.upload_manager import upload_manager
 from pywire.runtime.websocket import WebSocketHandler
@@ -318,9 +319,19 @@ class PyWire:
         self._load_pages()
 
         # Prepare exception handlers
-        exception_handlers: Dict[int, Any] = {}
-        # Always register our handler to check for custom error pages
+        exception_handlers: Dict[Any, Any] = {}
+        # HTTPException(status_code=500) → our custom error page path
         exception_handlers[500] = self._handle_500
+        # Bare Exception → same path, so unhandled errors always render
+        # __error__.wire instead of falling through to Starlette's plain
+        # "Internal Server Error". Debug vs prod sanitation is done inside
+        # _handle_500 itself.
+        exception_handlers[Exception] = self._handle_500
+
+        if self.debug:
+            from pywire.compiler.exceptions import PyWireSyntaxError
+
+            exception_handlers[PyWireSyntaxError] = self._handle_syntax_error
 
         # Build routes list
         routes: list[Route | WebSocketRoute | Mount] = [
@@ -493,16 +504,73 @@ class PyWire:
         if not self.interactive_server_mode:
             from pywire.runtime.session_middleware import SessionMiddleware
 
+            session_secret = self._resolve_session_secret()
             self.app.add_middleware(
                 SessionMiddleware,
                 session_store=self.session_store,
                 session_ttl=self.session_ttl,
+                secret_key=session_secret,
             )
 
         # Internal dispatch target — set by as_asgi() when mounted in
         # a host framework (e.g. FastAPI). When None, internal requests
         # dispatch through self.app (the Starlette instance).
         self._root_app: Optional[Any] = None
+
+    def _resolve_session_secret(self) -> Optional[str]:
+        """Resolve the HMAC secret used to sign session cookies.
+
+        Priority:
+        1. ``PYWIRE_SESSION_SECRET`` env var — production pathway.
+        2. ``PYWIRE_DEV_MODE=1`` (set by ``pywire dev``) — cache a
+           per-project secret in ``{pages_dir}/../.pywire/dev-session-secret``
+           so sessions survive restarts without manual env setup.
+        3. Fallback: return ``None`` so ``SessionMiddleware`` generates a
+           random key, and emit a loud warning. This is the
+           multi-worker-unsafe path users should avoid in production.
+        """
+        explicit = os.environ.get("PYWIRE_SESSION_SECRET")
+        if explicit:
+            return explicit
+
+        if os.environ.get("PYWIRE_DEV_MODE") == "1":
+            try:
+                secret_file = (
+                    Path(str(self.pages_dir)).parent / ".pywire" / "dev-session-secret"
+                )
+                if secret_file.exists():
+                    data = secret_file.read_text(encoding="utf-8").strip()
+                    if data:
+                        return data
+                secret = secrets.token_hex(32)
+                secret_file.parent.mkdir(parents=True, exist_ok=True)
+                secret_file.write_text(secret, encoding="utf-8")
+                try:
+                    secret_file.chmod(0o600)
+                except OSError:
+                    pass  # Windows etc — best-effort only
+                logger.info(
+                    "PyWire dev: generated a persistent session secret at %s. "
+                    "Sessions will survive restarts. Add `.pywire/` to "
+                    ".gitignore.",
+                    secret_file,
+                )
+                return secret
+            except OSError as e:
+                logger.warning(
+                    "PyWire dev: could not persist session secret (%s). "
+                    "Falling back to a random per-process key — sessions "
+                    "will not survive restarts.",
+                    e,
+                )
+
+        logger.warning(
+            "PYWIRE_SESSION_SECRET is not set — a random signing key will be "
+            "generated per process. Sessions will NOT validate across multiple "
+            "workers or process restarts. Set PYWIRE_SESSION_SECRET to a "
+            "stable value for production."
+        )
+        return None
 
     def _get_dispatch_target(self) -> Any:
         """Return the ASGI app for internal request dispatch."""
@@ -586,14 +654,24 @@ class PyWire:
             }
         )
 
-    def _get_client_script_url(self) -> str:
+    def _get_client_script_url(self, root_path: str = "") -> str:
         """Return the appropriate client bundle URL based on server mode.
 
-        Returns dev bundle when running via 'pywire dev', core bundle otherwise.
+        Dev mode uses the bundle's mtime as cache-buster so rebuilds
+        propagate without a manual hard-reload. Prod sticks to the
+        package version string. ``root_path`` is the ASGI mount prefix
+        (empty when running at "/") — prepended so the browser fetches
+        from the mounted location.
         """
+        filename = "pywire.dev.min.js" if self._is_dev_mode else "pywire.core.min.js"
+        buster: Any = __version__
         if self._is_dev_mode:
-            return f"/_pywire/static/pywire.dev.min.js?v={__version__}"
-        return f"/_pywire/static/pywire.core.min.js?v={__version__}"
+            try:
+                bundle_path = Path(__file__).parent.parent / "static" / filename
+                buster = int(bundle_path.stat().st_mtime)
+            except Exception:
+                pass
+        return f"{root_path}/_pywire/static/{filename}?v={buster}"
 
     async def _handle_upload(self, request: Request) -> JSONResponse:
         """Handle file uploads."""
@@ -766,6 +844,30 @@ class PyWire:
             {"workspace": {"root": str(project_root.resolve()), "uuid": project_uuid}}
         )
 
+    def _load_default_error_page(self) -> None:
+        """Load the built-in default __error__ wire page from package templates."""
+        import importlib.resources
+        import tempfile
+
+        try:
+            source = (
+                importlib.resources.files("pywire")
+                .joinpath("templates/error/default.wire")
+                .read_text(encoding="utf-8")
+            )
+            with tempfile.NamedTemporaryFile(
+                suffix="__error__.wire",
+                mode="w",
+                encoding="utf-8",
+                delete=False,
+            ) as f:
+                f.write(source)
+                tmp_path = f.name
+            page_class = self.loader.load(Path(tmp_path))
+            self.router.add_route("/__error__", page_class)
+        except Exception as e:
+            logger.debug(f"Could not load built-in error page: {e}")
+
     def _load_pages(self) -> None:
         """Discover and compile all .pywire files."""
         # Scan pages directory
@@ -785,11 +887,13 @@ class PyWire:
                     error_page_path, implicit_layout=root_layout
                 )
                 self.router.add_route("/__error__", page_class)
-                self.router.add_route("/__error__", page_class)
             except Exception as e:
                 logger.error(
                     f"Failed to load error page {error_page_path}: {e}", exc_info=True
                 )
+        else:
+            # No user error page — register the built-in default
+            self._load_default_error_page()
 
         # Check for __reconnect__.wire — custom reconnection overlay template
         reconnect_page_path = self.pages_dir / "__reconnect__.wire"
@@ -1225,7 +1329,8 @@ class PyWire:
 
                 # Recompile
                 new_page_class = self.loader.load(
-                    file_path, implicit_layout=implicit_layout
+                    file_path,
+                    implicit_layout=implicit_layout,
                 )
 
                 self.router.remove_routes_for_file(str(file_path))
@@ -1271,13 +1376,15 @@ class PyWire:
             try:
                 page_class, params, variant_name = match
                 # Minimal context
-                page = page_class(request, params, {}, path={"main": True}, url=None)
-                # Inject error code
+                page = cast(
+                    ErrorBasePage,
+                    page_class(request, params, {}, path={"main": True}, url=None),
+                )
                 page.error_code = 500
-                # Inject exception details if debug mode?
-                if self.debug:
-                    page.error_detail = str(exc)
-                    page.error_trace = traceback.format_exc()
+                page.error_message = (
+                    str(exc) if self.debug else "An unexpected error occurred."
+                )
+                page.error_trace = traceback.format_exc() if self.debug else ""
 
                 response = await page.render()
                 # Force 500 status
@@ -1294,6 +1401,60 @@ class PyWire:
             raise exc
 
         return PlainTextResponse("Internal Server Error", status_code=500)
+
+    async def _handle_syntax_error(self, request: Request, exc: Exception) -> Response:
+        """Render a helpful compile-error page. Debug-mode only."""
+        import linecache
+
+        from starlette.responses import HTMLResponse
+
+        from pywire.runtime.error_renderer import render_template
+
+        file_path = getattr(exc, "file_path", None)
+        line = getattr(exc, "line", None)
+        message = getattr(exc, "message", str(exc))
+
+        context_lines_data = []
+        if file_path and line and os.path.exists(file_path):
+            try:
+                linecache.checkcache(file_path)
+                lines = linecache.getlines(file_path)
+                start = max(1, line - 5)
+                end = min(len(lines), line + 5)
+                for i in range(start, end + 1):
+                    if i <= len(lines):
+                        context_lines_data.append(
+                            {
+                                "num": i,
+                                "content": lines[i - 1].rstrip(),
+                                "is_current": i == line,
+                            }
+                        )
+            except Exception:
+                pass
+
+        if file_path:
+            cwd = os.getcwd()
+            short_path = (
+                os.path.relpath(file_path, cwd)
+                if file_path.startswith(cwd)
+                else file_path
+            )
+        else:
+            short_path = "unknown file"
+
+        html_content = render_template(
+            "error/compile_error.html.j2",
+            {
+                "file_display": short_path,
+                "error_line": line,
+                "error_message": message,
+                "context_lines": context_lines_data,
+                "script_url": self._get_client_script_url(),
+                "title": "PyWire Syntax Error",
+            },
+        )
+        return HTMLResponse(html_content, status_code=500)
 
     async def _handle_request(self, request: Request) -> Response:
         """Handle HTTP request.
@@ -1346,11 +1507,13 @@ class PyWire:
                     url_helper = URLHelper(cast(dict[str, str], routes))
 
                 try:
-                    page = page_class(
-                        request, {}, query, path=path_info, url=url_helper
+                    page = cast(
+                        ErrorBasePage,
+                        page_class(request, {}, query, path=path_info, url=url_helper),
                     )
-                    # Inject error code
                     page.error_code = 404
+                    page.error_message = f"The path '{path}' could not be found."
+                    page.error_trace = ""
                     response = await page.render(init=not is_internal_relocate)
                     response.status_code = 404
                     return response
@@ -1361,13 +1524,9 @@ class PyWire:
                     traceback.print_exc()
                     pass  # Fallback
 
-            # Default 404 with client script
-            page = ErrorPage(
-                request, "404 Not Found", f"The path '{path}' could not be found."
-            )
-            response = await page.render(init=not is_internal_relocate)
-            response.status_code = 404
-            return response
+            from starlette.responses import HTMLResponse
+
+            return HTMLResponse("404 Not Found", status_code=404)
 
         page_class, params, variant_name = match
         # ... (params, query, path_info, url_helper construction)
@@ -1477,25 +1636,85 @@ class PyWire:
     async def _handle_form_post(self, request: Request, page: Any) -> Response:
         """Handle a standard HTML form POST in non-interactive mode.
 
-        Parses form data, calls the page's ``@submit`` handler (named
-        ``handle_submit``), re-renders the page, and returns the HTML.
-        If no submit handler exists, just re-renders with the form data
-        available via ``request.form()``.
+        Handler dispatch: JS clients send the handler name via the
+        ``X-PyWire-Handler`` header (see ``httpFormSubmit`` in the client
+        bundle). Component-scoped handlers (e.g. built-in ``<Form />``) carry
+        the ``_comp:{component_key}:`` prefix, matching interactive-mode
+        event routing.
+
+        When the client submits with ``X-PyWire-Internal: form-submit`` the
+        response renders as a body fragment (init=False) so the client can
+        morph it in — same swap path as SPA link nav. Without the header,
+        a full HTML document is returned.
         """
+        is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
         try:
             form_data = await request.form()
-            # Build event data dict from form fields
             event_data: Dict[str, Any] = {str(k): v for k, v in form_data.multi_items()}
 
-            # Look for a submit handler on the page
-            handler = getattr(page, "handle_submit", None)
-            if handler and callable(handler):
-                await handler(event_data)
+            handler_name: Any = request.headers.get("x-pywire-handler")
+            if not handler_name or not isinstance(handler_name, str):
+                return PlainTextResponse(
+                    "PyWire: form POST missing X-PyWire-Handler header. Add "
+                    "`@submit={handler_name}` to your <form>; the PyWire "
+                    "client sends the header automatically.",
+                    status_code=400,
+                )
 
-            # Re-render the page with updated state
-            response = await page.render()
+            if handler_name.startswith("_comp:"):
+                # Component-scoped handler. We need `page._components`
+                # populated before dispatch — that only happens during
+                # `render()`. Accept the extra render cost; init hooks
+                # are expected to be idempotent.
+                await page.render()
 
-            # Check for pending navigation (e.g. redirect after form submit)
+                payload = handler_name[len("_comp:") :]
+                comp_key, sep, remainder = payload.partition(":")
+                if not sep or not comp_key or not remainder:
+                    return PlainTextResponse(
+                        f"PyWire: malformed component handler '{handler_name}'",
+                        status_code=400,
+                    )
+
+                component = page._components.get(comp_key)
+                if component is None:
+                    return PlainTextResponse(
+                        f"PyWire: component '{comp_key}' not found",
+                        status_code=400,
+                    )
+
+                # Populate the component's form ref (if any) so
+                # ``form_ref.data`` returns the POSTed fields — the
+                # built-in `<Form />` component reads this during
+                # validation.
+                form_ref_attr = getattr(component, "form_ref", None)
+                if form_ref_attr is not None and hasattr(form_ref_attr, "_update_data"):
+                    form_ref_attr._update_data(dict(event_data))
+
+                handler = getattr(component, remainder, None)
+                if handler is None or not callable(handler):
+                    return PlainTextResponse(
+                        f"PyWire: handler '{remainder}' not found on component",
+                        status_code=400,
+                    )
+                if inspect.iscoroutinefunction(handler):
+                    await handler(event_data)
+                else:
+                    handler(event_data)
+            else:
+                handler = getattr(page, handler_name, None)
+                if handler is None or not callable(handler):
+                    return PlainTextResponse(
+                        f"PyWire: handler '{handler_name}' not found on page",
+                        status_code=400,
+                    )
+                if inspect.iscoroutinefunction(handler):
+                    await handler(event_data)
+                else:
+                    handler(event_data)
+
+            response = await page.render(init=not is_spa_submit)
+
             if hasattr(page, "_pending_navigation") and page._pending_navigation:
                 from starlette.responses import RedirectResponse
 
@@ -1506,11 +1725,10 @@ class PyWire:
             return response
         except Exception as e:
             logger.error("Form POST error: %s", e, exc_info=True)
-            # Re-render with error state
             if hasattr(page, "_form_error"):
                 page._form_error = str(e)
             try:
-                return await page.render()
+                return await page.render(init=not is_spa_submit)
             except Exception:
                 return PlainTextResponse("Internal Server Error", status_code=500)
 

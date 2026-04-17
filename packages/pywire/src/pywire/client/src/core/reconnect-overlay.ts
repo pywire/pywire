@@ -110,6 +110,10 @@ export class ReconnectOverlay {
    * Expects a `<template id="_pywire_reconnect">` injected by the server.
    */
   private ensureElement(): void {
+    // Re-create if removed from DOM (e.g. by PJAX morphdom update)
+    if (this.element && !document.body.contains(this.element)) {
+      this.element = null
+    }
     if (this.element) return
 
     const tmpl = document.getElementById('_pywire_reconnect') as HTMLTemplateElement | null

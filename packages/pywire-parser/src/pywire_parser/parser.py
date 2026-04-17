@@ -35,7 +35,7 @@ from pywire_parser.directives.layout import LayoutDirectiveParser
 from pywire_parser.directives.no_spa import NoSpaDirectiveParser
 from pywire_parser.directives.path import PathDirectiveParser
 from pywire_parser.exceptions import PyWireSyntaxError
-from pywire_parser.interpolation.jinja import JinjaInterpolationParser
+from pywire_parser.interpolation.brace import BraceInterpolationParser
 
 
 @dataclass
@@ -65,7 +65,7 @@ class PyWireParser:
         ]
 
         # Interpolation parser (pluggable)
-        self.interpolation_parser = JinjaInterpolationParser()
+        self.interpolation_parser = BraceInterpolationParser()
 
     def parse_file(self, file_path: Path) -> ParsedPyWire:
         """Parse a .pywire file."""

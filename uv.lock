@@ -1775,7 +1775,6 @@ name = "pywire"
 version = "0.8.0"
 source = { editable = "packages/pywire" }
 dependencies = [
-    { name = "jinja2" },
     { name = "msgpack" },
     { name = "python-multipart" },
     { name = "starlette" },
@@ -1786,6 +1785,7 @@ build = [
     { name = "pywire-parser" },
 ]
 cli = [
+    { name = "jinja2" },
     { name = "pywire-parser" },
     { name = "rich-click" },
     { name = "textual" },
@@ -1797,6 +1797,7 @@ dev = [
     { name = "build" },
     { name = "coverage" },
     { name = "httpx" },
+    { name = "jinja2" },
     { name = "msgpack-types" },
     { name = "nox" },
     { name = "pydantic" },
@@ -1836,7 +1837,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "hypercorn", marker = "extra == 'http3'", specifier = ">=0.14.0" },
-    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "jinja2", marker = "extra == 'cli'", specifier = ">=3.1.0" },
     { name = "msgpack", specifier = ">=1.0.0" },
     { name = "msgpack-types", marker = "extra == 'dev'" },
     { name = "nox", marker = "extra == 'dev'" },
