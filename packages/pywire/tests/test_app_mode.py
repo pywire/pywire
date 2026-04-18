@@ -54,20 +54,17 @@ def test_app_mode_gating_dev(tmp_path) -> None:
     app._is_dev_mode = True
     client = TestClient(app.app)
 
-    # Source route should work (if path valid, but here we just check it's not 404 initially)
-    # We'll use a real file to verify it actually works
-    import os
-
-    this_file = os.path.abspath(__file__)
-    response = client.get(f"/_pywire/source?path={this_file}")
+    # Source route should work — use a temp file so the path is stable
+    # regardless of virtualenv or worktree layout
+    src_file = tmp_path / "sample.py"
+    src_file.write_text("# test_app_mode_gating_dev marker")
+    response = client.get(f"/_pywire/source?path={src_file}")
     assert response.status_code == 200
     assert "test_app_mode_gating_dev" in response.text
 
-    # Script URL should be dev bundle
-    assert (
-        app._get_client_script_url()
-        == f"/_pywire/static/pywire.dev.min.js?v={__version__}"
-    )
+    # Script URL should be dev bundle (buster is bundle mtime)
+    url = app._get_client_script_url()
+    assert url.startswith("/_pywire/static/pywire.dev.min.js?v=")
 
 
 def test_capabilities_endpoint(tmp_path) -> None:

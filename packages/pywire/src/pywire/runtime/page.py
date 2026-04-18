@@ -530,6 +530,27 @@ class BasePage:
                 if name in call_kwargs:
                     bound_kwargs[name] = call_kwargs[name]
 
+            # Parity with the non-interactive form-post path (which calls
+            # ``handler(event_data)`` positionally): if a required positional
+            # param is still unbound, give it the event-data object so
+            # handlers like ``def on_click(e):`` or ``def handler(_):`` work
+            # across both dispatch paths.
+            event_obj: Any = None
+            for name, param in sig.parameters.items():
+                if name in bound_kwargs:
+                    continue
+                if param.kind not in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                ):
+                    continue
+                if param.default is not inspect.Parameter.empty:
+                    continue
+                if event_obj is None:
+                    event_obj = create_event_data(call_kwargs)
+                bound_kwargs[name] = event_obj
+                break
+
         from pywire.shell import _request_ctx
         from pywire.core.dispatch import _page_context
 
@@ -755,6 +776,22 @@ class BasePage:
             except (AttributeError, KeyError):
                 pass  # no router available; SPA navigation will use sibling paths only
 
+            # ASGI mount prefix — when PyWire is mounted under e.g. /app on a
+            # host FastAPI/Starlette app, every URL we emit must be prefixed
+            # with it. Starlette sets scope["root_path"] on mounted sub-apps.
+            root_path: str = ""
+            try:
+                root_path = str(self.request.scope.get("root_path", "") or "")
+            except (AttributeError, KeyError):
+                pass
+
+            def _prefix(p: str) -> str:
+                if not root_path or not isinstance(p, str) or not p.startswith("/"):
+                    return p
+                if p.startswith(root_path + "/") or p == root_path:
+                    return p
+                return root_path + p
+
             if not no_spa and not is_component:
                 # Reconnect overlay config from PyWire app
                 reconnect_max_attempts = 10
@@ -770,14 +807,40 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
+                # Check interactive server mode
+                interactive_mode = True
+                try:
+                    interactive_mode = bool(
+                        getattr(self.request.app.state, "interactive_server_mode", True)
+                    )
+                except (AttributeError, KeyError):
+                    pass
+
+                # Dev-only SSE reload channel for non-interactive mode. The
+                # dev server mounts /_pywire/dev/reload when both conditions
+                # hold; client subscribes via EventSource if this is set.
+                dev_reload_url = None
+                try:
+                    pywire_app = self.request.app.state.pywire
+                    if not interactive_mode and getattr(
+                        pywire_app, "_is_dev_mode", False
+                    ):
+                        dev_reload_url = _prefix("/_pywire/dev/reload")
+                except (AttributeError, KeyError):
+                    pass
+
+                sibling_paths_raw = getattr(self, "__sibling_paths__", []) or []
                 meta = {
-                    "sibling_paths": getattr(self, "__sibling_paths__", []),
-                    "all_paths": all_wire_paths,
+                    "sibling_paths": [_prefix(p) for p in sibling_paths_raw],
+                    "all_paths": [_prefix(p) for p in all_wire_paths],
                     "enable_pjax": pjax_enabled,
                     "debug": debug_mode,
-                    "static_path": static_url_path,
+                    "static_path": _prefix(static_url_path),
+                    "mount_path": root_path,
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
+                    "interactive": interactive_mode,
+                    "dev_reload_url": dev_reload_url,
                 }
                 import json
 
@@ -787,10 +850,12 @@ class BasePage:
                 # Determine client script URL
                 from pywire import __version__ as _pywire_version
 
-                script_url = f"/_pywire/static/pywire.core.min.js?v={_pywire_version}"
+                script_url = (
+                    f"{root_path}/_pywire/static/pywire.core.min.js?v={_pywire_version}"
+                )
                 try:
                     pywire_app = self.request.app.state.pywire
-                    script_url = pywire_app._get_client_script_url()
+                    script_url = pywire_app._get_client_script_url(root_path=root_path)
                 except (AttributeError, KeyError):
                     # Fallback to dev if we can't detect, or keep core default
                     pass
@@ -812,7 +877,27 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
-                injection = f"{reconnect_injection}{meta_script}{client_script}"
+                # Non-interactive mode: warn about unsupported event handlers
+                event_warning = ""
+                if not interactive_mode and debug_mode:
+                    # Check for event handler attributes in the rendered HTML
+                    import re
+
+                    event_attrs = re.findall(r"data-on-(\w+)=", html)
+                    # Filter out @submit which works via form POST
+                    unsupported = [e for e in event_attrs if e != "submit"]
+                    if unsupported:
+                        unique = sorted(set(unsupported))
+                        handlers_str = ", ".join(f"@{e}" for e in unique)
+                        event_warning = (
+                            f'<script>console.warn("PyWire: Non-interactive mode — '
+                            f"these event handlers are inactive: {handlers_str}. "
+                            f'Only @submit works via form POST.")</script>'
+                        )
+
+                injection = (
+                    f"{reconnect_injection}{meta_script}{client_script}{event_warning}"
+                )
 
                 if "</body>" in html:
                     parts = html.rsplit("</body>", 1)
@@ -1156,3 +1241,11 @@ class BasePage:
         html = await self._render_template()
         self._cleanup_components()
         return html
+
+
+class ErrorBasePage(BasePage):
+    """Base class for __error__.wire pages. Provides typed error context attributes."""
+
+    error_code: int
+    error_message: str
+    error_trace: str

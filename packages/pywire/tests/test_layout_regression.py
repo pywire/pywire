@@ -16,6 +16,7 @@ def loader() -> PageLoader:
 def mock_app() -> MagicMock:
     app = MagicMock()
     app.state = MagicMock()
+    app.state.interactive_server_mode = True
     return app
 
 

@@ -7,7 +7,7 @@ from pywire_parser.ast_nodes import InterpolationNode
 
 
 class InterpolationParser(ABC):
-    """Base class for parsing interpolations - can swap Jinja for custom later."""
+    """Base class for parsing {expression} interpolations in .wire file attributes."""
 
     @abstractmethod
     def parse(

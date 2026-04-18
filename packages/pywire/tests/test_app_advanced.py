@@ -29,6 +29,7 @@ class TestAppAdvanced:
         request.method = "POST"
         request.headers = {"X-PyWire-Event": "click"}
         request.url.path = "/test"
+        request.scope = {"type": "http"}
         request.json.return_value = {"handler": "save", "data": {}}
 
         page_class = MagicMock()
@@ -50,6 +51,7 @@ class TestAppAdvanced:
         request = AsyncMock(spec=Request)
         request.method = "GET"
         request.url.path = "/test"
+        request.scope = {"type": "http"}
         request.app.state.webtransport_cert_hash = [1, 2, 3]
 
         page_class = MagicMock()

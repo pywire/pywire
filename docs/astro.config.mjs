@@ -88,6 +88,7 @@ export default defineConfig({
             { label: 'Layouts', slug: 'guides/layouts' },
             { label: 'Forms & Validation', slug: 'guides/forms' },
             { label: 'Middleware', slug: 'guides/middleware' },
+            { label: 'Framework Integration', slug: 'guides/framework-integration' },
           ],
         },
         {

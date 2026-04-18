@@ -184,9 +184,7 @@ class TestDeployCommand:
             _make_app_dir(tmpdir)
             Path("Dockerfile").write_text("# custom dockerfile")
             # Decline the overwrite prompt for the existing Dockerfile
-            result = runner.invoke(
-                cli, ["deploy", "--platform", "fly"], input="n\n"
-            )
+            result = runner.invoke(cli, ["deploy", "--platform", "fly"], input="n\n")
             assert result.exit_code == 0, result.output
             assert Path("fly.toml").exists()
             # Declined overwrite — existing Dockerfile preserved, skip hint shown

@@ -59,6 +59,7 @@ class TestStrictRequirements:
 
         request = MagicMock(spec=Request)
         request.url.path = "/nonexistent"
+        request.scope = {"type": "http"}
         request.query_params = {}
 
         await app._handle_request(request)

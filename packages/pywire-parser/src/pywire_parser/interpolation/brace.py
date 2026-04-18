@@ -1,23 +1,17 @@
-"""Jinja2-based interpolation parser."""
+"""Brace interpolation parser for {expression} syntax in .wire files."""
 
 import ast
 from typing import List, Union
-
-from jinja2 import Environment
 
 from pywire_parser.ast_nodes import InterpolationNode
 from pywire_parser.interpolation.base import InterpolationParser
 
 
-class JinjaInterpolationParser(InterpolationParser):
-    """Jinja2-based interpolation parser."""
+class BraceInterpolationParser(InterpolationParser):
+    """Parses {expression} interpolations in .wire file attributes."""
 
     def __init__(self) -> None:
-        self.env = Environment(
-            variable_start_string="{",
-            variable_end_string="}",
-            autoescape=True,  # XSS protection
-        )
+        pass
 
     def _is_valid_python(self, text: str) -> bool:
         """Check if text is valid Python expression (or with format spec)."""
@@ -86,6 +80,17 @@ class JinjaInterpolationParser(InterpolationParser):
         last_end = 0
 
         while i < len(text):
+            # Escaped literal braces: `\{` -> `{`, `\}` -> `}`.
+            # A bare backslash not followed by `{`/`}` is left untouched so
+            # existing wire files that contain literal backslashes keep
+            # rendering as before.
+            if text[i] == "\\" and i + 1 < len(text) and text[i + 1] in ("{", "}"):
+                if i > last_end:
+                    tokens.append(text[last_end:i])
+                tokens.append(text[i + 1])
+                i += 2
+                last_end = i
+                continue
             if text[i] == "{":
                 # Find matching closing brace
                 brace_count = 1
@@ -195,6 +200,16 @@ class JinjaInterpolationParser(InterpolationParser):
         last_end = 0
 
         while i < len(text):
+            # Escaped literal braces in compile() — emit doubled braces into
+            # the f-string source so the runtime-evaluated string contains a
+            # single literal brace.
+            if text[i] == "\\" and i + 1 < len(text) and text[i + 1] in ("{", "}"):
+                if i > last_end:
+                    result.append(text[last_end:i])
+                result.append("{{" if text[i + 1] == "{" else "}}")
+                i += 2
+                last_end = i
+                continue
             if text[i] == "{":
                 # Add text before brace
                 if i > last_end:

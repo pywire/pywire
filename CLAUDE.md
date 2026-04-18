@@ -34,7 +34,6 @@ cd packages/pywire
 ./scripts/test                             # pytest --cov=pywire + pnpm test (client)
 uv run --extra dev pytest tests/path/to/test_file.py::test_name  # single test
 uv run --extra dev nox                     # multi-version Python tests
-cargo clippy -- -D warnings && cargo fmt --check  # Rust checks
 ```
 
 ### packages/pywire-language-server
@@ -84,7 +83,8 @@ tree-sitter test
 ```
 docs/                         # Interactive documentation site (Astro + Starlight + Pyodide)
 packages/
-  pywire/                     # Core Python framework (Python + Rust + TS client)
+  pywire/                     # Core Python framework (Python + TS client)
+  pywire-parser/              # Shared .wire file parser (Python, py-tree-sitter)
   pywire-language-server/     # LSP server (Python, pygls)
   create-pywire-app/          # Project scaffolding CLI (Python)
   vscode-pywire/              # VS Code extension (TypeScript)
@@ -98,17 +98,14 @@ examples/
 
 ### packages/pywire — Core Framework
 
-The core package has three layers built together:
+The core package has two layers built together:
 
-1. **Rust parser** (`Cargo.toml`, `src/`) — compiles to `pywire._pywire_parser` Python extension module via Maturin + PyO3. Uses tree-sitter-pywire for parsing `.wire` files.
-2. **Python framework** (`src/pywire/`) — Starlette-based web framework. CLI entry point is `pywire` → `pywire.cli.main:cli`.
-3. **TypeScript client** (`src/pywire/client/`) — pnpm workspace package. Built assets are included in the PyPI wheel via Maturin's `include` directive (along with `src/pywire/static/` and `src/pywire/templates/`).
-
-Because the Rust extension is built by Maturin, `maturin develop` or the standard `uv sync` + `./scripts/install` flow is needed for a working dev environment. The Python module `pywire._pywire_parser` is intentionally excluded from type checking.
+1. **Python framework** (`src/pywire/`) — Starlette-based web framework. CLI entry point is `pywire` → `pywire.cli.main:cli`. Parsing is handled by the separate `pywire-parser` package (which uses `tree-sitter-pywire` via py-tree-sitter).
+2. **TypeScript client** (`src/pywire/client/`) — pnpm workspace package. Built assets are included in the PyPI wheel via Hatchling's build config (along with `src/pywire/static/` and `src/pywire/templates/`).
 
 ### .wire Files
 
-`.wire` files are the framework's template format — a custom syntax embedding Python, HTML, CSS, and JS. Parsing is handled by the Rust/tree-sitter layer. The Tree-sitter grammar, Prettier plugin, and VS Code extension all exist to support this file type.
+`.wire` files are the framework's template format — a custom syntax embedding Python, HTML, CSS, and JS. Parsing is handled by the `pywire-parser` package (pure Python, using py-tree-sitter + `tree-sitter-pywire`). The Tree-sitter grammar, Prettier plugin, and VS Code extension all exist to support this file type.
 
 ### Type Checking
 
@@ -120,7 +117,6 @@ Python type checking uses **ty** (not mypy). Tests and certain internal modules 
 |----------|--------|------|------------|------|
 | Python | ruff format | ruff check | ty | pytest / nox |
 | TypeScript | prettier | eslint | tsc | vitest / playwright |
-| Rust | cargo fmt | cargo clippy | — | cargo test |
 
 Multi-version Python testing uses **nox** in the core and language server packages.
 

@@ -16,14 +16,16 @@ def test_cache_busting_prod_url(tmp_path) -> None:
 
 
 def test_cache_busting_dev_url(tmp_path) -> None:
-    """Dev script URL includes ?v= with the package version."""
+    """Dev script URL uses the bundle's mtime so rebuilds bust the cache."""
     (tmp_path / "pages").mkdir()
     app = PyWire(debug=True, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = True
 
     url = app._get_client_script_url()
-    assert url == f"/_pywire/static/pywire.dev.min.js?v={__version__}"
-    assert "?v=" in url
+    assert url.startswith("/_pywire/static/pywire.dev.min.js?v=")
+    # Dev buster is an int mtime — not the package version string.
+    buster = url.split("?v=")[1]
+    assert buster.isdigit()
 
 
 def test_cache_busting_version_not_empty(tmp_path) -> None:

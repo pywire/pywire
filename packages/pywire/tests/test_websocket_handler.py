@@ -102,21 +102,57 @@ class TestWebSocketHandler:
 
     @pytest.mark.asyncio
     async def test_handle_relocate(self) -> None:
-        ws = MockWebSocket()
+        """Relocate dispatches through internal ASGI replay and creates local page."""
+        ws = MockWebSocket(
+            scope={
+                "type": "websocket",
+                "path": "/",
+                "headers": [(b"host", b"testserver")],
+                "query_string": b"",
+                "client": ("127.0.0.1", 1234),
+                "server": ("testserver", 80),
+                "scheme": "http",
+                "root_path": "",
+            }
+        )
 
-        # Setup router mock
-        # match returns (PageClass, params, match_type)
+        # Setup router mock — used by resolve_page for local state instance
         self.app.router.match.return_value = (MockPage, {"id": "123"}, "main")
+
+        # Mock _get_dispatch_target to return a minimal ASGI app that returns 200
+        async def fake_asgi_app(scope: dict, receive: Any, send: Any) -> None:
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"text/html")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b"<div>Relocated Page</div>",
+                }
+            )
+
+        self.app._get_dispatch_target.return_value = fake_asgi_app
 
         data = {"type": "relocate", "path": "/new-path"}
 
         await self.handler._handle_relocate(cast(WebSocket, ws), data)
 
+        # Should have a local page instance for WS state management
         assert cast(WebSocket, ws) in self.handler.connection_pages
         page = self.handler.connection_pages[cast(WebSocket, ws)]
         assert isinstance(page, MockPage)
         assert page.params == {"id": "123"}
-        assert ws.sent_messages[0]["type"] == "update"
+
+        # First message should be the update with rendered HTML from internal dispatch
+        update_msg = next(
+            (m for m in ws.sent_messages if m.get("type") == "update"), None
+        )
+        assert update_msg is not None
+        assert "Relocated Page" in update_msg.get("html", "")
 
     @pytest.mark.asyncio
     async def test_send_console_message(self) -> None:
@@ -140,7 +176,9 @@ class TestWebSocketHandler:
         ws = MockWebSocket()
         store = MemorySessionStore()
         # Pre-populate a session
-        await store.set("existing-session", {"attrs": {"count": 5}, "wire_tags": {}}, ttl=60)
+        await store.set(
+            "existing-session", {"attrs": {"count": 5}, "wire_tags": {}}, ttl=60
+        )
 
         self.app.session_store = store
         self.app.router.match.return_value = (MockPage, {}, "main")
@@ -156,9 +194,7 @@ class TestWebSocketHandler:
         }
         await self.handler._handle_init(cast(WebSocket, ws), data)
 
-        init_ack = next(
-            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
-        )
+        init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is True
         assert init_ack["session_id"] == "existing-session"
@@ -184,9 +220,7 @@ class TestWebSocketHandler:
         }
         await self.handler._handle_init(cast(WebSocket, ws), data)
 
-        init_ack = next(
-            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
-        )
+        init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is False
         # A new session_id should have been generated
@@ -211,8 +245,6 @@ class TestWebSocketHandler:
         }
         await self.handler._handle_init(cast(WebSocket, ws), data)
 
-        init_ack = next(
-            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
-        )
+        init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is False

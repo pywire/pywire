@@ -123,8 +123,13 @@ app = PyWire(
 ## Transport Compatibility
 
 - **HTTP requests**: Pass through all middleware.
-- **WebSocket connections**: Pass through middleware (Starlette's `BaseHTTPMiddleware` forwards WebSocket scopes automatically).
+- **SPA navigations (WebSocket)**: Pass through all middleware. When a user clicks a link and PyWire navigates via WebSocket, an internal HTTP request is dispatched through the full middleware stack — auth, rate limiting, CORS, etc. all apply identically to SPA navigation and direct HTTP requests.
+- **WebSocket connections**: The initial WebSocket handshake passes through middleware. Subsequent messages go through middleware via internal replay (see above).
 - **WebTransport connections**: Bypass middleware entirely. WebTransport is handled directly by the PyWire transport layer.
+
+:::note
+Prior to this release, SPA navigations via WebSocket bypassed the middleware stack entirely. This is no longer the case — middleware enforcement is now uniform across all transports.
+:::
 
 ## Available Middleware
 

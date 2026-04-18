@@ -217,7 +217,10 @@ class TestCodegenTemplate(unittest.TestCase):
         )
         self.normalize_ast(func_def)
         code = ast.unparse(func_def)
-        self.assertIn("'click': self.handleClick", code)
+        # Component events are emitted as `on_{event}` kwargs so they
+        # match the `on_click` / `on_submit` convention in @props classes
+        # and don't collide with same-named @expose methods.
+        self.assertIn("'on_click': self.handleClick", code)
         self.assertIn("self._resolve_component(", code)
 
     def test_codegen_form_extracts_field_rules(self) -> None:

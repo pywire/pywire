@@ -33,7 +33,9 @@ class TestHandlerNameEvolution(unittest.TestCase):
 
     def test_inline_expression_produces_handler_wrapper(self) -> None:
         """@click={count.value += 1} should generate _handler_0."""
-        content = "---\ncount = wire(0)\n---\n<button @click={count.value += 1}>Inc</button>"
+        content = (
+            "---\ncount = wire(0)\n---\n<button @click={count.value += 1}>Inc</button>"
+        )
         code = self._compile(content)
 
         self.assertIn("_handler_0", code)
@@ -154,7 +156,7 @@ class TestBroadcastReloadOrdering(unittest.TestCase):
         mock_app.router.match.return_value = (new_page_class, {}, None)
         handler.app = mock_app
 
-        asyncio.get_event_loop().run_until_complete(handler.broadcast_reload())
+        asyncio.run(handler.broadcast_reload())
 
         # send_bytes should have been called while old page was still active
         self.assertEqual(send_order, ["old"])
@@ -193,7 +195,7 @@ class TestBroadcastReloadOrdering(unittest.TestCase):
         mock_app.router.match.return_value = (new_page_class, {}, None)
         handler.app = mock_app
 
-        asyncio.get_event_loop().run_until_complete(handler.broadcast_reload())
+        asyncio.run(handler.broadcast_reload())
 
         # Old page should be restored after failure
         self.assertIs(handler.connection_pages[mock_ws], old_page)

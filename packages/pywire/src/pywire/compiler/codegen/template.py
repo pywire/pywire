@@ -27,7 +27,7 @@ from pywire.compiler.ast_nodes import (
     ThenAttribute,
     TryAttribute,
 )
-from pywire.compiler.interpolation.jinja import JinjaInterpolationParser
+from pywire.compiler.interpolation.brace import BraceInterpolationParser
 
 
 class TemplateCodegen:
@@ -54,7 +54,7 @@ class TemplateCodegen:
     DOCUMENT_ROOT_ELEMENTS = {"html", "head", "body"}
 
     def __init__(self, *, dev_mode: Optional[bool] = None) -> None:
-        self.interpolation_parser = JinjaInterpolationParser()
+        self.interpolation_parser = BraceInterpolationParser()
         self._slot_default_counter = 0
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
@@ -2335,13 +2335,18 @@ class TemplateCodegen:
                     dict_values.append(expr)
 
             # Compile events into callable props on component instances.
+            # Use the `on_{event}` naming convention so the kwarg matches
+            # the component's Props declaration (e.g. `on_submit` on the
+            # built-in <Form />). A bare `event_type` key would collide
+            # with @expose methods of the same name (e.g. Form's own
+            # `submit()` method) and silently overwrite them.
             for event_type, attrs_list in event_attrs_by_type.items():
                 attr = attrs_list[-1]
                 raw_handler = attr.handler_name.strip()
                 if raw_handler.startswith("{") and raw_handler.endswith("}"):
                     raw_handler = raw_handler[1:-1].strip()
 
-                dict_keys.append(ast.Constant(value=event_type))
+                dict_keys.append(ast.Constant(value=f"on_{event_type}"))
                 dict_values.append(
                     cast(
                         ast.expr,

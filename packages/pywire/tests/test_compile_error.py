@@ -32,12 +32,15 @@ async def test_compile_error_page_syntax_error(
 
     response = await page.render()
     assert isinstance(response, HTMLResponse)
-    assert response.status_code == 200
+    # Compile errors must return 500 so browsers, proxies, and monitoring
+    # tools treat the response as a server error rather than a successful
+    # page load.
+    assert response.status_code == 500
     content = bytes(response.body).decode()
     assert "PyWire Syntax Error" in content
     assert "Invalid syntax" in content
     assert "line 10" in content
-    assert "line-num'>10</span>" in content
+    assert 'line-num">10</span>' in content
     assert "line-current" in content
     assert temp_pywire_file in content
 
@@ -55,6 +58,7 @@ async def test_compile_error_page_generic_exception(
     page = CompileErrorPage(mock_request, error, file_path=temp_pywire_file)
 
     response = await page.render()
+    assert response.status_code == 500
     content = bytes(response.body).decode()
 
     assert "Compilation Error" in content

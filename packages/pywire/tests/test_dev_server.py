@@ -54,19 +54,15 @@ class TestImportApp:
             import_app("fake_app_mod_no_attr:missing_attr")
         assert exc_info.value.code == 1
 
-    def test_bad_module_prints_message(self, monkeypatch, capsys):
-        """ImportError prints a helpful message (via Rich console)."""
+    def test_bad_module_prints_message(self, monkeypatch, caplog):
+        """ImportError logs a helpful message."""
+        import logging
+
         monkeypatch.delitem(sys.modules, "__nonexistent_pywire_mod2__", raising=False)
 
-        # Capture console.print output by patching the module-level console
-        import pywire.runtime.dev_server as ds
-
-        printed = []
-        original_print = ds.console.print
-        monkeypatch.setattr(ds.console, "print", lambda *a, **kw: printed.append(str(a)))
-
         import_app = _make_import_app()
-        with pytest.raises(SystemExit):
-            import_app("__nonexistent_pywire_mod2__:app")
+        with caplog.at_level(logging.ERROR, logger="pywire.dev"):
+            with pytest.raises(SystemExit):
+                import_app("__nonexistent_pywire_mod2__:app")
 
-        assert any("__nonexistent_pywire_mod2__" in msg for msg in printed)
+        assert any("__nonexistent_pywire_mod2__" in r.message for r in caplog.records)

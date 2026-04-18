@@ -5,7 +5,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 # Initialize templating environment for internal error pages
 _env = Environment(
     loader=PackageLoader("pywire", "templates"),
-    autoescape=select_autoescape(["html", "xml"]),
+    autoescape=select_autoescape(["html", "xml", "j2"]),
 )
 
 

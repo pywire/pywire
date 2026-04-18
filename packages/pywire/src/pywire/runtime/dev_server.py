@@ -12,6 +12,9 @@ from rich.text import Text
 # Force terminal to ensure ANSI codes are generated even when piped to TUI
 console = Console(force_terminal=True, markup=True)
 
+# Module-level logger — handler/level configured in run_dev_server() at startup
+_dev_logger = logging.getLogger("pywire.dev")
+
 
 class _PyWireDevHandler(logging.Handler):
     """Logging handler: uvicorn-style levelprefix + Rich markup in message body."""
@@ -31,7 +34,7 @@ class _PyWireDevHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             levelname = record.levelname
-            separator = " " * (8 - len(levelname))
+            separator = " " * (9 - len(levelname))
             style = self._LEVEL_STYLES.get(record.levelno, "white")
             prefix = Text(f"{levelname}:{separator}", style=style)
             body = Text.from_markup(record.getMessage())
@@ -53,19 +56,19 @@ def _import_app(app_str: str) -> Any:
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
-        console.print(
-            f"[bold red]PyWire Error[/]: Could not import module '[bold]{module_name}[/]': {e}"
+        _dev_logger.error(
+            f"PyWire: Could not import module '[bold]{module_name}[/]': {e}"
         )
-        console.print(
-            "[dim]Check that your app module and all its dependencies are installed and importable.[/]"
+        _dev_logger.error(
+            "PyWire: Check that your app module and all its dependencies are installed and importable."
         )
         raise SystemExit(1) from e
 
     try:
         return getattr(module, app_name)
     except AttributeError:
-        console.print(
-            f"[bold red]PyWire Error[/]: Module '[bold]{module_name}[/]' has no attribute '[bold]{app_name}[/]'"
+        _dev_logger.error(
+            f"PyWire: Module '[bold]{module_name}[/]' has no attribute '[bold]{app_name}[/]'"
         )
         raise SystemExit(1)
 
@@ -146,6 +149,7 @@ async def run_dev_server(
     port: int,
     ssl_keyfile: Optional[str] = None,
     ssl_certfile: Optional[str] = None,
+    original_port: Optional[int] = None,
 ) -> None:
     """Run development server with hot reload."""
     import asyncio
@@ -163,12 +167,22 @@ async def run_dev_server(
     )
     logging.getLogger("hypercorn").setLevel(logging.INFO)
 
-    # pywire.dev logger: uvicorn-aligned levelprefix + Rich markup in message body
-    _dev_logger = logging.getLogger("pywire.dev")
+    # Configure pywire.dev logger: uvicorn-aligned levelprefix + Rich markup in message body
     if not _dev_logger.handlers:
         _dev_logger.addHandler(_PyWireDevHandler(console))
     _dev_logger.setLevel(logging.INFO)
     _dev_logger.propagate = False
+    _dev_logger.info(f"🔍 PyWire: Using app [cyan]{app_str}[/]")
+    if original_port is not None and port != original_port:
+        _dev_logger.warning(
+            f"PyWire: Port {original_port} is busy, using [bold cyan]{port}[/] instead."
+        )
+
+    # Signal dev mode to PyWire.__init__ before the app is imported.
+    # The flag on the instance is set below, but some init-time decisions
+    # (e.g. resolving a persistent dev session secret) need to know
+    # upfront — the import triggers __init__ immediately.
+    os.environ.setdefault("PYWIRE_DEV_MODE", "1")
 
     # Load app to get config
     pywire_app = _import_app(app_str)
@@ -178,10 +192,22 @@ async def run_dev_server(
 
     pages_dir = pywire_app.pages_dir
 
-    # Enable Dev Error Middleware
-    from pywire.runtime.debug import DevErrorMiddleware
+    # Non-interactive mode has no persistent WebSocket/HTTP-poll transport,
+    # so hot reload needs its own channel. Mount a dev-only SSE endpoint.
+    from pywire.runtime.dev_reload import DevReloadBroadcaster
 
-    pywire_app.app = DevErrorMiddleware(pywire_app.app)
+    dev_broadcaster: Optional[DevReloadBroadcaster] = None
+    if not pywire_app.interactive_server_mode:
+        from starlette.routing import Route
+
+        from pywire.runtime.dev_reload import dev_reload_endpoint
+
+        dev_broadcaster = DevReloadBroadcaster()
+        pywire_app.app.state.dev_reload_broadcaster = dev_broadcaster
+        # Prepend so we beat the PyWire catch-all `/{path:path}` route.
+        pywire_app.app.router.routes.insert(
+            0, Route("/_pywire/dev/reload", dev_reload_endpoint, methods=["GET"])
+        )
 
     if not pages_dir.exists():
         _dev_logger.warning(f"PyWire: Pages directory '{pages_dir}' does not exist.")
@@ -303,16 +329,20 @@ async def run_dev_server(
                     )
 
                     # Broadcast reload to WebSocket clients
-                    if hasattr(pywire_app, "ws_handler"):
+                    if getattr(pywire_app, "ws_handler", None) is not None:
                         await pywire_app.ws_handler.broadcast_reload()
 
                     # Broadcast reload to HTTP polling clients
-                    if hasattr(pywire_app, "http_handler"):
+                    if getattr(pywire_app, "http_handler", None) is not None:
                         pywire_app.http_handler.broadcast_reload()
 
                     # Broadcast to WebTransport clients
-                    if hasattr(pywire_app, "web_transport_handler"):
+                    if getattr(pywire_app, "web_transport_handler", None) is not None:
                         await pywire_app.web_transport_handler.broadcast_reload()
+
+                    # Broadcast to non-interactive dev SSE subscribers
+                    if dev_broadcaster is not None:
+                        await dev_broadcaster.broadcast_reload()
 
         except Exception as e:
             if not shutdown_event.is_set():
@@ -478,8 +508,10 @@ async def run_dev_server(
                 await shutdown_event.wait()
                 # Send shutdown signal to all connected clients so they close
                 # their WebSocket connections before uvicorn tries to stop.
-                if hasattr(pywire_app, "ws_handler"):
+                if getattr(pywire_app, "ws_handler", None) is not None:
                     await pywire_app.ws_handler.broadcast_shutdown()
+                if dev_broadcaster is not None:
+                    await dev_broadcaster.broadcast_shutdown()
                 server.should_exit = True
                 # Watchdog: last-resort force-exit if something stalls (0.5s —
                 # connections should already be drained by broadcast_shutdown)

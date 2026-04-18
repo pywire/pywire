@@ -12,10 +12,8 @@ from pathlib import Path
 REQUIRED_ASSETS = (
     "pywire/static/pywire.core.min.js",
     "pywire/static/pywire.dev.min.js",
-    "pywire/templates/error/404.html",
-    "pywire/templates/error/500.html",
-    "pywire/templates/error/compile_error.html",
-    "pywire/templates/error/base.html",
+    "pywire/templates/error/compile_error.html.j2",
+    "pywire/templates/error/default.wire",
 )
 
 
