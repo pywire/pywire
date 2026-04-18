@@ -33,7 +33,9 @@ class TestHandlerNameEvolution(unittest.TestCase):
 
     def test_inline_expression_produces_handler_wrapper(self) -> None:
         """@click={count.value += 1} should generate _handler_0."""
-        content = "---\ncount = wire(0)\n---\n<button @click={count.value += 1}>Inc</button>"
+        content = (
+            "---\ncount = wire(0)\n---\n<button @click={count.value += 1}>Inc</button>"
+        )
         code = self._compile(content)
 
         self.assertIn("_handler_0", code)

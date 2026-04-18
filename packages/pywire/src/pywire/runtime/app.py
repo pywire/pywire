@@ -3,7 +3,6 @@
 import logging
 import os
 import re
-import secrets
 import traceback
 import inspect
 import hashlib
@@ -522,47 +521,38 @@ class PyWire:
 
         Priority:
         1. ``PYWIRE_SESSION_SECRET`` env var — production pathway.
-        2. ``PYWIRE_DEV_MODE=1`` (set by ``pywire dev``) — cache a
-           per-project secret in ``{pages_dir}/../.pywire/dev-session-secret``
-           so sessions survive restarts without manual env setup.
+        2. ``PYWIRE_DEV_MODE=1`` (set by ``pywire dev``) — derive a stable
+           per-machine + per-project secret via HMAC so sessions survive
+           restarts without writing a secret to disk.
         3. Fallback: return ``None`` so ``SessionMiddleware`` generates a
-           random key, and emit a loud warning. This is the
-           multi-worker-unsafe path users should avoid in production.
+           random key, and emit a loud warning. Multi-worker-unsafe —
+           users should avoid this path in production.
         """
         explicit = os.environ.get("PYWIRE_SESSION_SECRET")
         if explicit:
             return explicit
 
         if os.environ.get("PYWIRE_DEV_MODE") == "1":
-            try:
-                secret_file = (
-                    Path(str(self.pages_dir)).parent / ".pywire" / "dev-session-secret"
-                )
-                if secret_file.exists():
-                    data = secret_file.read_text(encoding="utf-8").strip()
-                    if data:
-                        return data
-                secret = secrets.token_hex(32)
-                secret_file.parent.mkdir(parents=True, exist_ok=True)
-                secret_file.write_text(secret, encoding="utf-8")
-                try:
-                    secret_file.chmod(0o600)
-                except OSError:
-                    pass  # Windows etc — best-effort only
-                logger.info(
-                    "PyWire dev: generated a persistent session secret at %s. "
-                    "Sessions will survive restarts. Add `.pywire/` to "
-                    ".gitignore.",
-                    secret_file,
-                )
-                return secret
-            except OSError as e:
-                logger.warning(
-                    "PyWire dev: could not persist session secret (%s). "
-                    "Falling back to a random per-process key — sessions "
-                    "will not survive restarts.",
-                    e,
-                )
+            # Derive a deterministic dev secret from machine identity +
+            # project path. Never written to disk (CodeQL: clear-text
+            # storage of sensitive information). Stable across restarts
+            # on the same machine + project, different between machines
+            # and across `pages_dir` moves.
+            import platform
+
+            material = "|".join(
+                [
+                    "pywire-dev-session-v1",
+                    platform.node() or "unknown-host",
+                    str(Path(str(self.pages_dir)).resolve()),
+                ]
+            ).encode("utf-8")
+            logger.info(
+                "PyWire dev: derived a per-machine session secret. Sessions "
+                "will survive restarts. Set PYWIRE_SESSION_SECRET for "
+                "multi-worker or production use."
+            )
+            return hashlib.sha256(material).hexdigest()
 
         logger.warning(
             "PYWIRE_SESSION_SECRET is not set — a random signing key will be "

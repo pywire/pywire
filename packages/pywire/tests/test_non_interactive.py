@@ -60,7 +60,7 @@ class TestSessionSigning:
         secret = "test-secret-key"
         signed = _sign_session_id("abc123", secret)
         # Tamper with the session ID
-        tampered = "xyz789" + signed[signed.index("."):]
+        tampered = "xyz789" + signed[signed.index(".") :]
         assert _verify_session_id(tampered, secret) is None
 
     def test_verify_rejects_no_dot(self):
@@ -123,33 +123,28 @@ class TestSessionSecretEnvWiring:
             shutil.rmtree(app_b._test_dir, ignore_errors=True)
 
     def test_dev_mode_persists_secret_across_restarts(self, monkeypatch):
-        """`pywire dev` sets PYWIRE_DEV_MODE=1. First launch generates a
-        secret and writes it to `{pages_dir}/../.pywire/dev-session-secret`;
-        later launches reuse it. This keeps sessions alive across hot
-        reloads without forcing users to set PYWIRE_SESSION_SECRET."""
+        """`pywire dev` sets PYWIRE_DEV_MODE=1. The dev signing key is
+        derived deterministically from machine identity + pages_dir (no
+        secret written to disk — CodeQL flagged the prior file cache), so
+        sessions survive restarts and a second launch against the same
+        pages_dir validates cookies from the first.
+        """
         monkeypatch.delenv("PYWIRE_SESSION_SECRET", raising=False)
         monkeypatch.setenv("PYWIRE_DEV_MODE", "1")
 
         app_a = _make_non_interactive_app()
-        app_root = Path(str(app_a.pages_dir)).parent
-        secret_file = app_root / ".pywire" / "dev-session-secret"
-
-        # First instance creates the file.
-        assert secret_file.exists()
-        first_secret = secret_file.read_text().strip()
-        assert len(first_secret) >= 32
 
         client_a = TestClient(app_a, raise_server_exceptions=False)
         res_a = client_a.get("/")
         cookie = res_a.cookies.get("pywire_session")
         assert cookie is not None
 
-        # Second instance, same pages_dir — must reuse the same secret so
-        # cookies from the first instance still validate.
+        # Second instance, same pages_dir — deterministic derivation means
+        # the signing secret matches, so cookies from the first instance
+        # validate without any file-backed cache.
         app_b = PyWire(pages_dir=str(app_a.pages_dir))
         app_b._test_dir = app_a._test_dir  # piggyback for teardown parity
         try:
-            assert secret_file.read_text().strip() == first_secret
             client_b = TestClient(app_b, raise_server_exceptions=False)
             res_b = client_b.get("/", cookies={"pywire_session": cookie})
             # Same secret → signature accepted → no new cookie issued.

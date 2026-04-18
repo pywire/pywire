@@ -111,6 +111,13 @@ export interface EventMessage {
 export interface RelocateMessage {
   type: 'relocate'
   path: string
+  /**
+   * Current ``document.cookie`` snapshot (non-httponly cookies only). The
+   * server reconciles its virtual cookie jar against this so that manual
+   * browser-side deletions take effect on the next SPA navigation without
+   * requiring a full page reload.
+   */
+  cookies?: string
 }
 
 export interface RefSyncMessage {

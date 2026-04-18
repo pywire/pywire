@@ -176,7 +176,9 @@ class TestWebSocketHandler:
         ws = MockWebSocket()
         store = MemorySessionStore()
         # Pre-populate a session
-        await store.set("existing-session", {"attrs": {"count": 5}, "wire_tags": {}}, ttl=60)
+        await store.set(
+            "existing-session", {"attrs": {"count": 5}, "wire_tags": {}}, ttl=60
+        )
 
         self.app.session_store = store
         self.app.router.match.return_value = (MockPage, {}, "main")
@@ -192,9 +194,7 @@ class TestWebSocketHandler:
         }
         await self.handler._handle_init(cast(WebSocket, ws), data)
 
-        init_ack = next(
-            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
-        )
+        init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is True
         assert init_ack["session_id"] == "existing-session"
@@ -220,9 +220,7 @@ class TestWebSocketHandler:
         }
         await self.handler._handle_init(cast(WebSocket, ws), data)
 
-        init_ack = next(
-            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
-        )
+        init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is False
         # A new session_id should have been generated
@@ -247,8 +245,6 @@ class TestWebSocketHandler:
         }
         await self.handler._handle_init(cast(WebSocket, ws), data)
 
-        init_ack = next(
-            (m for m in ws.sent_messages if m["type"] == "init_ack"), None
-        )
+        init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is False

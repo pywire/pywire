@@ -149,9 +149,7 @@ class TestDispatchInternal:
 
         async def app(scope, receive, send):
             assert scope["query_string"] == b"foo=bar&baz=1"
-            await send(
-                {"type": "http.response.start", "status": 200, "headers": []}
-            )
+            await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b"ok"})
 
         response = await dispatch_internal(app, path="/test?foo=bar&baz=1")
@@ -165,9 +163,7 @@ class TestDispatchInternal:
         async def app(scope, receive, send):
             for name, value in scope["headers"]:
                 received_headers[name.decode()] = value.decode()
-            await send(
-                {"type": "http.response.start", "status": 200, "headers": []}
-            )
+            await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b""})
 
         await dispatch_internal(
@@ -184,9 +180,7 @@ class TestDispatchInternal:
 
         async def app(scope, receive, send):
             assert scope.get("_pywire_internal") is True
-            await send(
-                {"type": "http.response.start", "status": 200, "headers": []}
-            )
+            await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b""})
 
         await dispatch_internal(app, path="/")
@@ -235,9 +229,7 @@ class TestDispatchInternal:
         """Adapter collects multiple body chunks."""
 
         async def app(scope, receive, send):
-            await send(
-                {"type": "http.response.start", "status": 200, "headers": []}
-            )
+            await send({"type": "http.response.start", "status": 200, "headers": []})
             await send(
                 {"type": "http.response.body", "body": b"chunk1", "more_body": True}
             )
@@ -256,9 +248,7 @@ class TestDispatchInternal:
             assert scope["server"] == ("example.com", 443)
             assert scope["scheme"] == "https"
             assert scope["client"] == ("10.0.0.1", 5678)
-            await send(
-                {"type": "http.response.start", "status": 200, "headers": []}
-            )
+            await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b""})
 
         await dispatch_internal(
@@ -279,9 +269,7 @@ class TestDispatchInternal:
             assert scope["method"] == "POST"
             msg = await receive()
             assert msg["body"] == b'{"key": "value"}'
-            await send(
-                {"type": "http.response.start", "status": 200, "headers": []}
-            )
+            await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b"created"})
 
         response = await dispatch_internal(

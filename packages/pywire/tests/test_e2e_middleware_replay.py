@@ -31,10 +31,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Allow capabilities, static assets, login page, and internal WS
         path = request.url.path
-        if any(
-            path.startswith(p)
-            for p in ("/_pywire/", "/login")
-        ):
+        if any(path.startswith(p) for p in ("/_pywire/", "/login")):
             return await call_next(request)
         if not request.cookies.get("auth_token"):
             return RedirectResponse("/login", status_code=302)
@@ -112,9 +109,12 @@ def _ws_init(ws: Any, path: str = "/") -> dict:
     return data
 
 
-def _ws_relocate(ws: Any, path: str) -> dict:
+def _ws_relocate(ws: Any, path: str, cookies: str | None = None) -> dict:
     """Send relocate and return the response message."""
-    ws.send_bytes(msgpack.packb({"type": "relocate", "path": path}))
+    payload: dict[str, Any] = {"type": "relocate", "path": path}
+    if cookies is not None:
+        payload["cookies"] = cookies
+    ws.send_bytes(msgpack.packb(payload))
     data = msgpack.unpackb(ws.receive_bytes(), raw=False)
     return data
 
@@ -170,9 +170,7 @@ class TestAuthMiddlewareReplay:
         """SPA nav via WS with auth cookie in handshake → 200 update."""
         # Connect with auth cookie in handshake headers
         headers = {"cookie": "auth_token=valid"}
-        with self.client.websocket_connect(
-            "/_pywire/ws", headers=headers
-        ) as ws:
+        with self.client.websocket_connect("/_pywire/ws", headers=headers) as ws:
             _ws_init(ws, "/")
 
             # Navigate to dashboard
@@ -224,7 +222,9 @@ class TestCookieRoundTrip:
             tracker_cmd = [
                 c for c in cookie_cmds if c.get("args", {}).get("key") == "tracker"
             ]
-            assert len(tracker_cmd) > 0, f"Expected tracker cookie command, got: {commands}"
+            assert len(tracker_cmd) > 0, (
+                f"Expected tracker cookie command, got: {commands}"
+            )
             assert tracker_cmd[0]["args"]["value"] == "middleware-set"
 
 
@@ -435,3 +435,119 @@ class TestRelocateWithState:
 
             # Should get an update with 404 content or a reload
             assert msg["type"] in ("update", "reload")
+
+
+# ---------------------------------------------------------------------------
+# E2E: Virtual cookie jar reconciles with client document.cookie on relocate
+# ---------------------------------------------------------------------------
+
+
+class GateByCookieMiddleware(BaseHTTPMiddleware):
+    """Redirect to /login unless ``demo_auth=ok`` is present."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/_pywire/") or path.startswith("/login"):
+            return await call_next(request)
+        if request.cookies.get("demo_auth") != "ok":
+            return RedirectResponse("/login", status_code=302)
+        return await call_next(request)
+
+
+class TestCookieReconcile:
+    """Browser-side cookie changes should sync on the next WS relocate."""
+
+    def setup_method(self):
+        self.app = _make_app(
+            {
+                "index": "<p>Home</p>",
+                "dashboard": "<p>Dashboard</p>",
+                "login": "<p>Login</p>",
+            },
+            middleware=[GateByCookieMiddleware],
+        )
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def teardown_method(self):
+        shutil.rmtree(self.app._test_dir, ignore_errors=True)
+
+    def test_client_dropped_cookie_tombstones_on_relocate(self):
+        """Cookie in handshake but missing from document.cookie → redirect."""
+        headers = {"cookie": "demo_auth=ok"}
+        with self.client.websocket_connect("/_pywire/ws", headers=headers) as ws:
+            _ws_init(ws, "/dashboard")
+
+            # First relocate carries the cookie back — allowed.
+            msg = _ws_relocate(ws, "/dashboard", cookies="demo_auth=ok")
+            assert msg["type"] == "update"
+            assert "Dashboard" in msg.get("html", "")
+
+            # User clears cookie in browser. Next relocate sends empty
+            # document.cookie. Server should tombstone and middleware
+            # should redirect to /login.
+            msg = _ws_relocate(ws, "/dashboard", cookies="")
+            assert msg["type"] == "navigate"
+            assert msg["path"] == "/login"
+
+    def test_client_adds_cookie_allows_subsequent_relocate(self):
+        """Cookie added in the browser between relocates lets middleware pass."""
+        with self.client.websocket_connect("/_pywire/ws") as ws:
+            _ws_init(ws, "/login")
+
+            # Without cookie → redirect.
+            msg = _ws_relocate(ws, "/dashboard", cookies="")
+            assert msg["type"] == "navigate"
+            assert msg["path"] == "/login"
+
+            # Browser set the cookie locally (e.g. via document.cookie).
+            msg = _ws_relocate(ws, "/dashboard", cookies="demo_auth=ok")
+            assert msg["type"] == "update"
+            assert "Dashboard" in msg.get("html", "")
+
+
+class GateByHttpOnlyMiddleware(BaseHTTPMiddleware):
+    """Redirect unless ``secret=ok`` (set HttpOnly server-side)."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/_pywire/") or path.startswith("/login"):
+            response = await call_next(request)
+            if path == "/login":
+                response.set_cookie("secret", "ok", httponly=True, path="/")
+            return response
+        if request.cookies.get("secret") != "ok":
+            return RedirectResponse("/login", status_code=302)
+        return await call_next(request)
+
+
+class TestHttpOnlyCookieStaysAuthoritative:
+    """HttpOnly cookies are untouched by client reconcile."""
+
+    def setup_method(self):
+        self.app = _make_app(
+            {
+                "index": "<p>Home</p>",
+                "dashboard": "<p>Dashboard</p>",
+                "login": "<p>Login</p>",
+            },
+            middleware=[GateByHttpOnlyMiddleware],
+        )
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def teardown_method(self):
+        shutil.rmtree(self.app._test_dir, ignore_errors=True)
+
+    def test_httponly_survives_empty_client_cookie_header(self):
+        """JS can't see httponly — empty document.cookie must NOT tombstone it."""
+        with self.client.websocket_connect("/_pywire/ws") as ws:
+            _ws_init(ws, "/login")
+
+            # Visit /login → middleware sets httponly ``secret`` cookie.
+            msg = _ws_relocate(ws, "/login", cookies="")
+            assert msg["type"] == "update"
+
+            # Client's document.cookie is empty (httponly hidden from JS).
+            # The jar should keep ``secret=ok`` authoritative → dashboard allowed.
+            msg = _ws_relocate(ws, "/dashboard", cookies="")
+            assert msg["type"] == "update"
+            assert "Dashboard" in msg.get("html", "")

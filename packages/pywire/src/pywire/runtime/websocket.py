@@ -5,7 +5,7 @@ import re
 import sys
 import traceback
 import uuid
-from typing import Any, Dict, Set, cast
+from typing import Any, Dict, Optional, Set, cast
 
 import msgpack
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -34,7 +34,15 @@ class WebSocketHandler:
         # Track pending pong events per connection
         self._pong_events: Dict[WebSocket, asyncio.Event] = {}
         # Virtual cookie jar — tracks cookies set during WS session
-        self._connection_cookies: Dict[WebSocket, Dict[str, str]] = {}
+        # Virtual cookie jar per connection. Value of ``None`` is a
+        # tombstone marking a cookie deleted during the session — it masks
+        # any handshake baseline value in ``_get_merged_cookies``.
+        self._connection_cookies: Dict[WebSocket, Dict[str, Optional[str]]] = {}
+        # Per-connection set of cookie keys the server marked ``HttpOnly``.
+        # These stay authoritative in the virtual jar because JS can't
+        # observe or mutate them from ``document.cookie``. All other keys
+        # are reconciled against ``document.cookie`` on each SPA relocate.
+        self._connection_httponly: Dict[WebSocket, Set[str]] = {}
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
@@ -90,6 +98,7 @@ class WebSocketHandler:
         # Keep session in store (TTL handles cleanup) — enables reconnect
         self.session_ids.pop(websocket, None)
         self._connection_cookies.pop(websocket, None)
+        self._connection_httponly.pop(websocket, None)
 
     async def _ping_loop(self, websocket: WebSocket) -> None:
         """Send periodic pings and close the connection if pong is not received."""
@@ -464,6 +473,13 @@ class WebSocketHandler:
             from pywire.runtime.internal_request import dispatch_internal
             from pywire.runtime.page_resolver import resolve_page
 
+            # 0. Reconcile jar against client-reported cookies so browser-side
+            #    deletions (document.cookie mutations, devtools clears) take
+            #    effect on this relocate instead of waiting for a hard reload.
+            client_cookie_header = data.get("cookies")
+            if isinstance(client_cookie_header, str):
+                self._reconcile_from_client_cookies(websocket, client_cookie_header)
+
             # 1. Build merged cookies and headers for internal dispatch
             cookies = self._get_merged_cookies(websocket)
             headers = self._build_internal_headers(websocket, cookies)
@@ -537,6 +553,22 @@ class WebSocketHandler:
                 # Run @mount hooks
                 await new_page._run_hooks(new_page.MOUNT_HOOKS)
 
+                # Prime wire-subscriber tracking on this local instance.
+                # The internal dispatch rendered a DIFFERENT page instance
+                # to produce the HTML we just sent; this local one is what
+                # handles subsequent events. Without a render call here,
+                # `register_read` never fires for its wires → no region
+                # subscriptions → handler writes invalidate nothing →
+                # `render_update` returns empty regions → UI looks frozen.
+                try:
+                    await new_page.render(init=False)
+                except Exception:
+                    logger.debug(
+                        "relocate: priming render on %s failed",
+                        path,
+                        exc_info=True,
+                    )
+
                 # Persist session state
                 session_id = self.session_ids.get(websocket)
                 if session_id:
@@ -564,10 +596,22 @@ class WebSocketHandler:
         return {}
 
     def _get_merged_cookies(self, websocket: WebSocket) -> dict[str, str]:
-        """Merge handshake cookies with any cookies set during the WS session."""
+        """Merge handshake cookies with any cookies set during the WS session.
+
+        The virtual jar uses ``None`` as a tombstone to mark cookies deleted
+        during the session — those keys are removed from the merge so a
+        prior handshake value doesn't shadow a middleware-issued logout.
+        """
         baseline = self._get_handshake_cookies(websocket)
         virtual = self._connection_cookies.get(websocket, {})
-        return {**baseline, **virtual}
+        merged: dict[str, str] = {
+            **baseline,
+            **{k: v for k, v in virtual.items() if v is not None},
+        }
+        for key, value in virtual.items():
+            if value is None:
+                merged.pop(key, None)
+        return merged
 
     def _build_internal_headers(
         self, websocket: WebSocket, cookies: dict[str, str]
@@ -618,6 +662,7 @@ class WebSocketHandler:
 
         commands: list[dict[str, Any]] = []
         virtual = self._connection_cookies.setdefault(websocket, {})
+        httponly_set = self._connection_httponly.setdefault(websocket, set())
 
         for _name, value in get_set_cookie_headers(raw_headers):
             parsed = parse_set_cookie_value(value.decode("latin-1"))
@@ -629,7 +674,10 @@ class WebSocketHandler:
 
             # Check if this is a deletion (max-age=0 or negative)
             if max_age is not None and max_age <= 0:
-                virtual.pop(key, None)
+                # Tombstone: None masks any baseline handshake cookie in
+                # `_get_merged_cookies` so subsequent SPA navs don't resurrect it.
+                virtual[key] = None  # type: ignore[assignment]
+                httponly_set.discard(key)
                 commands.append(
                     {
                         "cmd": "delete_cookie",
@@ -642,6 +690,10 @@ class WebSocketHandler:
                 )
             else:
                 virtual[key] = parsed["value"]
+                if parsed.get("httponly"):
+                    httponly_set.add(key)
+                else:
+                    httponly_set.discard(key)
                 args: dict[str, Any] = {
                     "key": key,
                     "value": parsed["value"],
@@ -664,6 +716,44 @@ class WebSocketHandler:
 
         return commands
 
+    def _reconcile_from_client_cookies(
+        self, websocket: WebSocket, cookie_header: str
+    ) -> None:
+        """Sync the virtual jar against ``document.cookie`` from the client.
+
+        Non-httponly cookies visible to JavaScript are authoritative on the
+        client — the user (or a third-party script) may have deleted or
+        rewritten one between SPA navigations. httponly cookies tracked in
+        ``_connection_httponly`` stay authoritative server-side because JS
+        can neither read nor delete them.
+
+        Anything the client reports is treated as truth for non-httponly
+        keys; anything previously in the jar or handshake that the client
+        no longer carries is tombstoned so middleware doesn't see a ghost
+        cookie.
+        """
+        from pywire.runtime.internal_request import parse_cookie_header
+
+        client_cookies = parse_cookie_header(cookie_header) if cookie_header else {}
+        virtual = self._connection_cookies.setdefault(websocket, {})
+        httponly_set = self._connection_httponly.get(websocket, set())
+        baseline = self._get_handshake_cookies(websocket)
+
+        # 1. Adopt non-httponly client values (covers both rewrites and new
+        #    cookies the client set locally).
+        for key, value in client_cookies.items():
+            if key in httponly_set:
+                continue
+            virtual[key] = value
+
+        # 2. Tombstone non-httponly keys the client no longer carries.
+        known_keys = set(baseline) | {k for k, v in virtual.items() if v is not None}
+        for key in known_keys:
+            if key in httponly_set:
+                continue
+            if key not in client_cookies:
+                virtual[key] = None  # type: ignore[assignment]
+
     def _update_cookie_jar_from_commands(
         self, websocket: WebSocket, cookie_commands: list[dict[str, Any]]
     ) -> None:
@@ -677,7 +767,8 @@ class WebSocketHandler:
             elif cmd.get("cmd") == "delete_cookie":
                 args = cmd.get("args", {})
                 if "key" in args:
-                    virtual.pop(args["key"], None)
+                    # Tombstone — see `_get_merged_cookies`.
+                    virtual[args["key"]] = None  # type: ignore[assignment]
 
     def _persist_session(self, session_id: str, page: BasePage) -> None:
         """Schedule non-blocking session persistence."""

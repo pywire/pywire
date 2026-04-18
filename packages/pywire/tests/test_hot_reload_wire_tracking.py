@@ -161,7 +161,13 @@ class TestWireTrackingNoLayout:
 # ---------------------------------------------------------------------------
 
 # Paths to the demo-hot-reload example that has a __layout__.wire
-_DEMO_DIR = Path(__file__).resolve().parent.parent.parent.parent / "examples" / "demo-hot-reload" / "src" / "pages"
+_DEMO_DIR = (
+    Path(__file__).resolve().parent.parent.parent.parent
+    / "examples"
+    / "demo-hot-reload"
+    / "src"
+    / "pages"
+)
 _INDEX_WIRE = _DEMO_DIR / "index.wire"
 _LAYOUT_WIRE = _DEMO_DIR / "__layout__.wire"
 

@@ -530,6 +530,27 @@ class BasePage:
                 if name in call_kwargs:
                     bound_kwargs[name] = call_kwargs[name]
 
+            # Parity with the non-interactive form-post path (which calls
+            # ``handler(event_data)`` positionally): if a required positional
+            # param is still unbound, give it the event-data object so
+            # handlers like ``def on_click(e):`` or ``def handler(_):`` work
+            # across both dispatch paths.
+            event_obj: Any = None
+            for name, param in sig.parameters.items():
+                if name in bound_kwargs:
+                    continue
+                if param.kind not in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                ):
+                    continue
+                if param.default is not inspect.Parameter.empty:
+                    continue
+                if event_obj is None:
+                    event_obj = create_event_data(call_kwargs)
+                bound_kwargs[name] = event_obj
+                break
+
         from pywire.shell import _request_ctx
         from pywire.core.dispatch import _page_context
 

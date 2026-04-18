@@ -439,6 +439,7 @@ export class PyWireApp {
     const message: RelocateMessage = {
       type: 'relocate',
       path,
+      cookies: typeof document !== 'undefined' ? document.cookie : '',
     }
     this.transport.send(message)
   }

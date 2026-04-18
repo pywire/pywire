@@ -50,12 +50,7 @@ class TestSessionStatePersistence:
     def setup_method(self):
         self.app = _make_app(
             {
-                "index": (
-                    "---\n"
-                    "count = wire(0)\n"
-                    "---\n"
-                    "<p id='count'>{count}</p>\n"
-                ),
+                "index": ("---\ncount = wire(0)\n---\n<p id='count'>{count}</p>\n"),
             },
         )
         self.client = TestClient(self.app, raise_server_exceptions=False)
