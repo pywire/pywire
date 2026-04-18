@@ -80,11 +80,7 @@ class PolicyEngine:
         Exactly one of ``fn``, ``requires_claim``, or
         ``requires_authenticated`` must be provided.
         """
-        count = sum(
-            1
-            for x in (fn, requires_claim, requires_authenticated)
-            if x
-        )
+        count = sum(1 for x in (fn, requires_claim, requires_authenticated) if x)
         if count != 1:
             raise ValueError(
                 "add_policy requires exactly one of fn, requires_claim, "

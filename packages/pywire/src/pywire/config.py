@@ -134,15 +134,11 @@ def env(key: str, *, default: _T) -> Union[str, _T]: ...
 
 
 @overload
-def env(
-    key: str, *, cast: Callable[[str], _T], default: _T
-) -> _T: ...
+def env(key: str, *, cast: Callable[[str], _T], default: _T) -> _T: ...
 
 
 @overload
-def env(
-    key: str, *, cast: Callable[[str], _T], required: bool
-) -> _T: ...
+def env(key: str, *, cast: Callable[[str], _T], required: bool) -> _T: ...
 
 
 def env(

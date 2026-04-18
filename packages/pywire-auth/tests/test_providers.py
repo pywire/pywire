@@ -118,11 +118,13 @@ def test_microsoft_defaults_to_common_tenant() -> None:
 
 
 def test_microsoft_single_tenant() -> None:
-    p = MicrosoftProvider(
-        client_id="cid", client_secret="sec", tenant="myorg.onmicrosoft.com"
+    tenant = "myorg.onmicrosoft.com"
+    p = MicrosoftProvider(client_id="cid", client_secret="sec", tenant=tenant)
+    assert p.issuer == f"https://login.microsoftonline.com/{tenant}/v2.0"
+    assert (
+        p.token_endpoint
+        == f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
     )
-    assert "myorg.onmicrosoft.com" in p.issuer
-    assert "myorg.onmicrosoft.com" in p.token_endpoint
 
 
 def test_microsoft_claim_mapping() -> None:
