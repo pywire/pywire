@@ -28,6 +28,7 @@ class _FakePyWireApp:
         self.session_ttl = session_ttl
         if session_secret:
             self._session_secret = session_secret
+
         # Seed a Starlette app with a catch-all last route to prove insertion
         # happens at index 0.
         async def catch_all(request):  # pragma: no cover
@@ -52,9 +53,7 @@ def test_connect_returns_engine() -> None:
 def test_connect_uses_existing_engine() -> None:
     app = _FakePyWireApp(session_secret="k" * 32)
     engine = PolicyEngine()
-    returned = connect_auth(
-        app, providers=[_FakeProvider()], policy_engine=engine
-    )
+    returned = connect_auth(app, providers=[_FakeProvider()], policy_engine=engine)
     assert returned is engine
     assert app._auth_engine is engine
 
@@ -86,12 +85,17 @@ def test_custom_prefix() -> None:
     assert any(p.startswith("/oidc/") for p in paths)
 
 
+def _added_by_class(app: _FakePyWireApp, cls: Any) -> Dict[str, Any]:
+    for added_cls, kwargs in app._added:
+        if added_cls is cls:
+            return kwargs
+    raise AssertionError(f"{cls.__name__} was not added")
+
+
 def test_middleware_installed_with_secret() -> None:
     app = _FakePyWireApp(session_secret="k" * 32)
     engine = connect_auth(app, providers=[_FakeProvider()])
-    assert len(app._added) == 1
-    cls, kwargs = app._added[0]
-    assert cls is AuthMiddleware
+    kwargs = _added_by_class(app, AuthMiddleware)
     assert kwargs["secret_key"] == "k" * 32
     assert kwargs["session_store"] is app.session_store
     assert kwargs["policy_engine"] is engine
@@ -117,10 +121,8 @@ def test_missing_secret_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_explicit_secret_key_overrides_app() -> None:
     app = _FakePyWireApp(session_secret="from-app")
-    connect_auth(
-        app, providers=[_FakeProvider()], secret_key="explicit-key"
-    )
-    _, kwargs = app._added[0]
+    connect_auth(app, providers=[_FakeProvider()], secret_key="explicit-key")
+    kwargs = _added_by_class(app, AuthMiddleware)
     assert kwargs["secret_key"] == "explicit-key"
 
 
@@ -131,13 +133,72 @@ def test_env_secret_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
     pywire_config.reload()
     connect_auth(app, providers=[_FakeProvider()])
-    _, kwargs = app._added[0]
+    kwargs = _added_by_class(app, AuthMiddleware)
     assert kwargs["secret_key"] == "from-env"
 
 
 def test_session_ttl_override() -> None:
     app = _FakePyWireApp(session_secret="k" * 32, session_ttl=60)
     connect_auth(app, providers=[_FakeProvider()], session_ttl=900)
-    # The _RouteContext is not directly exposed; confirm via internal kwargs is n/a.
-    # Smoke-test: connect_auth didn't raise, and _added middleware carries store.
-    assert len(app._added) == 1
+    # Smoke: didn't raise, AuthMiddleware installed with the overridden store.
+    auth_kwargs = _added_by_class(app, AuthMiddleware)
+    assert auth_kwargs["session_store"] is app.session_store
+
+
+def test_session_middleware_auto_installed_when_missing() -> None:
+    from pywire.runtime.session_middleware import SessionMiddleware
+
+    app = _FakePyWireApp(session_secret="k" * 32)
+    connect_auth(app, providers=[_FakeProvider()])
+    kwargs = _added_by_class(app, SessionMiddleware)
+    assert kwargs["secret_key"] == "k" * 32
+    assert kwargs["session_store"] is app.session_store
+
+
+def test_session_middleware_skipped_when_present() -> None:
+    from pywire.runtime.session_middleware import SessionMiddleware
+
+    app = _FakePyWireApp(session_secret="k" * 32)
+    # Pre-install SessionMiddleware the way a non-interactive PyWire would.
+    app.add_middleware(
+        SessionMiddleware,
+        session_store=app.session_store,
+        session_ttl=1800,
+        secret_key="k" * 32,
+    )
+    connect_auth(app, providers=[_FakeProvider()])
+    session_mws = [cls for cls, _ in app._added if cls is SessionMiddleware]
+    assert len(session_mws) == 1  # only the pre-existing one
+
+
+def test_local_routes_mounted_when_local_idp_passed() -> None:
+    from pywire_auth import LocalIdP, MemoryAuthStore
+
+    app = _FakePyWireApp(session_secret="k" * 32)
+    idp = LocalIdP(store=MemoryAuthStore(), secret="s" * 32)
+    connect_auth(app, local_idp=idp)
+    paths = [getattr(r, "path", "") for r in app.app.router.routes]
+    assert "/auth/local/register" in paths
+    assert "/auth/local/login" in paths
+    assert "/auth/local/token" in paths
+    assert "/auth/local/verify-token" in paths
+    assert "/auth/local/revoke" in paths
+
+
+def test_local_routes_absent_without_local_idp() -> None:
+    app = _FakePyWireApp(session_secret="k" * 32)
+    connect_auth(app, providers=[_FakeProvider()])
+    paths = [getattr(r, "path", "") for r in app.app.router.routes]
+    assert "/auth/local/register" not in paths
+
+
+def test_app_state_populated() -> None:
+    from pywire_auth import LocalIdP, MemoryAuthStore
+
+    app = _FakePyWireApp(session_secret="k" * 32)
+    idp = LocalIdP(store=MemoryAuthStore(), secret="s" * 32)
+    engine = connect_auth(app, providers=[_FakeProvider()], local_idp=idp)
+    assert app.app.state.auth_engine is engine
+    assert app.app.state.local_idp is idp
+    assert app.app.state.auth_store is idp.store
+    assert app.app.state.auth_providers == ["fake"]

@@ -14,6 +14,7 @@ Usage:
 """
 
 from pywire_auth.local.idp import LocalIdP
+from pywire_auth.local.routes import build_local_routes
 from pywire_auth.local.token import TokenIssuer
 
-__all__ = ["LocalIdP", "TokenIssuer"]
+__all__ = ["LocalIdP", "TokenIssuer", "build_local_routes"]

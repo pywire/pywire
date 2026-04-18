@@ -57,7 +57,9 @@ class _RouteContext:
         self.on_logout = on_logout
 
 
-def build_routes(ctx: _RouteContext, prefix: str) -> list:
+def build_routes(
+    ctx: _RouteContext, prefix: str, *, local_idp: Optional[Any] = None
+) -> list:
     async def login(request: Request) -> Response:
         provider = ctx.providers.get(request.path_params["provider"])
         if provider is None:
@@ -82,9 +84,7 @@ def build_routes(ctx: _RouteContext, prefix: str) -> list:
                 "redirect_uri": redirect_uri,
             }
             data[NEXT_KEY] = next_url
-            await ctx.session_store.set(
-                session_id, data, ttl=ctx.session_ttl
-            )
+            await ctx.session_store.set(session_id, data, ttl=ctx.session_ttl)
 
         url = await provider.authorize_url(
             redirect_uri=redirect_uri, state=state, nonce=nonce
@@ -104,9 +104,7 @@ def build_routes(ctx: _RouteContext, prefix: str) -> list:
 
         session_id = _session_id_or_none(request)
         if not session_id:
-            return Response(
-                "No session — OAuth requires cookies", status_code=400
-            )
+            return Response("No session — OAuth requires cookies", status_code=400)
         data = await ctx.session_store.get(session_id) or {}
 
         saved = data.get(STATE_KEY) or {}
@@ -178,7 +176,17 @@ def build_routes(ctx: _RouteContext, prefix: str) -> list:
         )
         return RedirectResponse(next_url, status_code=303)
 
+    # Mount LocalIdP routes first so /auth/local/* matches before the
+    # dynamic /auth/{provider}/* route (which would otherwise 404 with
+    # "Unknown provider").
+    local_routes: list = []
+    if local_idp is not None:
+        from pywire_auth.local.routes import build_local_routes
+
+        local_routes = list(build_local_routes(ctx, prefix, local_idp))
+
     return [
+        *local_routes,
         Route(
             f"{prefix}/{{provider}}/login",
             login,

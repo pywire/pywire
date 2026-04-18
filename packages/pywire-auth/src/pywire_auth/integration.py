@@ -1,8 +1,10 @@
 """Single integration entry point — ``connect_auth(app, ...)``.
 
-Mounts login/callback/logout routes, installs ``AuthMiddleware``, and
-wires ``PolicyEngine`` + ``AuthChannel`` onto the app. Apps that only
-use external OIDC providers need nothing more.
+Mounts login/callback/logout routes (plus LocalIdP routes when
+``local_idp=`` is passed), auto-installs :class:`SessionMiddleware`
+when missing, installs ``AuthMiddleware``, and wires ``PolicyEngine``
++ ``AuthChannel`` onto the app. Apps that only use external OIDC
+providers need nothing more.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ def connect_auth(
     app: Any,
     *,
     providers: Iterable[Any] = (),
+    local_idp: Optional[Any] = None,
     policy_engine: Optional[PolicyEngine] = None,
     auth_channel: Optional[Any] = None,
     prefix: str = "/auth",
@@ -39,6 +42,9 @@ def connect_auth(
 
         engine = connect_auth(app, providers=[GoogleProvider(...)])
         engine.add_policy("AdminOnly", requires_claim=("role", "admin"))
+
+    Pass ``local_idp=LocalIdP(...)`` to mount default password/JWT
+    endpoints at ``{prefix}/local/{register,login,token,verify-token,revoke}``.
     """
     engine = policy_engine or PolicyEngine()
     channel = auth_channel or MemoryAuthChannel()
@@ -55,19 +61,23 @@ def connect_auth(
         on_logout=on_logout,
     )
 
-    for route in build_routes(ctx, prefix):
+    for route in build_routes(ctx, prefix, local_idp=local_idp):
         app.app.router.routes.insert(0, route)
 
     effective_secret = (
-        secret_key
-        or getattr(app, "_session_secret", None)
-        or _resolve_secret(app)
+        secret_key or getattr(app, "_session_secret", None) or _resolve_secret(app)
     )
     if not effective_secret:
         raise RuntimeError(
             "connect_auth requires secret_key (or PYWIRE_SESSION_SECRET "
             "set on the app) for session cookie verification"
         )
+
+    # Auto-install SessionMiddleware when missing — interactive-mode PyWire
+    # apps skip it by default (WS owns state), but connect_auth's routes
+    # and AuthMiddleware both need scope["pywire_session_id"] to exist on
+    # HTTP requests.
+    _ensure_session_middleware(app, effective_secret)
 
     app.add_middleware(
         AuthMiddleware,
@@ -80,8 +90,35 @@ def connect_auth(
     app._auth_engine = engine
     app._auth_channel = channel
     app._auth_providers = providers_by_name
+    app._auth_local_idp = local_idp
+
+    # Also expose on the Starlette app's state so pages can access shared
+    # auth state via `app.state.X` without importing main/state.
+    _app_state = app.app.state
+    _app_state.auth_engine = engine
+    _app_state.auth_channel = channel
+    _app_state.auth_providers = list(providers_by_name.keys())
+    _app_state.local_idp = local_idp
+    if local_idp is not None:
+        _app_state.auth_store = local_idp.store
 
     return engine
+
+
+def _ensure_session_middleware(app: Any, secret: str) -> None:
+    """Install ``SessionMiddleware`` if it isn't already on the stack."""
+    from pywire.runtime.session_middleware import SessionMiddleware
+
+    installed = getattr(app.app, "user_middleware", []) or []
+    if any(getattr(mw, "cls", None) is SessionMiddleware for mw in installed):
+        return
+
+    app.add_middleware(
+        SessionMiddleware,
+        session_store=app.session_store,
+        session_ttl=getattr(app, "session_ttl", 1800),
+        secret_key=secret,
+    )
 
 
 def _resolve_secret(app: Any) -> Optional[str]:
