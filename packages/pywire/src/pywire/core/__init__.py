@@ -17,6 +17,15 @@ from .refs import (
     RefFactory,
 )
 from .component import WireComponent
+from .snippet import (
+    Child,
+    Children,
+    ChildrenType,
+    HeadBuffer,
+    RenderUnit,
+    Snippet,
+    SnippetType,
+)
 
 __all__ = [
     "wire",
@@ -41,4 +50,11 @@ __all__ = [
     "CanvasElement",
     "ComponentRef",
     "WireComponent",
+    "Snippet",
+    "SnippetType",
+    "Child",
+    "Children",
+    "ChildrenType",
+    "RenderUnit",
+    "HeadBuffer",
 ]

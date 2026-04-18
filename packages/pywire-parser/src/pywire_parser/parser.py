@@ -15,10 +15,13 @@ from pywire_parser.ast_nodes import (
     ExceptAttribute,
     FinallyAttribute,
     ForAttribute,
+    HeadAttribute,
     IfAttribute,
     InterpolationNode,
     ParsedPyWire,
     ReactiveAttribute,
+    RenderAttribute,
+    SnippetAttribute,
     SpecialAttribute,
     SpreadAttribute,
     TemplateNode,
@@ -43,6 +46,49 @@ class BlockMarkerAttribute(SpecialAttribute):
     """Internal attribute to mark closing blocks like {/if}."""
 
     keyword: str
+
+
+def _parse_snippet_signature(expr: str) -> Tuple[str, List[str]]:
+    """Parse 'name(p1, p2: T)' → ('name', ['p1', 'p2']).
+
+    Accepts positional parameters with optional type annotations.
+    Bare 'name' (no parens) → ('name', []).
+    """
+    expr = expr.strip()
+    if not expr:
+        return "", []
+    if "(" not in expr:
+        return expr, []
+    try:
+        tree = ast.parse(f"def {expr}: pass")
+    except SyntaxError:
+        return expr.split("(", 1)[0].strip(), []
+    func = tree.body[0]
+    if not isinstance(func, ast.FunctionDef):
+        return expr.split("(", 1)[0].strip(), []
+    params = [a.arg for a in func.args.args]
+    return func.name, params
+
+
+def _parse_render_call(expr: str) -> Tuple[str, List[str]]:
+    """Parse 'name(expr1, expr2)' → ('name', ['expr1', 'expr2']).
+
+    Bare 'name' (no parens) → ('name', []).
+    """
+    expr = expr.strip()
+    if not expr:
+        return "", []
+    if "(" not in expr:
+        return expr, []
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return expr.split("(", 1)[0].strip(), []
+    call = tree.body
+    if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+        return expr.split("(", 1)[0].strip(), []
+    args_src = [ast.unparse(a) for a in call.args]
+    return call.func.id, args_src
 
 
 class PyWireParser:
@@ -179,6 +225,10 @@ class PyWireParser:
 
     def _structure_hierarchy(self, nodes: List[TemplateNode]) -> List[TemplateNode]:
         """Convert linear sequence of block/end-block nodes into a tree."""
+        # Pre-pass: mark RenderAttribute openers that have matching {/render}
+        # closers at this nesting level — these get has_fallback=True.
+        self._mark_paired_renders(nodes)
+
         roots: List[TemplateNode] = []
         stack: List[TemplateNode] = []
 
@@ -188,6 +238,8 @@ class PyWireParser:
             ForAttribute,
             TryAttribute,
             AwaitAttribute,
+            SnippetAttribute,
+            HeadAttribute,
         )
 
         for node in nodes:
@@ -209,9 +261,12 @@ class PyWireParser:
             # Check if this is an opening block
             is_opener = False
             if node.tag is None and node.text_content is None:
-                # Check specifics
                 for attr in node.special_attributes:
                     if isinstance(attr, opener_types):
+                        is_opener = True
+                        break
+                    # Render is opener only when paired with {/render}
+                    if isinstance(attr, RenderAttribute) and attr.has_fallback:
                         is_opener = True
                         break
 
@@ -226,6 +281,24 @@ class PyWireParser:
                 stack.append(node)
 
         return roots
+
+    def _mark_paired_renders(self, nodes: List[TemplateNode]) -> None:
+        """Set has_fallback=True on RenderAttribute nodes that pair with {/render}.
+
+        Uses a render-only depth stack — other block types don't affect it since
+        they're nested at a different level by the outer `_structure_hierarchy`.
+        """
+        render_stack: List[RenderAttribute] = []
+        for node in nodes:
+            for attr in node.special_attributes:
+                if isinstance(attr, RenderAttribute):
+                    render_stack.append(attr)
+                elif (
+                    isinstance(attr, BlockMarkerAttribute)
+                    and attr.keyword == "/render"
+                ):
+                    if render_stack:
+                        render_stack.pop().has_fallback = True
 
     def _handle_rust_block(self, rn: Any, node: TemplateNode) -> None:
         """Map Rust brace blocks to PyWire special attributes."""
@@ -356,6 +429,37 @@ class PyWireParser:
             node.special_attributes.append(
                 InterpolationNode(
                     expression=expr, is_raw=True, line=rn.line, column=rn.column
+                )
+            )
+        elif kw == "snippet":
+            snippet_name, params = _parse_snippet_signature(expr)
+            node.special_attributes.append(
+                SnippetAttribute(
+                    name="$snippet",
+                    value="",
+                    snippet_name=snippet_name,
+                    params=params,
+                    line=rn.line,
+                    column=rn.column,
+                )
+            )
+        elif kw == "render":
+            render_name, call_args = _parse_render_call(expr)
+            node.special_attributes.append(
+                RenderAttribute(
+                    name="$render",
+                    value="",
+                    snippet_name=render_name,
+                    call_args=call_args,
+                    has_fallback=False,  # set later by _mark_paired_renders
+                    line=rn.line,
+                    column=rn.column,
+                )
+            )
+        elif kw == "head":
+            node.special_attributes.append(
+                HeadAttribute(
+                    name="$head", value="", line=rn.line, column=rn.column
                 )
             )
 

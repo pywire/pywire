@@ -187,6 +187,52 @@ class CatchAttribute(SpecialAttribute):
 
 
 @dataclass
+class SnippetAttribute(SpecialAttribute):
+    """{$snippet name(param1, param2)}...{/snippet} — defines a named snippet.
+
+    The body is stored in the parent TemplateNode.children.
+    Params are zero-or-more positional parameter names.
+    """
+
+    snippet_name: str = ""
+    params: List[str] = field(default_factory=list)
+
+    def __str__(self) -> str:
+        return f"SnippetAttribute(name={self.snippet_name}, params={self.params})"
+
+
+@dataclass
+class RenderAttribute(SpecialAttribute):
+    """{$render name(args)} — invoke a snippet.
+
+    Self-closing form has no fallback (has_fallback=False).
+    Paired form {$render name(args)}fallback{/render} has has_fallback=True
+    with fallback content in parent TemplateNode.children.
+    """
+
+    snippet_name: str = ""
+    call_args: List[str] = field(default_factory=list)
+    has_fallback: bool = False
+
+    def __str__(self) -> str:
+        return (
+            f"RenderAttribute(name={self.snippet_name}, args={self.call_args}, "
+            f"fallback={self.has_fallback})"
+        )
+
+
+@dataclass
+class HeadAttribute(SpecialAttribute):
+    """{$head}...{/head} — teleport body into document <head>.
+
+    Body is stored in parent TemplateNode.children.
+    """
+
+    def __str__(self) -> str:
+        return "HeadAttribute()"
+
+
+@dataclass
 class EventAttribute(SpecialAttribute):
     """@click={handler_name} or @click={handler(arg1)}."""
 

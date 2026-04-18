@@ -985,6 +985,18 @@
         {
           "type": "STRING",
           "value": "html"
+        },
+        {
+          "type": "STRING",
+          "value": "snippet"
+        },
+        {
+          "type": "STRING",
+          "value": "render"
+        },
+        {
+          "type": "STRING",
+          "value": "head"
         }
       ]
     },
