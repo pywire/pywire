@@ -59,8 +59,15 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        principal = await self._load_principal(scope)
+        session_id = self._extract_session_id(scope)
+        principal = await self._load_principal_from_sid(scope, session_id)
         scope["user"] = principal
+        # Expose the session id so WS handlers can update the persisted
+        # session without re-parsing / re-verifying the cookie themselves.
+        # SessionMiddleware sets this on HTTP scopes; AuthMiddleware fills
+        # the gap for WebSocket scopes where SessionMiddleware doesn't run.
+        if session_id and "pywire_session_id" not in scope:
+            scope["pywire_session_id"] = session_id
 
         ctx = AuthContext(
             principal=principal,
@@ -75,6 +82,11 @@ class AuthMiddleware:
 
     async def _load_principal(self, scope: dict) -> ClaimsPrincipal:
         session_id = self._extract_session_id(scope)
+        return await self._load_principal_from_sid(scope, session_id)
+
+    async def _load_principal_from_sid(
+        self, scope: dict, session_id: Optional[str]
+    ) -> ClaimsPrincipal:
         if not session_id:
             return ANONYMOUS
 

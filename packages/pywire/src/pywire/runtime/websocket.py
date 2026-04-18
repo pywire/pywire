@@ -163,6 +163,38 @@ class WebSocketHandler:
                                 page.user = replace(current, claims=list(claims))
                             except TypeError:
                                 pass
+                    # If the page has an !auth guard, re-evaluate against
+                    # the new principal. A newly-denied page (common after
+                    # revoke / role downgrade) emits a navigate so the
+                    # client leaves the protected page instead of silently
+                    # re-rendering with ANONYMOUS.
+                    if getattr(page.__class__, "__auth_required__", False):
+                        from pywire.auth.guard import run_auth_guard
+
+                        try:
+                            denied = await run_auth_guard(page)
+                        except Exception:
+                            logger.warning(
+                                "live-auth: guard evaluation failed", exc_info=True
+                            )
+                            denied = None
+                        if denied is not None:
+                            location = denied.headers.get("location") or "/"
+                            try:
+                                await websocket.send_bytes(
+                                    msgpack.packb(
+                                        {"type": "navigate", "path": location}
+                                    )
+                                )
+                            except Exception:
+                                logger.debug(
+                                    "live-auth: navigate send failed",
+                                    exc_info=True,
+                                )
+                            # Stop pumping — the client will reconnect on
+                            # the new path and start a fresh subscription.
+                            return
+
                     # Root-scope invalidation triggers a full re-render on
                     # the next render_update call (see page.render_update).
                     page._dirty_regions.add(None)  # type: ignore[arg-type]
