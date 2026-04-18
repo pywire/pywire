@@ -54,6 +54,39 @@ async def _next_from_form_or_query(request: Request) -> Optional[str]:
     return None
 
 
+def _error_redirect(request: Request, form: Any, fallback: str, error: str) -> str:
+    """Build a redirect URL for the error case.
+
+    Priority:
+    1. ``error_next`` form field (explicit from the page that posted)
+    2. ``Referer`` header (the form page the user came from)
+    3. ``fallback`` (framework-provided default, e.g. ``/auth/logout``)
+
+    The ``error`` code is appended as a query param. Always safe because
+    we only use same-origin URLs: form-field and Referer are origin-checked
+    via a simple path-prefix test.
+    """
+    explicit = str(form.get("error_next") or "").strip() if form else ""
+    if explicit.startswith("/"):
+        return _with_query(explicit, "error", error)
+    referer = request.headers.get("referer", "")
+    if referer:
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(referer)
+            if parsed.netloc == request.url.netloc and parsed.path:
+                return _with_query(parsed.path, "error", error)
+        except Exception:
+            pass
+    return _with_query(fallback, "error", error)
+
+
+def _with_query(path: str, key: str, value: str) -> str:
+    sep = "&" if "?" in path else "?"
+    return f"{path}{sep}{key}={value}"
+
+
 def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
     """Return the Starlette routes for LocalIdP.
 
@@ -75,9 +108,10 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
             or ctx.default_next
         )
 
+        fallback = f"{prefix}/logout"  # always present
         if not email or not password:
             return RedirectResponse(
-                f"{prefix}/local/register?error=missing", status_code=303
+                _error_redirect(request, form, fallback, "missing"), status_code=303
             )
 
         claims: Dict[str, Any] = {"email": email}
@@ -92,12 +126,12 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
             )
         except ValueError:
             return RedirectResponse(
-                f"{prefix}/local/register?error=exists", status_code=303
+                _error_redirect(request, form, fallback, "exists"), status_code=303
             )
         except Exception:
             logger.warning("LocalIdP create_user failed", exc_info=True)
             return RedirectResponse(
-                f"{prefix}/local/register?error=unknown", status_code=303
+                _error_redirect(request, form, fallback, "unknown"), status_code=303
             )
 
         principal = await idp.principal_for_user(user_id)
@@ -133,7 +167,8 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
         principal = await idp.verify_credentials(email=email, password=password)
         if principal is None:
             return RedirectResponse(
-                f"{prefix}/local/login?error=invalid", status_code=303
+                _error_redirect(request, form, f"{prefix}/logout", "invalid"),
+                status_code=303,
             )
 
         if sid:
