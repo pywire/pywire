@@ -262,6 +262,15 @@ class PyWire:
 
         self.router = Router()
 
+        # First-wins ambient reference so pages can `from pywire import app`
+        # at script top level without a circular import on main.py. Later
+        # PyWire instances (tests, mounted sub-apps) keep working but don't
+        # clobber the global.
+        import pywire as _pywire_pkg
+
+        if _pywire_pkg.app is None:
+            _pywire_pkg.app = self
+
         from pywire.runtime.loader import get_loader
 
         self.loader = get_loader()
