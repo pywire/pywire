@@ -151,13 +151,9 @@ class LocalIdP:
         self, token: str, *, audience: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         assert self.token_issuer is not None
-        return self.token_issuer.verify(
-            token, audience=audience or self.audience
-        )
+        return self.token_issuer.verify(token, audience=audience or self.audience)
 
-    async def principal_from_id_token(
-        self, token: str
-    ) -> Optional[ClaimsPrincipal]:
+    async def principal_from_id_token(self, token: str) -> Optional[ClaimsPrincipal]:
         payload = self.verify_id_token(token)
         if payload is None:
             return None

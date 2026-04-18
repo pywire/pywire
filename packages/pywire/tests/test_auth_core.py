@@ -108,9 +108,7 @@ class TestPolicyEngine(unittest.TestCase):
         engine.add_policy("LoggedIn", requires_authenticated=True)
 
         p = ClaimsPrincipal(is_authenticated=True)
-        self.assertTrue(
-            _run(engine.evaluate("LoggedIn", PolicyContext(principal=p)))
-        )
+        self.assertTrue(_run(engine.evaluate("LoggedIn", PolicyContext(principal=p))))
         self.assertFalse(
             _run(engine.evaluate("LoggedIn", PolicyContext(principal=ANONYMOUS)))
         )
@@ -180,9 +178,7 @@ class TestMemoryAuthChannel(unittest.TestCase):
                 pass
             return len(channel._subscribers)
 
-        self.assertEqual(
-            asyncio.new_event_loop().run_until_complete(scenario()), 0
-        )
+        self.assertEqual(asyncio.new_event_loop().run_until_complete(scenario()), 0)
 
 
 class TestAuthGuard(unittest.TestCase):
@@ -209,9 +205,7 @@ class TestAuthGuard(unittest.TestCase):
         self.assertIsNone(_run(run_auth_guard(page)))
 
     def test_custom_redirect(self) -> None:
-        page = self._page(
-            __auth_required__=True, __auth_redirect__="/sign-in"
-        )
+        page = self._page(__auth_required__=True, __auth_redirect__="/sign-in")
         page.user = ANONYMOUS
         resp = _run(run_auth_guard(page))
         assert resp is not None
@@ -236,9 +230,7 @@ class TestAuthGuard(unittest.TestCase):
         self.assertIsNone(_run(run_auth_guard(page)))
 
     def test_named_policy_allows(self) -> None:
-        page = self._page(
-            __auth_required__=True, __auth_policy__="AdminOnly"
-        )
+        page = self._page(__auth_required__=True, __auth_policy__="AdminOnly")
         page.user = ClaimsPrincipal(
             is_authenticated=True,
             claims=[Claim(type="role", value="admin")],
@@ -256,14 +248,10 @@ class TestAuthGuard(unittest.TestCase):
             finally:
                 reset_auth_context(token)
 
-        self.assertIsNone(
-            asyncio.new_event_loop().run_until_complete(scenario())
-        )
+        self.assertIsNone(asyncio.new_event_loop().run_until_complete(scenario()))
 
     def test_named_policy_denies(self) -> None:
-        page = self._page(
-            __auth_required__=True, __auth_policy__="AdminOnly"
-        )
+        page = self._page(__auth_required__=True, __auth_policy__="AdminOnly")
         page.user = ClaimsPrincipal(is_authenticated=True)
 
         async def scenario():
@@ -282,16 +270,12 @@ class TestAuthGuard(unittest.TestCase):
         self.assertIsNotNone(resp)
 
     def test_named_policy_missing_engine_fails_closed(self) -> None:
-        page = self._page(
-            __auth_required__=True, __auth_policy__="AdminOnly"
-        )
+        page = self._page(__auth_required__=True, __auth_policy__="AdminOnly")
         page.user = ClaimsPrincipal(is_authenticated=True)
         self.assertIsNotNone(_run(run_auth_guard(page)))
 
     def test_unknown_policy_fails_closed(self) -> None:
-        page = self._page(
-            __auth_required__=True, __auth_policy__="DoesNotExist"
-        )
+        page = self._page(__auth_required__=True, __auth_policy__="DoesNotExist")
         page.user = ClaimsPrincipal(is_authenticated=True)
 
         async def scenario():
@@ -305,9 +289,7 @@ class TestAuthGuard(unittest.TestCase):
             finally:
                 reset_auth_context(token)
 
-        self.assertIsNotNone(
-            asyncio.new_event_loop().run_until_complete(scenario())
-        )
+        self.assertIsNotNone(asyncio.new_event_loop().run_until_complete(scenario()))
 
 
 class TestAuthContextVar(unittest.TestCase):

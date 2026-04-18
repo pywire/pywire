@@ -157,9 +157,7 @@ def test_facebook_claim_mapping_nested_picture() -> None:
 
 
 def test_auth0_derives_discovery_from_domain() -> None:
-    p = Auth0Provider(
-        client_id="cid", client_secret="sec", domain="myapp.auth0.com"
-    )
+    p = Auth0Provider(client_id="cid", client_secret="sec", domain="myapp.auth0.com")
     assert p.discovery_url == (
         "https://myapp.auth0.com/.well-known/openid-configuration"
     )
@@ -171,9 +169,7 @@ def test_auth0_requires_domain_or_discovery_url() -> None:
 
 
 def test_auth0_maps_roles_claim() -> None:
-    p = Auth0Provider(
-        client_id="cid", client_secret="sec", domain="myapp.auth0.com"
-    )
+    p = Auth0Provider(client_id="cid", client_secret="sec", domain="myapp.auth0.com")
     raw = {"sub": "x", "roles": ["admin", "editor"]}
     claims = [(c.type, c.value) for c in p.map_claims(raw)]
     assert ("sub", "x") in claims

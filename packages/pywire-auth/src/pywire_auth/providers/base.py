@@ -37,9 +37,7 @@ class BaseOAuth2Provider(ABC):
     userinfo_endpoint: str
     scopes: List[str] = field(default_factory=list)
 
-    async def authorize_url(
-        self, *, redirect_uri: str, state: str, nonce: str
-    ) -> str:
+    async def authorize_url(self, *, redirect_uri: str, state: str, nonce: str) -> str:
         params = {
             "response_type": "code",
             "client_id": self.client_id,

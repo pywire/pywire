@@ -32,9 +32,7 @@ class TokenIssuer:
     public_key_pem: str = ""
     default_ttl: int = 3600
     kid: str = "local"
-    _public_jwk: Optional[Dict[str, Any]] = field(
-        default=None, init=False, repr=False
-    )
+    _public_jwk: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.algorithm == "HS256":
@@ -71,7 +69,9 @@ class TokenIssuer:
         token = jwt.encode(header, payload, key)
         return token.decode("utf-8") if isinstance(token, bytes) else token
 
-    def verify(self, token: str, *, audience: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def verify(
+        self, token: str, *, audience: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """Return the decoded claims dict if valid; None otherwise."""
         key = (
             self.secret

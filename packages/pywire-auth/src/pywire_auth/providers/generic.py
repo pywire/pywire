@@ -75,9 +75,7 @@ class GenericOIDCProvider(BaseOIDCProvider):
             self.issuer = doc["issuer"]
             self._discovered = True
 
-    async def authorize_url(
-        self, *, redirect_uri: str, state: str, nonce: str
-    ) -> str:
+    async def authorize_url(self, *, redirect_uri: str, state: str, nonce: str) -> str:
         await self._ensure_discovered()
         return await super().authorize_url(
             redirect_uri=redirect_uri, state=state, nonce=nonce

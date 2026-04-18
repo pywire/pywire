@@ -119,10 +119,7 @@ class TestDotenvCascade(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             path = Path(tmp)
             (path / ".env").write_text(
-                "# a comment\n"
-                "\n"
-                "  # indented comment\n"
-                'PW_DOTENV_X="quoted value"\n'
+                '# a comment\n\n  # indented comment\nPW_DOTENV_X="quoted value"\n'
             )
             reload(path)
             self.assertEqual(env("PW_DOTENV_X"), "quoted value")

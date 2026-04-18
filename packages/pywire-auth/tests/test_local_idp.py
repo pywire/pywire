@@ -54,8 +54,7 @@ def test_wrong_password_returns_none() -> None:
 def test_unknown_email_returns_none() -> None:
     idp = _make_idp()
     assert (
-        _run(idp.verify_credentials(email="nobody@example.com", password="x"))
-        is None
+        _run(idp.verify_credentials(email="nobody@example.com", password="x")) is None
     )
 
 
@@ -70,9 +69,7 @@ def test_change_password_happy_path() -> None:
     idp = _make_idp()
     user_id = _run(idp.create_user(email="a@b.c", password="old"))
     ok = _run(
-        idp.change_password(
-            user_id=user_id, old_password="old", new_password="new"
-        )
+        idp.change_password(user_id=user_id, old_password="old", new_password="new")
     )
     assert ok is True
     assert _run(idp.verify_credentials(email="a@b.c", password="old")) is None
@@ -83,9 +80,7 @@ def test_change_password_wrong_old_rejected() -> None:
     idp = _make_idp()
     user_id = _run(idp.create_user(email="a@b.c", password="old"))
     ok = _run(
-        idp.change_password(
-            user_id=user_id, old_password="WRONG", new_password="new"
-        )
+        idp.change_password(user_id=user_id, old_password="WRONG", new_password="new")
     )
     assert ok is False
 
@@ -94,9 +89,7 @@ def test_reset_password_skips_old() -> None:
     idp = _make_idp()
     user_id = _run(idp.create_user(email="a@b.c", password="old"))
     _run(idp.reset_password(user_id=user_id, new_password="reset"))
-    assert (
-        _run(idp.verify_credentials(email="a@b.c", password="reset")) is not None
-    )
+    assert _run(idp.verify_credentials(email="a@b.c", password="reset")) is not None
 
 
 def test_id_token_roundtrip() -> None:

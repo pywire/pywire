@@ -46,9 +46,7 @@ class _FakeProvider:
         self.authorize_calls: List[Dict[str, str]] = []
         self.exchange_calls: List[Dict[str, str]] = []
 
-    async def authorize_url(
-        self, *, redirect_uri: str, state: str, nonce: str
-    ) -> str:
+    async def authorize_url(self, *, redirect_uri: str, state: str, nonce: str) -> str:
         self.authorize_calls.append(
             {"redirect_uri": redirect_uri, "state": state, "nonce": nonce}
         )
@@ -127,9 +125,7 @@ def test_login_redirects_and_stores_state() -> None:
 
 def test_login_unknown_provider_404() -> None:
     store = _MemStore()
-    app = _build_app(
-        provider=_FakeProvider(), store=store, channel=MemoryAuthChannel()
-    )
+    app = _build_app(provider=_FakeProvider(), store=store, channel=MemoryAuthChannel())
     client = TestClient(app, follow_redirects=False)
     resp = client.get("/auth/other/login")
     assert resp.status_code == 404
@@ -167,9 +163,7 @@ def test_callback_rejects_mismatched_state() -> None:
             "redirect_uri": "http://x/auth/fake/callback",
         }
     }
-    app = _build_app(
-        provider=_FakeProvider(), store=store, channel=MemoryAuthChannel()
-    )
+    app = _build_app(provider=_FakeProvider(), store=store, channel=MemoryAuthChannel())
     client = TestClient(app, follow_redirects=False)
     resp = client.get("/auth/fake/callback?code=c&state=WRONG")
     assert resp.status_code == 400
@@ -289,9 +283,7 @@ def test_logout_anonymous_does_not_revoke() -> None:
 
 def test_logout_next_from_query() -> None:
     store = _MemStore()
-    app = _build_app(
-        provider=_FakeProvider(), store=store, channel=MemoryAuthChannel()
-    )
+    app = _build_app(provider=_FakeProvider(), store=store, channel=MemoryAuthChannel())
     client = TestClient(app, follow_redirects=False)
     resp = client.get("/auth/logout?next=/goodbye")
     assert resp.status_code == 303

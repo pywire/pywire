@@ -89,9 +89,7 @@ async def test_evaluate_named_policy() -> None:
     )
     view = _make_view(parent=parent, policy="AdminOnly")
 
-    ctx = AuthContext(
-        principal=parent.user, engine=engine, channel=MemoryAuthChannel()
-    )
+    ctx = AuthContext(principal=parent.user, engine=engine, channel=MemoryAuthChannel())
     token = set_auth_context(ctx)
     try:
         assert await view._evaluate() is True
@@ -112,9 +110,7 @@ async def test_evaluate_unknown_policy_fails_closed() -> None:
     parent = _FakeParent(ClaimsPrincipal(is_authenticated=True))
     view = _make_view(parent=parent, policy="DoesNotExist")
 
-    ctx = AuthContext(
-        principal=parent.user, engine=engine, channel=MemoryAuthChannel()
-    )
+    ctx = AuthContext(principal=parent.user, engine=engine, channel=MemoryAuthChannel())
     token = set_auth_context(ctx)
     try:
         assert await view._evaluate() is False
