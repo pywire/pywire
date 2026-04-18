@@ -1543,6 +1543,13 @@ class PyWire:
         # Instantiate page
         page = page_class(request, params, query, path=path_info, url=url_helper)
 
+        # Populate page.user from scope so the auth guard, templates, and
+        # @before_load hooks all see the same principal AuthMiddleware wrote.
+        # Mirrors http_transport.py and websocket.py.
+        resolved_user = self.get_user(request)
+        if resolved_user is not None:
+            page.user = resolved_user
+
         # In non-interactive mode, restore session state if available
         session_id = request.scope.get("pywire_session_id")
         if not self.interactive_server_mode and session_id:
