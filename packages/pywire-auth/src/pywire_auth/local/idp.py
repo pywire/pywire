@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -13,8 +14,13 @@ from pywire.auth import Claim, ClaimsPrincipal
 
 from pywire_auth._protocols import AuthStore
 from pywire_auth.local.token import TokenIssuer
+from pywire_auth.stores.memory import MemoryAuthStore
 
 logger = logging.getLogger(__name__)
+
+
+def _default_store() -> AuthStore:
+    return MemoryAuthStore()
 
 
 @dataclass
@@ -25,12 +31,21 @@ class LocalIdP:
     - Login (password): :meth:`verify_credentials` → ``ClaimsPrincipal``
     - Machine tokens: :meth:`issue_id_token` → signed JWT
 
+    Defaults tuned for the zero-boilerplate path:
+
+    - ``store`` defaults to an in-memory :class:`MemoryAuthStore` — good
+      for dev, replace with a SQLAlchemy-backed store for production.
+    - ``secret`` falls back to the ``LOCAL_IDP_SECRET`` env var when
+      empty. If neither is provided, construction raises so the error
+      surfaces at boot rather than at first token-issue.
+
     The ``audience`` defaults to the issuer for single-app deployments;
     override per :meth:`issue_id_token` for multi-audience setups.
     """
 
-    store: AuthStore
-    # Supply one of: secret (HS256), OR configure a TokenIssuer explicitly
+    store: AuthStore = field(default_factory=_default_store)
+    # Supply one of: secret (HS256), OR configure a TokenIssuer explicitly.
+    # When empty, reads LOCAL_IDP_SECRET from the environment.
     secret: str = ""
     issuer: str = "pywire-auth-local"
     audience: str = ""
@@ -39,13 +54,16 @@ class LocalIdP:
 
     def __post_init__(self) -> None:
         if self.token_issuer is None:
-            if not self.secret:
+            secret = self.secret or os.environ.get("LOCAL_IDP_SECRET", "")
+            if not secret:
                 raise ValueError(
-                    "LocalIdP requires either secret=... (HS256) or an "
-                    "explicit token_issuer=TokenIssuer(...)"
+                    "LocalIdP requires a signing secret. Pass secret=... "
+                    "(HS256), set the LOCAL_IDP_SECRET env var, or supply "
+                    "an explicit token_issuer=TokenIssuer(...)."
                 )
+            self.secret = secret
             self.token_issuer = TokenIssuer(
-                issuer=self.issuer, algorithm="HS256", secret=self.secret
+                issuer=self.issuer, algorithm="HS256", secret=secret
             )
         else:
             # Ensure the issuer string matches any external token_issuer.
