@@ -93,33 +93,10 @@ def _setup_import_paths(module_name: str) -> None:
             sys.path.insert(0, subdir)
 
 
-def _load_dotenv(env_file: Optional[str] = None) -> None:
-    """Load env vars from an explicit file or ``.env`` (searched upward from CWD).
-
-    Silent no-op when ``python-dotenv`` isn't installed. Does not override
-    existing env vars — shell exports win.
-    """
-    try:
-        from dotenv import find_dotenv, load_dotenv as _lde
-    except ImportError:
-        return
-    if env_file:
-        _lde(env_file, override=False)
-        return
-    # find_dotenv defaults to the caller's __file__; force CWD-based search
-    # so apps pick up `.env` in the project root, not in pywire's site-packages.
-    path = find_dotenv(usecwd=True)
-    if path:
-        _lde(path, override=False)
-
-
-def import_app(app_str: str, env_file: Optional[str] = None) -> Any:
+def import_app(app_str: str) -> Any:
     """Import application from string (e.g. 'main:app' or 'src.main:app')."""
     if ":" not in app_str:
         raise click.BadParameter("App must be in format 'module:app'", param_hint="APP")
-
-    # Load .env BEFORE importing the app so env-gated constructors see vars.
-    _load_dotenv(env_file)
 
     module_name, app_name = app_str.split(":", 1)
 
@@ -238,9 +215,12 @@ If not provided, pywire tries to discover it in main.py, app.py, etc.[/dim]
 )
 @click.version_option(__version__)
 def cli() -> None:
-    # Load .env (CWD-rooted) before ANY subcommand runs so app-import-time
-    # code (provider constructors, LocalIdP, etc.) sees the env vars.
-    _load_dotenv()
+    # Run pywire's .env cascade before any subcommand so app-import-time
+    # code (provider constructors, LocalIdP, direct os.environ reads in
+    # main.py, etc.) sees the env vars populated.
+    from pywire.config import _ensure_loaded
+
+    _ensure_loaded()
 
 
 cli.add_command(config_command)
@@ -287,8 +267,10 @@ def dev(
     if not app:
         app = _discover_app_str()
 
-    # Verify import (also triggers .env auto-load).
-    import_app(app, env_file=env_file)
+    # .env already loaded in the cli group callback (see pywire.config
+    # cascade). --env-file is a forward-compat flag consumed by the TUI
+    # subprocess path below.
+    import_app(app)
 
     # Find available port
     original_port = port

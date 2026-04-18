@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +10,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
 from pywire.auth import Claim, ClaimsPrincipal
+from pywire.config import env as _env
 
 from pywire_auth._protocols import AuthStore
 from pywire_auth.local.token import TokenIssuer
@@ -54,7 +54,7 @@ class LocalIdP:
 
     def __post_init__(self) -> None:
         if self.token_issuer is None:
-            secret = self.secret or os.environ.get("LOCAL_IDP_SECRET", "")
+            secret = self.secret or _env("LOCAL_IDP_SECRET") or ""
             if not secret:
                 raise ValueError(
                     "LocalIdP requires a signing secret. Pass secret=... "
