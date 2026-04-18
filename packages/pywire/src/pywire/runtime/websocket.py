@@ -321,8 +321,12 @@ class WebSocketHandler:
 
             # Populate principal on initial page (parity with _handle_event and
             # _handle_relocate — previously missed here so the first render
-            # always saw user=None).
-            page.user = await self._resolve_user(websocket)
+            # always saw user=None). Only overwrite when resolution yields a
+            # real principal; without auth installed, `user` may be a page
+            # script variable we must not clobber.
+            resolved_user = await self._resolve_user(websocket)
+            if resolved_user is not None:
+                page.user = resolved_user
 
             self.connection_pages[websocket] = page
             self.session_ids[websocket] = session_id
@@ -408,7 +412,9 @@ class WebSocketHandler:
                     return
 
                 page, _params, _variant_name = result
-                page.user = await self._resolve_user(websocket)
+                resolved_user = await self._resolve_user(websocket)
+                if resolved_user is not None:
+                    page.user = resolved_user
 
                 self.connection_pages[websocket] = page
 
@@ -556,7 +562,9 @@ class WebSocketHandler:
                 if old_page:
                     new_page.user = getattr(old_page, "user", None)
                 else:
-                    new_page.user = await self._resolve_user(websocket)
+                    resolved_user = await self._resolve_user(websocket)
+                    if resolved_user is not None:
+                        new_page.user = resolved_user
 
                 # Replace page instance for this connection
                 self.connection_pages[websocket] = new_page
