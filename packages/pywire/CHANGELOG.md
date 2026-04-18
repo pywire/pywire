@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.0](https://github.com/pywire/pywire/compare/pywire-v0.8.0...pywire-v0.9.0) (2026-04-18)
+
+
+### Features
+
+* **pywire:** add configurable dev server port ([82b11f4](https://github.com/pywire/pywire/commit/82b11f4cbc19fe5e354858ef0daf1b41dd4f4191))
+* **pywire:** pre-warm CF Durable Object during HTTP request ([72673a2](https://github.com/pywire/pywire/commit/72673a26ac1fb3a8874aa9439feb7ea5537ff08a))
+
+
+### Bug Fixes
+
+* **pywire:** align dev server logs with uvicorn format via Rich handler ([f1684c6](https://github.com/pywire/pywire/commit/f1684c6bdf1d68432e9901004a916dcf7f5029f6))
+* **pywire:** clean dev server shutdown via client broadcast ([06f4e98](https://github.com/pywire/pywire/commit/06f4e98b5ea3e56902b35358975eb5e367bbf3e0))
+* **pywire:** decouple internal framework logging from debug flag ([e2998fc](https://github.com/pywire/pywire/commit/e2998fc3be4f2b2ff9065b7c8f3f7c04e0c11e66))
+* **pywire:** fix hot reload breaking interactivity on pages with layouts ([e83d6f0](https://github.com/pywire/pywire/commit/e83d6f0e7b470de75629758277d119ab0e83a557))
+* **pywire:** fix WireList equality recursion, ImportError surfacing, and $for component cleanup ([c7afde4](https://github.com/pywire/pywire/commit/c7afde4d8ec094bf24beabb9afec66b6cbe8031a))
+* **pywire:** force uvicorn exit and show correct startup URL ([6498047](https://github.com/pywire/pywire/commit/649804771fc8adc7b93452c932ddbef324752137))
+* **pywire:** implement [@click](https://github.com/click).once modifier in event handler ([ccfdc0f](https://github.com/pywire/pywire/commit/ccfdc0f31ff7720e8d4ff0db38354c3a0d2cf1da)), closes [#86](https://github.com/pywire/pywire/issues/86)
+* **pywire:** remove duplicate reconnect toast in dev mode ([1b33a93](https://github.com/pywire/pywire/commit/1b33a933c0fbfd616e9e78431d8a01de1517658f))
+
 ## [0.8.0](https://github.com/pywire/pywire/compare/pywire-v0.7.0...pywire-v0.8.0) (2026-04-15)
 
 
