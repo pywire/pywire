@@ -597,6 +597,15 @@ class PyWire:
             self._root_app = host
         return self
 
+    @property
+    def state(self) -> Any:
+        """Shortcut for ``self.app.state`` — Starlette's per-app state bag.
+
+        Lets pages do ``pywire.app.state.X`` instead of
+        ``pywire.app.app.state.X``.
+        """
+        return self.app.state
+
     def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
         """Add ASGI middleware to the application.
 
