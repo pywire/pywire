@@ -762,8 +762,19 @@ class WebSocketHandler:
 
         client_cookies = parse_cookie_header(cookie_header) if cookie_header else {}
         virtual = self._connection_cookies.setdefault(websocket, {})
-        httponly_set = self._connection_httponly.get(websocket, set())
+        httponly_set = self._connection_httponly.setdefault(websocket, set())
         baseline = self._get_handshake_cookies(websocket)
+
+        # 0. Infer HttpOnly for any baseline cookie the client can't see.
+        #    document.cookie only exposes non-httponly cookies, so anything
+        #    in the handshake Cookie header that's absent from the client
+        #    payload is almost certainly HttpOnly (pywire_session is the
+        #    canonical case). Pre-registering avoids tombstoning them in
+        #    step 2 below.
+        if cookie_header is not None:
+            for key in baseline:
+                if key not in client_cookies:
+                    httponly_set.add(key)
 
         # 1. Adopt non-httponly client values (covers both rewrites and new
         #    cookies the client set locally).

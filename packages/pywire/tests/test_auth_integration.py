@@ -144,8 +144,16 @@ def bl(self):
         assert page.log == ["ran"]
 
     @pytest.mark.asyncio
-    async def test_guard_only_on_init(self) -> None:
-        """Guard is only enforced on init=True (full renders), not updates."""
+    async def test_guard_runs_on_init_false_for_spa_relocate(self) -> None:
+        """Guard runs on BOTH init=True (hard load) and init=False (SPA relocate).
+
+        The internal-relocate dispatch path in app.py uses init=False when
+        rendering the target page for SPA navigation. Skipping the guard
+        there (the previous behavior) let anonymous SPA navs reach pages
+        that a hard reload would redirect away from. Partial in-place
+        re-renders use render_update(), not render(), so this does not
+        re-guard on state-driven updates.
+        """
         content = """
 !auth
 ---
@@ -156,14 +164,33 @@ self.log = []
 <p>x</p>
 """
         page = self._make_page(content)
-        page.user = ClaimsPrincipal(is_authenticated=True)
-
-        await page.render(init=True)  # pass
-        # Now simulate a partial re-render — should not re-run guard.
         page.user = ANONYMOUS
         response = await page.render(init=False)
-        # No redirect — partial render proceeds.
-        assert response.status_code != 303
+        # Guard fires on relocate path and returns a redirect.
+        assert response.status_code == 303
+
+    @pytest.mark.asyncio
+    async def test_guard_not_run_by_render_update(self) -> None:
+        """Partial state updates go through render_update(), not render().
+
+        render_update has no auth-guard call, so reactive writes re-render
+        regions without paying the policy cost on every update.
+        """
+        content = """
+!auth
+---
+__no_spa__ = True
+---
+
+<p>x</p>
+"""
+        page = self._make_page(content)
+        page.user = ClaimsPrincipal(is_authenticated=True)
+        await page.render(init=True)  # set up wire tracking
+        # Revoke user, then do a partial update — must not raise or redirect.
+        page.user = ANONYMOUS
+        update = await page.render_update(init=False)
+        assert isinstance(update, dict)
 
 
 class TestResolveUser:

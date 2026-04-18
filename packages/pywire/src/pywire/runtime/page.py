@@ -815,9 +815,12 @@ class BasePage:
             self._await_states.clear()
 
         # Auth guard — must short-circuit before any user code runs so
-        # unauthorized requests never trigger side effects. Lazy-imported
-        # so unprotected pages don't pull in the auth submodule.
-        if init and getattr(self.__class__, "__auth_required__", False):
+        # unauthorized requests never trigger side effects. Runs on BOTH
+        # init=True (hard load) and init=False (SPA relocate via internal
+        # ASGI replay); skipping on relocate would let an anonymous SPA
+        # nav reach a protected page. Lazy-imported so unprotected pages
+        # don't pull in the auth submodule.
+        if getattr(self.__class__, "__auth_required__", False):
             from pywire.auth.guard import run_auth_guard
 
             guard_response = await run_auth_guard(self)
