@@ -32,9 +32,11 @@ apple = []
 auth0 = []
 
 # Persistent user store — pulls SQLAlchemy when an app needs account
-# linking or the local IdP.
+# linking or the local IdP. aiosqlite covers dev / single-worker apps;
+# Postgres / MySQL users swap in their own async driver.
 sqlalchemy = [
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.19",
 ]
 
 # Cross-worker realtime updates.

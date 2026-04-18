@@ -26,6 +26,11 @@ from pywire_auth.providers import (
 )
 from pywire_auth.stores import MemoryAuthStore
 
+try:
+    from pywire_auth.stores.sqlalchemy import SQLAlchemyAuthStore
+except ImportError:
+    SQLAlchemyAuthStore = None  # type: ignore[assignment,misc]
+
 __all__ = [
     "Auth0Provider",
     "AuthMiddleware",
@@ -39,6 +44,7 @@ __all__ = [
     "LocalIdP",
     "MemoryAuthStore",
     "MicrosoftProvider",
+    "SQLAlchemyAuthStore",
     "OIDCProvider",
     "TokenIssuer",
     "connect_auth",
