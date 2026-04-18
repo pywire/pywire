@@ -332,57 +332,92 @@ jobs:
         with:
           packages-dir: packages/create-pywire-app/dist/
 
-  # Check if docs/ changed since the previous pywire release (only runs on pywire release)
-  check-docs-changed:
-    name: "Check if docs changed since last pywire release"
+  # When pywire releases, ensure docs gets a patch release too (if docs changed since
+  # last docs release). Closes any stale docs release-please PR to prevent conflicts,
+  # then bumps docs/package.json + manifest via a fresh PR, tags, and creates a GH release.
+  # Docs can still release independently via its own release-please PR when pywire does not release.
+  sync-docs-release:
+    name: "Sync docs release with pywire"
     needs: release-please
     if: needs.release-please.outputs.pywire--release_created == 'true'
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.check.outputs.changed }}
+      released: ${{ steps.check.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: check
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Check docs changed since last docs release
+        id: check
         run: |
-          PREV_TAG=$(git tag --sort=-version:refname | grep '^pywire-v' | sed -n '2p')
-          if [ -z "$PREV_TAG" ] || ! git diff --quiet "$PREV_TAG"..HEAD -- docs/; then
+          LAST_TAG=$(git tag --sort=-version:refname | grep '^pywire-docs-v' | head -1 || true)
+          if [ -z "$LAST_TAG" ] || ! git diff --quiet "$LAST_TAG"..HEAD -- docs/; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-  # Merge the docs release PR when pywire releases and docs changed (keeps manifest in sync)
-  merge-docs-release-pr:
-    name: "Merge docs release PR"
-    needs: [release-please, check-docs-changed]
-    if: >-
-      needs.release-please.outputs.pywire--release_created == 'true'
-      && needs.check-docs-changed.result == 'success'
-      && needs.check-docs-changed.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Merge docs release PR
+      - name: Close stale docs release-please PR
+        if: steps.check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
-          gh pr merge release-please--branches--main--components--pywire-docs \
-            --squash \
-            --repo "$GITHUB_REPOSITORY" \
-            || true
+          prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,headRefName \
+            --jq '[.[] | select(.headRefName == "release-please--branches--main--components--pywire-docs")] | .[].number')
+          for n in $prs; do
+            echo "Closing superseded docs release PR #$n"
+            gh pr close "$n" --repo "$GITHUB_REPOSITORY" --delete-branch \
+              --comment "Superseded by pywire release sync." || true
+          done
+
+      - name: Bump docs version, merge, tag, release
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PYWIRE_TAG: ${{ needs.release-please.outputs.pywire--tag_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          current=$(jq -r '.docs' .release-please-manifest.json)
+          IFS='.' read -r major minor patch <<< "$current"
+          new="${major}.${minor}.$((patch + 1))"
+          tag="pywire-docs-v${new}"
+          branch="chore/sync-docs-release-${new}"
+
+          git checkout -b "$branch"
+          jq --arg v "$new" '.docs = $v' .release-please-manifest.json > tmp && mv tmp .release-please-manifest.json
+          jq --arg v "$new" '.version = $v' docs/package.json > tmp && mv tmp docs/package.json
+
+          git add .release-please-manifest.json docs/package.json
+          git commit -m "chore(pywire-docs): release ${new}"
+          git push origin "$branch"
+
+          pr_url=$(gh pr create --base main --head "$branch" \
+            --title "chore(pywire-docs): release ${new}" \
+            --body "Auto-synced with pywire release ${PYWIRE_TAG}.")
+          gh pr merge "$pr_url" --squash --admin --delete-branch --repo "$GITHUB_REPOSITORY"
+
+          git fetch origin main
+          git tag "$tag" FETCH_HEAD
+          git push origin "$tag"
+          gh release create "$tag" --title "pywire-docs: ${tag}" \
+            --notes "Synced with pywire release ${PYWIRE_TAG}."
 
   # Deploy docs to Cloudflare Pages (on pywire release with doc changes, or explicit docs release)
   deploy-docs:
     name: "Deploy Docs (Production)"
-    needs: [release-please, check-docs-changed]
+    needs: [release-please, sync-docs-release]
     if: >-
       always()
       && needs.release-please.result == 'success'
       && (
-        (needs.release-please.outputs.pywire--release_created == 'true'
-         && needs.check-docs-changed.result == 'success'
-         && needs.check-docs-changed.outputs.changed == 'true')
+        (needs.sync-docs-release.result == 'success'
+         && needs.sync-docs-release.outputs.released == 'true')
         || needs.release-please.outputs.pywire-docs--release_created == 'true'
       )
     uses: ./.github/workflows/deploy-docs.yml
