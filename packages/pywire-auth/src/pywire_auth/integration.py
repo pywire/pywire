@@ -18,6 +18,7 @@ from pywire.auth import (
 )
 from starlette.requests import Request
 
+from pywire_auth.actions import AuthActions
 from pywire_auth.middleware import AuthMiddleware
 from pywire_auth.routes import _RouteContext, build_routes
 
@@ -101,6 +102,10 @@ def connect_auth(
     _app_state.local_idp = local_idp
     if local_idp is not None:
         _app_state.auth_store = local_idp.store
+    # Single entry point for claim/session mutations — bundles
+    # auth_store + session + channel writes so app code never reaches
+    # into all three directly. See pywire_auth.actions.AuthActions.
+    _app_state.auth = AuthActions(app)
 
     return engine
 

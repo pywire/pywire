@@ -11,6 +11,7 @@ Public API:
 """
 
 from pywire_auth._protocols import AuthStore, OIDCProvider
+from pywire_auth.actions import AuthActions
 from pywire_auth.integration import connect_auth
 from pywire_auth.middleware import AuthMiddleware
 from pywire_auth.local import LocalIdP, TokenIssuer
@@ -33,6 +34,7 @@ except ImportError:
 
 __all__ = [
     "Auth0Provider",
+    "AuthActions",
     "AuthMiddleware",
     "AuthStore",
     "BaseOAuth2Provider",
