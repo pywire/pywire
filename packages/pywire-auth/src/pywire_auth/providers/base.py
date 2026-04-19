@@ -45,6 +45,12 @@ class BaseOAuth2Provider(ABC):
             "scope": " ".join(self.scopes),
             "state": state,
         }
+        # OIDC providers bind the nonce into the returned id_token; without
+        # sending it here the id_token's `nonce` claim is absent and
+        # ``_verify_id_token`` raises "id_token nonce mismatch". Plain
+        # OAuth2 providers (GitHub, Facebook) ignore the extra param.
+        if nonce:
+            params["nonce"] = nonce
         query = urllib.parse.urlencode(params)
         return f"{self.authorize_endpoint}?{query}"
 
