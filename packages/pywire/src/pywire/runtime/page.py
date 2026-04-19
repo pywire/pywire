@@ -190,6 +190,12 @@ class BasePage:
         else:
             self._head_buffer = HeadBuffer()
         self._snippet_invocations: Dict[str, Tuple[Any, str]] = {}
+        # Output-equality cache for the general region system. Keyed by
+        # ``region_id``; value is the last rendered HTML. Used by
+        # ``render_update`` to skip morphdom patches when a dirty region
+        # re-renders to identical HTML (e.g. a wire flipped then flipped
+        # back, or changed in a way that doesn't affect output).
+        self._region_output_cache: Dict[str, str] = {}
 
         # Protected ``children`` prop for layout composition. Default to
         # ``None`` so layouts that never receive children don't AttributeError
@@ -1087,6 +1093,11 @@ class BasePage:
         self._wire_subscribers.clear()
         self._region_dependencies.clear()
         self._dirty_regions.clear()
+        # Also drop the output-equality cache so the next full render emits
+        # fresh markup (the previous cache belonged to a pre-hot-reload
+        # template that may have been invalidated).
+        self._region_output_cache.clear()
+        self._snippet_invocations.clear()
 
     def _begin_region_render(self, region_id: str) -> None:
         deps = self._region_dependencies.get(region_id)
@@ -1272,6 +1283,18 @@ class BasePage:
                         has_root_dirty = True
                         break
 
+                    # Output-equality skip: if the re-rendered HTML matches
+                    # what we sent the client last time for this region, skip
+                    # emitting a morphdom patch. Still refresh the cache so a
+                    # subsequent change continues to match against the latest.
+                    cached = self._region_output_cache.get(region_id)
+                    if cached == region_html:
+                        logger.debug(
+                            f"render_update: skipping region {region_id} "
+                            "(HTML unchanged)"
+                        )
+                        continue
+                    self._region_output_cache[region_id] = region_html
                     updates.append({"region": region_id, "html": region_html})
 
                 if not has_root_dirty:
