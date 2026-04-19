@@ -245,37 +245,50 @@ class Children:
 class HeadBuffer:
     """Page-scoped accumulator for ``{$head}`` contributions.
 
-    Contributions are appended in render order; on ``flush``, the last
-    ``<title>`` tag observed wins (earlier ``<title>`` tags are dropped).
-    Non-title content is preserved in the order it was contributed.
+    Contributions are appended in render order. On ``flush``, the *last*
+    ``<title>`` tag observed wins; earlier ``<title>`` tags are stripped,
+    and the winning title stays at its original source position. All
+    non-title content retains the order it was contributed — crucial so
+    that ``<meta charset>`` / ``<meta viewport>`` appear before the title
+    if the author wrote them that way.
     """
 
-    __slots__ = ("_contributions", "_title")
+    __slots__ = ("_contributions",)
 
     def __init__(self) -> None:
         self._contributions: List[str] = []
-        self._title: Optional[str] = None
 
     def contribute(self, html: str) -> None:
-        # Extract the last <title> in this contribution, track it as the
-        # winning title, and strip any <title> tags from the contribution
-        # itself so later flush can re-insert the winner once.
-        titles = _TITLE_RE.findall(html)
-        if titles:
-            self._title = titles[-1]
-            html = _TITLE_RE.sub("", html)
         self._contributions.append(html)
 
     def flush(self) -> str:
+        # Locate the *last* <title> across all contributions. Strip every
+        # other <title>; keep the winner in place.
+        last_c = -1
+        last_start = -1
+        last_end = -1
+        for i, html in enumerate(self._contributions):
+            for m in _TITLE_RE.finditer(html):
+                last_c = i
+                last_start = m.start()
+                last_end = m.end()
+
+        if last_c < 0:
+            return "".join(self._contributions)
+
         parts: List[str] = []
-        if self._title is not None:
-            parts.append(self._title)
-        parts.extend(self._contributions)
+        for i, html in enumerate(self._contributions):
+            if i == last_c:
+                winner = html[last_start:last_end]
+                before = _TITLE_RE.sub("", html[:last_start])
+                after = _TITLE_RE.sub("", html[last_end:])
+                parts.append(before + winner + after)
+            else:
+                parts.append(_TITLE_RE.sub("", html))
         return "".join(parts)
 
     def clear(self) -> None:
         self._contributions.clear()
-        self._title = None
 
     def __bool__(self) -> bool:
-        return bool(self._contributions) or self._title is not None
+        return bool(self._contributions)

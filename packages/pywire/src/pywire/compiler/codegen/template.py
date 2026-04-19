@@ -1177,8 +1177,14 @@ class TemplateCodegen:
     # ---------------- Render region (snippet) codegen ----------------
 
     def _snippet_method_name(self, name: str, line: int, col: int) -> str:
-        """Stable method name for a snippet definition."""
-        return f"_snippet_{name}_{line}_{col}".replace("-", "_")
+        """Unique method name for a snippet definition.
+
+        Block-level snippets always sit at column 0, so ``name_line_col`` can
+        collide across siblings or across files. Append a per-generator
+        counter to guarantee uniqueness within a compilation.
+        """
+        self._region_counter += 1
+        return f"_snippet_{name}_{line}_{col}_{self._region_counter}".replace("-", "_")
 
     def _render_site_id(self, snippet_name: str, line: int, col: int) -> str:
         """Stable site id used as both region id and memo key for a
@@ -1255,15 +1261,37 @@ class TemplateCodegen:
             args=[render_unit],
             keywords=[],
         )
-        bind_attr = ast.Assign(
-            targets=[
-                ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()),
-                    attr=name,
-                    ctx=ast.Store(),
+        # Only bind as the default when the parent didn't pass a snippet
+        # prop of the same name. ``self.<name>`` may already hold a Snippet
+        # supplied by ``_update_props``; don't clobber it.
+        # Emits: ``if getattr(self, "<name>", None) is None: self.<name> = <snippet_expr>``
+        bind_attr = ast.If(
+            test=ast.Compare(
+                left=ast.Call(
+                    func=ast.Name(id="getattr", ctx=ast.Load()),
+                    args=[
+                        ast.Name(id="self", ctx=ast.Load()),
+                        ast.Constant(value=name),
+                        ast.Constant(value=None),
+                    ],
+                    keywords=[],
+                ),
+                ops=[ast.Is()],
+                comparators=[ast.Constant(value=None)],
+            ),
+            body=[
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=name,
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=snippet_expr,
                 )
             ],
-            value=snippet_expr,
+            orelse=[],
         )
         self._set_line(bind_attr, node)
         body.append(bind_attr)

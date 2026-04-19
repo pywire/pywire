@@ -66,6 +66,11 @@ def _parse_snippet_signature(expr: str) -> Tuple[str, List[str]]:
     func = tree.body[0]
     if not isinstance(func, ast.FunctionDef):
         return expr.split("(", 1)[0].strip(), []
+    if func.args.vararg or func.args.kwarg or func.args.kwonlyargs:
+        raise PyWireSyntaxError(
+            f"{{$snippet {func.name}(...)}} only accepts positional parameters; "
+            "*args / **kwargs / keyword-only params are not supported.",
+        )
     params = [a.arg for a in func.args.args]
     return func.name, params
 
@@ -87,6 +92,13 @@ def _parse_render_call(expr: str) -> Tuple[str, List[str]]:
     call = tree.body
     if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
         return expr.split("(", 1)[0].strip(), []
+    if call.keywords:
+        # Keyword arguments aren't yet supported in {$render name(...)}. Fail
+        # loudly rather than silently dropping them.
+        raise PyWireSyntaxError(
+            f"{{$render {call.func.id}(...)}} does not support keyword arguments yet; "
+            "pass values positionally.",
+        )
     args_src = [ast.unparse(a) for a in call.args]
     return call.func.id, args_src
 
@@ -497,13 +509,6 @@ class PyWireParser:
                     if is_real:
                         real_children.append(c)
 
-                print(
-                    f"[DEBUG-PARSER] Validating For block at line {node.line}. Children: {len(node.children)}, Real: {len(real_children)}"
-                )
-                for i, c in enumerate(real_children):
-                    print(
-                        f"  Real Child {i}: tag={c.tag}, text={c.text_content[:20] if c.text_content else None}"
-                    )
 
                 if len(real_children) != 1:
                     from pywire_parser.exceptions import PyWireSyntaxError

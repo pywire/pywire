@@ -186,16 +186,29 @@ def test_children_type_rejects_mixed_n_and_range():
 # ---------- HeadBuffer ----------
 
 
-def test_head_buffer_flush_orders_title_first():
+def test_head_buffer_flush_preserves_author_order():
     hb = HeadBuffer()
-    hb.contribute("<title>Home</title><meta name=a>")
+    # `<meta charset>` must not be pushed after `<title>` — authors rely on
+    # charset appearing first in `<head>` for correctness.
+    hb.contribute('<meta charset="utf-8"><title>Home</title><meta name=a>')
     hb.contribute("<link rel=icon>")
     out = hb.flush()
-    # Title appears once, first.
-    assert out.startswith("<title>Home</title>")
-    assert "<meta name=a>" in out
+    assert out.startswith('<meta charset="utf-8">')
+    assert out.index("<title>Home</title>") < out.index("<meta name=a>")
     assert "<link rel=icon>" in out
     assert out.count("<title>") == 1
+
+
+def test_head_buffer_winner_keeps_original_position():
+    hb = HeadBuffer()
+    # Winning title appears in the second contribution, after a meta tag;
+    # it must stay there, not leap to the front.
+    hb.contribute("<title>Layout</title>")
+    hb.contribute('<meta name="x"><title>Page</title><link rel=icon>')
+    out = hb.flush()
+    assert out.index('<meta name="x">') < out.index("<title>Page</title>")
+    assert out.index("<title>Page</title>") < out.index("<link rel=icon>")
+    assert "Layout" not in out
 
 
 def test_head_buffer_last_title_wins():

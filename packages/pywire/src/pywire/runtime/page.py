@@ -661,16 +661,21 @@ class BasePage:
         if cached is not None:
             prev_args, prev_html = cached
             try:
-                if prev_args == args:
-                    return prev_html
+                args_match = prev_args == args
             except Exception:
-                if prev_args is args:
-                    return prev_html
+                args_match = prev_args is args
+            if args_match:
+                # Keep the output-equality cache aligned so ``render_update``
+                # can skip the morphdom patch when this site re-renders to
+                # the same HTML.
+                self._region_output_cache[site_id] = prev_html
+                return prev_html
 
         html = await self._invoke_region(
             site_id, snippet.render, args=args
         )
         self._snippet_invocations[site_id] = (args, html)
+        self._region_output_cache[site_id] = html
         return html
 
     async def _invoke_region(
@@ -1043,10 +1048,6 @@ class BasePage:
                     regions.discard(region_id)
                     if not regions:
                         self._wire_subscribers.pop(dep, None)
-                    if regions and region_id in regions:
-                        regions.discard(region_id)
-                        if not regions:
-                            self._wire_subscribers.pop(dep, None)
         self._region_dependencies[region_id] = set()
 
     def _render_expr(self, static_id: str, compute_func: Callable[[], Any]) -> Any:
