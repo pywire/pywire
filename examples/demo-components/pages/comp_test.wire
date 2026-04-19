@@ -27,7 +27,7 @@ count = 0
     <hr />
     
     <Card>
-        <slot name="header">Card Header</slot>
+        {$snippet header}Card Header{/snippet}
         Card Body Content
     </Card>
 </div>

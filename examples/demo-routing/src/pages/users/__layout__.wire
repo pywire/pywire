@@ -21,7 +21,7 @@
         </aside>
         
         <div>
-            <slot />
+            {$render children}
         </div>
     </div>
 </section>

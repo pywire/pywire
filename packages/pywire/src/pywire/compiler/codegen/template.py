@@ -2373,50 +2373,11 @@ class TemplateCodegen:
             )
             return
 
-        # --- Handle legacy <slot> / <slot name="X"> / <slot $head> ---
-        # Compile to the equivalent render-region invocation. ``<slot/>`` →
-        # ``{$render children}``; ``<slot name="X"/>`` → ``{$render X}``.
-        # Any inline children become the fallback body used when the snippet
-        # prop is ``None``. ``<slot $head />`` was replaced by the ``{$head}``
-        # teleport block and is no longer meaningful here — emit nothing.
         if node.tag == "slot":
-            if "$head" in node.attributes:
-                return
-            snippet_name = node.attributes.get("name", "children")
-            # Rewrite to an equivalent RenderAttribute node so we share the
-            # same codegen path as ``{$render name(...)}``.
-            synthetic_render = RenderAttribute(
-                name="$render",
-                value="",
-                snippet_name=snippet_name,
-                call_args=[],
-                has_fallback=bool(node.children),
-                line=node.line,
-                column=node.column,
+            raise ValueError(
+                f"<slot> is no longer supported (line {node.line}). "
+                "Use {$render name} / {$snippet name}...{/snippet} / {$head}...{/head} instead."
             )
-            synthetic_node = dataclasses.replace(
-                node,
-                tag=None,
-                attributes={},
-                special_attributes=[synthetic_render],
-            )
-            self._emit_render_invocation(
-                synthetic_node,
-                synthetic_render,
-                body,
-                local_vars,
-                bound_var,
-                layout_id,
-                known_methods,
-                known_globals,
-                known_imports,
-                async_methods,
-                component_map,
-                scope_id,
-                parts_var=parts_var,
-                wire_vars=wire_vars,
-            )
-            return
 
         if node.tag and (
             (component_map and node.tag in component_map) or node.tag[0].isupper()
@@ -2675,22 +2636,11 @@ class TemplateCodegen:
                     continue
                 remaining_children.append(child)
 
-            # Bucket remaining children by named slot ``slot="x"`` attribute
-            # (the default bucket becomes the protected ``children`` prop).
-            # Each bucket compiles to an anonymous zero-arg Snippet passed as
-            # a regular kwarg on the component.
+            # Remaining children → protected ``children`` prop as an anonymous
+            # zero-arg Snippet passed as a regular kwarg on the component.
             bucketed: Dict[str, List[TemplateNode]] = {}
-            default_bucket: List[TemplateNode] = []
-            for child in remaining_children:
-                child_slot_name: Optional[str] = None
-                if child.tag and "slot" in child.attributes:
-                    child_slot_name = child.attributes["slot"]
-                if child_slot_name:
-                    bucketed.setdefault(child_slot_name, []).append(child)
-                else:
-                    default_bucket.append(child)
-            if default_bucket:
-                bucketed["children"] = default_bucket
+            if remaining_children:
+                bucketed["children"] = remaining_children
 
             all_slot_nodes: List[TemplateNode] = []
             for s_nodes in bucketed.values():

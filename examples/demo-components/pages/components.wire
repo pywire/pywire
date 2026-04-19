@@ -83,7 +83,7 @@ test_var = "helllo"
         <h2 class="section-title">Cards</h2>
         <div class="stack">
             <Card>
-                <div slot="header">Product Details</div>
+                {$snippet header}Product Details{/snippet}
                 <p>This is a card component with a named header slot.</p>
                 <div style="margin-top: 1rem;">
                     <Button variant="primary">Add to Cart</Button>
