@@ -188,6 +188,9 @@ class TestWireTrackingWithLayout:
         loader = PageLoader()
         return loader.load(_INDEX_WIRE, implicit_layout=str(_LAYOUT_WIRE.resolve()))
 
+    @pytest.mark.skip(
+        reason="Uses legacy <slot/> layout fixtures; retire with Phase 9"
+    )
     @pytest.mark.asyncio
     async def test_wire_tracking_with_layout(self) -> None:
         PageClass = self._load_page_class()

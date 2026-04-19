@@ -8,6 +8,15 @@ from pywire.runtime.loader import PageLoader
 from pywire.runtime.page import BasePage
 
 
+# These tests exercise the legacy ``<slot/>`` / ``<slot $head/>`` system
+# which is being removed in Phase 9. Layout composition's replacement,
+# ``{$render children}`` + ``{$head}`` teleport, is exercised in
+# ``test_layout_as_component.py``.
+pytestmark = pytest.mark.skip(
+    reason="Legacy slot system retired in Phase 8; see test_layout_as_component.py"
+)
+
+
 @pytest.fixture
 def loader() -> PageLoader:
     return PageLoader()

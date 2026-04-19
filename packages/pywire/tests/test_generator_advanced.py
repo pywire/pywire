@@ -1,6 +1,8 @@
 import ast
 import unittest
 
+import pytest
+
 from pywire.compiler.ast_nodes import LayoutDirective, ParsedPyWire, TemplateNode
 from pywire.compiler.codegen.generator import CodeGenerator
 
@@ -9,6 +11,10 @@ class TestGeneratorAdvanced(unittest.TestCase):
     def setUp(self) -> None:
         self.generator = CodeGenerator()
 
+    @pytest.mark.skip(
+        reason="Obsolete slot-mode codegen assertions; replaced by "
+        "test_layout_as_component.py in Phase 8. To be removed in Phase 9."
+    )
     def test_generate_layout_mode(self) -> None:
         # Page with layout inheriting slots
         layout = LayoutDirective(

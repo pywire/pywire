@@ -22,6 +22,9 @@ def mock_app() -> MagicMock:
     return app
 
 
+@pytest.mark.skip(
+    reason="Uses legacy <slot/> layout fixtures; retire with Phase 9"
+)
 @pytest.mark.asyncio
 async def test_component_with_layout_rendering(
     loader: PageLoader, mock_app: MagicMock

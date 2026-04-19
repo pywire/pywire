@@ -148,6 +148,11 @@ class BasePage:
                 f"{self._parent_page._handler_prefix}_comp:{self._component_key}:"
             )
 
+        # ``children`` is a protected prop: it holds the implicit children
+        # Snippet passed by a parent (layout composition) and must not fall
+        # through into ``self.attrs`` where it would leak into HTML rendering.
+        children_arg = kwargs.pop("children", None)
+
         # Store remaining kwargs as fallthrough attributes
         self.attrs = {k: v for k, v in kwargs.items() if k != "slots"}
 
@@ -174,12 +179,23 @@ class BasePage:
         # Render-region (snippet) system:
         # - ``_head_buffer``: accumulator for ``{$head}...{/head}`` contributions
         #   from this page and any descendant component in the render tree.
+        #   Shared with ``_parent_page`` so contributions from any depth reach
+        #   the root layout's flush point.
         # - ``_snippet_invocations``: per-site memo cache. Keyed by the stable
         #   ``site_id`` codegen assigns to each ``{$render}`` call. Each entry
         #   is (args_tuple, cached_html). Site_ids double as region_ids so the
         #   existing wire-dep tracker handles invalidation on wire writes.
-        self._head_buffer: HeadBuffer = HeadBuffer()
+        if self._parent_page is not None:
+            self._head_buffer: HeadBuffer = self._parent_page._head_buffer
+        else:
+            self._head_buffer = HeadBuffer()
         self._snippet_invocations: Dict[str, Tuple[Any, str]] = {}
+
+        # Protected ``children`` prop for layout composition. Default to
+        # ``None`` so layouts that never receive children don't AttributeError
+        # on ``{$render children}`` lookups; ``_update_props`` later sets the
+        # real snippet when the parent resolves this instance.
+        self.children: Optional[Snippet] = children_arg
 
         self._instance_id = id(self)
         logger.debug(f"[{self._instance_id}] BasePage initialized")
@@ -751,6 +767,25 @@ class BasePage:
         self._head_buffer.clear()
         return html
 
+    def _inject_head_into(self, html: str) -> str:
+        """Flush head buffer into ``html``'s ``</head>`` tag (if any).
+
+        Used as the single injection point whether the page is rendered
+        via ``render()`` (HTTP response builder) or ``_render_template()``
+        directly (tests / SSR integration).
+        """
+        if self._parent_page is not None:
+            # Nested render: defer to the root page so head contributions
+            # accumulate before a single flush. Return ``html`` untouched.
+            return html
+        head_html = self._flush_head()
+        if not head_html:
+            return html
+        if "</head>" in html:
+            left, _, right = html.rpartition("</head>")
+            return f"{left}{head_html}</head>{right}"
+        return f"{head_html}{html}"
+
     async def _run_hooks(self, hook_list: List[str]) -> None:
         """Run a list of lifecycle hooks by method name."""
         for hook_name in hook_list:
@@ -843,6 +878,9 @@ class BasePage:
                 # But if it has <html, strip it?
                 # For safety, let's look for html tags and warn/strip if we can't find body
                 pass
+
+        # Flush {$head} contributions into the document head.
+        html = self._inject_head_into(html)
 
         # Inject styles if this is the root render (not a component or partial update)
         styles = self._style_collector.render()
@@ -1354,7 +1392,11 @@ class BasePage:
         """Render template and remove stale child component instances."""
         html = await self._render_template()
         self._cleanup_components()
-        return html
+        # At the root of the render tree (no parent page), flush accumulated
+        # ``{$head}`` contributions into the document head so callers that
+        # use ``_render_template()`` / ``_render_and_cleanup()`` directly
+        # (tests, SSR integrations) get a complete document.
+        return self._inject_head_into(html)
 
 
 class ErrorBasePage(BasePage):
