@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.7.0...create-pywire-app-v0.8.0) (2026-04-18)
+
+
+### Features
+
+* **pywire:** pre-warm CF Durable Object during HTTP request ([72673a2](https://github.com/pywire/pywire/commit/72673a26ac1fb3a8874aa9439feb7ea5537ff08a))
+
+
+### Bug Fixes
+
+* **create-pywire-app:** sync CF templates with pywire deploy ([9787dcf](https://github.com/pywire/pywire/commit/9787dcf7c4f2a794b2377a7dd742329fb6a864bf))
+
 ## [0.7.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.6.0...create-pywire-app-v0.7.0) (2026-04-15)
 
 
