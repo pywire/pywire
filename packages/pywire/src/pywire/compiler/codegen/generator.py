@@ -226,6 +226,14 @@ class CodeGenerator:
                 ],
                 level=0,
             ),
+            ast.ImportFrom(
+                module="pywire.core.snippet",
+                names=[
+                    ast.alias(name="Snippet", asname=None),
+                    ast.alias(name="RenderUnit", asname=None),
+                ],
+                level=0,
+            ),
         ]
         return imports
 
