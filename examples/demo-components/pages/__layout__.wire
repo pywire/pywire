@@ -20,7 +20,7 @@
         </nav>
     </header>
     <main class="container">
-        <slot />
+        {$render children}
     </main>
     <footer class="container">
         <small>Built with PyWire & Pico CSS</small>

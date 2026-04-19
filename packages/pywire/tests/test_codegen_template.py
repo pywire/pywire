@@ -1,5 +1,7 @@
 import ast
 import unittest
+
+import pytest
 from typing import Any, List, Union, cast
 
 from pywire.compiler.ast_nodes import (
@@ -135,6 +137,7 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("parts.append(await self._render_region_r1())", main_code)
         self.assertIn("attrs['data-pw-region'] = 'r1'", aux_code)
 
+    @pytest.mark.skip(reason="generate_slot_methods removed in Phase 9")
     def test_generate_slot_methods(self) -> None:
         # Node with slot filler: <slot name="header">...</slot>
         node = TemplateNode(
@@ -174,6 +177,9 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("'__is_component__': True", code)
         self.assertIn("'_style_collector': self._style_collector", code)
 
+    @pytest.mark.skip(
+        reason="Legacy slot dict codegen replaced by snippet props (Phase 9)"
+    )
     def test_codegen_component_slots(self) -> None:
         child1 = TemplateNode(
             tag="div", attributes={"slot": "header"}, line=1, column=0

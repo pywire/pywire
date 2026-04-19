@@ -50,8 +50,6 @@ class DotDict(dict):
 class BasePage:
     """Base class for all compiled pages."""
 
-    # Layout ID (overridden by generator)
-    LAYOUT_ID: Optional[str] = None
     __file_path__: ClassVar[str]
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
@@ -59,7 +57,6 @@ class BasePage:
         "query",
         "path",
         "url",
-        "slots",
         "__is_component__",
         "_style_collector",
         "_parent_page",
@@ -131,13 +128,6 @@ class BasePage:
         self.loading: Dict[str, bool] = {}
         self._pending_cookies: List[Dict[str, Any]] = []
 
-        # Slot registry: layout_id -> slot_name -> renderer (replacement semantics)
-        self.slots: Dict[str, Dict[str, Union[Callable, str]]] = defaultdict(dict)
-
-        # Populate slots from kwargs (for components)
-        if "slots" in kwargs and self.LAYOUT_ID:
-            self.slots[self.LAYOUT_ID].update(kwargs["slots"])
-
         # Component flag (internal)
         self.__is_component__ = kwargs.pop("__is_component__", False)
         self._parent_page: Optional["BasePage"] = kwargs.pop("_parent_page", None)
@@ -154,10 +144,7 @@ class BasePage:
         children_arg = kwargs.pop("children", None)
 
         # Store remaining kwargs as fallthrough attributes
-        self.attrs = {k: v for k, v in kwargs.items() if k != "slots"}
-
-        # Head slot registry: layout_id -> list of renderers (append semantics, top-down order)
-        self.head_slots: Dict[str, List[Callable]] = defaultdict(list)
+        self.attrs = dict(kwargs)
 
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
@@ -397,6 +384,15 @@ class BasePage:
             if self._is_framework_prop_key(key):
                 continue
 
+            # Snippet props are always stored directly on ``self`` so
+            # ``{$render name}`` can reach them via attribute lookup,
+            # regardless of whether the component declared ``name`` in
+            # ``@props``. (``<slot name="X">`` / nested ``{$snippet X}``
+            # sugar produces snippet kwargs for undeclared slot names.)
+            if isinstance(value, Snippet):
+                setattr(self, key, value)
+                continue
+
             # Prop reconciliation:
             # - existing attributes on the component instance are treated as props/state
             # - unknown keys are fallthrough HTML attrs
@@ -404,9 +400,6 @@ class BasePage:
                 setattr(self, key, value)
                 continue
             fallback_attrs[key] = value
-
-        if "slots" in new_kwargs and self.LAYOUT_ID:
-            self.slots[self.LAYOUT_ID].update(new_kwargs["slots"])
 
         self.attrs = fallback_attrs
 
@@ -611,64 +604,6 @@ class BasePage:
             return
 
         await self._dispatch_handler(event_name, event_data)
-
-    def register_slot(
-        self, layout_id: str, slot_name: str, renderer: Callable[..., Any]
-    ) -> None:
-        """Register a content renderer for a slot in a specific layout."""
-        self.slots[layout_id][slot_name] = renderer
-
-    def register_head_slot(self, layout_id: str, renderer: Callable[..., Any]) -> None:
-        """Register head content to be appended (top-down order)."""
-        # Prevent duplicate registration (can happen with super()._init_slots() chaining)
-        if renderer not in self.head_slots[layout_id]:
-            self.head_slots[layout_id].append(renderer)
-
-    async def render_slot(
-        self,
-        slot_name: str,
-        default_renderer: Optional[Callable[..., Any]] = None,
-        layout_id: Optional[str] = None,
-        append: bool = False,
-    ) -> str:
-        """Render a slot for the current layout."""
-        target_id = layout_id or self.LAYOUT_ID
-
-        # Handle $head slots with append semantics
-        if append:
-            parts = []
-            # Render default content first (from the layout itself)
-            if default_renderer:
-                if inspect.iscoroutinefunction(default_renderer):
-                    parts.append(await default_renderer())
-                else:
-                    parts.append(default_renderer())
-
-            # Collect head content from ALL layout IDs in the inheritance chain
-            for layout_id_key in self.head_slots:
-                for head_renderer in self.head_slots[layout_id_key]:
-                    if inspect.iscoroutinefunction(head_renderer):
-                        parts.append(await head_renderer())
-                    else:
-                        parts.append(head_renderer())
-            return "".join(parts)
-
-        # Normal replacement semantics
-        if target_id and slot_name in self.slots[target_id]:
-            renderer: Union[Callable[..., Any], str] = self.slots[target_id][slot_name]
-            if callable(renderer):
-                if inspect.iscoroutinefunction(renderer):
-                    return str(await renderer())
-                return str(renderer())  # ty: ignore[call-top-callable]
-            return str(renderer)
-
-        # Fallback to default content if provided
-        if default_renderer:
-            if inspect.iscoroutinefunction(default_renderer):
-                return str(await default_renderer())
-            return str(default_renderer())
-
-        return ""
 
     async def _invoke_render(
         self,

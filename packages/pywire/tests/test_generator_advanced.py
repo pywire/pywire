@@ -99,22 +99,14 @@ class TestGeneratorAdvanced(unittest.TestCase):
         init_func = self.generator._generate_init_method(parsed)
 
         self.assertEqual(init_func.name, "__init__")
-        # Should call super().__init__ and self._init_slots()
+        # Should call super().__init__ (no more _init_slots call — slot
+        # runtime retired in Phase 9).
         self.assertTrue(
             any(
                 isinstance(n, ast.Expr)
                 and isinstance(n.value, ast.Call)
                 and isinstance(n.value.func, ast.Attribute)
                 and n.value.func.attr == "__init__"
-                for n in init_func.body
-            )
-        )
-        self.assertTrue(
-            any(
-                isinstance(n, ast.Expr)
-                and isinstance(n.value, ast.Call)
-                and isinstance(n.value.func, ast.Attribute)
-                and n.value.func.attr == "_init_slots"
                 for n in init_func.body
             )
         )

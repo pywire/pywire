@@ -79,6 +79,7 @@ class TestPageRendering:
         assert page.id == "42"
         assert page.slug == "test-post"
 
+    @pytest.mark.skip(reason="Slot registry retired in Phase 9")
     @pytest.mark.asyncio
     async def test_recursive_slot_logic(self) -> None:
         """Verify slot registration logic manually."""
@@ -181,6 +182,7 @@ class TestPageRendering:
         html_passed = cast(Any, Response).call_args[0][0]
         assert "<style>.test { color: red; }</style></head>" in html_passed
 
+    @pytest.mark.skip(reason="register_head_slot removed in Phase 9; see {$head} block")
     @pytest.mark.asyncio
     async def test_render_head_slot_append(self) -> None:
         request = MagicMock()

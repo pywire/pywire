@@ -18,5 +18,5 @@ class Props:
 </style>
 
 <span class="badge badge-{type}">
-    {label} <slot>Default Slot</slot>
+    {label} {$render children}Default Slot{/render}
 </span>

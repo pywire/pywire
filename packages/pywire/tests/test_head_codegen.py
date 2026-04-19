@@ -2,10 +2,17 @@ import unittest
 import ast
 import textwrap
 from typing import Union, List, Any, cast
+
+import pytest
+
 from pywire.compiler.parser import PyWireParser
 from pywire.compiler.codegen.template import TemplateCodegen
 
 
+# Legacy ``<head>`` wrapper auto-bucketing was part of the slot system.
+# Phase 9 retired it in favour of the ``{$head}...{/head}`` teleport block
+# exercised by test_snippet_codegen.py::test_head_contribution.
+@pytest.mark.skip(reason="Legacy <head> bucket removed in Phase 9; see {$head} block")
 class TestHeadCodegen(unittest.TestCase):
     def normalize_ast(
         self, node: Union[ast.AST, List[ast.AST]]

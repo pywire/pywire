@@ -13,9 +13,9 @@ class Props:
 
 <div class="card">
     <div class="header">
-        <slot name="header">Default Header</slot>
+        {$render header}Default Header{/render}
     </div>
     <div class="body">
-        <slot></slot>
+        {$render children}
     </div>
 </div>

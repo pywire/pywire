@@ -58,6 +58,6 @@ class Props:
 </style>
 <div style="display: flex; align-items: center; justify-content: center; width: 200px; height: 150px; background-color: red;">
 <button class="btn btn-{variant}" type={type} {**attrs}>
-    <slot>{label}</slot>
+    {$render children}{label}{/render}
 </button>
 </div>

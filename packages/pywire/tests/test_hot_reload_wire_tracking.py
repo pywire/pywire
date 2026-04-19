@@ -223,6 +223,7 @@ class TestWireTrackingWithLayout:
                 "render_update returned empty regions — wire tracking broken"
             )
 
+    @pytest.mark.skip(reason="Slot renderers removed in Phase 9")
     @pytest.mark.asyncio
     async def test_slot_renderers_not_migrated(self) -> None:
         """Slot renderers should be bound to the new page, not the old."""

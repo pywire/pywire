@@ -852,8 +852,6 @@ class WebSocketHandler:
                             "user",
                             "errors",
                             "loading",
-                            "slots",
-                            "head_slots",
                             "attrs",
                         }
                         for attr, value in old_page.__dict__.items():

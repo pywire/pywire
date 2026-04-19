@@ -30,12 +30,10 @@ _FRAMEWORK_ATTRS: Set[str] = {
     "query",
     "path",
     "url",
-    "slots",
     "errors",
     "loading",
     "user",
     "attrs",
-    "head_slots",
 }
 
 # Wire type tags for reconstruction

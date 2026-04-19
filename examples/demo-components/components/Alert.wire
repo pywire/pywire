@@ -49,5 +49,5 @@ class Props:
 
 <div class="alert alert-{variant}">
     <div $if={title} class="alert-title">{title}</div>
-    <slot></slot>
+    {$render children}
 </div>

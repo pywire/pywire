@@ -561,27 +561,6 @@ class CodeGenerator:
         if parsed.get_directive_by_type(LayoutDirective):
             base_id = "_LayoutBase"
 
-        # Inject LAYOUT_ID if we determined one is needed
-        # We need to calculate it here too or pass it back from _generate_render_template_method
-        # Since we need it for class attribute, let's calculate it early.
-        layout_id_to_inject = None
-        if parsed.file_path:
-            import hashlib
-
-            layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-            # Recursive check for slots
-            has_slots = self._has_slots_recursive(parsed.template)
-            if has_slots:
-                layout_id_to_inject = layout_id_hash
-
-        if layout_id_to_inject:
-            class_body.append(
-                ast.Assign(
-                    targets=[ast.Name(id="LAYOUT_ID", ctx=ast.Store())],
-                    value=ast.Constant(value=layout_id_to_inject),
-                )
-            )
-
         # Lifecycle hooks calculation
         # @before_load hooks (pages only, before any page logic)
         class_body.append(
@@ -1166,21 +1145,6 @@ class CodeGenerator:
         # Add prop assignments
         body.extend(props_assigns)
 
-        # Call _init_slots
-        body.append(
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="self", ctx=ast.Load()),
-                        attr="_init_slots",
-                        ctx=ast.Load(),
-                    ),
-                    args=[],
-                    keywords=[],
-                )
-            )
-        )
-
         # Call __top_level_init__ if it exists (for wire() and mutable init)
         if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
             body.append(
@@ -1755,28 +1719,10 @@ class CodeGenerator:
                 returns=None,
             )
 
-            # No-op _init_slots (called unconditionally by generated __init__).
-            binding_funcs.append(
-                ast.FunctionDef(
-                    name="_init_slots",
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[ast.arg(arg="self")],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[],
-                    ),
-                    body=[ast.Pass()],
-                    decorator_list=[],
-                    returns=None,
-                )
-            )
-
         else:
             # === Standard Mode ===
-            # We no longer aggressively generate layout_id/scope_id for everything
-            # to avoid breaking existing tests.
+            # Standard mode: no layout directive. ``scope_id`` is only
+            # needed for ``<style scoped>`` CSS scoping.
             layout_id = None
             scope_id = None
 
@@ -1784,21 +1730,12 @@ class CodeGenerator:
                 import hashlib
 
                 layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-                # Use as layout_id if we have slots to fill for ourselves (as a component)
-                # Or for scoping if <style scoped> is present
                 has_scoped_style = any(
                     n.tag == "style" and "scoped" in n.attributes
                     for n in parsed.template
                 )
                 if has_scoped_style:
                     scope_id = layout_id_hash[:8]
-
-                # If we are a layout (referenced by others), we should have a LAYOUT_ID.
-                # But we don't know if we ARE a layout here.
-                # We'll assume if there are <slot> tags, we might be a layout.
-                has_slots = self._has_slots_recursive(parsed.template)
-                if has_slots:
-                    layout_id = layout_id_hash
 
             # Extract Props to Unpack
 
@@ -1845,24 +1782,6 @@ class CodeGenerator:
 
             binding_funcs.extend(aux_funcs)
 
-            # Add no-op _init_slots
-            binding_funcs.append(
-                ast.FunctionDef(
-                    name="_init_slots",
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[ast.arg(arg="self")],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[],
-                    ),
-                    body=[ast.Pass()],
-                    decorator_list=[],
-                    returns=None,
-                )
-            )
-
         if self.template_codegen.region_renderers:
             region_keys: List[ast.expr | None] = []
             region_vals: List[ast.expr] = []
@@ -1880,12 +1799,3 @@ class CodeGenerator:
             )
 
         return render_func, binding_funcs
-
-    def _has_slots_recursive(self, nodes: List[TemplateNode]) -> bool:
-        """Check recursively if the template contains any <slot> elements."""
-        for node in nodes:
-            if node.tag == "slot":
-                return True
-            if self._has_slots_recursive(node.children):
-                return True
-        return False

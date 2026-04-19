@@ -3,6 +3,14 @@ from unittest.mock import MagicMock
 from pywire.runtime.page import BasePage
 
 
+# Slot runtime APIs (register_slot, render_slot, etc.) were removed in
+# Phase 9. Snippet-based replacements are covered by test_snippet_types.py
+# and test_snippet_codegen.py.
+pytestmark = pytest.mark.skip(
+    reason="Legacy slot runtime removed in Phase 9"
+)
+
+
 class TestSlotRuntime:
     @pytest.mark.asyncio
     async def test_named_slots_rendering(self):

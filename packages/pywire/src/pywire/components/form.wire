@@ -194,5 +194,5 @@ def _setup_validation_rules():
     html5_rules = {}
 ---
 <form $ref={form_ref} @submit={handle_submit}>
-    <slot />
+    {$render children}
 </form>

@@ -1,5 +1,8 @@
 import ast
 from typing import Union, List, Any, cast
+
+import pytest
+
 from pywire.compiler.parser import PyWireParser
 from pywire.compiler.codegen.template import TemplateCodegen
 
@@ -7,6 +10,13 @@ from pywire.compiler.codegen.template import TemplateCodegen
 class MockCompiler:
     def __init__(self):
         self.scope_id = "test_scope"
+
+
+# Legacy slot codegen assertions — retired alongside the slot runtime
+# in Phase 9. New snippet codegen is covered by test_snippet_codegen.py.
+pytestmark = pytest.mark.skip(
+    reason="Slot codegen replaced by snippet codegen (test_snippet_codegen.py)"
+)
 
 
 class TestSlotCodegen:
