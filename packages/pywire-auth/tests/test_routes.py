@@ -335,6 +335,90 @@ def test_concurrent_logins_each_callback_ok() -> None:
     assert provider.exchange_calls[-1]["nonce"] == second_nonce
 
 
+def test_oidc_callback_upserts_user_and_merges_stored_claims() -> None:
+    """First OIDC login creates a store row; second merges stored claims."""
+    import asyncio as _asyncio
+
+    from pywire.auth import Claim, ClaimsPrincipal
+    from pywire_auth import MemoryAuthStore
+    from starlette.applications import Starlette
+
+    store = MemoryAuthStore()
+    session_store = _MemStore()
+    provider = _FakeProvider(
+        principal=ClaimsPrincipal(
+            is_authenticated=True,
+            name="Alice",
+            user_id="fake:google-sub-123",
+            claims=[
+                Claim(type="sub", value="google-sub-123"),
+                Claim(type="email", value="a@b.c"),
+                Claim(type="name", value="Alice"),
+            ],
+        )
+    )
+    channel = MemoryAuthChannel()
+    ctx = _RouteContext(
+        providers={provider.name: provider},
+        session_store=session_store,
+        session_ttl=1800,
+        auth_channel=channel,
+        default_next="/",
+        on_login=None,
+        on_logout=None,
+    )
+    app = Starlette(routes=build_routes(ctx, "/auth"))
+    app.state.auth_store = store
+    app.add_middleware(_SessionInjector, session_id="sid-1")
+    client = TestClient(app, follow_redirects=False)
+
+    # First login — user row created.
+    session_store._data["sid-1"] = {
+        STATE_KEY: {
+            "s1": {
+                "nonce": "n",
+                "provider": "fake",
+                "redirect_uri": "http://x/auth/fake/callback",
+                "next": "/",
+            }
+        }
+    }
+    resp = client.get("/auth/fake/callback?code=c&state=s1")
+    assert resp.status_code == 303
+
+    record = _asyncio.new_event_loop().run_until_complete(
+        store.get_user("google-sub-123")
+    )
+    assert record is not None
+    assert record["email"] == "a@b.c"
+    assert record["claims"].get("email") == "a@b.c"
+
+    # Simulate a grant — app wrote role=admin to the store.
+    _asyncio.new_event_loop().run_until_complete(
+        store.update_user(
+            "google-sub-123", claims={"email": "a@b.c", "role": "admin"}
+        )
+    )
+
+    # Second login — principal should be rebuilt with merged claims.
+    session_store._data["sid-1"][STATE_KEY] = {
+        "s2": {
+            "nonce": "n",
+            "provider": "fake",
+            "redirect_uri": "http://x/auth/fake/callback",
+            "next": "/",
+        }
+    }
+    resp = client.get("/auth/fake/callback?code=c&state=s2")
+    assert resp.status_code == 303
+    # Session should now carry the merged admin claim.
+    session_claims = dict(
+        session_store._data["sid-1"]["auth"]["claims"]
+    )
+    assert session_claims.get("role") == "admin"
+    assert session_claims.get("email") == "a@b.c"
+
+
 def test_login_state_is_random() -> None:
     """Each /login produces a fresh state/nonce pair."""
     store = _MemStore()

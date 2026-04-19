@@ -20,8 +20,11 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
+from dataclasses import replace
+
 from pywire.auth import (
     ANONYMOUS,
+    Claim,
     ClaimsPrincipal,
     clear_principal_from_session,
     write_principal_to_session,
@@ -143,6 +146,11 @@ def build_routes(
             logger.warning("OAuth exchange failed: %s", exc, exc_info=True)
             return Response("Login failed", status_code=400)
 
+        # Upsert the user into the auth_store (if one is installed) and
+        # merge any app-managed claims (role=admin, tier=beta, etc.) back
+        # onto the principal so they survive logout/login.
+        principal = await _upsert_oidc_user(request, provider_name, principal)
+
         # Persist principal; consume this pending state (leave any other
         # concurrent flows alone).
         pending.pop(returned_state, None)
@@ -230,6 +238,97 @@ def build_routes(
 def _session_id_or_none(request: Request) -> Optional[str]:
     # Read the session ID the same way pywire writes it.
     return request.scope.get("pywire_session_id")
+
+
+async def _upsert_oidc_user(
+    request: Request, provider_name: str, principal: ClaimsPrincipal
+) -> ClaimsPrincipal:
+    """Ensure the OIDC-logged-in user exists in the app's auth_store.
+
+    First login: insert a new row keyed on the provider's subject, with
+    the provider's claim map. Subsequent logins: look up the row, merge
+    the stored claims (app-added grants like ``role=admin``) on top of
+    the provider-fresh claims (email, name, picture) and rebuild the
+    principal with the combined set.
+
+    No-op when the app has no auth_store (OIDC-only deployments that
+    don't persist users) or when the principal lacks a ``<provider>:<sub>``
+    prefix.
+    """
+    store = _auth_store_from_request(request)
+    if store is None or ":" not in principal.user_id:
+        return principal
+    subject = principal.user_id.split(":", 1)[1]
+    if not subject:
+        return principal
+
+    provider_claims = {
+        c.type: c.value for c in principal.claims if c.type != "sub"
+    }
+    email = next(
+        (c.value for c in principal.claims if c.type == "email"),
+        provider_claims.get("email", ""),
+    )
+
+    existing = await store.find_by_provider(provider_name, subject)
+
+    if existing is None:
+        try:
+            await store.create_user(
+                user_id=subject,
+                email=email,
+                name=principal.name,
+                claims=provider_claims,
+            )
+        except Exception:
+            logger.warning(
+                "auth_store create_user failed for %s:%s",
+                provider_name,
+                subject,
+                exc_info=True,
+            )
+        try:
+            await store.link_provider(
+                subject, provider_name, subject, provider_claims
+            )
+        except Exception:
+            logger.warning(
+                "auth_store link_provider failed", exc_info=True
+            )
+        # First login — provider claims ARE the canonical state.
+        return principal
+
+    # Subsequent login: merge stored claims on top of provider claims
+    # (stored takes precedence so app grants stick).
+    stored_claims = dict(existing.get("claims") or {})
+    stored_user_id = str(existing.get("user_id") or subject)
+    merged = {**provider_claims, **stored_claims}
+
+    # Refresh the provider's view of its own claims (audit trail).
+    try:
+        await store.link_provider(
+            stored_user_id, provider_name, subject, provider_claims
+        )
+    except Exception:
+        logger.warning("auth_store link_provider refresh failed", exc_info=True)
+
+    rebuilt_claims: list[Claim] = [Claim(type="sub", value=stored_user_id)]
+    for ctype, cvalue in merged.items():
+        rebuilt_claims.append(Claim(type=str(ctype), value=str(cvalue)))
+
+    return replace(
+        principal,
+        user_id=f"{provider_name}:{stored_user_id}",
+        name=principal.name or str(existing.get("name") or ""),
+        claims=rebuilt_claims,
+    )
+
+
+def _auth_store_from_request(request: Request) -> Any:
+    """Resolve the auth_store connect_auth stashed on app.state."""
+    app = getattr(request, "app", None)
+    state = getattr(app, "state", None) if app is not None else None
+    return getattr(state, "auth_store", None) if state is not None else None
 
 
 async def _form_next(request: Request) -> Optional[str]:
