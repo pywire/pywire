@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 STATE_KEY = "_oauth_state"
 NEXT_KEY = "_oauth_next"
+# Max pending OAuth flows per session. Rapid double-clicks on a login
+# link used to clobber a single-slot state/nonce pair and blow up the
+# callback with an "id_token nonce mismatch". Keyed-by-state storage
+# keeps each flow independent; the cap prevents unbounded growth if a
+# client triggers authorize_url over and over without completing.
+_MAX_PENDING_STATES = 5
 
 
 class _RouteContext:
@@ -77,13 +83,23 @@ def build_routes(
         session_id = _session_id_or_none(request)
         if session_id:
             data = await ctx.session_store.get(session_id) or {}
-            data[STATE_KEY] = {
-                "state": state,
+            pending = data.get(STATE_KEY)
+            # Backwards-compat: older single-slot layout was a flat dict
+            # without the state token as the key. Migrate by discarding.
+            if not isinstance(pending, dict) or "state" in pending:
+                pending = {}
+            pending[state] = {
                 "nonce": nonce,
                 "provider": request.path_params["provider"],
                 "redirect_uri": redirect_uri,
+                "next": next_url,
             }
-            data[NEXT_KEY] = next_url
+            # Cap: keep the N most recently added entries (dict insertion
+            # order preserves recency).
+            if len(pending) > _MAX_PENDING_STATES:
+                for stale_key in list(pending)[: -_MAX_PENDING_STATES]:
+                    pending.pop(stale_key, None)
+            data[STATE_KEY] = pending
             await ctx.session_store.set(session_id, data, ttl=ctx.session_ttl)
 
         url = await provider.authorize_url(
@@ -107,16 +123,14 @@ def build_routes(
             return Response("No session — OAuth requires cookies", status_code=400)
         data = await ctx.session_store.get(session_id) or {}
 
-        saved = data.get(STATE_KEY) or {}
-        if (
-            not saved
-            or saved.get("state") != returned_state
-            or saved.get("provider") != provider_name
-        ):
+        pending = data.get(STATE_KEY) or {}
+        saved = pending.get(returned_state) if isinstance(pending, dict) else None
+        if not saved or saved.get("provider") != provider_name:
             return Response("Invalid OAuth state", status_code=400)
 
         redirect_uri = saved["redirect_uri"]
         nonce = saved["nonce"]
+        next_url = saved.get("next") or ctx.default_next
 
         try:
             principal, token_data = await provider.exchange_code(
@@ -129,9 +143,14 @@ def build_routes(
             logger.warning("OAuth exchange failed: %s", exc, exc_info=True)
             return Response("Login failed", status_code=400)
 
-        # Persist principal; drop state + nonce.
-        data.pop(STATE_KEY, None)
-        next_url = data.pop(NEXT_KEY, ctx.default_next)
+        # Persist principal; consume this pending state (leave any other
+        # concurrent flows alone).
+        pending.pop(returned_state, None)
+        if pending:
+            data[STATE_KEY] = pending
+        else:
+            data.pop(STATE_KEY, None)
+        data.pop(NEXT_KEY, None)  # legacy key cleanup
         write_principal_to_session(data, principal)
         if token_data.get("refresh_token"):
             data["_refresh_token"] = token_data["refresh_token"]

@@ -113,14 +113,15 @@ def test_login_redirects_and_stores_state() -> None:
     assert resp.status_code == 303
     assert resp.headers["location"].startswith("https://idp.example/authorize")
 
-    # State + nonce stored under the injected session id.
+    # State + nonce stored keyed by the state token.
     data = store._data["sid-1"]
-    saved = data[STATE_KEY]
+    pending = data[STATE_KEY]
+    state_token = provider.authorize_calls[0]["state"]
+    saved = pending[state_token]
     assert saved["provider"] == "fake"
-    assert saved["state"] == provider.authorize_calls[0]["state"]
     assert saved["nonce"] == provider.authorize_calls[0]["nonce"]
     assert saved["redirect_uri"].endswith("/auth/fake/callback")
-    assert data[NEXT_KEY] == "/dashboard"
+    assert saved["next"] == "/dashboard"
 
 
 def test_login_unknown_provider_404() -> None:
@@ -157,10 +158,12 @@ def test_callback_rejects_mismatched_state() -> None:
     store = _MemStore()
     store._data["sid-1"] = {
         STATE_KEY: {
-            "state": "correct",
-            "nonce": "n",
-            "provider": "fake",
-            "redirect_uri": "http://x/auth/fake/callback",
+            "correct": {
+                "nonce": "n",
+                "provider": "fake",
+                "redirect_uri": "http://x/auth/fake/callback",
+                "next": "/home",
+            }
         }
     }
     app = _build_app(provider=_FakeProvider(), store=store, channel=MemoryAuthChannel())
@@ -173,12 +176,13 @@ def test_callback_happy_path_writes_principal_and_redirects_next() -> None:
     store = _MemStore()
     store._data["sid-1"] = {
         STATE_KEY: {
-            "state": "s",
-            "nonce": "n",
-            "provider": "fake",
-            "redirect_uri": "http://x/auth/fake/callback",
+            "s": {
+                "nonce": "n",
+                "provider": "fake",
+                "redirect_uri": "http://x/auth/fake/callback",
+                "next": "/dashboard",
+            }
         },
-        NEXT_KEY: "/dashboard",
     }
     provider = _FakeProvider(token_data={"access_token": "at", "refresh_token": "rt"})
     app = _build_app(provider=provider, store=store, channel=MemoryAuthChannel())
@@ -206,10 +210,12 @@ def test_callback_provider_exception_returns_400() -> None:
     store = _MemStore()
     store._data["sid-1"] = {
         STATE_KEY: {
-            "state": "s",
-            "nonce": "n",
-            "provider": "fake",
-            "redirect_uri": "http://x/auth/fake/callback",
+            "s": {
+                "nonce": "n",
+                "provider": "fake",
+                "redirect_uri": "http://x/auth/fake/callback",
+                "next": "/home",
+            }
         }
     }
     app = _build_app(
@@ -290,6 +296,45 @@ def test_logout_next_from_query() -> None:
     assert resp.headers["location"] == "/goodbye"
 
 
+def test_concurrent_logins_each_callback_ok() -> None:
+    """Two /login hits before either callback → both flows survive.
+
+    Regression for "id_token nonce mismatch": rapid double-click on a
+    provider login button used to clobber a single state/nonce slot;
+    the first-flow's callback would then run against the second-flow's
+    nonce and explode in ``_verify_id_token``.
+    """
+    store = _MemStore()
+    provider = _FakeProvider()
+    app = _build_app(provider=provider, store=store, channel=MemoryAuthChannel())
+    client = TestClient(app, follow_redirects=False)
+
+    client.get("/auth/fake/login?next=/one")
+    first_state = provider.authorize_calls[-1]["state"]
+    first_nonce = provider.authorize_calls[-1]["nonce"]
+
+    client.get("/auth/fake/login?next=/two")
+    second_state = provider.authorize_calls[-1]["state"]
+    second_nonce = provider.authorize_calls[-1]["nonce"]
+
+    assert first_state != second_state
+    assert first_nonce != second_nonce
+
+    # Complete the first flow — server should use the first flow's nonce.
+    resp = client.get(f"/auth/fake/callback?code=c1&state={first_state}")
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/one"
+    assert provider.exchange_calls[-1]["nonce"] == first_nonce
+
+    # Second flow's pending state still reachable.
+    pending = store._data["sid-1"][STATE_KEY]
+    assert second_state in pending
+    resp = client.get(f"/auth/fake/callback?code=c2&state={second_state}")
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/two"
+    assert provider.exchange_calls[-1]["nonce"] == second_nonce
+
+
 def test_login_state_is_random() -> None:
     """Each /login produces a fresh state/nonce pair."""
     store = _MemStore()
@@ -313,4 +358,5 @@ def test_authorize_url_state_matches_session() -> None:
     resp = client.get("/auth/fake/login")
     parsed = urlparse(resp.headers["location"])
     qs = parse_qs(parsed.query)
-    assert qs["state"][0] == store._data["sid-1"][STATE_KEY]["state"]
+    pending = store._data["sid-1"][STATE_KEY]
+    assert qs["state"][0] in pending
