@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/pywire/pywire/compare/pywire-auth-v0.1.0...pywire-auth-v0.1.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* **pywire-auth:** public-API docstring + add PyPI publish job ([620aa66](https://github.com/pywire/pywire/commit/620aa66523c9429e20948df94729fcba693fbcbc))
+
 ## [0.1.0](https://github.com/pywire/pywire/compare/pywire-auth-v0.1.0...pywire-auth-v0.1.0) (2026-04-20)
 
 
