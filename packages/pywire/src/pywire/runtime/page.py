@@ -881,11 +881,14 @@ class BasePage:
         # Flush {$head} contributions into the document head.
         html = self._inject_head_into(html)
 
-        # Inject styles if this is the root render (not a component or partial update)
+        # Inject styles if this is the root render (not a component or partial update).
+        # Split on the FIRST ``</head>`` — the document's real one — so that a
+        # stray ``</head>`` substring sitting inside a JS string literal later
+        # in the body doesn't hijack the injection site.
         styles = self._style_collector.render()
         if styles:
             if "</head>" in html:
-                parts = html.rsplit("</head>", 1)
+                parts = html.split("</head>", 1)
                 html = parts[0] + f"{styles}</head>" + parts[1]
             else:
                 html = f"{styles}{html}"
