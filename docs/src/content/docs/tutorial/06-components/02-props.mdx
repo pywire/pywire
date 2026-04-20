@@ -60,3 +60,20 @@ To make components flexible, you can pass data to them using props. PyWire uses 
 4.  Check the preview to see the "Admin" and "User" badges rendered with different colors.
 
 Props are accessed via the `props` object in your template and are fully typed.
+
+**Beyond plain values.** Props can also be **snippets** — callable template fragments a parent passes in for rendering elsewhere. Declare them with `Snippet`, `Child`, or `Children`:
+
+```pywire
+---
+from pywire import props, Snippet, Child, Children
+
+@props
+class Props:
+    label: str                   # plain string, as above
+    header: Snippet              # optional named region, rendered with {$render header}
+    children: Child              # exactly one child fragment (doc hint)
+    rows: Snippet[dict]          # callable with one dict arg per row
+---
+```
+
+You'll practice this in the **Snippets** section of the tutorial. For now, plain typed props cover most use cases.
