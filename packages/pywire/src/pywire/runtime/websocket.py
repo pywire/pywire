@@ -1,6 +1,7 @@
 """WebSocket handler for PyWire."""
 
 import asyncio
+import inspect
 import re
 import sys
 import traceback
@@ -43,6 +44,17 @@ class WebSocketHandler:
         # observe or mutate them from ``document.cookie``. All other keys
         # are reconciled against ``document.cookie`` on each SPA relocate.
         self._connection_httponly: Dict[WebSocket, Set[str]] = {}
+        # Per-connection live-auth subscription task — fan-out from the
+        # app's AuthChannel pushes update/revoke events into the WS so the
+        # page re-renders when the current user's claims change or the
+        # session is revoked mid-session.
+        self._auth_subs: Dict[WebSocket, asyncio.Task[None]] = {}
+        # Tracks whether we've seen the first SPA-relocate cookie reconcile
+        # for a connection. Used to infer HttpOnly for baseline cookies
+        # absent from document.cookie on the first reconcile only — on
+        # subsequent reconciles we trust the client (a user can legitimately
+        # clear a non-HttpOnly cookie in JS).
+        self._connection_reconciled: Set[WebSocket] = set()
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
@@ -85,6 +97,126 @@ class WebSocketHandler:
         finally:
             self._cleanup_connection(websocket)
 
+    async def _resolve_user(self, websocket: WebSocket) -> Any:
+        """Invoke ``app.get_user``, awaiting if it returns a coroutine.
+
+        ``get_user`` is sync by default but ``pywire-auth`` overrides it
+        with an async implementation that reads from the session store.
+        """
+        if not hasattr(self.app, "get_user"):
+            return None
+        maybe = self.app.get_user(websocket)
+        if inspect.isawaitable(maybe):
+            maybe = await maybe
+        return maybe
+
+    def _subscribe_auth(self, websocket: WebSocket, principal: Any) -> None:
+        """Spawn a live-auth listener for the connected principal.
+
+        No-op when:
+        - No auth channel is installed on the app
+        - Principal is None / anonymous (no user_id to subscribe)
+        - A subscription already exists for this connection
+
+        Cancelled automatically when the WS disconnects.
+        """
+        if websocket in self._auth_subs:
+            return
+        channel = getattr(self.app, "_auth_channel", None)
+        if channel is None:
+            return
+        user_id = getattr(principal, "user_id", "") if principal else ""
+        is_auth = getattr(principal, "is_authenticated", False) if principal else False
+        if not is_auth or not user_id:
+            return
+        self._auth_subs[websocket] = asyncio.create_task(
+            self._live_auth_loop(websocket, user_id, channel)
+        )
+
+    async def _live_auth_loop(
+        self, websocket: WebSocket, user_id: str, channel: Any
+    ) -> None:
+        """Pump AuthEvents from the channel into the connected page.
+
+        Each event rewrites ``page.user`` in-place and flags the root scope
+        dirty so the next ``render_update`` returns a full re-render.
+        ``{$auth}`` regions (and any expression reading ``self.user``)
+        re-evaluate as a result.
+        """
+        from pywire.auth import ANONYMOUS
+
+        try:
+            async with channel.subscribe(user_id) as subscription:
+                async for event in subscription:
+                    page = self.connection_pages.get(websocket)
+                    if page is None:
+                        return
+                    kind = getattr(event, "kind", "")
+                    if kind == "revoke":
+                        page.user = ANONYMOUS
+                    elif getattr(event, "principal", None) is not None:
+                        page.user = event.principal
+                    else:
+                        # Only claims provided — rebuild a principal patch on
+                        # top of the current one so existing name / user_id
+                        # don't get wiped.
+                        claims = getattr(event, "claims", None) or []
+                        current = getattr(page, "user", None)
+                        if current is not None and hasattr(current, "claims"):
+                            from dataclasses import replace
+
+                            try:
+                                page.user = replace(current, claims=list(claims))
+                            except TypeError:
+                                pass
+                    # If the page has an !auth guard, re-evaluate against
+                    # the new principal. A newly-denied page (common after
+                    # revoke / role downgrade) emits a navigate so the
+                    # client leaves the protected page instead of silently
+                    # re-rendering with ANONYMOUS.
+                    if getattr(page.__class__, "__auth_required__", False):
+                        from pywire.auth.guard import run_auth_guard
+
+                        try:
+                            denied = await run_auth_guard(page)
+                        except Exception:
+                            logger.warning(
+                                "live-auth: guard evaluation failed", exc_info=True
+                            )
+                            denied = None
+                        if denied is not None:
+                            location = denied.headers.get("location") or "/"
+                            try:
+                                await websocket.send_bytes(
+                                    msgpack.packb(
+                                        {"type": "navigate", "path": location}
+                                    )
+                                )
+                            except Exception:
+                                logger.debug(
+                                    "live-auth: navigate send failed",
+                                    exc_info=True,
+                                )
+                            # Stop pumping — the client will reconnect on
+                            # the new path and start a fresh subscription.
+                            return
+
+                    # Root-scope invalidation triggers a full re-render on
+                    # the next render_update call (see page.render_update).
+                    page._dirty_regions.add(None)  # ty: ignore[invalid-argument-type]
+                    on_update = getattr(page, "_on_update", None)
+                    if on_update is not None:
+                        try:
+                            await on_update()
+                        except Exception:
+                            logger.warning(
+                                "live-auth: broadcast_update failed", exc_info=True
+                            )
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.warning("live-auth loop exited with error", exc_info=True)
+
     def _cleanup_connection(self, websocket: WebSocket) -> None:
         """Clean up all state associated with a WebSocket connection."""
         # Cancel ping task
@@ -99,6 +231,10 @@ class WebSocketHandler:
         self.session_ids.pop(websocket, None)
         self._connection_cookies.pop(websocket, None)
         self._connection_httponly.pop(websocket, None)
+        self._connection_reconciled.discard(websocket)
+        sub_task = self._auth_subs.pop(websocket, None)
+        if sub_task and not sub_task.done():
+            sub_task.cancel()
 
     async def _ping_loop(self, websocket: WebSocket) -> None:
         """Send periodic pings and close the connection if pong is not received."""
@@ -305,6 +441,15 @@ class WebSocketHandler:
             if session_id is None:
                 session_id = str(uuid.uuid4())
 
+            # Populate principal on initial page (parity with _handle_event and
+            # _handle_relocate — previously missed here so the first render
+            # always saw user=None). Only overwrite when resolution yields a
+            # real principal; without auth installed, `user` may be a page
+            # script variable we must not clobber.
+            resolved_user = await self._resolve_user(websocket)
+            if resolved_user is not None:
+                page.user = resolved_user
+
             self.connection_pages[websocket] = page
             self.session_ids[websocket] = session_id
 
@@ -318,6 +463,10 @@ class WebSocketHandler:
                 logger.debug(
                     f"[{page._instance_id}] Setting _on_update in _handle_init"
                 )
+
+            # Subscribe to the app's auth channel so revoke / update events
+            # trigger a live re-render without requiring a page reload.
+            self._subscribe_auth(websocket, resolved_user)
 
             # Render initial state to register dependencies
             if getattr(self.app, "debug", False):
@@ -389,8 +538,9 @@ class WebSocketHandler:
                     return
 
                 page, _params, _variant_name = result
-                if hasattr(self.app, "get_user"):
-                    page.user = self.app.get_user(websocket)
+                resolved_user = await self._resolve_user(websocket)
+                if resolved_user is not None:
+                    page.user = resolved_user
 
                 self.connection_pages[websocket] = page
 
@@ -537,8 +687,10 @@ class WebSocketHandler:
                 # Migrate persistent user state from old page
                 if old_page:
                     new_page.user = getattr(old_page, "user", None)
-                elif hasattr(self.app, "get_user"):
-                    new_page.user = self.app.get_user(websocket)
+                else:
+                    resolved_user = await self._resolve_user(websocket)
+                    if resolved_user is not None:
+                        new_page.user = resolved_user
 
                 # Replace page instance for this connection
                 self.connection_pages[websocket] = new_page
@@ -736,8 +888,28 @@ class WebSocketHandler:
 
         client_cookies = parse_cookie_header(cookie_header) if cookie_header else {}
         virtual = self._connection_cookies.setdefault(websocket, {})
-        httponly_set = self._connection_httponly.get(websocket, set())
+        httponly_set = self._connection_httponly.setdefault(websocket, set())
         baseline = self._get_handshake_cookies(websocket)
+
+        # 0. Infer HttpOnly for any baseline cookie the client can't see,
+        #    but ONLY on the first reconcile for this connection AND when
+        #    the client reports at least one cookie. Rationale:
+        #      - document.cookie omits HttpOnly by definition; first-time
+        #        absence from a non-empty client payload implies HttpOnly.
+        #      - On subsequent reconciles we trust the client: the user
+        #        may have legitimately cleared a non-HttpOnly cookie via
+        #        devtools or JS.
+        #      - If the first reconcile's client payload is empty we
+        #        can't distinguish HttpOnly from "no cookies at all";
+        #        be conservative and skip the inference — later tombstone
+        #        logic correctly drops baseline cookies the client no
+        #        longer reports.
+        first_reconcile = websocket not in self._connection_reconciled
+        if cookie_header is not None and first_reconcile and client_cookies:
+            for key in baseline:
+                if key not in client_cookies:
+                    httponly_set.add(key)
+        self._connection_reconciled.add(websocket)
 
         # 1. Adopt non-httponly client values (covers both rewrites and new
         #    cookies the client set locally).

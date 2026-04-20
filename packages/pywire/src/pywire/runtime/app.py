@@ -262,6 +262,15 @@ class PyWire:
 
         self.router = Router()
 
+        # First-wins ambient reference so pages can `from pywire import app`
+        # at script top level without a circular import on main.py. Later
+        # PyWire instances (tests, mounted sub-apps) keep working but don't
+        # clobber the global.
+        import pywire as _pywire_pkg
+
+        if _pywire_pkg.app is None:
+            _pywire_pkg.app = self
+
         from pywire.runtime.loader import get_loader
 
         self.loader = get_loader()
@@ -587,6 +596,15 @@ class PyWire:
         if host is not None:
             self._root_app = host
         return self
+
+    @property
+    def state(self) -> Any:
+        """Shortcut for ``self.app.state`` — Starlette's per-app state bag.
+
+        Lets pages do ``pywire.app.state.X`` instead of
+        ``pywire.app.app.state.X``.
+        """
+        return self.app.state
 
     def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
         """Add ASGI middleware to the application.
@@ -1542,6 +1560,13 @@ class PyWire:
 
         # Instantiate page
         page = page_class(request, params, query, path=path_info, url=url_helper)
+
+        # Populate page.user from scope so the auth guard, templates, and
+        # @before_load hooks all see the same principal AuthMiddleware wrote.
+        # Mirrors http_transport.py and websocket.py.
+        resolved_user = self.get_user(request)
+        if resolved_user is not None:
+            page.user = resolved_user
 
         # In non-interactive mode, restore session state if available
         session_id = request.scope.get("pywire_session_id")

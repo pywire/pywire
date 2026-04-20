@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pywire-auth"
+version = "0.1.0"
+description = "Authentication providers and identity store adapters for PyWire"
+authors = [
+    { name = "Reece Holmdahl", email = "reece@pywire.dev" },
+]
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "pywire",
+    "starlette>=0.31",
+    "authlib>=1.3",
+    "httpx>=0.25",
+    "argon2-cffi>=23.1",
+]
+
+[project.optional-dependencies]
+# Each OIDC provider is a config-only extra today — the network layer
+# is authlib + httpx (already required). Extras exist so users can
+# declare intent and so providers can pick up provider-specific deps
+# in the future without a compat break.
+google = []
+github = []
+microsoft = []
+facebook = []
+apple = []
+auth0 = []
+
+# Persistent user store — pulls SQLAlchemy when an app needs account
+# linking or the local IdP. aiosqlite covers dev / single-worker apps;
+# Postgres / MySQL users swap in their own async driver.
+sqlalchemy = [
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.19",
+]
+
+# Cross-worker realtime updates.
+redis = [
+    "redis>=5",
+]
+
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "httpx>=0.25",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pywire_auth"]

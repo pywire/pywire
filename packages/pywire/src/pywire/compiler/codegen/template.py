@@ -10,6 +10,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from pywire.compiler.ast_nodes import (
+    AuthAttribute,
     AwaitAttribute,
     CatchAttribute,
     ElifAttribute,
@@ -894,6 +895,181 @@ class TemplateCodegen:
                     ),
                     body=then_ast if then_ast else [ast.Pass()],
                     orelse=catch_ast if catch_ast else [ast.Pass()],
+                )
+            ],
+        )
+        body.append(if_stmt)
+
+        body.append(
+            ast.Return(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                    ),
+                    args=[ast.Name(id="parts", ctx=ast.Load())],
+                    keywords=[],
+                )
+            )
+        )
+
+        return ast.AsyncFunctionDef(
+            name=func_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=body,
+            decorator_list=[],
+            returns=None,
+        )
+
+    def _generate_auth_renderer(
+        self,
+        func_name: str,
+        region_id: str,
+        authorizing_nodes: List[TemplateNode],
+        allowed_nodes: List[TemplateNode],
+        denied_nodes: List[TemplateNode],
+        then_var: Optional[str],
+        layout_id: Optional[str],
+        known_methods: Optional[Dict[str, int]],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        async_methods: Optional[Set[str]],
+        component_map: Optional[Dict[str, str]],
+        scope_id: Optional[str],
+        wire_vars: Set[str] = set(),
+    ) -> ast.AsyncFunctionDef:
+        """Generate a renderer for a ``{$auth}`` region.
+
+        Mirrors :meth:`_generate_await_renderer`. Three bodies:
+          - ``authorizing_nodes`` — rendered while the policy eval is pending
+          - ``allowed_nodes``     — rendered when principal satisfies policy
+          - ``denied_nodes``      — rendered when denied
+
+        When the consumer used the ``$then var`` form, ``then_var`` holds
+        the bound variable name and both ``allowed_nodes`` and
+        ``denied_nodes`` refer to the same body — we emit it twice with
+        ``then_var = True`` and ``then_var = False`` respectively so
+        nested ``{$if var}`` branches evaluate the way the user expects.
+        """
+        body: List[ast.stmt] = []
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id="parts", ctx=ast.Store())],
+                value=ast.List(elts=[], ctx=ast.Load()),
+            )
+        )
+        body.append(
+            ast.ImportFrom(
+                module="pywire.runtime.escape",
+                names=[ast.alias(name="escape_html", asname=None)],
+                level=0,
+            )
+        )
+
+        # state = self._auth_states.get(region_id, {"status": "pending"})
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id="state", ctx=ast.Store())],
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_auth_states",
+                            ctx=ast.Load(),
+                        ),
+                        attr="get",
+                        ctx=ast.Load(),
+                    ),
+                    args=[
+                        ast.Constant(value=region_id),
+                        ast.Dict(
+                            keys=[ast.Constant(value="status")],
+                            values=[ast.Constant(value="pending")],
+                        ),
+                    ],
+                    keywords=[],
+                ),
+            )
+        )
+
+        def _render(
+            nodes: List[TemplateNode], locals_: Optional[Set[str]] = None
+        ) -> List[ast.stmt]:
+            stmts: List[ast.stmt] = []
+            for n in nodes:
+                self._add_node(
+                    n,
+                    stmts,
+                    local_vars=locals_ or set(),
+                    layout_id=layout_id,
+                    known_methods=known_methods,
+                    known_globals=known_globals,
+                    known_imports=known_imports,
+                    async_methods=async_methods,
+                    component_map=component_map,
+                    scope_id=scope_id,
+                    enable_regions=False,
+                    wire_vars=wire_vars,
+                )
+            if not stmts:
+                return [ast.Pass()]
+            return stmts
+
+        pending_ast = _render(authorizing_nodes)
+
+        if then_var:
+            allowed_locals = {then_var}
+            allowed_body_stmts: List[ast.stmt] = [
+                ast.Assign(
+                    targets=[ast.Name(id=then_var, ctx=ast.Store())],
+                    value=ast.Constant(value=True),
+                )
+            ]
+            allowed_body_stmts += _render(allowed_nodes, allowed_locals)
+            denied_body_stmts: List[ast.stmt] = [
+                ast.Assign(
+                    targets=[ast.Name(id=then_var, ctx=ast.Store())],
+                    value=ast.Constant(value=False),
+                )
+            ]
+            denied_body_stmts += _render(denied_nodes, allowed_locals)
+        else:
+            allowed_body_stmts = _render(allowed_nodes)
+            denied_body_stmts = _render(denied_nodes)
+
+        # if state["status"] == "pending": pending_body
+        # elif state["status"] == "allowed": allowed_body
+        # else: denied_body
+        if_stmt = ast.If(
+            test=ast.Compare(
+                left=ast.Subscript(
+                    value=ast.Name(id="state", ctx=ast.Load()),
+                    slice=ast.Constant(value="status"),
+                    ctx=ast.Load(),
+                ),
+                ops=[ast.Eq()],
+                comparators=[ast.Constant(value="pending")],
+            ),
+            body=pending_ast,
+            orelse=[
+                ast.If(
+                    test=ast.Compare(
+                        left=ast.Subscript(
+                            value=ast.Name(id="state", ctx=ast.Load()),
+                            slice=ast.Constant(value="status"),
+                            ctx=ast.Load(),
+                        ),
+                        ops=[ast.Eq()],
+                        comparators=[ast.Constant(value="allowed")],
+                    ),
+                    body=allowed_body_stmts,
+                    orelse=denied_body_stmts,
                 )
             ],
         )
@@ -2086,6 +2262,268 @@ class TemplateCodegen:
             )
             self._set_line(try_stmt, node)
             body.append(try_stmt)
+            return
+
+        # 2c. Handle $auth
+        auth_attr = next(
+            (a for a in node.special_attributes if isinstance(a, AuthAttribute)), None
+        )
+        if auth_attr:
+            authorizing_body: List[TemplateNode] = []
+            allowed_body: List[TemplateNode] = []
+            denied_body: List[TemplateNode] = []
+            then_var: Optional[str] = None
+
+            seen_then = False
+            seen_else = False
+            for child in node.children:
+                then_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ThenAttribute)
+                    ),
+                    None,
+                )
+                else_attr = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, ElseAttribute)
+                    ),
+                    None,
+                )
+                if then_attr:
+                    seen_then = True
+                    then_var = then_attr.variable
+                    continue
+                if else_attr:
+                    seen_else = True
+                    continue
+                if seen_then:
+                    # With $then: body after $then is the unified branch;
+                    # duplicate into allowed/denied (renderer re-emits with
+                    # then_var bound True vs False).
+                    allowed_body.append(child)
+                    denied_body.append(child)
+                elif seen_else:
+                    denied_body.append(child)
+                else:
+                    if then_var is not None:
+                        # shouldn't happen; $then hasn't appeared yet
+                        authorizing_body.append(child)
+                    else:
+                        # Default mode (no $then): body before $else is allowed.
+                        allowed_body.append(child)
+
+            if seen_then:
+                # Body up to $then was authorizing; everything before $then
+                # went into allowed_body by the 'else' branch above, so
+                # move that over to authorizing.
+                authorizing_body = allowed_body[: len(allowed_body) - len(allowed_body)]
+                # We built allowed/denied identically above, but the
+                # authorizing body needs the pre-$then siblings. Rewalk:
+                authorizing_body = []
+                allowed_body = []
+                denied_body = []
+                seen_then = False
+                for child in node.children:
+                    then_attr = next(
+                        (
+                            a
+                            for a in child.special_attributes
+                            if isinstance(a, ThenAttribute)
+                        ),
+                        None,
+                    )
+                    if then_attr:
+                        seen_then = True
+                        continue
+                    if seen_then:
+                        allowed_body.append(child)
+                        denied_body.append(child)
+                    else:
+                        authorizing_body.append(child)
+
+            region_id = f"auth_{node.line}_{node.column}".replace("-", "_")
+            method_name = f"_render_auth_{region_id}"
+            self.region_renderers[region_id] = method_name
+
+            aux_func = self._generate_auth_renderer(
+                method_name,
+                region_id,
+                authorizing_body,
+                allowed_body,
+                denied_body,
+                then_var,
+                layout_id,
+                known_methods,
+                known_globals,
+                known_imports,
+                async_methods,
+                component_map,
+                scope_id,
+                wire_vars=wire_vars,
+            )
+            self.auxiliary_functions.append(aux_func)
+
+            # Build _resolve_auth(region_id, policy=..., claims=...) call.
+            claims_expr: ast.expr = ast.Constant(value=None)
+            if auth_attr.claims:
+                tuple_elts: List[ast.expr] = []
+                for ctype, cvalue in auth_attr.claims:
+                    tuple_elts.append(
+                        ast.Tuple(
+                            elts=[
+                                ast.Constant(value=ctype),
+                                ast.Constant(value=cvalue),
+                            ],
+                            ctx=ast.Load(),
+                        )
+                    )
+                claims_expr = ast.List(elts=tuple_elts, ctx=ast.Load())
+
+            resolve_kwargs: List[ast.keyword] = []
+            if auth_attr.policy is not None:
+                resolve_kwargs.append(
+                    ast.keyword(
+                        arg="policy", value=ast.Constant(value=auth_attr.policy)
+                    )
+                )
+            if auth_attr.claims:
+                resolve_kwargs.append(ast.keyword(arg="claims", value=claims_expr))
+
+            start_task_stmt = ast.If(
+                test=ast.Compare(
+                    left=ast.Constant(value=region_id),
+                    ops=[ast.NotIn()],
+                    comparators=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_auth_states",
+                            ctx=ast.Load(),
+                        )
+                    ],
+                ),
+                body=[
+                    ast.Assign(
+                        targets=[ast.Name(id="_auth_task", ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="asyncio", ctx=ast.Load()),
+                                attr="create_task",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="_resolve_auth",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[ast.Constant(value=region_id)],
+                                    keywords=resolve_kwargs,
+                                )
+                            ],
+                            keywords=[],
+                        ),
+                    ),
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Attribute(
+                                    value=ast.Name(id="self", ctx=ast.Load()),
+                                    attr="_background_tasks",
+                                    ctx=ast.Load(),
+                                ),
+                                attr="add",
+                                ctx=ast.Load(),
+                            ),
+                            args=[ast.Name(id="_auth_task", ctx=ast.Load())],
+                            keywords=[],
+                        )
+                    ),
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="_auth_task", ctx=ast.Load()),
+                                attr="add_done_callback",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Attribute(
+                                    value=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr="_background_tasks",
+                                        ctx=ast.Load(),
+                                    ),
+                                    attr="discard",
+                                    ctx=ast.Load(),
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    ),
+                ],
+                orelse=[],
+            )
+            body.append(start_task_stmt)
+
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Constant(
+                                value=f'<div data-pw-region="{region_id}" style="display: contents;">'
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+            )
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Await(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                        attr=method_name,
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[],
+                                    keywords=[],
+                                )
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+            )
+            body.append(
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id=parts_var, ctx=ast.Load()),
+                            attr="append",
+                            ctx=ast.Load(),
+                        ),
+                        args=[ast.Constant(value="</div>")],
+                        keywords=[],
+                    )
+                )
+            )
             return
 
         # 2b. Handle $await

@@ -61,6 +61,28 @@ class PropsDirective(Directive):
 
 
 @dataclass
+class AuthDirective(Directive):
+    """!auth — gate page on authentication/policy.
+
+    Forms:
+        !auth                                        # require authenticated
+        !auth "PolicyName"                           # named policy
+        !auth {"policy":"X","claims":[...],"redirect":"/login"}
+    """
+
+    policy: Optional[str] = None
+    # Each claim is (type, value). An empty value matches any value for that type.
+    claims: Optional[List[Tuple[str, str]]] = None
+    redirect: Optional[str] = None
+
+    def __str__(self) -> str:
+        return (
+            f"AuthDirective(policy={self.policy}, "
+            f"claims={self.claims}, redirect={self.redirect})"
+        )
+
+
+@dataclass
 class SpecialAttribute(ASTNode):
     """Base for special attributes ($, @, :)."""
 
@@ -230,6 +252,22 @@ class HeadAttribute(SpecialAttribute):
 
     def __str__(self) -> str:
         return "HeadAttribute()"
+
+
+@dataclass
+class AuthAttribute(SpecialAttribute):
+    """{$auth policy="X" claims=[...]} marker.
+
+    Region-scoped auth gate. Parallel to the page-level ``!auth``
+    directive but evaluates per-region and renders an "allowed" or
+    "denied" branch rather than redirecting the whole page.
+    """
+
+    policy: Optional[str] = None
+    claims: Optional[List[Tuple[str, Optional[str]]]] = None
+
+    def __str__(self) -> str:
+        return f"AuthAttribute(policy={self.policy}, claims={self.claims})"
 
 
 @dataclass

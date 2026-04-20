@@ -1,6 +1,6 @@
 ---
 title: Control Flow Blocks
-description: Rendering logic using {$if}, {$for}, {$await}, {$try}, {$snippet}, {$render}, and {$head} blocks.
+description: Rendering logic using {$if}, {$for}, {$await}, {$auth}, {$try}, {$snippet}, {$render}, and {$head} blocks.
 ---
 
 PyWire provides a structured block syntax to handle dynamic rendering logic directly in your HTML. These blocks allow you to condition, loop, wait, catch errors, and reuse markup fragments — without writing complex Python logic inside your elements.
@@ -184,6 +184,56 @@ The `{$try}` block creates a safety zone. If an exception occurs while rendering
     <p class="error">Unknown error rendering bio.</p>
 {/try}
 ```
+
+## Auth (`{$auth}`)
+
+---
+
+The `{$auth}` block gates a region against a named policy or an inline claim list, backed by the same `PolicyEngine` that drives the page-level `!auth` directive. Two forms.
+
+### Sync form (allowed / denied)
+
+```pywire
+{$auth policy="AdminOnly"}
+    <!-- Rendered when the current user satisfies the policy. -->
+{$else}
+    <!-- Optional: rendered when denied. Omit to render nothing. -->
+{/auth}
+```
+
+Claim-based form — list of `(type, value)` tuples or bare `"type"` strings (any value):
+
+```pywire
+{$auth claims=[("role", "admin"), ("tier", "beta")]}
+    <p>Beta admin features.</p>
+{/auth}
+```
+
+### Async form with `$then`
+
+When you want an "authorizing" placeholder (e.g. for expensive custom policies that hit a remote store), use the `$then` variant. The body after `$then var` runs in both allowed and denied states with `var` bound to a bool:
+
+```pywire
+{$auth policy="AdminOnly"}
+    <small>Checking…</small>
+{$then allowed}
+    {$if allowed}
+        <p>Unlocked.</p>
+    {$else}
+        <p>Locked.</p>
+    {/if}
+{/auth}
+```
+
+### Semantics
+
+- Policy lookup misses, missing engine, and user-policy exceptions all fail closed to denied.
+- Evaluation is asynchronous; the first render shows the authorizing body (if any), subsequent renders show the resolved branch.
+- Each `{$auth}` region runs independently — works inside `{$for}`, nested inside other blocks, etc.
+- Auth channel events (claim grants, revokes) trigger a re-render that re-evaluates every `{$auth}` region on the page — no reload required.
+- Use `!auth` at the page level when you want a redirect on denial; use `{$auth}` when you want to branch the rendering in place.
+
+See the [Authentication guide](../guides/authentication/) for end-to-end setup including providers, the local IdP, and live claim updates.
 
 ## Snippets (`{$snippet}`)
 

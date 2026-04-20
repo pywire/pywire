@@ -215,7 +215,12 @@ If not provided, pywire tries to discover it in main.py, app.py, etc.[/dim]
 )
 @click.version_option(__version__)
 def cli() -> None:
-    pass
+    # Run pywire's .env cascade before any subcommand so app-import-time
+    # code (provider constructors, LocalIdP, direct os.environ reads in
+    # main.py, etc.) sees the env vars populated.
+    from pywire.config import _ensure_loaded
+
+    _ensure_loaded()
 
 
 cli.add_command(config_command)
@@ -262,7 +267,9 @@ def dev(
     if not app:
         app = _discover_app_str()
 
-    # Verify import
+    # .env already loaded in the cli group callback (see pywire.config
+    # cascade). --env-file is a forward-compat flag consumed by the TUI
+    # subprocess path below.
     import_app(app)
 
     # Find available port

@@ -1,9 +1,13 @@
 from importlib.metadata import version, PackageNotFoundError
+from typing import Optional, TYPE_CHECKING
 
 try:
     __version__ = version("pywire")
 except PackageNotFoundError:
     __version__ = "unknown"
+
+if TYPE_CHECKING:
+    from pywire.runtime.app import PyWire as _PyWireType
 
 from pywire.runtime.app import PyWire
 from pywire.runtime.page import BasePage
@@ -32,7 +36,16 @@ from pywire.runtime.importer import install_import_hook
 
 install_import_hook()
 
+# Ambient reference to the first-constructed PyWire instance in this process.
+# Set by PyWire.__init__ (first-wins). Pages can import this at script top
+# level to access shared app state (app.state.X) without a circular import
+# on main.py. Subsequent PyWire constructions (test fixtures, mounted
+# sub-apps) do not overwrite this — each such instance is reachable via
+# request.app on its own requests.
+app: Optional["_PyWireType"] = None
+
 __all__ = [
+    "app",
     "PyWire",
     "BasePage",
     "wire",

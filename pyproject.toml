@@ -12,6 +12,7 @@ dependencies = [
 [tool.uv]
 workspace = { members = [
     "packages/pywire",
+    "packages/pywire-auth",
     "packages/pywire-language-server",
     "packages/pywire-parser",
     "packages/create-pywire-app",
@@ -25,6 +26,7 @@ workspace = { members = [
 
 [tool.uv.sources]
 pywire = { workspace = true }
+pywire-auth = { workspace = true }
 pywire-language-server = { workspace = true }
 pywire-parser = { workspace = true }
 tree-sitter-pywire = { workspace = true }

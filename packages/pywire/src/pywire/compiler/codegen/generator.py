@@ -5,6 +5,7 @@ import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
 
 from pywire.compiler.ast_nodes import (
+    AuthDirective,
     Directive,
     EventAttribute,
     LayoutDirective,
@@ -498,6 +499,9 @@ class CodeGenerator:
 
         # Generate SPA metadata
         class_body.extend(self._generate_spa_metadata(parsed))
+
+        # Generate auth metadata (only when !auth directive present)
+        class_body.extend(self._generate_auth_metadata(parsed))
 
         # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
 
@@ -1042,6 +1046,64 @@ class CodeGenerator:
                 ast.Assign(
                     targets=[ast.Name(id="__file_path__", ctx=ast.Store())],
                     value=ast.Constant(value=str(parsed.file_path)),
+                )
+            )
+
+        return stmts
+
+    def _generate_auth_metadata(self, parsed: ParsedPyWire) -> List[ast.stmt]:
+        """Generate __auth_*__ class attributes from !auth directive.
+
+        Emits nothing when no !auth directive is present so that unprotected
+        pages carry zero auth overhead. The runtime guard reads these via
+        ``getattr(cls, "__auth_required__", False)``.
+        """
+        auth = cast(
+            Optional[AuthDirective], parsed.get_directive_by_type(AuthDirective)
+        )
+        if auth is None:
+            return []
+
+        stmts: List[ast.stmt] = [
+            ast.Assign(
+                targets=[ast.Name(id="__auth_required__", ctx=ast.Store())],
+                value=ast.Constant(value=True),
+            ),
+        ]
+
+        if auth.policy is not None:
+            stmts.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__auth_policy__", ctx=ast.Store())],
+                    value=ast.Constant(value=auth.policy),
+                )
+            )
+
+        if auth.claims is not None:
+            stmts.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__auth_claims__", ctx=ast.Store())],
+                    value=ast.List(
+                        elts=[
+                            ast.Tuple(
+                                elts=[
+                                    ast.Constant(value=t),
+                                    ast.Constant(value=v),
+                                ],
+                                ctx=ast.Load(),
+                            )
+                            for t, v in auth.claims
+                        ],
+                        ctx=ast.Load(),
+                    ),
+                )
+            )
+
+        if auth.redirect is not None:
+            stmts.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__auth_redirect__", ctx=ast.Store())],
+                    value=ast.Constant(value=auth.redirect),
                 )
             )
 
