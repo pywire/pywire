@@ -3,11 +3,16 @@
 Public API:
 
 - :func:`connect_auth` — single integration entry point
+- :class:`AuthActions` — one-call claim/session mutations (`app.state.auth`)
 - :class:`AuthMiddleware` — ASGI middleware that populates scope['user']
-- Providers: :class:`GoogleProvider`, :class:`GitHubProvider`,
-  :class:`GenericOIDCProvider`
-- Store adapters: :class:`MemoryAuthStore`
-- Structural interfaces: :class:`AuthStore`, :class:`OIDCProvider`
+- :class:`LocalIdP` + :class:`TokenIssuer` — database-backed local provider
+- OIDC providers: :class:`GoogleProvider`, :class:`GitHubProvider`,
+  :class:`MicrosoftProvider`, :class:`FacebookProvider`,
+  :class:`Auth0Provider`, :class:`GenericOIDCProvider`
+- Store adapters: :class:`MemoryAuthStore`, :class:`SQLAlchemyAuthStore`
+  (requires ``pip install pywire-auth[sqlalchemy]``)
+- Structural interfaces: :class:`AuthStore`, :class:`OIDCProvider`,
+  :class:`BaseOAuth2Provider`, :class:`BaseOIDCProvider`
 """
 
 from pywire_auth._protocols import AuthStore, OIDCProvider

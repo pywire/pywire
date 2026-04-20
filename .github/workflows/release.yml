@@ -28,6 +28,8 @@ jobs:
       pywire--tag_name: ${{ steps.release.outputs['packages/pywire--tag_name'] }}
       pywire-parser--release_created: ${{ steps.release.outputs['packages/pywire-parser--release_created'] }}
       pywire-parser--tag_name: ${{ steps.release.outputs['packages/pywire-parser--tag_name'] }}
+      pywire-auth--release_created: ${{ steps.release.outputs['packages/pywire-auth--release_created'] }}
+      pywire-auth--tag_name: ${{ steps.release.outputs['packages/pywire-auth--tag_name'] }}
       pywire-language-server--release_created: ${{ steps.release.outputs['packages/pywire-language-server--release_created'] }}
       pywire-language-server--tag_name: ${{ steps.release.outputs['packages/pywire-language-server--tag_name'] }}
       vscode-pywire--release_created: ${{ steps.release.outputs['packages/vscode-pywire--release_created'] }}
@@ -279,6 +281,23 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/pywire-parser/dist/
+
+  # Build and publish pywire-auth (pure Python)
+  publish-pywire-auth:
+    name: "Publish pywire-auth to PyPI"
+    needs: release-please
+    if: needs.release-please.outputs.pywire-auth--release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-auth
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/pywire-auth/dist/
 
   # Publish language server to PyPI
   publish-language-server:
