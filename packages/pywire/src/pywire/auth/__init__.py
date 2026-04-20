@@ -18,7 +18,7 @@ from pywire.auth.context import (
     reset_auth_context,
     set_auth_context,
 )
-from pywire.auth.guard import run_auth_guard
+from pywire.auth.guard import evaluate_auth, run_auth_guard
 from pywire.auth.policy import (
     Policy,
     PolicyContext,
@@ -53,6 +53,7 @@ __all__ = [
     "PolicyLike",
     "clear_principal_from_session",
     "deserialize",
+    "evaluate_auth",
     "get_auth_context",
     "read_principal_from_session",
     "reset_auth_context",
