@@ -960,6 +960,10 @@
         },
         {
           "type": "STRING",
+          "value": "auth"
+        },
+        {
+          "type": "STRING",
           "value": "elif"
         },
         {

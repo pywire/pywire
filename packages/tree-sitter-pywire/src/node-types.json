@@ -561,6 +561,10 @@
     "named": true
   },
   {
+    "type": "auth",
+    "named": false
+  },
+  {
     "type": "await",
     "named": false
   },

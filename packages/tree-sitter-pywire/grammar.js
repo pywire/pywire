@@ -213,7 +213,7 @@ module.exports = grammar({
         ),
 
         block_keyword: $ => choice(
-            'if', 'for', 'try', 'await', 'elif', 'else', 'finally', 'except', 'then', 'catch', 'html',
+            'if', 'for', 'try', 'await', 'auth', 'elif', 'else', 'finally', 'except', 'then', 'catch', 'html',
             'snippet', 'render', 'head'
         ),
 
