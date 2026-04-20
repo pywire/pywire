@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/pywire/pywire/compare/pywire-v0.11.2...pywire-v0.11.3) (2026-04-20)
+
+
+### Bug Fixes
+
+* **pywire:** sequence non-async &lt;script src&gt; before later scripts on SPA nav ([e18f964](https://github.com/pywire/pywire/commit/e18f9649abeb2183a5969e644fe189b3ff587db0))
+
 ## [0.11.2](https://github.com/pywire/pywire/compare/pywire-v0.11.1...pywire-v0.11.2) (2026-04-20)
 
 
