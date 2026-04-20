@@ -3737,7 +3737,12 @@ class TemplateCodegen:
                                 j += 1
                             return n
 
-                        VERBATIM = {"keyframes", "font-face", "property", "counter-style"}
+                        VERBATIM = {
+                            "keyframes",
+                            "font-face",
+                            "property",
+                            "counter-style",
+                        }
                         NESTED = {"media", "supports", "container", "layer"}
 
                         out: List[str] = []
@@ -3772,7 +3777,9 @@ class TemplateCodegen:
                             body = css[body_start:body_end]
 
                             if prelude_stripped.startswith("@"):
-                                m = re.match(r"@-?(?:[a-zA-Z]+-)?([a-zA-Z-]+)", prelude_stripped)
+                                m = re.match(
+                                    r"@-?(?:[a-zA-Z]+-)?([a-zA-Z-]+)", prelude_stripped
+                                )
                                 name = m.group(1).lower() if m else ""
                                 if name in VERBATIM:
                                     out.append(prelude + "{" + body + "}")
