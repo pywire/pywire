@@ -8,6 +8,9 @@ during codegen and at test time.
 Paired with the ``{$auth}`` template directive (see
 ``pywire.compiler.codegen.template``) and the page-level ``!auth``
 directive, which both call through to :func:`evaluate_auth`.
+
+Live claim updates flow via :class:`AuthChannel` over the WebSocket
+connection, marking ``{$auth}`` regions dirty for re-evaluation.
 """
 
 from pywire.auth.channel import (
