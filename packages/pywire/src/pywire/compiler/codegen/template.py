@@ -3704,33 +3704,91 @@ class TemplateCodegen:
                 if node.children and node.children[0].text_content:
                     original_css = node.children[0].text_content
 
-                    # Rewrite CSS with scope ID
+                    # Rewrite CSS with scope ID.
+                    #
+                    # Top-level rules get ``[data-ph-{sid}]`` appended to each
+                    # selector. At-rules are handled specially:
+                    #   * ``@keyframes`` / ``@font-face`` / ``@property`` and
+                    #     their vendor-prefixed variants have no selectors —
+                    #     emitted verbatim (including nested ``from``/``to``).
+                    #   * ``@media`` / ``@supports`` / ``@container`` wrap
+                    #     nested rules — recurse into the body so inner
+                    #     selectors get scoped too.
                     def rewrite_css(css: str, sid: str) -> str:
-                        new_parts = []
-                        last_idx = 0
-                        in_brace = False
-                        for i, char in enumerate(css):
-                            if char == "{":
-                                if not in_brace:
-                                    selectors = css[last_idx:i]
-                                    rewritten_selectors = ",".join(
-                                        [
-                                            f"{s.strip()}[data-ph-{sid}]"
-                                            for s in selectors.split(",")
-                                            if s.strip()
-                                        ]
-                                    )
-                                    new_parts.append(rewritten_selectors)
-                                    in_brace = True
-                                    last_idx = i
-                            elif char == "}":
-                                if in_brace:
-                                    new_parts.append(css[last_idx : i + 1])
-                                    in_brace = False
-                                    last_idx = i + 1
+                        def scope_selectors(sel: str) -> str:
+                            return ",".join(
+                                f"{s.strip()}[data-ph-{sid}]"
+                                for s in sel.split(",")
+                                if s.strip()
+                            )
 
-                        new_parts.append(css[last_idx:])
-                        return "".join(new_parts)
+                        def find_matching_brace(s: str, start: int) -> int:
+                            depth = 0
+                            j = start
+                            n = len(s)
+                            while j < n:
+                                c = s[j]
+                                if c == "{":
+                                    depth += 1
+                                elif c == "}":
+                                    depth -= 1
+                                    if depth == 0:
+                                        return j
+                                j += 1
+                            return n
+
+                        VERBATIM = {"keyframes", "font-face", "property", "counter-style"}
+                        NESTED = {"media", "supports", "container", "layer"}
+
+                        out: List[str] = []
+                        i = 0
+                        n = len(css)
+                        while i < n:
+                            # Preserve whitespace between rules verbatim
+                            ws_start = i
+                            while i < n and css[i] in " \t\r\n":
+                                i += 1
+                            if i > ws_start:
+                                out.append(css[ws_start:i])
+                            if i >= n:
+                                break
+
+                            # Find next '{' or ';' (for at-statements like @import)
+                            brace = css.find("{", i)
+                            semi = css.find(";", i)
+                            if brace == -1:
+                                out.append(css[i:])
+                                break
+                            if semi != -1 and semi < brace:
+                                # @-statement (no body), e.g. @import/@charset
+                                out.append(css[i : semi + 1])
+                                i = semi + 1
+                                continue
+
+                            prelude = css[i:brace]
+                            prelude_stripped = prelude.strip()
+                            body_start = brace + 1
+                            body_end = find_matching_brace(css, brace)
+                            body = css[body_start:body_end]
+
+                            if prelude_stripped.startswith("@"):
+                                m = re.match(r"@-?(?:[a-zA-Z]+-)?([a-zA-Z-]+)", prelude_stripped)
+                                name = m.group(1).lower() if m else ""
+                                if name in VERBATIM:
+                                    out.append(prelude + "{" + body + "}")
+                                elif name in NESTED:
+                                    out.append(
+                                        prelude + "{" + rewrite_css(body, sid) + "}"
+                                    )
+                                else:
+                                    # Unknown at-rule — emit verbatim rather
+                                    # than corrupt it with a scope attr.
+                                    out.append(prelude + "{" + body + "}")
+                            else:
+                                out.append(scope_selectors(prelude) + "{" + body + "}")
+
+                            i = body_end + 1
+                        return "".join(out)
 
                     rewritten_css = rewrite_css(original_css, scope_id)
 
