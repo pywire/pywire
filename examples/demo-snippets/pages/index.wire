@@ -1,0 +1,25 @@
+---
+greeting = "Hello from home"
+---
+{$head}
+    <title>Home — Snippets Demo</title>
+    <meta name="description" content="Demonstrates render children and head teleport">
+{/head}
+
+<section>
+    <h2>Home</h2>
+    <p>{greeting}</p>
+    <p>Layout uses <code>&#123;$render children&#125;</code> to slot this body.</p>
+    <p>This page's <code>&#123;$head&#125;</code> overrides the layout title via last-title-wins.</p>
+</section>
+
+<section>
+    <h3>Named Snippet + Fallback</h3>
+    {$snippet welcome}
+        <strong>Welcome, friend!</strong>
+    {/snippet}
+    <p>render a defined snippet:</p>
+    {$render welcome}
+    <p>render an undefined snippet with fallback:</p>
+    {$render missing}<em>fallback content</em>{/render}
+</section>
