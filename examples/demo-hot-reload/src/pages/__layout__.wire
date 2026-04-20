@@ -7,7 +7,7 @@
 </head>
 <body>
     <main>
-        <slot />
+        {$render children}
     </main>
 </body>
 </html>

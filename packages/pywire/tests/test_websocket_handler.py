@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from typing import Any, Dict, Optional, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import msgpack
 from pywire.runtime.page import BasePage

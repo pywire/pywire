@@ -60,13 +60,19 @@ KNOWN_BLOCKS = {
     "try",
     "except",
     "finally",
+    "snippet",
+    "render",
+    "head",
 }
-# Block keywords that start a block (require a closing {/tag})
-BLOCK_OPENERS = {"if", "for", "await", "try"}
+# Block keywords that start a block (require a closing {/tag}).
+# ``render`` is dual-form: unclosed ``{$render name}`` calls a snippet;
+# paired ``{$render name}fallback{/render}`` also accepts a closer, so
+# both here and in BLOCK_CLOSERS.
+BLOCK_OPENERS = {"if", "for", "await", "try", "snippet", "render", "head"}
 # Block keywords that are continuations (must appear inside an opener)
 BLOCK_CONTINUATIONS = {"elif", "else", "then", "catch", "except", "finally"}
 # Closing tags that are valid
-BLOCK_CLOSERS = {"if", "for", "await", "try"}  # {/if}, {/for}, etc.
+BLOCK_CLOSERS = {"if", "for", "await", "try", "snippet", "render", "head"}
 
 # Valid attribute keywords: used as $keyword on HTML elements
 KNOWN_ATTRIBUTES = {"if", "show", "for", "key", "ref", "permanent", "reload"}
@@ -2023,6 +2029,9 @@ Example:
         "try": "**{$try}** Block\n\nError boundary block.\n\n```html\n{$try}\n  ...\n{$except Exception as e}\n  ...\n{/try}\n```",
         "except": "**{$except}** Block\n\nException handler branch for a `{$try}` block.",
         "finally": "**{$finally}** Block\n\nCleanup branch for a `{$try}` block.",
+        "snippet": "**{$snippet}** Block\n\nDefines a named render region (snippet). Snippets can be invoked elsewhere with `{$render name(...)}` or passed to a child component as a prop.\n\n```html\n{$snippet row(item)}\n  <li>{item.label}</li>\n{/snippet}\n```",
+        "render": "**{$render}** Block\n\nInvokes a snippet by name. Self-closing form calls the snippet directly; paired form uses the body as a fallback when the snippet prop is `None`.\n\n```html\n{$render row(item)}\n\n{$render header}Default Header{/render}\n```",
+        "head": '**{$head}** Block\n\nTeleports content into the document `<head>`. Contributions merge across layouts and components; the last `<title>` wins while non-title content stays in author order.\n\n```html\n{$head}\n  <meta name="description" content="About us">\n  <title>About — My Site</title>\n{/head}\n```',
     }
 
     attr_hover_docs = {
@@ -2992,6 +3001,38 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                 insert_text="{\\$try}\n\t$1\n{\\$except ${2:Exception} as ${3:e}}\n\t$0\n{/try}",
                 insert_text_format=InsertTextFormat.Snippet,
                 sort_text="03_try",
+            ),
+            CompletionItem(
+                label="{$snippet}",
+                kind=CompletionItemKind.Snippet,
+                detail="PyWire snippet (named render region)",
+                insert_text="{\\$snippet ${1:name}(${2:params})}\n\t$0\n{/snippet}",
+                insert_text_format=InsertTextFormat.Snippet,
+                sort_text="04_snippet",
+            ),
+            CompletionItem(
+                label="{$render}",
+                kind=CompletionItemKind.Snippet,
+                detail="PyWire render (invoke a snippet)",
+                insert_text="{\\$render ${1:name}(${2:args})}",
+                insert_text_format=InsertTextFormat.Snippet,
+                sort_text="05_render",
+            ),
+            CompletionItem(
+                label="{$render}…{/render}",
+                kind=CompletionItemKind.Snippet,
+                detail="PyWire render with fallback",
+                insert_text="{\\$render ${1:name}(${2:args})}\n\t${3:fallback}\n{/render}",
+                insert_text_format=InsertTextFormat.Snippet,
+                sort_text="06_render_fallback",
+            ),
+            CompletionItem(
+                label="{$head}",
+                kind=CompletionItemKind.Snippet,
+                detail="PyWire head teleport",
+                insert_text="{\\$head}\n\t$0\n{/head}",
+                insert_text_format=InsertTextFormat.Snippet,
+                sort_text="07_head",
             ),
         ]
 

@@ -41,3 +41,14 @@ Sometimes you want a component to accept any arbitrary HTML attributes and apply
 2.  Note how the `placeholder` and `type="password"` from `index.wire` are now correctly applied to the real input element.
 
 The `**attrs` catch-all prop collects all attributes not explicitly named, similar to Python's `**kwargs`.
+
+**Implicit companion: `children`.** Every component also receives an implicit `children` prop — a snippet holding whatever markup the parent wrote between the component's opening and closing tags. Render it with `{$render children}`:
+
+```pywire
+<!-- components/panel.wire -->
+<section class="panel" {**attrs}>
+    {$render children}
+</section>
+```
+
+`attrs` catches extra **attributes**; `children` catches the **body**. Together they make most components pass-through by default. The full mechanics (named snippets, parameters, the `Child` / `Children[n]` annotations, and the `{$head}` teleport) live in the **Snippets** tutorial section.

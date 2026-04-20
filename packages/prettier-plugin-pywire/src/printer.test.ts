@@ -32,6 +32,36 @@ describe('printPywire', () => {
     expect(output).toContain('{f"Hi {name}"}')
   })
 
+  it('passes {$snippet name(params)}…{/snippet} through unchanged', () => {
+    const input = `<div>\n  {$snippet row(item)}\n    <li>{item.label}</li>\n  {/snippet}\n</div>\n`
+    const doc = parsePywire(input)
+    const output = printPywire({ getValue: () => doc }, { printWidth: 80 })
+
+    expect(output).toContain('{$snippet row(item)}')
+    expect(output).toContain('<li>{item.label}</li>')
+    expect(output).toContain('{/snippet}')
+  })
+
+  it('passes unclosed and paired {$render} forms through unchanged', () => {
+    const input = `<div>\n  {$render row(x)}\n  {$render header}Default{/render}\n</div>\n`
+    const doc = parsePywire(input)
+    const output = printPywire({ getValue: () => doc }, { printWidth: 80 })
+
+    expect(output).toContain('{$render row(x)}')
+    expect(output).toContain('{$render header}Default{/render}')
+  })
+
+  it('passes {$head}…{/head} teleport blocks through unchanged', () => {
+    const input = `{$head}\n  <meta name="description" content="x">\n  <title>Page</title>\n{/head}\n`
+    const doc = parsePywire(input)
+    const output = printPywire({ getValue: () => doc }, { printWidth: 80 })
+
+    expect(output).toContain('{$head}')
+    expect(output).toContain('<meta name="description" content="x">')
+    expect(output).toContain('<title>Page</title>')
+    expect(output).toContain('{/head}')
+  })
+
   it('formats directives with Ruff', () => {
     const input = `!path {"a": 1}\n!layout "base.wire"\n---html---\n`
     const doc = parsePywire(input)

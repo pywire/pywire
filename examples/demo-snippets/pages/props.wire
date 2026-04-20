@@ -1,0 +1,24 @@
+---
+from components.card import Card
+---
+{$head}<title>Props — Snippets Demo</title>{/head}
+
+<section>
+    <h2>Snippet Props + Implicit Children</h2>
+
+    <h3>Card 1: implicit children only</h3>
+    <Card title="Implicit children">
+        <p>This body is passed implicitly — no inner snippet tag, but maps to the <code>children</code> prop.</p>
+    </Card>
+
+    <h3>Card 2: named footer snippet + children</h3>
+    <Card title="With footer">
+        <p>Body content.</p>
+        {$snippet footer}
+            <strong>custom footer</strong> via named snippet prop
+        {/snippet}
+    </Card>
+
+    <h3>Card 3: no children → fallback shown</h3>
+    <Card title="Empty card" />
+</section>

@@ -1,6 +1,7 @@
 """Base page class with lifecycle system."""
 
 import inspect
+import re
 import asyncio
 from collections import defaultdict
 from .events import create_event_data
@@ -15,7 +16,6 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    Union,
 )
 import logging
 
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
 from pywire.runtime.style_collector import StyleCollector
+from pywire.core.snippet import HeadBuffer, Snippet
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,46 @@ class DotDict(dict):
 # EventData moved to .events
 
 
+_SITE_ID_RE = re.compile(r"^render_(?P<name>.+?)_(?P<line>\d+)_(?P<col>\d+)$")
+
+
+def _parse_site_id(site_id: str) -> Tuple[str, Optional[int], Optional[int]]:
+    """Split a snippet site_id back into (snippet_name, line, col)."""
+    m = _SITE_ID_RE.match(site_id)
+    if not m:
+        return site_id, None, None
+    return m["name"], int(m["line"]), int(m["col"])
+
+
+def _missing_snippet_message(site_id: str, class_name: str) -> str:
+    name, line, col = _parse_site_id(site_id)
+    loc = f" (line {line}, col {col})" if line is not None else ""
+    return (
+        f"{class_name}: required snippet {name!r}{loc} was not provided "
+        f"by the caller. Pass it as a named snippet (e.g. "
+        f"``{{$snippet {name}}}...{{/snippet}}``), or add a fallback "
+        f"with ``{{$render {name}}}...{{/render}}``."
+    )
+
+
+def _rewrite_snippet_typeerror(err: TypeError, site_id: str) -> TypeError:
+    """Rewrite TypeErrors from a snippet invocation to reference the
+    author-visible snippet name instead of the mangled codegen symbol."""
+    name, line, col = _parse_site_id(site_id)
+    msg = str(err)
+    # Codegen names snippet methods like ``_snippet_<name>_<l>_<c>_<n>``,
+    # nested under the enclosing render method's ``<locals>``. Strip
+    # everything up to and including that mangled call so the error
+    # speaks in snippet terms.
+    mangled_prefix = re.compile(r"^.*?\._snippet_[A-Za-z0-9_]+\(\)\s*")
+    msg = mangled_prefix.sub("", msg, count=1)
+    loc = f" (line {line}, col {col})" if line is not None else ""
+    return TypeError(f"{{$render {name}}}{loc}: {msg}")
+
+
 class BasePage:
     """Base class for all compiled pages."""
 
-    # Layout ID (overridden by generator)
-    LAYOUT_ID: Optional[str] = None
     __file_path__: ClassVar[str]
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
@@ -58,7 +94,6 @@ class BasePage:
         "query",
         "path",
         "url",
-        "slots",
         "__is_component__",
         "_style_collector",
         "_parent_page",
@@ -130,13 +165,6 @@ class BasePage:
         self.loading: Dict[str, bool] = {}
         self._pending_cookies: List[Dict[str, Any]] = []
 
-        # Slot registry: layout_id -> slot_name -> renderer (replacement semantics)
-        self.slots: Dict[str, Dict[str, Union[Callable, str]]] = defaultdict(dict)
-
-        # Populate slots from kwargs (for components)
-        if "slots" in kwargs and self.LAYOUT_ID:
-            self.slots[self.LAYOUT_ID].update(kwargs["slots"])
-
         # Component flag (internal)
         self.__is_component__ = kwargs.pop("__is_component__", False)
         self._parent_page: Optional["BasePage"] = kwargs.pop("_parent_page", None)
@@ -147,11 +175,13 @@ class BasePage:
                 f"{self._parent_page._handler_prefix}_comp:{self._component_key}:"
             )
 
-        # Store remaining kwargs as fallthrough attributes
-        self.attrs = {k: v for k, v in kwargs.items() if k != "slots"}
+        # ``children`` is a protected prop: it holds the implicit children
+        # Snippet passed by a parent (layout composition) and must not fall
+        # through into ``self.attrs`` where it would leak into HTML rendering.
+        children_arg = kwargs.pop("children", None)
 
-        # Head slot registry: layout_id -> list of renderers (append semantics, top-down order)
-        self.head_slots: Dict[str, List[Callable]] = defaultdict(list)
+        # Store remaining kwargs as fallthrough attributes
+        self.attrs = dict(kwargs)
 
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
@@ -169,6 +199,33 @@ class BasePage:
         self._expr_counts: Dict[str, int] = defaultdict(int)
         self._capturing_deps: bool = False
         self._captured_deps: Set[Tuple[Any, str]] = set()
+
+        # Render-region (snippet) system:
+        # - ``_head_buffer``: accumulator for ``{$head}...{/head}`` contributions
+        #   from this page and any descendant component in the render tree.
+        #   Shared with ``_parent_page`` so contributions from any depth reach
+        #   the root layout's flush point.
+        # - ``_snippet_invocations``: per-site memo cache. Keyed by the stable
+        #   ``site_id`` codegen assigns to each ``{$render}`` call. Each entry
+        #   is (args_tuple, cached_html). Site_ids double as region_ids so the
+        #   existing wire-dep tracker handles invalidation on wire writes.
+        if self._parent_page is not None:
+            self._head_buffer: HeadBuffer = self._parent_page._head_buffer
+        else:
+            self._head_buffer = HeadBuffer()
+        self._snippet_invocations: Dict[str, Tuple[Any, str]] = {}
+        # Output-equality cache for the general region system. Keyed by
+        # ``region_id``; value is the last rendered HTML. Used by
+        # ``render_update`` to skip morphdom patches when a dirty region
+        # re-renders to identical HTML (e.g. a wire flipped then flipped
+        # back, or changed in a way that doesn't affect output).
+        self._region_output_cache: Dict[str, str] = {}
+
+        # Protected ``children`` prop for layout composition. Default to
+        # ``None`` so layouts that never receive children don't AttributeError
+        # on ``{$render children}`` lookups; ``_update_props`` later sets the
+        # real snippet when the parent resolves this instance.
+        self.children: Optional[Snippet] = children_arg
 
         self._instance_id = id(self)
         logger.debug(f"[{self._instance_id}] BasePage initialized")
@@ -364,6 +421,14 @@ class BasePage:
             if self._is_framework_prop_key(key):
                 continue
 
+            # Snippet props are always stored directly on ``self`` so
+            # ``{$render name}`` can reach them via attribute lookup,
+            # regardless of whether the component declared ``name`` in
+            # ``@props``.
+            if isinstance(value, Snippet):
+                setattr(self, key, value)
+                continue
+
             # Prop reconciliation:
             # - existing attributes on the component instance are treated as props/state
             # - unknown keys are fallthrough HTML attrs
@@ -371,9 +436,6 @@ class BasePage:
                 setattr(self, key, value)
                 continue
             fallback_attrs[key] = value
-
-        if "slots" in new_kwargs and self.LAYOUT_ID:
-            self.slots[self.LAYOUT_ID].update(new_kwargs["slots"])
 
         self.attrs = fallback_attrs
 
@@ -579,63 +641,131 @@ class BasePage:
 
         await self._dispatch_handler(event_name, event_data)
 
-    def register_slot(
-        self, layout_id: str, slot_name: str, renderer: Callable[..., Any]
-    ) -> None:
-        """Register a content renderer for a slot in a specific layout."""
-        self.slots[layout_id][slot_name] = renderer
-
-    def register_head_slot(self, layout_id: str, renderer: Callable[..., Any]) -> None:
-        """Register head content to be appended (top-down order)."""
-        # Prevent duplicate registration (can happen with super()._init_slots() chaining)
-        if renderer not in self.head_slots[layout_id]:
-            self.head_slots[layout_id].append(renderer)
-
-    async def render_slot(
+    async def _invoke_render(
         self,
-        slot_name: str,
-        default_renderer: Optional[Callable[..., Any]] = None,
-        layout_id: Optional[str] = None,
-        append: bool = False,
+        snippet: Optional[Snippet],
+        site_id: str,
+        *args: Any,
     ) -> str:
-        """Render a slot for the current layout."""
-        target_id = layout_id or self.LAYOUT_ID
+        """Render a snippet at invocation site ``site_id`` with ``args``.
 
-        # Handle $head slots with append semantics
-        if append:
-            parts = []
-            # Render default content first (from the layout itself)
-            if default_renderer:
-                if inspect.iscoroutinefunction(default_renderer):
-                    parts.append(await default_renderer())
-                else:
-                    parts.append(default_renderer())
+        Memoization: if the site has a cached (args, html) pair whose args
+        compare equal to the current ``args`` and the site has not been
+        marked dirty by a wire write since the last render, returns the
+        cached html. Otherwise runs the snippet under a region context
+        that tracks wire reads at ``site_id``, caches the output, and
+        returns it.
 
-            # Collect head content from ALL layout IDs in the inheritance chain
-            for layout_id_key in self.head_slots:
-                for head_renderer in self.head_slots[layout_id_key]:
-                    if inspect.iscoroutinefunction(head_renderer):
-                        parts.append(await head_renderer())
-                    else:
-                        parts.append(head_renderer())
-            return "".join(parts)
+        Raises ``TypeError`` if ``snippet`` is ``None`` — a required
+        snippet prop was not provided. For optional snippets with a
+        fallback, use :meth:`_invoke_render_with_fallback`.
+        """
+        if snippet is None:
+            raise TypeError(_missing_snippet_message(site_id, self.__class__.__name__))
+        try:
+            return await self._invoke_snippet_inner(snippet, site_id, args)
+        except TypeError as e:
+            raise _rewrite_snippet_typeerror(e, site_id) from e
 
-        # Normal replacement semantics
-        if target_id and slot_name in self.slots[target_id]:
-            renderer: Union[Callable[..., Any], str] = self.slots[target_id][slot_name]
-            if callable(renderer):
-                if inspect.iscoroutinefunction(renderer):
-                    return str(await renderer())
-                return str(renderer())  # ty: ignore[call-top-callable]
-            return str(renderer)
+    async def _invoke_render_with_fallback(
+        self,
+        snippet: Optional[Snippet],
+        site_id: str,
+        fallback: Callable[..., Awaitable[str]],
+        *args: Any,
+    ) -> str:
+        """Render ``snippet`` at ``site_id``; on ``None`` run ``fallback``.
 
-        # Fallback to default content if provided
-        if default_renderer:
-            if inspect.iscoroutinefunction(default_renderer):
-                return str(await default_renderer())
-            return str(default_renderer())
+        ``fallback`` is a zero-arg async callable generated by codegen
+        from the body of ``{$render name(args)}fallback{/render}``.
+        """
+        if snippet is None:
+            # Fallback runs under the same site_id so its wire reads
+            # invalidate this site if they change.
+            return await self._invoke_region(site_id, fallback, args=())
+        return await self._invoke_snippet_inner(snippet, site_id, args)
 
-        return ""
+    async def _invoke_snippet_inner(
+        self, snippet: Snippet, site_id: str, args: Tuple[Any, ...]
+    ) -> str:
+        # If a wire write marked this site dirty since the last render,
+        # drop the cache entry before checking for a hit.
+        if site_id in self._dirty_regions:
+            self._snippet_invocations.pop(site_id, None)
+            self._dirty_regions.discard(site_id)
+
+        cached = self._snippet_invocations.get(site_id)
+        if cached is not None:
+            prev_args, prev_html = cached
+            try:
+                args_match = prev_args == args
+            except Exception:
+                args_match = prev_args is args
+            if args_match:
+                # Keep the output-equality cache aligned so ``render_update``
+                # can skip the morphdom patch when this site re-renders to
+                # the same HTML.
+                self._region_output_cache[site_id] = prev_html
+                return prev_html
+
+        html = await self._invoke_region(site_id, snippet.render, args=args)
+        self._snippet_invocations[site_id] = (args, html)
+        self._region_output_cache[site_id] = html
+        return html
+
+    async def _invoke_region(
+        self,
+        region_id: str,
+        func: Callable[..., Awaitable[str]],
+        args: Tuple[Any, ...] = (),
+    ) -> str:
+        """Run ``func`` under a region-scoped render context.
+
+        Centralizes the begin-region + context-set + try/finally reset
+        ritual so snippet invocations and framework-internal regions
+        share the same machinery.
+        """
+        # Lazy import to avoid circular references between page.py and wire.py
+        from pywire.core.wire import (  # noqa: PLC0415
+            set_render_context,
+            reset_render_context,
+        )
+
+        self._begin_region_render(region_id)
+        token = set_render_context(self, region_id)
+        try:
+            return await func(*args)
+        finally:
+            reset_render_context(token)
+
+    def _flush_head(self) -> str:
+        """Return accumulated ``{$head}`` HTML and clear the buffer.
+
+        Called by the layout/page during document assembly just before
+        emitting ``</head>``.
+        """
+        html = self._head_buffer.flush()
+        self._head_buffer.clear()
+        return html
+
+    def _inject_head_into(self, html: str) -> str:
+        """Flush head buffer into ``html``'s ``</head>`` tag (if any).
+
+        Used as the single injection point whether the page is rendered
+        via ``render()`` (HTTP response builder) or ``_render_template()``
+        directly (tests / SSR integration).
+        """
+        if self._parent_page is not None:
+            # Nested render: defer to the root page so head contributions
+            # accumulate before a single flush. Return ``html`` untouched.
+            return html
+        head_html = self._flush_head()
+        if not head_html:
+            return html
+        if "</head>" in html:
+            left, _, right = html.rpartition("</head>")
+            return f"{left}{head_html}</head>{right}"
+        return f"{head_html}{html}"
 
     async def _run_hooks(self, hook_list: List[str]) -> None:
         """Run a list of lifecycle hooks by method name."""
@@ -692,10 +822,6 @@ class BasePage:
         if init:
             await self._run_hooks(self.INIT_HOOKS)
 
-        # Render template (may be async for layouts with render_slot calls)
-        # Render HTML
-        # Render template (may be async for layouts with render_slot calls)
-        # Render HTML
         self._clear_wire_tracking()
         self._expr_counts.clear()
 
@@ -729,6 +855,9 @@ class BasePage:
                 # But if it has <html, strip it?
                 # For safety, let's look for html tags and warn/strip if we can't find body
                 pass
+
+        # Flush {$head} contributions into the document head.
+        html = self._inject_head_into(html)
 
         # Inject styles if this is the root render (not a component or partial update)
         styles = self._style_collector.render()
@@ -935,6 +1064,11 @@ class BasePage:
         self._wire_subscribers.clear()
         self._region_dependencies.clear()
         self._dirty_regions.clear()
+        # Also drop the output-equality cache so the next full render emits
+        # fresh markup (the previous cache belonged to a pre-hot-reload
+        # template that may have been invalidated).
+        self._region_output_cache.clear()
+        self._snippet_invocations.clear()
 
     def _begin_region_render(self, region_id: str) -> None:
         deps = self._region_dependencies.get(region_id)
@@ -945,10 +1079,6 @@ class BasePage:
                     regions.discard(region_id)
                     if not regions:
                         self._wire_subscribers.pop(dep, None)
-                    if regions and region_id in regions:
-                        regions.discard(region_id)
-                        if not regions:
-                            self._wire_subscribers.pop(dep, None)
         self._region_dependencies[region_id] = set()
 
     def _render_expr(self, static_id: str, compute_func: Callable[[], Any]) -> Any:
@@ -1120,6 +1250,18 @@ class BasePage:
                         has_root_dirty = True
                         break
 
+                    # Output-equality skip: if the re-rendered HTML matches
+                    # what we sent the client last time for this region, skip
+                    # emitting a morphdom patch. Still refresh the cache so a
+                    # subsequent change continues to match against the latest.
+                    cached = self._region_output_cache.get(region_id)
+                    if cached == region_html:
+                        logger.debug(
+                            f"render_update: skipping region {region_id} "
+                            "(HTML unchanged)"
+                        )
+                        continue
+                    self._region_output_cache[region_id] = region_html
                     updates.append({"region": region_id, "html": region_html})
 
                 if not has_root_dirty:
@@ -1240,7 +1382,11 @@ class BasePage:
         """Render template and remove stale child component instances."""
         html = await self._render_template()
         self._cleanup_components()
-        return html
+        # At the root of the render tree (no parent page), flush accumulated
+        # ``{$head}`` contributions into the document head so callers that
+        # use ``_render_template()`` / ``_render_and_cleanup()`` directly
+        # (tests, SSR integrations) get a complete document.
+        return self._inject_head_into(html)
 
 
 class ErrorBasePage(BasePage):

@@ -1,0 +1,23 @@
+---
+users = [
+    {"name": "Ada", "role": "admin"},
+    {"name": "Bo", "role": "user"},
+    {"name": "Cleo", "role": "user"},
+]
+---
+{$head}<title>Params — Snippets Demo</title>{/head}
+
+<section>
+    <h2>Parameterized Snippets</h2>
+    <p>Snippet taking a user dict, invoked per-row.</p>
+
+    {$snippet row(user)}
+        <li><strong>{user["name"]}</strong> — <span class="tag">{user["role"]}</span></li>
+    {/snippet}
+
+    <ul>
+        {$for u in users}
+            {$render row(u)}
+        {/for}
+    </ul>
+</section>

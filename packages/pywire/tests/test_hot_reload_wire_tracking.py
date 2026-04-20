@@ -11,10 +11,9 @@ wire tracking registered on old_page instead of new_page → new_page had
 zero wire subscribers → render_update returned empty regions.
 """
 
-import asyncio
 import pytest
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock
 
 from pywire.compiler.codegen.generator import CodeGenerator
@@ -40,7 +39,6 @@ def increment():
 
 def _compile_page_class(wire_content: str) -> type:
     """Compile .wire content into a page class (no layout)."""
-    import ast as _ast
 
     parser = PyWireParser()
     generator = CodeGenerator()
@@ -219,21 +217,3 @@ class TestWireTrackingWithLayout:
             assert len(update["regions"]) > 0, (
                 "render_update returned empty regions — wire tracking broken"
             )
-
-    @pytest.mark.asyncio
-    async def test_slot_renderers_not_migrated(self) -> None:
-        """Slot renderers should be bound to the new page, not the old."""
-        PageClass = self._load_page_class()
-        req = _make_request()
-
-        old_page = _create_page(PageClass, req)
-        new_page = _create_page(PageClass, req)
-        _simulate_migration(old_page, new_page)
-
-        # Check that slot renderers are bound to new_page, not old_page
-        for layout_id, slot_map in new_page.slots.items():
-            for slot_name, renderer in slot_map.items():
-                if hasattr(renderer, "__self__"):
-                    assert renderer.__self__ is new_page, (
-                        f"Slot renderer {slot_name} bound to old page, not new page"
-                    )

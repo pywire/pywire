@@ -8,6 +8,7 @@ members = [
     "demo-app",
     "demo-components",
     "demo-routing",
+    "demo-snippets",
     "pywire",
     "pywire-language-server",
     "pywire-monorepo",
@@ -600,6 +601,17 @@ requires-dist = [{ name = "pywire", editable = "packages/pywire" }]
 name = "demo-routing"
 version = "0.1.0"
 source = { virtual = "examples/demo-routing" }
+dependencies = [
+    { name = "pywire" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pywire", editable = "packages/pywire" }]
+
+[[package]]
+name = "demo-snippets"
+version = "0.1.0"
+source = { editable = "examples/demo-snippets" }
 dependencies = [
     { name = "pywire" },
 ]
@@ -1772,7 +1784,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "msgpack" },

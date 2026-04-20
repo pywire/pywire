@@ -15,10 +15,13 @@ from pywire_parser.ast_nodes import (
     ExceptAttribute,
     FinallyAttribute,
     ForAttribute,
+    HeadAttribute,
     IfAttribute,
     InterpolationNode,
     ParsedPyWire,
     ReactiveAttribute,
+    RenderAttribute,
+    SnippetAttribute,
     SpecialAttribute,
     SpreadAttribute,
     TemplateNode,
@@ -43,6 +46,61 @@ class BlockMarkerAttribute(SpecialAttribute):
     """Internal attribute to mark closing blocks like {/if}."""
 
     keyword: str
+
+
+def _parse_snippet_signature(expr: str) -> Tuple[str, List[str]]:
+    """Parse 'name(p1, p2: T)' → ('name', ['p1', 'p2']).
+
+    Accepts positional parameters with optional type annotations.
+    Bare 'name' (no parens) → ('name', []).
+    """
+    expr = expr.strip()
+    if not expr:
+        return "", []
+    if "(" not in expr:
+        return expr, []
+    try:
+        tree = ast.parse(f"def {expr}: pass")
+    except SyntaxError:
+        return expr.split("(", 1)[0].strip(), []
+    func = tree.body[0]
+    if not isinstance(func, ast.FunctionDef):
+        return expr.split("(", 1)[0].strip(), []
+    if func.args.vararg or func.args.kwarg or func.args.kwonlyargs:
+        raise PyWireSyntaxError(
+            f"{{$snippet {func.name}(...)}} only accepts positional parameters; "
+            "*args / **kwargs / keyword-only params are not supported.",
+        )
+    params = [a.arg for a in func.args.args]
+    return func.name, params
+
+
+def _parse_render_call(expr: str) -> Tuple[str, List[str]]:
+    """Parse 'name(expr1, expr2)' → ('name', ['expr1', 'expr2']).
+
+    Bare 'name' (no parens) → ('name', []).
+    """
+    expr = expr.strip()
+    if not expr:
+        return "", []
+    if "(" not in expr:
+        return expr, []
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return expr.split("(", 1)[0].strip(), []
+    call = tree.body
+    if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+        return expr.split("(", 1)[0].strip(), []
+    if call.keywords:
+        # Keyword arguments aren't yet supported in {$render name(...)}. Fail
+        # loudly rather than silently dropping them.
+        raise PyWireSyntaxError(
+            f"{{$render {call.func.id}(...)}} does not support keyword arguments yet; "
+            "pass values positionally.",
+        )
+    args_src = [ast.unparse(a) for a in call.args]
+    return call.func.id, args_src
 
 
 class PyWireParser:
@@ -93,6 +151,12 @@ class PyWireParser:
 
         # Reconstruct block hierarchy from flat list
         template_nodes = self._structure_hierarchy(template_nodes)
+
+        # Walk the finished tree to catch post-structure violations that
+        # per-node validators can't see (duplicate snippet names, implicit
+        # body + explicit ``{$snippet children}`` on the same component
+        # invocation, etc.).
+        self._validate_snippet_scopes(template_nodes, file_path)
 
         python_section = doc.python_code
         python_ast = None
@@ -179,6 +243,10 @@ class PyWireParser:
 
     def _structure_hierarchy(self, nodes: List[TemplateNode]) -> List[TemplateNode]:
         """Convert linear sequence of block/end-block nodes into a tree."""
+        # Pre-pass: mark RenderAttribute openers that have matching {/render}
+        # closers at this nesting level — these get has_fallback=True.
+        self._mark_paired_renders(nodes)
+
         roots: List[TemplateNode] = []
         stack: List[TemplateNode] = []
 
@@ -188,6 +256,8 @@ class PyWireParser:
             ForAttribute,
             TryAttribute,
             AwaitAttribute,
+            SnippetAttribute,
+            HeadAttribute,
         )
 
         for node in nodes:
@@ -209,9 +279,12 @@ class PyWireParser:
             # Check if this is an opening block
             is_opener = False
             if node.tag is None and node.text_content is None:
-                # Check specifics
                 for attr in node.special_attributes:
                     if isinstance(attr, opener_types):
+                        is_opener = True
+                        break
+                    # Render is opener only when paired with {/render}
+                    if isinstance(attr, RenderAttribute) and attr.has_fallback:
                         is_opener = True
                         break
 
@@ -226,6 +299,23 @@ class PyWireParser:
                 stack.append(node)
 
         return roots
+
+    def _mark_paired_renders(self, nodes: List[TemplateNode]) -> None:
+        """Set has_fallback=True on RenderAttribute nodes that pair with {/render}.
+
+        Uses a render-only depth stack — other block types don't affect it since
+        they're nested at a different level by the outer `_structure_hierarchy`.
+        """
+        render_stack: List[RenderAttribute] = []
+        for node in nodes:
+            for attr in node.special_attributes:
+                if isinstance(attr, RenderAttribute):
+                    render_stack.append(attr)
+                elif (
+                    isinstance(attr, BlockMarkerAttribute) and attr.keyword == "/render"
+                ):
+                    if render_stack:
+                        render_stack.pop().has_fallback = True
 
     def _handle_rust_block(self, rn: Any, node: TemplateNode) -> None:
         """Map Rust brace blocks to PyWire special attributes."""
@@ -358,6 +448,35 @@ class PyWireParser:
                     expression=expr, is_raw=True, line=rn.line, column=rn.column
                 )
             )
+        elif kw == "snippet":
+            snippet_name, params = _parse_snippet_signature(expr)
+            node.special_attributes.append(
+                SnippetAttribute(
+                    name="$snippet",
+                    value="",
+                    snippet_name=snippet_name,
+                    params=params,
+                    line=rn.line,
+                    column=rn.column,
+                )
+            )
+        elif kw == "render":
+            render_name, call_args = _parse_render_call(expr)
+            node.special_attributes.append(
+                RenderAttribute(
+                    name="$render",
+                    value="",
+                    snippet_name=render_name,
+                    call_args=call_args,
+                    has_fallback=False,  # set later by _mark_paired_renders
+                    line=rn.line,
+                    column=rn.column,
+                )
+            )
+        elif kw == "head":
+            node.special_attributes.append(
+                HeadAttribute(name="$head", value="", line=rn.line, column=rn.column)
+            )
 
     def _validate_block_root(self, node: TemplateNode) -> None:
         """Validate that certain blocks have only one root element."""
@@ -365,6 +484,7 @@ class PyWireParser:
             ForAttribute,
             ElseAttribute,
             ElifAttribute,
+            SnippetAttribute,
         )
 
         for_attrs = [a for a in node.special_attributes if isinstance(a, ForAttribute)]
@@ -378,6 +498,15 @@ class PyWireParser:
                         for a in c.special_attributes
                     ):
                         break
+
+                    # ``{$snippet}`` definitions emit no DOM at their
+                    # declaration site — they only bind a method on the
+                    # page. They must not count toward the root-element
+                    # budget of an unkeyed ``$for``.
+                    if any(
+                        isinstance(a, SnippetAttribute) for a in c.special_attributes
+                    ):
+                        continue
 
                     is_real = False
                     if c.tag:
@@ -393,14 +522,6 @@ class PyWireParser:
                     if is_real:
                         real_children.append(c)
 
-                print(
-                    f"[DEBUG-PARSER] Validating For block at line {node.line}. Children: {len(node.children)}, Real: {len(real_children)}"
-                )
-                for i, c in enumerate(real_children):
-                    print(
-                        f"  Real Child {i}: tag={c.tag}, text={c.text_content[:20] if c.text_content else None}"
-                    )
-
                 if len(real_children) != 1:
                     from pywire_parser.exceptions import PyWireSyntaxError
 
@@ -408,6 +529,85 @@ class PyWireParser:
                         "A $for loop without a 'key' must have exactly one root element",
                         line=node.line,
                     )
+
+    def _validate_snippet_scopes(
+        self, nodes: List[TemplateNode], file_path: str
+    ) -> None:
+        """Walk the parsed tree and reject:
+
+        - duplicate ``{$snippet name}`` definitions in the same scope;
+        - a component invocation that has both implicit body content AND
+          an explicit ``{$snippet children}`` definition.
+
+        Runs after the block hierarchy has been built so scopes are
+        expressed as parent→children edges.
+        """
+
+        def _is_component_tag(tag: str | None) -> bool:
+            # Components are PascalCase; native HTML tags are lowercase.
+            return bool(tag) and tag[0].isupper()  # type: ignore[index]
+
+        def _snippet_attr_of(n: TemplateNode):
+            for a in n.special_attributes:
+                if isinstance(a, SnippetAttribute):
+                    return a
+            return None
+
+        def _walk_scope(siblings: List[TemplateNode], inside_component: bool) -> None:
+            seen: Dict[str, SnippetAttribute] = {}
+            implicit_body: List[TemplateNode] = []
+            explicit_children: SnippetAttribute | None = None
+
+            for child in siblings:
+                snip = _snippet_attr_of(child)
+                if snip is not None:
+                    prior = seen.get(snip.snippet_name)
+                    if prior is not None:
+                        raise PyWireSyntaxError(
+                            f"Duplicate {{$snippet {snip.snippet_name}}} "
+                            f"definition (first defined at line {prior.line}).",
+                            file_path=file_path,
+                            line=snip.line,
+                        )
+                    seen[snip.snippet_name] = snip
+                    if inside_component and snip.snippet_name == "children":
+                        explicit_children = snip
+                    # Recurse into the snippet body
+                    _walk_scope(child.children, inside_component=False)
+                    continue
+
+                # Non-snippet child inside a component invocation body.
+                # Whitespace-only text nodes don't count.
+                if inside_component:
+                    is_content = bool(
+                        child.tag
+                        or (child.text_content and child.text_content.strip())
+                        or any(
+                            not isinstance(a, BlockMarkerAttribute)
+                            for a in child.special_attributes
+                        )
+                    )
+                    if is_content:
+                        implicit_body.append(child)
+
+                # Recurse into this child's own scope
+                _walk_scope(
+                    child.children,
+                    inside_component=_is_component_tag(child.tag),
+                )
+
+            if explicit_children is not None and implicit_body:
+                first = implicit_body[0]
+                raise PyWireSyntaxError(
+                    "Component body has both implicit children "
+                    "(inline content) and an explicit "
+                    "{$snippet children} definition. Use one or the "
+                    "other.",
+                    file_path=file_path,
+                    line=first.line,
+                )
+
+        _walk_scope(nodes, inside_component=False)
 
     def _parse_text(
         self, text: str, start_line: int = 0, raw_text: bool = False, start_col: int = 0

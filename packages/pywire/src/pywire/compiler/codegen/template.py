@@ -18,11 +18,14 @@ from pywire.compiler.ast_nodes import (
     ExceptAttribute,
     FinallyAttribute,
     ForAttribute,
+    HeadAttribute,
     IfAttribute,
     InterpolationNode,
     KeyAttribute,
     ReactiveAttribute,
+    RenderAttribute,
     ShowAttribute,
+    SnippetAttribute,
     TemplateNode,
     ThenAttribute,
     TryAttribute,
@@ -49,13 +52,11 @@ class TemplateCodegen:
         "source",
         "track",
         "wbr",
-        "slot",
     }
     DOCUMENT_ROOT_ELEMENTS = {"html", "head", "body"}
 
     def __init__(self, *, dev_mode: Optional[bool] = None) -> None:
         self.interpolation_parser = BraceInterpolationParser()
-        self._slot_default_counter = 0
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
         self._region_counter = 0
@@ -113,80 +114,13 @@ class TemplateCodegen:
         )
         return main_func, self.auxiliary_functions
 
-    def generate_slot_methods(
-        self,
-        template_nodes: List[TemplateNode],
-        file_id: str = "",
-        known_globals: Optional[Set[str]] = None,
-        known_imports: Optional[Set[str]] = None,
-        layout_id: Optional[str] = None,
-        component_map: Optional[Dict[str, str]] = None,
-        wire_vars: Set[str] = set(),
-    ) -> Tuple[Dict[str, ast.AsyncFunctionDef], List[ast.AsyncFunctionDef]]:
-        """
-        Generate slot filler methods for child pages.
-        Returns: ({slot_name: function_ast}, list_of_auxiliary_function_asts)
-        """
-        self._reset_state()
-        self._wire_vars = wire_vars
-        slots = defaultdict(list)
-
-        # Generate a short hash from file_id to make method names unique per file
-        import hashlib
-
-        file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
-
-        # 1. Bucket nodes into slots based on wrapper elements
-        for node in template_nodes:
-            if node.tag == "slot" and node.attributes and "name" in node.attributes:
-                slot_name = node.attributes["name"]
-                for child in node.children:
-                    slots[slot_name].append(child)
-            elif node.tag == "head":
-                for child in node.children:
-                    slots["$head"].append(child)
-            else:
-                slots["default"].append(node)
-
-        # 2. Generate functions for each slot
-        slot_funcs = {}
-        for slot_name, nodes in slots.items():
-            safe_name = (
-                slot_name.replace("$", "_head_").replace("-", "_")
-                if slot_name.startswith("$")
-                else slot_name.replace("-", "_")
-            )
-            func_name = (
-                f"_render_slot_fill_{safe_name}_{file_hash}"
-                if file_hash
-                else f"_render_slot_fill_{safe_name}"
-            )
-            slot_funcs[slot_name] = self._generate_function(
-                nodes,
-                func_name,
-                is_async=True,
-                known_globals=known_globals,
-                known_imports=known_imports,
-                layout_id=layout_id,
-                component_map=component_map,
-                wire_vars=wire_vars,
-            )
-
-        return slot_funcs, self.auxiliary_functions
-
     def _reset_state(self) -> None:
-        self._slot_default_counter = 0
         self.auxiliary_functions = []
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
         self._wire_vars = set()
         self._expr_id_counter = 0
-        self._slot_default_counter = 0
-        self.auxiliary_functions = []
-        self.has_file_inputs = False
-        self._region_counter = 0
-        self.region_renderers = {}
         self._wire_vars = set()
 
     def _generate_function(
@@ -1025,7 +959,7 @@ class TemplateCodegen:
         known_methods: Optional[Dict[str, int]] = None,
         wire_vars: Set[str] = set(),
     ) -> Optional[ast.Dict]:
-        """Extract HTML5 field rules from slot nodes for server-side Form validation."""
+        """Extract HTML5 field rules from form input nodes for server-side Form validation."""
         html_to_rule = {
             "required": "required",
             "pattern": "pattern",
@@ -1239,6 +1173,339 @@ class TemplateCodegen:
             node.end_lineno = template_node.line  # type: ignore # Single line approximation
             node.end_col_offset = template_node.column + 1  # type: ignore
         return node
+
+    # ---------------- Render region (snippet) codegen ----------------
+
+    def _snippet_method_name(self, name: str, line: int, col: int) -> str:
+        """Unique method name for a snippet definition.
+
+        Block-level snippets always sit at column 0, so ``name_line_col`` can
+        collide across siblings or across files. Append a per-generator
+        counter to guarantee uniqueness within a compilation.
+        """
+        self._region_counter += 1
+        return f"_snippet_{name}_{line}_{col}_{self._region_counter}".replace("-", "_")
+
+    def _render_site_id(self, snippet_name: str, line: int, col: int) -> str:
+        """Stable site id used as both region id and memo key for a
+        single ``{$render}`` invocation."""
+        return f"render_{snippet_name}_{line}_{col}".replace("-", "_")
+
+    def _emit_snippet_definition(
+        self,
+        node: TemplateNode,
+        snippet_attr: SnippetAttribute,
+        body: List[ast.stmt],
+        local_vars: Set[str],
+        bound_var: Union[str, ast.expr, None],
+        layout_id: Optional[str],
+        known_methods: Optional[Dict[str, int]],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        async_methods: Optional[Set[str]],
+        component_map: Optional[Dict[str, str]],
+        scope_id: Optional[str],
+        wire_vars: Set[str],
+    ) -> None:
+        """Emit code for ``{$snippet name(params)}...{/snippet}``.
+
+        Produces a nested ``async def`` inside the current render
+        function (so the body naturally closes over ``self`` and any
+        enclosing loop locals), then binds
+        ``self.<name> = Snippet(RenderUnit(...))`` so the snippet is
+        reachable by attribute lookup both from sibling invocations in
+        this file and from child components that receive it as a prop.
+        """
+        del bound_var  # snippets are always rendered fresh; bound_var doesn't apply
+        name = snippet_attr.snippet_name
+        params = snippet_attr.params
+        method_name = self._snippet_method_name(name, node.line, node.column)
+
+        # A snippet binds to ``self.<name>``; a frontmatter assignment
+        # ``<name> = ...`` also writes ``self.<name>``. The first one wins,
+        # and ``__top_level_init__`` always runs before snippet binding,
+        # so any render later resolves the frontmatter value (a plain
+        # Python object) instead of the snippet — and fails with a
+        # cryptic ``'str' object has no attribute 'render'``. Surface
+        # this as a compile-time error with source context.
+        if known_globals and name in known_globals:
+            from pywire_parser.exceptions import PyWireSyntaxError
+
+            raise PyWireSyntaxError(
+                f"{{$snippet {name}}} collides with the frontmatter "
+                f"symbol {name!r}. Snippets bind to ``self.{name}`` and "
+                f"would be shadowed by the frontmatter assignment. "
+                f"Rename the snippet or the frontmatter variable.",
+                line=node.line,
+            )
+
+        # Build the snippet body reusing the standard function generator
+        # so `{$if}`, `{$for}`, interpolation, components, etc. all work
+        # the same way as in a render method.
+        aux_func = self._generate_function(
+            node.children,
+            method_name,
+            is_async=True,
+            initial_locals=local_vars | set(params),
+            layout_id=layout_id,
+            known_methods=known_methods,
+            known_globals=known_globals,
+            known_imports=known_imports,
+            async_methods=async_methods,
+            component_map=component_map,
+            scope_id=scope_id,
+            wire_vars=wire_vars,
+        )
+        # Nested async def — no ``self`` parameter. ``self`` comes from
+        # the enclosing closure.
+        aux_func.args.args = [ast.arg(arg=p) for p in params]
+
+        body.append(aux_func)
+
+        # self.<name> = Snippet(RenderUnit(method_name_str, <method_name>, name=<name>, scope=self))
+        render_unit = ast.Call(
+            func=ast.Name(id="RenderUnit", ctx=ast.Load()),
+            args=[
+                ast.Constant(value=method_name),
+                ast.Name(id=method_name, ctx=ast.Load()),
+            ],
+            keywords=[
+                ast.keyword(arg="name", value=ast.Constant(value=name)),
+                ast.keyword(arg="scope", value=ast.Name(id="self", ctx=ast.Load())),
+            ],
+        )
+        snippet_expr = ast.Call(
+            func=ast.Name(id="Snippet", ctx=ast.Load()),
+            args=[render_unit],
+            keywords=[],
+        )
+        # Only bind as the default when the parent didn't pass a snippet
+        # prop of the same name. ``self.<name>`` may already hold a Snippet
+        # supplied by ``_update_props``; don't clobber it.
+        # Emits: ``if getattr(self, "<name>", None) is None: self.<name> = <snippet_expr>``
+        bind_attr = ast.If(
+            test=ast.Compare(
+                left=ast.Call(
+                    func=ast.Name(id="getattr", ctx=ast.Load()),
+                    args=[
+                        ast.Name(id="self", ctx=ast.Load()),
+                        ast.Constant(value=name),
+                        ast.Constant(value=None),
+                    ],
+                    keywords=[],
+                ),
+                ops=[ast.Is()],
+                comparators=[ast.Constant(value=None)],
+            ),
+            body=[
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=name,
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=snippet_expr,
+                )
+            ],
+            orelse=[],
+        )
+        self._set_line(bind_attr, node)
+        body.append(bind_attr)
+
+    def _emit_render_invocation(
+        self,
+        node: TemplateNode,
+        render_attr: RenderAttribute,
+        body: List[ast.stmt],
+        local_vars: Set[str],
+        bound_var: Union[str, ast.expr, None],
+        layout_id: Optional[str],
+        known_methods: Optional[Dict[str, int]],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        async_methods: Optional[Set[str]],
+        component_map: Optional[Dict[str, str]],
+        scope_id: Optional[str],
+        parts_var: str,
+        wire_vars: Set[str],
+    ) -> None:
+        """Emit code for ``{$render name(args)}`` or the paired form
+        with a fallback body.
+
+        Paired form generates a nested ``async def`` for the fallback so
+        it can contain regular template content. Unpaired form just
+        calls :meth:`BasePage._invoke_render`.
+        """
+        del bound_var
+        snippet_name = render_attr.snippet_name
+        site_id = self._render_site_id(snippet_name, node.line, node.column)
+
+        # Transform each user-provided arg expression through the standard
+        # pipeline (handles self.-prefixing, wire-unwrapping, etc).
+        arg_exprs: List[ast.expr] = []
+        for src in render_attr.call_args:
+            expr = self._transform_expr(
+                src,
+                local_vars,
+                known_globals,
+                known_imports,
+                line_offset=node.line,
+                col_offset=node.column,
+                wire_vars=wire_vars,
+            )
+            arg_exprs.append(cast(ast.expr, expr))
+
+        # The snippet reference is ``getattr(self, "<name>", None)``:
+        # ``_emit_snippet_definition`` assigns to ``self.<name>`` for
+        # same-file definitions; ``_update_props`` sets it when a parent
+        # passes the snippet as a prop. ``getattr`` tolerates the case
+        # where no definition nor parent passed it — the invocation then
+        # either runs the fallback (paired form) or raises the usual
+        # "required snippet missing" error (unpaired form).
+        snippet_ref: ast.expr = ast.Call(
+            func=ast.Name(id="getattr", ctx=ast.Load()),
+            args=[
+                ast.Name(id="self", ctx=ast.Load()),
+                ast.Constant(value=snippet_name),
+                ast.Constant(value=None),
+            ],
+            keywords=[],
+        )
+
+        if render_attr.has_fallback:
+            fallback_method = f"_fallback_{site_id}"
+            fallback_func = self._generate_function(
+                node.children,
+                fallback_method,
+                is_async=True,
+                initial_locals=local_vars,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                known_imports=known_imports,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                wire_vars=wire_vars,
+            )
+            # Nested async def — no self arg.
+            fallback_func.args.args = []
+            body.append(fallback_func)
+
+            call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_invoke_render_with_fallback",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    snippet_ref,
+                    ast.Constant(value=site_id),
+                    ast.Name(id=fallback_method, ctx=ast.Load()),
+                    *arg_exprs,
+                ],
+                keywords=[],
+            )
+        else:
+            call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_invoke_render",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    snippet_ref,
+                    ast.Constant(value=site_id),
+                    *arg_exprs,
+                ],
+                keywords=[],
+            )
+
+        append_stmt = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id=parts_var, ctx=ast.Load()),
+                    attr="append",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Await(value=call)],
+                keywords=[],
+            )
+        )
+        self._set_line(append_stmt, node)
+        body.append(append_stmt)
+
+    def _emit_head_contribution(
+        self,
+        node: TemplateNode,
+        body: List[ast.stmt],
+        local_vars: Set[str],
+        layout_id: Optional[str],
+        known_methods: Optional[Dict[str, int]],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        async_methods: Optional[Set[str]],
+        component_map: Optional[Dict[str, str]],
+        scope_id: Optional[str],
+        wire_vars: Set[str],
+    ) -> None:
+        """Emit code for ``{$head}...{/head}``.
+
+        Renders the body into a local ``_head_parts`` list, joins it,
+        and calls ``self._head_buffer.contribute(html)``. The buffer is
+        flushed by the page during document assembly.
+        """
+        head_parts_var = f"_head_parts_{node.line}_{node.column}".replace("-", "_")
+        body.append(
+            ast.Assign(
+                targets=[ast.Name(id=head_parts_var, ctx=ast.Store())],
+                value=ast.List(elts=[], ctx=ast.Load()),
+            )
+        )
+        for child in node.children:
+            self._add_node(
+                child,
+                body,
+                local_vars=local_vars,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                known_imports=known_imports,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                parts_var=head_parts_var,
+                wire_vars=wire_vars,
+            )
+        contribute_call = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr="_head_buffer",
+                        ctx=ast.Load(),
+                    ),
+                    attr="contribute",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Constant(value=""),
+                            attr="join",
+                            ctx=ast.Load(),
+                        ),
+                        args=[ast.Name(id=head_parts_var, ctx=ast.Load())],
+                        keywords=[],
+                    )
+                ],
+                keywords=[],
+            )
+        )
+        self._set_line(contribute_call, node)
+        body.append(contribute_call)
 
     def _add_node(
         self,
@@ -2086,74 +2353,77 @@ class TemplateCodegen:
             )
             return
 
-        # --- Handle <slot> ---
-        if node.tag == "slot":
-            slot_name = node.attributes.get("name", "default")
-            is_head_slot = "$head" in node.attributes
-
-            default_renderer_arg: ast.expr = ast.Constant(value=None)
-            if node.children:
-                self._slot_default_counter += 1
-                func_name = (
-                    f"_render_slot_default_{slot_name}_{self._slot_default_counter}"
-                )
-                aux_func = self._generate_function(
-                    node.children, func_name, is_async=True
-                )
-                self.auxiliary_functions.append(aux_func)
-                default_renderer_arg = ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()),
-                    attr=func_name,
-                    ctx=ast.Load(),
-                )
-
-            call_kwargs = [
-                ast.keyword(arg="default_renderer", value=default_renderer_arg),
-                ast.keyword(
-                    arg="layout_id",
-                    value=ast.Constant(value=layout_id)
-                    if layout_id
-                    else ast.Call(
-                        func=ast.Name(id="getattr", ctx=ast.Load()),
-                        args=[
-                            ast.Name(id="self", ctx=ast.Load()),
-                            ast.Constant(value="LAYOUT_ID"),
-                            ast.Constant(value=None),
-                        ],
-                        keywords=[],
-                    ),
-                ),
-            ]
-
-            if is_head_slot:
-                call_kwargs.append(
-                    ast.keyword(arg="append", value=ast.Constant(value=True))
-                )
-
-            render_call = ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="self", ctx=ast.Load()),
-                    attr="render_slot",
-                    ctx=ast.Load(),
-                ),
-                args=[ast.Constant(value=slot_name)],
-                keywords=call_kwargs,
+        # --- Handle $snippet / $render / $head blocks ---
+        snippet_attr = next(
+            (a for a in node.special_attributes if isinstance(a, SnippetAttribute)),
+            None,
+        )
+        if snippet_attr:
+            self._emit_snippet_definition(
+                node,
+                snippet_attr,
+                body,
+                local_vars,
+                bound_var,
+                layout_id,
+                known_methods,
+                known_globals,
+                known_imports,
+                async_methods,
+                component_map,
+                scope_id,
+                wire_vars=wire_vars,
             )
-
-            append_stmt = ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id=parts_var, ctx=ast.Load()),
-                        attr="append",
-                        ctx=ast.Load(),
-                    ),
-                    args=[ast.Await(value=render_call)],
-                    keywords=[],
-                )
-            )
-            self._set_line(append_stmt, node)
-            body.append(append_stmt)
             return
+
+        render_attr = next(
+            (a for a in node.special_attributes if isinstance(a, RenderAttribute)),
+            None,
+        )
+        if render_attr:
+            self._emit_render_invocation(
+                node,
+                render_attr,
+                body,
+                local_vars,
+                bound_var,
+                layout_id,
+                known_methods,
+                known_globals,
+                known_imports,
+                async_methods,
+                component_map,
+                scope_id,
+                parts_var=parts_var,
+                wire_vars=wire_vars,
+            )
+            return
+
+        head_attr = next(
+            (a for a in node.special_attributes if isinstance(a, HeadAttribute)),
+            None,
+        )
+        if head_attr:
+            self._emit_head_contribution(
+                node,
+                body,
+                local_vars,
+                layout_id,
+                known_methods,
+                known_globals,
+                known_imports,
+                async_methods,
+                component_map,
+                scope_id,
+                wire_vars=wire_vars,
+            )
+            return
+
+        if node.tag == "slot":
+            raise ValueError(
+                f"<slot> is no longer supported (line {node.line}). "
+                "Use {$render name} / {$snippet name}...{/snippet} / {$head}...{/head} instead."
+            )
 
         if node.tag and (
             (component_map and node.tag in component_map) or node.tag[0].isupper()
@@ -2370,28 +2640,56 @@ class TemplateCodegen:
             )
 
             # 4. Handle Slots (Children) - Grouping phase
-            # Group children by slot name
-            slots_map: Dict[str, List[TemplateNode]] = {}
-            default_slot_nodes = []
-
+            # First: extract any `{$snippet name(...)}` children — these become
+            # named prop sugar. Their definitions are hoisted into the parent's
+            # render scope and referenced as `self.<name>` on the component
+            # via the standard kwargs dict.
+            remaining_children: List[TemplateNode] = []
             for child in node.children:
-                # Check for slot="..." attribute on child
-                child_slot_name: Optional[str] = None
-                if child.tag and "slot" in child.attributes:
-                    child_slot_name = child.attributes["slot"]
+                child_snippet = next(
+                    (
+                        a
+                        for a in child.special_attributes
+                        if isinstance(a, SnippetAttribute)
+                    ),
+                    None,
+                )
+                if child_snippet:
+                    self._emit_snippet_definition(
+                        child,
+                        child_snippet,
+                        body,
+                        local_vars,
+                        bound_var,
+                        layout_id,
+                        known_methods,
+                        known_globals,
+                        known_imports,
+                        async_methods,
+                        component_map,
+                        scope_id,
+                        wire_vars=wire_vars,
+                    )
+                    # Pass as a named prop: <snippet_name>={self.<snippet_name>}
+                    dict_keys.append(ast.Constant(value=child_snippet.snippet_name))
+                    dict_values.append(
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=child_snippet.snippet_name,
+                            ctx=ast.Load(),
+                        )
+                    )
+                    continue
+                remaining_children.append(child)
 
-                if child_slot_name:
-                    if child_slot_name not in slots_map:
-                        slots_map[child_slot_name] = []
-                    slots_map[child_slot_name].append(child)
-                else:
-                    default_slot_nodes.append(child)
-
-            if default_slot_nodes:
-                slots_map["default"] = default_slot_nodes
+            # Remaining children → protected ``children`` prop as an anonymous
+            # zero-arg Snippet passed as a regular kwarg on the component.
+            bucketed: Dict[str, List[TemplateNode]] = {}
+            if remaining_children:
+                bucketed["children"] = remaining_children
 
             all_slot_nodes: List[TemplateNode] = []
-            for s_nodes in slots_map.values():
+            for s_nodes in bucketed.values():
                 all_slot_nodes.extend(s_nodes)
 
             if cls_name == "FileInput":
@@ -2473,61 +2771,83 @@ class TemplateCodegen:
                     )
                 )
 
-            # 7. Render Slots (phase 2: execution)
-            if slots_map:
+            # 7. Emit an anonymous Snippet for each bucket and pass it as a
+            # prop via ``_update_props``. Buckets close over the enclosing
+            # scope (including loop vars) via Python closure, and rely on
+            # ``BasePage._invoke_render`` for memoization + wire tracking.
+            if bucketed:
                 slot_keys: List[Optional[ast.expr]] = []
                 slot_values: List[ast.expr] = []
 
-                for s_name, s_nodes in slots_map.items():
-                    slot_var_name = f"_slot_{s_name}_{node.line}_{node.column}".replace(
+                for s_name, s_nodes in bucketed.items():
+                    method_name = (
+                        f"_child_snip_{s_name}_{node.line}_{node.column}"
+                    ).replace("-", "_")
+                    unit_id = method_name
+
+                    # Build the nested async def rendering this bucket.
+                    synthetic_parent = TemplateNode(
+                        tag=None,
+                        attributes={},
+                        special_attributes=[],
+                        children=list(s_nodes),
+                        line=node.line,
+                        column=node.column,
+                    )
+                    aux_func = self._generate_function(
+                        [synthetic_parent],
+                        method_name,
+                        is_async=True,
+                        initial_locals=local_vars,
+                        layout_id=layout_id,
+                        known_methods=known_methods,
+                        known_globals=known_globals,
+                        known_imports=known_imports,
+                        async_methods=async_methods,
+                        component_map=component_map,
+                        scope_id=scope_id,
+                        wire_vars=wire_vars,
+                    )
+                    # Nested async def — closes over ``self`` and outer locals.
+                    aux_func.args.args = []
+                    body.append(aux_func)
+
+                    snip_var = f"_snip_{s_name}_{node.line}_{node.column}".replace(
                         "-", "_"
                     )
-                    slot_parts_var = f"{slot_var_name}_parts"
-
                     body.append(
                         ast.Assign(
-                            targets=[ast.Name(id=slot_parts_var, ctx=ast.Store())],
-                            value=ast.List(elts=[], ctx=ast.Load()),
-                        )
-                    )
-
-                    for s_node in s_nodes:
-                        self._add_node(
-                            s_node,
-                            body,
-                            local_vars,
-                            bound_var,
-                            layout_id,
-                            known_methods,
-                            known_globals,
-                            known_imports,
-                            async_methods,
-                            component_map,
-                            scope_id,
-                            parts_var=slot_parts_var,
-                            enable_regions=enable_regions,
-                            wire_vars=wire_vars,
-                        )
-
-                    body.append(
-                        ast.Assign(
-                            targets=[ast.Name(id=slot_var_name, ctx=ast.Store())],
+                            targets=[ast.Name(id=snip_var, ctx=ast.Store())],
                             value=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Constant(value=""),
-                                    attr="join",
-                                    ctx=ast.Load(),
-                                ),
-                                args=[ast.Name(id=slot_parts_var, ctx=ast.Load())],
+                                func=ast.Name(id="Snippet", ctx=ast.Load()),
+                                args=[
+                                    ast.Call(
+                                        func=ast.Name(id="RenderUnit", ctx=ast.Load()),
+                                        args=[
+                                            ast.Constant(value=unit_id),
+                                            ast.Name(id=method_name, ctx=ast.Load()),
+                                        ],
+                                        keywords=[
+                                            ast.keyword(
+                                                arg="name",
+                                                value=ast.Constant(value=s_name),
+                                            ),
+                                            ast.keyword(
+                                                arg="scope",
+                                                value=ast.Name(
+                                                    id="self", ctx=ast.Load()
+                                                ),
+                                            ),
+                                        ],
+                                    )
+                                ],
                                 keywords=[],
                             ),
                         )
                     )
-
                     slot_keys.append(ast.Constant(value=s_name))
-                    slot_values.append(ast.Name(id=slot_var_name, ctx=ast.Load()))
+                    slot_values.append(ast.Name(id=snip_var, ctx=ast.Load()))
 
-                # 8. Update component with rendered slots
                 body.append(
                     ast.Expr(
                         value=ast.Call(
@@ -2536,14 +2856,7 @@ class TemplateCodegen:
                                 attr="_update_props",
                                 ctx=ast.Load(),
                             ),
-                            args=[
-                                ast.Dict(
-                                    keys=[ast.Constant(value="slots")],
-                                    values=[
-                                        ast.Dict(keys=slot_keys, values=slot_values)
-                                    ],
-                                )
-                            ],
+                            args=[ast.Dict(keys=slot_keys, values=slot_values)],
                             keywords=[],
                         )
                     )
@@ -2922,16 +3235,11 @@ class TemplateCodegen:
                 )
             )
 
-            # Identify if we need to apply scope
-            # Apply to all elements if scope_id is present
-            # BUT: do not apply to <style> tag itself (unless we want to?), or <script>.
-            # And <slot>.
+            # Don't apply scope id to <style>, <script>, or <template>.
             # <style scoped> handling is separate (reshaping content).
-
             apply_scope = scope_id and node.tag not in (
                 "style",
                 "script",
-                "slot",
                 "template",
             )
             if apply_scope:

@@ -79,7 +79,7 @@ Any attributes passed to a component that aren't declared in `@props` are collec
 ```pywire
 <!-- components/button.wire -->
 <button class="btn" {**attrs}>
-    <slot />
+    {$render children}
 </button>
 ```
 
@@ -90,14 +90,14 @@ Any attributes passed to a component that aren't declared in `@props` are collec
 </Button>
 ```
 
-## Slots
+## Children and Named Snippets
 
-Components use the `<slot />` tag to define where child content gets injected.
+Every component receives an implicit `children` prop holding whatever markup the parent wrote between the tags. Render it with `{$render children}`:
 
 ```pywire
 <!-- components/card.wire -->
 <div class="card">
-    <slot />
+    {$render children}
 </div>
 ```
 
@@ -108,6 +108,79 @@ Components use the `<slot />` tag to define where child content gets injected.
     <p>Card content goes here.</p>
 </Card>
 ```
+
+For **multiple named regions** (header, footer, sidebar, etc.), define a named snippet in the parent and render it in the component. The paired form provides a fallback when the snippet isn't supplied:
+
+```pywire
+<!-- components/card.wire -->
+<div class="card">
+    <header>{$render header}Untitled{/render}</header>
+    {$render children}
+</div>
+```
+
+```pywire
+<!-- Usage -->
+<Card>
+    {$snippet header}Product Details{/snippet}
+    <p>Body content here.</p>
+</Card>
+```
+
+Snippets can also take parameters — useful for list rendering where the component owns the loop:
+
+```pywire
+<!-- components/list.wire -->
+---
+from pywire import props
+
+@props
+class Props:
+    items: list
+---
+<ul>
+    <li $for={item in props.items}>
+        {$render row(item)}
+    </li>
+</ul>
+```
+
+```pywire
+<!-- Usage -->
+<List items={todos}>
+    {$snippet row(todo)}
+        <input type="checkbox" checked={todo.done}> {todo.text}
+    {/snippet}
+</List>
+```
+
+### Typing `children` and named snippets
+
+PyWire exposes two annotation aliases for snippet-valued props:
+
+| Annotation                                    | Meaning                                                                                                  |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `Snippet`                                     | Any snippet value. Most general.                                                                         |
+| `Snippet[A, B]`                               | Snippet taking typed parameters `(A, B)`. Carried through to tooling.                                    |
+| `Child`                                       | Single-child shorthand. Alias of `Snippet` — documents that the caller should pass exactly one fragment. |
+| `Children`                                    | Many-children shorthand. Same runtime representation as `Snippet`.                                       |
+| `Children[n]` / `Children.of(min=, max=, n=)` | Declares expected cardinality for editor tooling and future validation.                                  |
+
+```pywire
+---
+from pywire import props
+from pywire import Snippet, Child, Children
+
+@props
+class Props:
+    children: Child                  # exactly one child
+    header:   Snippet                # zero-arg snippet
+    row:      Snippet[dict]          # called with one dict arg per row
+    tabs:     Children.of(min=1)     # at least one tab
+---
+```
+
+These are **type hints first** — they describe intent and are read by the LSP and prettier. Runtime cardinality enforcement for `Children[...]` is a planned follow-up; today the values themselves behave identically to `Snippet`.
 
 ## Scoped Styles
 

@@ -11,7 +11,7 @@ def increment_count():
     count.value += 1
 
 ---
-<slot name="title">Counter Example</slot>
+{$snippet title}Counter Example{/snippet}
 
 <h1>Counter</h1>
 <p>Current count: {count}</p>

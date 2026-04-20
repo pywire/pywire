@@ -27,6 +27,7 @@ from pywire.core.refs import (
 )
 from pywire.core.dispatch import dispatch
 from pywire.core.wire import WireDict
+from pywire.core.snippet import Snippet, Child, Children
 from pywire.runtime.importer import install_import_hook
 
 install_import_hook()
@@ -52,4 +53,7 @@ __all__ = [
     "writable",
     "readable",
     "store_derived",
+    "Snippet",
+    "Child",
+    "Children",
 ]

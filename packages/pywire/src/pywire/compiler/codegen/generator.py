@@ -226,6 +226,14 @@ class CodeGenerator:
                 ],
                 level=0,
             ),
+            ast.ImportFrom(
+                module="pywire.core.snippet",
+                names=[
+                    ast.alias(name="Snippet", asname=None),
+                    ast.alias(name="RenderUnit", asname=None),
+                ],
+                level=0,
+            ),
         ]
         return imports
 
@@ -552,27 +560,6 @@ class CodeGenerator:
         base_id = "BasePage"
         if parsed.get_directive_by_type(LayoutDirective):
             base_id = "_LayoutBase"
-
-        # Inject LAYOUT_ID if we determined one is needed
-        # We need to calculate it here too or pass it back from _generate_render_template_method
-        # Since we need it for class attribute, let's calculate it early.
-        layout_id_to_inject = None
-        if parsed.file_path:
-            import hashlib
-
-            layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-            # Recursive check for slots
-            has_slots = self._has_slots_recursive(parsed.template)
-            if has_slots:
-                layout_id_to_inject = layout_id_hash
-
-        if layout_id_to_inject:
-            class_body.append(
-                ast.Assign(
-                    targets=[ast.Name(id="LAYOUT_ID", ctx=ast.Store())],
-                    value=ast.Constant(value=layout_id_to_inject),
-                )
-            )
 
         # Lifecycle hooks calculation
         # @before_load hooks (pages only, before any page logic)
@@ -1105,6 +1092,15 @@ class CodeGenerator:
 
                 if default_val is not None:
                     kw_defaults.append(ast.parse(default_val, mode="eval").body)
+                elif name == "children":
+                    # ``children`` is a protected prop populated implicitly
+                    # from the caller's body. If the author declared it
+                    # without a default (``children: Snippet``), we default
+                    # it to ``None`` rather than making the kwarg required —
+                    # otherwise calling the component as a page (no caller
+                    # body) or self-closing it crashes before the component
+                    # can even render a fallback.
+                    kw_defaults.append(ast.Constant(value=None))
                 else:
                     kw_defaults.append(None)  # Required kwarg
 
@@ -1157,21 +1153,6 @@ class CodeGenerator:
 
         # Add prop assignments
         body.extend(props_assigns)
-
-        # Call _init_slots
-        body.append(
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="self", ctx=ast.Load()),
-                        attr="_init_slots",
-                        ctx=ast.Load(),
-                    ),
-                    args=[],
-                    keywords=[],
-                )
-            )
-        )
 
         # Call __top_level_init__ if it exists (for wire() and mutable init)
         if hasattr(self, "_has_top_level_init") and self._has_top_level_init:
@@ -1538,7 +1519,7 @@ class CodeGenerator:
         Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]],
         List[ast.stmt],
     ]:
-        """Generate _render_template method and binding/slot handlers."""
+        """Generate _render_template method."""
         if component_map is None:
             component_map = {}
         # Check for layout
@@ -1552,192 +1533,183 @@ class CodeGenerator:
 
         if layout_directive:
             layout_directive = cast(LayoutDirective, layout_directive)
-            # === Layout Mode ===
+            # === Layout Mode (Phase 8: layout-as-component) ===
+            # The page's own top-level template is rendered into an
+            # implicit ``children`` snippet. The parent layout is then
+            # instantiated as a component receiving ``children=<snippet>``
+            # (plus request/params/etc.) and its render output returned.
             import hashlib
 
             file_id = parsed.file_path or ""
-            file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
-
-            # Ensure layout_id is generated for intermediate layouts
-            layout_id = (
-                hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-                if parsed.file_path
-                else None
+            file_hash = (
+                hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else "root"
             )
 
-            slot_funcs_methods, aux_funcs = self.template_codegen.generate_slot_methods(
+            # Build the page-body renderer by reusing generate_render_method;
+            # strip the implicit ``self`` parameter so the nested async def
+            # closes over the enclosing render_template's ``self`` instead.
+            body_func_name = f"_page_body_{file_hash}"
+
+            # Unpack @props into locals at the top of the body so
+            # template expressions can refer to them by bare name.
+            prop_names: Set[str] = set()
+            props_unpack_stmts: List[ast.stmt] = []
+            props_directive_local = cast(
+                Optional[PropsDirective],
+                self._collected_props or parsed.get_directive_by_type(PropsDirective),
+            )
+            if props_directive_local:
+                for name, _, _ in props_directive_local.args:
+                    prop_names.add(name)
+                    props_unpack_stmts.append(
+                        ast.Assign(
+                            targets=[ast.Name(id=name, ctx=ast.Store())],
+                            value=ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
+                            ),
+                        )
+                    )
+
+            body_func, aux_funcs = self.template_codegen.generate_render_method(
                 parsed.template,
-                file_id=file_id,
+                layout_id="",
+                known_methods=known_methods,
                 known_globals=known_globals,
                 known_imports=known_imports,
-                layout_id=layout_id,
+                async_methods=async_methods,
                 component_map=component_map,
+                scope_id=None,
+                initial_locals=prop_names,
                 wire_vars=wire_vars,
             )
+            assert body_func is not None
+            body_func.name = body_func_name
+            # Nested async def — no ``self`` parameter.
+            body_func.args.args = []
+            if props_unpack_stmts:
+                body_func.body[0:0] = props_unpack_stmts
 
-            file_hash = hashlib.md5(file_id.encode()).hexdigest()[:8] if file_id else ""
-
-            # Add slot methods directly (they are ASTs now)
-            for slot_name, func_ast in slot_funcs_methods.items():
-                binding_funcs.append(func_ast)
-
-            # Add aux funcs
+            # Aux funcs remain as class methods.
             binding_funcs.extend(aux_funcs)
 
-            # Generate _init_slots
-
-            # Resolve parent layout path
-            from pathlib import Path
-
-            parent_layout_path = layout_directive.layout_path
-            if not Path(parent_layout_path).is_absolute():
-                base_dir = (
-                    Path(parsed.file_path).parent if parsed.file_path else Path.cwd()
-                )
-                parent_layout_path = str((base_dir / parent_layout_path).resolve())
-            else:
-                parent_layout_path = str(Path(parent_layout_path).resolve())
-
-            def make_parent_layout_id() -> ast.Constant:
-                import hashlib
-
-                parent_hash = hashlib.md5(parent_layout_path.encode()).hexdigest()
-                return ast.Constant(value=parent_hash)
-
-            init_slots_body: List[ast.stmt] = []
-
-            # Chain super
-            super_check = ast.If(
-                test=ast.Call(
-                    func=ast.Name(id="hasattr", ctx=ast.Load()),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="super", ctx=ast.Load()),
-                            args=[],
-                            keywords=[],
-                        ),
-                        ast.Constant(value="_init_slots"),
-                    ],
-                    keywords=[],
-                ),
-                body=[
-                    ast.Expr(
-                        value=ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Call(
-                                    func=ast.Name(id="super", ctx=ast.Load()),
-                                    args=[],
-                                    keywords=[],
-                                ),
-                                attr="_init_slots",
-                                ctx=ast.Load(),
-                            ),
-                            args=[],
-                            keywords=[],
-                        )
-                    )
-                ],
-                orelse=[],
-            )
-            init_slots_body.append(super_check)
-
-            for slot_name in slot_funcs_methods.keys():
-                safe_name = (
-                    slot_name.replace("$", "_head_").replace("-", "_")
-                    if slot_name.startswith("$")
-                    else slot_name.replace("-", "_")
-                )
-                func_name = (
-                    f"_render_slot_fill_{safe_name}_{file_hash}"
-                    if file_hash
-                    else f"_render_slot_fill_{safe_name}"
-                )
-
-                if slot_name == "$head":
-                    reg_call = ast.Expr(
-                        value=ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()),
-                                attr="register_head_slot",
-                                ctx=ast.Load(),
-                            ),
-                            args=[
-                                make_parent_layout_id(),
-                                ast.Attribute(
-                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                    attr=func_name,
-                                    ctx=ast.Load(),
-                                ),
-                            ],
-                            keywords=[],
-                        )
-                    )
-                else:
-                    reg_call = ast.Expr(
-                        value=ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()),
-                                attr="register_slot",
-                                ctx=ast.Load(),
-                            ),
-                            args=[
-                                make_parent_layout_id(),
-                                ast.Constant(value=slot_name),
-                                ast.Attribute(
-                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                    attr=func_name,
-                                    ctx=ast.Load(),
-                                ),
-                            ],
-                            keywords=[],
-                        )
-                    )
-                init_slots_body.append(reg_call)
-
-            init_slots_func = ast.FunctionDef(
-                name="_init_slots",
-                args=ast.arguments(
-                    posonlyargs=[],
-                    args=[ast.arg(arg="self")],
-                    vararg=None,
-                    kwonlyargs=[],
-                    kw_defaults=[],
-                    defaults=[],
-                ),
-                body=init_slots_body,
-                decorator_list=[],
-                returns=None,
-            )
-            binding_funcs.append(init_slots_func)
-
-            # Generate _render_template override to bypass layout when used as a component
-            default_slot_method = (
-                f"_render_slot_fill_default_{file_hash}"
-                if file_hash
-                else "_render_slot_fill_default"
-            )
-
-            # Check if default slot method was actually generated
-            has_default_slot = "default" in slot_funcs_methods
-
-            if has_default_slot:
-                component_render_body = [
-                    ast.Return(
-                        value=ast.Await(
-                            value=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Name(id="self", ctx=ast.Load()),
-                                    attr=default_slot_method,
-                                    ctx=ast.Load(),
-                                ),
-                                args=[],
-                                keywords=[],
+            unit_id = f"children_{file_hash}"
+            render_body: List[ast.stmt] = [
+                # nested body def
+                body_func,
+                # children = Snippet(RenderUnit(unit_id, body_func, name="children", scope=self))
+                ast.Assign(
+                    targets=[ast.Name(id="_children_snip", ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Name(id="Snippet", ctx=ast.Load()),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="RenderUnit", ctx=ast.Load()),
+                                args=[
+                                    ast.Constant(value=unit_id),
+                                    ast.Name(id=body_func_name, ctx=ast.Load()),
+                                ],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="name", value=ast.Constant(value="children")
+                                    ),
+                                    ast.keyword(
+                                        arg="scope",
+                                        value=ast.Name(id="self", ctx=ast.Load()),
+                                    ),
+                                ],
                             )
+                        ],
+                        keywords=[],
+                    ),
+                ),
+                # Note: do NOT assign ``self.children = _children_snip`` — this
+                # would overwrite the ``children`` prop our own parent layout
+                # (if any) passed to us. The local ``_children_snip`` is what
+                # we forward to the wrapping layout below.
+                # Instantiate parent layout as a component.
+                ast.Assign(
+                    targets=[ast.Name(id="_layout_comp", ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_resolve_component",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Constant(value=f"__layout__{file_hash}"),
+                            ast.Name(id="_LayoutBase", ctx=ast.Load()),
+                        ],
+                        keywords=[
+                            ast.keyword(
+                                arg=None,
+                                value=ast.Dict(
+                                    keys=[
+                                        ast.Constant(value="children"),
+                                        ast.Constant(value="request"),
+                                        ast.Constant(value="params"),
+                                        ast.Constant(value="query"),
+                                        ast.Constant(value="path"),
+                                        ast.Constant(value="url"),
+                                        ast.Constant(value="__is_component__"),
+                                        ast.Constant(value="_style_collector"),
+                                        ast.Constant(value="_parent_page"),
+                                    ],
+                                    values=[
+                                        ast.Name(id="_children_snip", ctx=ast.Load()),
+                                        ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="request",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="params",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="query",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="path",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="url",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Constant(value=True),
+                                        ast.Attribute(
+                                            value=ast.Name(id="self", ctx=ast.Load()),
+                                            attr="_style_collector",
+                                            ctx=ast.Load(),
+                                        ),
+                                        ast.Name(id="self", ctx=ast.Load()),
+                                    ],
+                                ),
+                            )
+                        ],
+                    ),
+                ),
+                ast.Return(
+                    value=ast.Await(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="_layout_comp", ctx=ast.Load()),
+                                attr="_render_and_cleanup",
+                                ctx=ast.Load(),
+                            ),
+                            args=[],
+                            keywords=[],
                         )
                     )
-                ]
-            else:
-                component_render_body = [ast.Return(value=ast.Constant(value=""))]
+                ),
+            ]
 
             render_func = ast.AsyncFunctionDef(
                 name="_render_template",
@@ -1749,45 +1721,15 @@ class CodeGenerator:
                     kw_defaults=[],
                     defaults=[],
                 ),
-                body=[
-                    ast.If(
-                        test=ast.Attribute(
-                            value=ast.Name(id="self", ctx=ast.Load()),
-                            attr="__is_component__",
-                            ctx=ast.Load(),
-                        ),
-                        body=component_render_body,
-                        orelse=[
-                            ast.Return(
-                                value=ast.Await(
-                                    value=ast.Call(
-                                        func=ast.Attribute(
-                                            value=ast.Call(
-                                                func=ast.Name(
-                                                    id="super", ctx=ast.Load()
-                                                ),
-                                                args=[],
-                                                keywords=[],
-                                            ),
-                                            attr="_render_template",
-                                            ctx=ast.Load(),
-                                        ),
-                                        args=[],
-                                        keywords=[],
-                                    )
-                                )
-                            )
-                        ],
-                    )
-                ],
+                body=render_body,
                 decorator_list=[],
                 returns=None,
             )
 
         else:
             # === Standard Mode ===
-            # We no longer aggressively generate layout_id/scope_id for everything
-            # to avoid breaking existing tests.
+            # Standard mode: no layout directive. ``scope_id`` is only
+            # needed for ``<style scoped>`` CSS scoping.
             layout_id = None
             scope_id = None
 
@@ -1795,21 +1737,12 @@ class CodeGenerator:
                 import hashlib
 
                 layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
-                # Use as layout_id if we have slots to fill for ourselves (as a component)
-                # Or for scoping if <style scoped> is present
                 has_scoped_style = any(
                     n.tag == "style" and "scoped" in n.attributes
                     for n in parsed.template
                 )
                 if has_scoped_style:
                     scope_id = layout_id_hash[:8]
-
-                # If we are a layout (referenced by others), we should have a LAYOUT_ID.
-                # But we don't know if we ARE a layout here.
-                # We'll assume if there are <slot> tags, we might be a layout.
-                has_slots = self._has_slots_recursive(parsed.template)
-                if has_slots:
-                    layout_id = layout_id_hash
 
             # Extract Props to Unpack
 
@@ -1856,24 +1789,6 @@ class CodeGenerator:
 
             binding_funcs.extend(aux_funcs)
 
-            # Add no-op _init_slots
-            binding_funcs.append(
-                ast.FunctionDef(
-                    name="_init_slots",
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[ast.arg(arg="self")],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[],
-                    ),
-                    body=[ast.Pass()],
-                    decorator_list=[],
-                    returns=None,
-                )
-            )
-
         if self.template_codegen.region_renderers:
             region_keys: List[ast.expr | None] = []
             region_vals: List[ast.expr] = []
@@ -1891,12 +1806,3 @@ class CodeGenerator:
             )
 
         return render_func, binding_funcs
-
-    def _has_slots_recursive(self, nodes: List[TemplateNode]) -> bool:
-        """Check recursively if the template contains any <slot> elements."""
-        for node in nodes:
-            if node.tag == "slot":
-                return True
-            if self._has_slots_recursive(node.children):
-                return True
-        return False

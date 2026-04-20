@@ -99,9 +99,9 @@
     "control-flow": {
       "patterns": [
         {
-          "comment": "Opening control flow block: {$if ...}, {$for ...}, {$elif ...}, {$else}, etc.",
+          "comment": "Opening control flow block: {$if ...}, {$for ...}, {$elif ...}, {$else}, {$snippet ...}, {$render ...}, {$head}, etc.",
           "name": "meta.control-flow.pywire",
-          "begin": "(\\{)(\\$)(if|elif|else|for|await|then|catch|try|except|finally|html)\\b",
+          "begin": "(\\{)(\\$)(if|elif|else|for|await|then|catch|try|except|finally|html|snippet|render|head)\\b",
           "beginCaptures": {
             "1": {
               "name": "punctuation.section.embedded.begin.pywire"
@@ -127,9 +127,9 @@
           ]
         },
         {
-          "comment": "Closing control flow block: {/if}, {/for}, {/await}, {/try}",
+          "comment": "Closing control flow block: {/if}, {/for}, {/await}, {/try}, {/snippet}, {/render}, {/head}",
           "name": "meta.control-flow.end.pywire",
-          "match": "(\\{)(/)(if|for|await|try)(\\})",
+          "match": "(\\{)(/)(if|for|await|try|snippet|render|head)(\\})",
           "captures": {
             "1": {
               "name": "punctuation.section.embedded.begin.pywire"

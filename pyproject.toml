@@ -19,6 +19,7 @@ workspace = { members = [
     "examples/demo-app",
     "examples/demo-components",
     "examples/demo-routing",
+    "examples/demo-snippets",
     "examples/v04-validation",
 ] }
 

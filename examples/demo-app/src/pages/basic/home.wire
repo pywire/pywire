@@ -3,7 +3,7 @@
 }
 !layout "__layout__.wire"
 
-<slot name="title">Basic Home</slot>
+{$snippet title}Basic Home{/snippet}
 
 <h1>Hello, world!</h1>
 <p>Welcome to your new app.</p>

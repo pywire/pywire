@@ -41,7 +41,7 @@ async def refresh_data():
     forecasts.value = new_forecasts
 ---
 
-<slot name="title">Weather Forecast</slot>
+{$snippet title}Weather Forecast{/snippet}
 
 <h1>Weather</h1>
 <p>This component demonstrates fetching data from the server.</p>

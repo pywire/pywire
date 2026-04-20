@@ -1,0 +1,27 @@
+---
+count = wire(0)
+
+def increment():
+    count.value += 1
+
+def reset():
+    count.value = 0
+---
+{$head}<title>Interactive — Snippets Demo</title>{/head}
+
+<section>
+    <h2>Interactive Wire Inside Snippets</h2>
+
+    {$snippet counter_display}
+        <p>Count: <strong data-testid="count">{count.value}</strong></p>
+    {/snippet}
+
+    {$render counter_display}
+
+    <button @click={increment} data-testid="inc">+1</button>
+    <button @click={reset} data-testid="reset">reset</button>
+
+    <hr>
+    <p>Fallback demo:</p>
+    {$render missing_for_interactive}<em>fallback shown</em>{/render}
+</section>

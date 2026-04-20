@@ -1,0 +1,19 @@
+---
+from pywire import Snippet, props
+
+@props
+class Props:
+    title: str
+    footer: Snippet | None = None
+    children: Snippet | None = None
+---
+
+<article>
+    <header><strong>{title}</strong></header>
+    <div>
+        {$render children}not provided{/render}
+    </div>
+    <footer>
+        {$render footer}<em>default footer</em>{/render}
+    </footer>
+</article>

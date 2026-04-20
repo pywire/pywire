@@ -838,11 +838,10 @@ class WebSocketHandler:
                             url=old_page.url,
                         )
 
-                        # Migrate user state: copy all non-framework attributes
-                        # Framework attrs to skip — slots/head_slots contain
-                        # bound methods referencing the old page instance; the
-                        # new page already has correct slot registrations from
-                        # __init__ → _init_slots().
+                        # Migrate user state: copy all non-framework attributes.
+                        # ``children`` holds a Snippet whose RenderUnit closes
+                        # over the *old* page's render closures — copying it to
+                        # the new page would bind stale, pre-reload code.
                         skip_attrs = {
                             "request",
                             "params",
@@ -852,16 +851,22 @@ class WebSocketHandler:
                             "user",
                             "errors",
                             "loading",
-                            "slots",
-                            "head_slots",
                             "attrs",
+                            "children",
                         }
+                        from pywire.core.snippet import Snippet as _Snippet
+
                         for attr, value in old_page.__dict__.items():
-                            if attr not in skip_attrs and not attr.startswith("_"):
-                                try:
-                                    setattr(new_page, attr, value)
-                                except AttributeError:
-                                    pass  # Read-only or property, skip
+                            if attr in skip_attrs or attr.startswith("_"):
+                                continue
+                            # Snippet values bind to the old page's render
+                            # closures — leave the new page to re-create them.
+                            if isinstance(value, _Snippet):
+                                continue
+                            try:
+                                setattr(new_page, attr, value)
+                            except AttributeError:
+                                pass  # Read-only or property, skip
 
                         # Preserve user
                         new_page.user = old_page.user

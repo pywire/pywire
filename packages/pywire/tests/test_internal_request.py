@@ -11,12 +11,11 @@ from pathlib import Path
 import pytest
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, RedirectResponse, Response
+from starlette.responses import RedirectResponse
 from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
 from pywire.runtime.internal_request import (
-    InternalResponse,
     dispatch_internal,
     encode_cookie_header,
     get_set_cookie_headers,
