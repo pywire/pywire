@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire-auth"
-version = "0.1.0"
+version = "0.1.1"
 description = "Authentication providers and identity store adapters for PyWire"
 authors = [
     { name = "Reece Holmdahl", email = "reece@pywire.dev" },
