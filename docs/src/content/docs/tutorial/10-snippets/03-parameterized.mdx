@@ -86,7 +86,7 @@ successCriteria:
     target: components/list.wire
     pattern: '{$render row(item)}'
   - type: browser_route_text
-    description: "Verify the first todo label renders"
+    description: 'Verify the first todo label renders'
     pattern: 'Write tests'
 pagesDir: pages
 ---
@@ -101,6 +101,6 @@ This is the PyWire equivalent of React's "render props" pattern — but declarat
 2. In `pages/index.wire`, define the snippet with a parameter: `{$snippet row(todo)}...{/snippet}`. Inside the body, reference `todo['text']` and `todo['done']`.
 3. Verify all three todos render as checkbox labels.
 
-**Why this matters:** the component controls *how* to iterate (order, pagination, virtualization, animation), and the caller controls *what* each row looks like. No rigid inheritance; just a callable snippet.
+**Why this matters:** the component controls _how_ to iterate (order, pagination, virtualization, animation), and the caller controls _what_ each row looks like. No rigid inheritance; just a callable snippet.
 
 Parameterless snippets are just `{$snippet name}...{/snippet}` — parens are optional when there are no params.

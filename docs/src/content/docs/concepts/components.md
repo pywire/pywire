@@ -158,13 +158,13 @@ class Props:
 
 PyWire exposes two annotation aliases for snippet-valued props:
 
-| Annotation | Meaning |
-|------------|---------|
-| `Snippet` | Any snippet value. Most general. |
-| `Snippet[A, B]` | Snippet taking typed parameters `(A, B)`. Carried through to tooling. |
-| `Child` | Single-child shorthand. Alias of `Snippet` — documents that the caller should pass exactly one fragment. |
-| `Children` | Many-children shorthand. Same runtime representation as `Snippet`. |
-| `Children[n]` / `Children.of(min=, max=, n=)` | Declares expected cardinality for editor tooling and future validation. |
+| Annotation                                    | Meaning                                                                                                  |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `Snippet`                                     | Any snippet value. Most general.                                                                         |
+| `Snippet[A, B]`                               | Snippet taking typed parameters `(A, B)`. Carried through to tooling.                                    |
+| `Child`                                       | Single-child shorthand. Alias of `Snippet` — documents that the caller should pass exactly one fragment. |
+| `Children`                                    | Many-children shorthand. Same runtime representation as `Snippet`.                                       |
+| `Children[n]` / `Children.of(min=, max=, n=)` | Declares expected cardinality for editor tooling and future validation.                                  |
 
 ```pywire
 ---

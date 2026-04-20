@@ -289,18 +289,18 @@ def on_after_render():
 
 These properties are available on every page and component instance, accessible in the Python block.
 
-| Property  | Type             | Description                                                              |
-| --------- | ---------------- | ------------------------------------------------------------------------ |
-| `params`  | `DotDict`        | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`) |
-| `query`   | `DotDict`        | Query string parameters (e.g., `query.search` for `?search=foo`)         |
-| `path`    | `DotDict`        | Route path flags for multi-route components using `!path` dictionaries   |
-| `url`     | `URLHelper`      | URL helper for the current request                                       |
-| `user`    | `Any`            | User object populated by the `get_user` hook                             |
-| `attrs`   | `dict`           | Fallthrough attributes not captured by `@props`                          |
-| `context` | `dict`           | Inherited context from parent components via `!provide`                  |
-| `errors`  | `ErrorNamespace` | Form validation errors                                                   |
-| `loading` | `dict`           | Loading state for async operations                                       |
-| `children`| `Snippet \| None`| Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`. |
+| Property   | Type              | Description                                                                                                         |
+| ---------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `params`   | `DotDict`         | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`)                                            |
+| `query`    | `DotDict`         | Query string parameters (e.g., `query.search` for `?search=foo`)                                                    |
+| `path`     | `DotDict`         | Route path flags for multi-route components using `!path` dictionaries                                              |
+| `url`      | `URLHelper`       | URL helper for the current request                                                                                  |
+| `user`     | `Any`             | User object populated by the `get_user` hook                                                                        |
+| `attrs`    | `dict`            | Fallthrough attributes not captured by `@props`                                                                     |
+| `context`  | `dict`            | Inherited context from parent components via `!provide`                                                             |
+| `errors`   | `ErrorNamespace`  | Form validation errors                                                                                              |
+| `loading`  | `dict`            | Loading state for async operations                                                                                  |
+| `children` | `Snippet \| None` | Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`. |
 
 ## Runtime Helpers
 
