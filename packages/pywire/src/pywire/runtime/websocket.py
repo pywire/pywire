@@ -49,6 +49,12 @@ class WebSocketHandler:
         # page re-renders when the current user's claims change or the
         # session is revoked mid-session.
         self._auth_subs: Dict[WebSocket, asyncio.Task[None]] = {}
+        # Tracks whether we've seen the first SPA-relocate cookie reconcile
+        # for a connection. Used to infer HttpOnly for baseline cookies
+        # absent from document.cookie on the first reconcile only — on
+        # subsequent reconciles we trust the client (a user can legitimately
+        # clear a non-HttpOnly cookie in JS).
+        self._connection_reconciled: Set[WebSocket] = set()
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
@@ -134,7 +140,7 @@ class WebSocketHandler:
 
         Each event rewrites ``page.user`` in-place and flags the root scope
         dirty so the next ``render_update`` returns a full re-render.
-        AuthorizedView components (and any expression reading ``self.user``)
+        ``{$auth}`` regions (and any expression reading ``self.user``)
         re-evaluate as a result.
         """
         from pywire.auth import ANONYMOUS
@@ -225,6 +231,7 @@ class WebSocketHandler:
         self.session_ids.pop(websocket, None)
         self._connection_cookies.pop(websocket, None)
         self._connection_httponly.pop(websocket, None)
+        self._connection_reconciled.discard(websocket)
         sub_task = self._auth_subs.pop(websocket, None)
         if sub_task and not sub_task.done():
             sub_task.cancel()
@@ -884,16 +891,29 @@ class WebSocketHandler:
         httponly_set = self._connection_httponly.setdefault(websocket, set())
         baseline = self._get_handshake_cookies(websocket)
 
-        # 0. Infer HttpOnly for any baseline cookie the client can't see.
-        #    document.cookie only exposes non-httponly cookies, so anything
-        #    in the handshake Cookie header that's absent from the client
-        #    payload is almost certainly HttpOnly (pywire_session is the
-        #    canonical case). Pre-registering avoids tombstoning them in
-        #    step 2 below.
-        if cookie_header is not None:
+        # 0. Infer HttpOnly for any baseline cookie the client can't see,
+        #    but ONLY on the first reconcile for this connection AND when
+        #    the client reports at least one cookie. Rationale:
+        #      - document.cookie omits HttpOnly by definition; first-time
+        #        absence from a non-empty client payload implies HttpOnly.
+        #      - On subsequent reconciles we trust the client: the user
+        #        may have legitimately cleared a non-HttpOnly cookie via
+        #        devtools or JS.
+        #      - If the first reconcile's client payload is empty we
+        #        can't distinguish HttpOnly from "no cookies at all";
+        #        be conservative and skip the inference — later tombstone
+        #        logic correctly drops baseline cookies the client no
+        #        longer reports.
+        first_reconcile = websocket not in self._connection_reconciled
+        if (
+            cookie_header is not None
+            and first_reconcile
+            and client_cookies
+        ):
             for key in baseline:
                 if key not in client_cookies:
                     httponly_set.add(key)
+        self._connection_reconciled.add(websocket)
 
         # 1. Adopt non-httponly client values (covers both rewrites and new
         #    cookies the client set locally).

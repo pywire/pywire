@@ -234,6 +234,9 @@ class BasePage:
 
         # Await block state: await_id -> {"status": "pending"|"success"|"error", "result": Any, "error": Any}
         self._await_states: Dict[str, Dict[str, Any]] = {}
+        # {$auth} block state: region_id -> {"status": "pending"|"allowed"|"denied"}
+        # Mirrors _await_states but for region-scoped policy evaluation.
+        self._auth_states: Dict[str, Dict[str, Any]] = {}
         self._background_tasks: Set["asyncio.Task[Any]"] = set()
 
         # Component ref support
@@ -1391,6 +1394,52 @@ class BasePage:
         except Exception as e:
             logger.debug(f"[{self._instance_id}] push_state failed: {e}")
             # push_state might fail if connection closed
+            pass
+
+    async def _resolve_auth(
+        self,
+        region_id: str,
+        *,
+        policy: Optional[str] = None,
+        claims: Optional[List[Tuple[str, Optional[str]]]] = None,
+    ) -> None:
+        """Background task backing the ``{$auth}`` directive.
+
+        Evaluates ``policy`` + ``claims`` against the current principal
+        via :func:`pywire.auth.evaluate_auth`, stores the outcome in
+        ``_auth_states[region_id]`` as ``{"status": "allowed"|"denied"}``,
+        marks the region dirty, and pushes a state update.
+        """
+        from pywire.auth.guard import evaluate_auth
+        from pywire.auth.principal import ANONYMOUS, ClaimsPrincipal
+
+        self._auth_states[region_id] = {"status": "pending"}
+
+        principal = getattr(self, "user", None)
+        if not isinstance(principal, ClaimsPrincipal):
+            principal = ANONYMOUS
+
+        try:
+            allowed = await evaluate_auth(
+                principal,
+                policy=policy,
+                claims=claims,
+                request=getattr(self, "request", None),
+            )
+        except Exception:
+            logger.warning(
+                f"[{self._instance_id}] {{$auth}} evaluation error for {region_id}; denying",
+                exc_info=True,
+            )
+            allowed = False
+
+        self._auth_states[region_id] = {
+            "status": "allowed" if allowed else "denied"
+        }
+        self._dirty_regions.add(region_id)
+        try:
+            await self.push_state()
+        except Exception:
             pass
 
     async def _render_template(self) -> str:
