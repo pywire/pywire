@@ -825,7 +825,7 @@ class BasePage:
         # legitimately contain ``'</head>'`` as a string literal.
         idx = _find_tag_outside_raw_text(html, "</head>", from_end=True)
         if idx >= 0:
-            return f"{html[:idx]}{head_html}</head>{html[idx + len('</head>'):]}"
+            return f"{html[:idx]}{head_html}</head>{html[idx + len('</head>') :]}"
         return f"{head_html}{html}"
 
     async def _run_hooks(self, hook_list: List[str]) -> None:
@@ -946,11 +946,9 @@ class BasePage:
         # any remaining ``</head>`` is inside user content — prepend instead.
         styles = self._style_collector.render()
         if styles:
-            idx = (
-                _find_tag_outside_raw_text(html, "</head>") if init else -1
-            )
+            idx = _find_tag_outside_raw_text(html, "</head>") if init else -1
             if idx >= 0:
-                html = f"{html[:idx]}{styles}</head>{html[idx + len('</head>'):]}"
+                html = f"{html[:idx]}{styles}</head>{html[idx + len('</head>') :]}"
             else:
                 html = f"{styles}{html}"
 
@@ -1117,13 +1115,11 @@ class BasePage:
                 # Last ``</body>`` outside <script>/<style> — user JS may
                 # include ``'</body>'`` as a string literal before the real
                 # closing tag, and rsplit would otherwise pick that one.
-                body_idx = _find_tag_outside_raw_text(
-                    html, "</body>", from_end=True
-                )
+                body_idx = _find_tag_outside_raw_text(html, "</body>", from_end=True)
                 if body_idx >= 0:
                     html = (
                         f"{html[:body_idx]}{injection}</body>"
-                        f"{html[body_idx + len('</body>'):]}"
+                        f"{html[body_idx + len('</body>') :]}"
                     )
                 else:
                     html += injection
