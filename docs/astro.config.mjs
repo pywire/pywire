@@ -92,6 +92,15 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Authentication',
+          items: [
+            { label: 'Overview', slug: 'guides/authentication' },
+            { label: 'OIDC Providers', slug: 'guides/authentication/providers' },
+            { label: 'Local IdP & Persistence', slug: 'guides/authentication/local-idp' },
+            { label: 'Live Auth Updates', slug: 'guides/authentication/live-auth' },
+          ],
+        },
+        {
           label: 'Ecosystem',
           items: [
             { label: 'Editor Setup', slug: 'guides/editor-setup' },
