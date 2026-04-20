@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.2...pywire-docs-v0.6.0) (2026-04-20)
+
+
+### Features
+
+* render regions (snippets, $render, $head) — retire slots ([#127](https://github.com/pywire/pywire/issues/127)) ([d2b48b6](https://github.com/pywire/pywire/commit/d2b48b635a4263b1568b0302e09875a5557c8004))
+
 ## [0.5.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.0...pywire-docs-v0.5.1) (2026-04-13)
 
 
