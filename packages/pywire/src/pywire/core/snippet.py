@@ -14,8 +14,8 @@ This module defines the runtime substrate for PyWire's render-region system:
   future static-analysis tooling.
 - ``Child`` / ``Children``: validation sentinels for the protected
   ``children`` prop. ``Child`` expects exactly one child element;
-  ``Children[min=..., max=..., n=...]`` expects a list with count
-  constraints.
+  ``Children[N]`` expects exactly ``N`` children; ``Children.of(min=,
+  max=, n=)`` declares arbitrary count constraints.
 - ``HeadBuffer``: page-scoped accumulator for ``{$head}...{/head}``
   contributions, with last-title-wins dedup.
 """
@@ -196,12 +196,15 @@ class Children:
 
     Usage:
 
-        children: Children                    # 0..N
-        children: Children[min=1]             # 1..N
-        children: Children[max=5]             # 0..5
-        children: Children[min=1, max=5]      # 1..5
-        children: Children[n=3]               # exactly 3
-        children: Children[3]                 # sugar: exactly 3
+        children: Children                         # 0..N
+        children: Children[3]                      # exactly 3
+        children: Children.of(min=1)               # 1..N
+        children: Children.of(max=5)               # 0..5
+        children: Children.of(min=1, max=5)        # 1..5
+        children: Children.of(n=3)                 # exactly 3
+
+    Python does not allow keyword arguments inside a subscript
+    (``Children[n=3]``), so the kwarg forms must go through ``.of(...)``.
     """
 
     def __class_getitem__(cls, params: Any) -> ChildrenType:

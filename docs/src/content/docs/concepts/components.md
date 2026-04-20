@@ -176,7 +176,7 @@ class Props:
     children: Child                  # exactly one child
     header:   Snippet                # zero-arg snippet
     row:      Snippet[dict]          # called with one dict arg per row
-    tabs:     Children[min=1]        # at least one tab
+    tabs:     Children.of(min=1)     # at least one tab
 ---
 ```
 
