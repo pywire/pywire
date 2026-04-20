@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.2](https://github.com/pywire/pywire/compare/pywire-v0.11.1...pywire-v0.11.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* **pywire:** handle @keyframes/[@media](https://github.com/media) correctly in scoped CSS ([a35d2c2](https://github.com/pywire/pywire/commit/a35d2c2813da0b7f5d0cba77c1cc339d341ae3ba))
+* **pywire:** inject collected styles into the first &lt;/head&gt; ([1b6a839](https://github.com/pywire/pywire/commit/1b6a8392c911ae002fc4a2f709dbd8a7d2a628d3))
+* **pywire:** namespace region IDs per compilation unit ([ffeb3cc](https://github.com/pywire/pywire/commit/ffeb3cc169e771ee2dccbbdb99476f515266e0f3))
+* **pywire:** skip framework artifacts in session snapshot ([8ef823f](https://github.com/pywire/pywire/commit/8ef823f809daf0f327c3e9330edf72325db0386d))
+
 ## [0.11.1](https://github.com/pywire/pywire/compare/pywire-v0.11.0...pywire-v0.11.1) (2026-04-20)
 
 
