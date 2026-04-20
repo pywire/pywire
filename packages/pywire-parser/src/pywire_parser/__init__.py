@@ -1,6 +1,8 @@
 """PyWire parser — shared parsing library for .wire files.
 
-Used by pywire (core framework) and pywire-language-server.
+Used by pywire (core framework) and pywire-language-server. AST nodes
+include block-directive markers such as ``AuthAttribute`` that mirror
+the tree-sitter-pywire grammar.
 """
 
 from pywire_parser.parser import PyWireParser
