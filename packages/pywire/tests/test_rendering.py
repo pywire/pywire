@@ -79,71 +79,6 @@ class TestPageRendering:
         assert page.id == "42"
         assert page.slug == "test-post"
 
-    @pytest.mark.skip(reason="Slot registry retired in Phase 9")
-    @pytest.mark.asyncio
-    async def test_recursive_slot_logic(self) -> None:
-        """Verify slot registration logic manually."""
-
-        # 1. Root Layout (LAYOUT_ID="ROOT")
-        class RootLayout(BasePage):
-            LAYOUT_ID = "ROOT"
-
-            async def _render_template(self) -> str:
-                # <slot /> renders default slot for layout ROOT
-                renderer = self.slots.get("ROOT", {}).get("default")
-                content = await renderer() if renderer else ""
-                return "ROOT_START|" + content + "|ROOT_END"
-
-            def _init_slots(self) -> None:
-                if hasattr(super(), "_init_slots"):
-                    super()._init_slots()
-
-        # 2. Sub Layout (LAYOUT_ID="SUB", parent="ROOT")
-        class SubLayout(RootLayout):
-            LAYOUT_ID = "SUB"
-
-            # CodeGen: registers filler for ROOT default slot
-            # MUST be unique to avoid override by child!
-            async def _render_slot_fill_default_sub(self) -> str:
-                # SubLayout content: <slot /> (which renders SUB default slot)
-                renderer = self.slots.get("SUB", {}).get("default")
-                content = await renderer() if renderer else ""
-                return "SUB_START|" + content + "|SUB_END"
-
-            def _init_slots(self) -> None:
-                if hasattr(super(), "_init_slots"):
-                    super()._init_slots()
-                # Register self for parent
-                self.register_slot(
-                    "ROOT", "default", self._render_slot_fill_default_sub
-                )
-
-        # 3. Leaf Page (parent="SUB")
-        class LeafPage(SubLayout):
-            # NO LAYOUT_ID (it's a page)
-
-            # CodeGen: registers filler for SUB default slot
-            async def _render_slot_fill_default_leaf(self) -> str:
-                return "LEAF_CONTENT"
-
-            def _init_slots(self) -> None:
-                if hasattr(super(), "_init_slots"):
-                    super()._init_slots()
-                self.register_slot(
-                    "SUB", "default", self._render_slot_fill_default_leaf
-                )
-
-        # Execution
-        request = MagicMock()
-        page = LeafPage(request, params={}, query={})
-
-        # Generated code would call this in __init__
-        page._init_slots()
-
-        # BasePage.render() calls self._render_template().
-        content = await page._render_template()
-        assert content == "ROOT_START|SUB_START|LEAF_CONTENT|SUB_END|ROOT_END"
-
     def test_page_style_initialization(self) -> None:
         from pywire.runtime.style_collector import StyleCollector
 
@@ -181,18 +116,6 @@ class TestPageRendering:
 
         html_passed = cast(Any, Response).call_args[0][0]
         assert "<style>.test { color: red; }</style></head>" in html_passed
-
-    @pytest.mark.skip(reason="register_head_slot removed in Phase 9; see {$head} block")
-    @pytest.mark.asyncio
-    async def test_render_head_slot_append(self) -> None:
-        request = MagicMock()
-        page = BasePage(request, {}, {})
-        page.register_head_slot("main", lambda: "<meta 1>")
-        page.register_head_slot("main", lambda: "<meta 2>")
-
-        result = await page.render_slot("$head", layout_id="main", append=True)
-        assert "<meta 1>" in result
-        assert "<meta 2>" in result
 
     @pytest.mark.asyncio
     async def test_handle_event_arg_normalization(self) -> None:

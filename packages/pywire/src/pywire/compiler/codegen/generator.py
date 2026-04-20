@@ -1510,7 +1510,7 @@ class CodeGenerator:
         Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]],
         List[ast.stmt],
     ]:
-        """Generate _render_template method and binding/slot handlers."""
+        """Generate _render_template method."""
         if component_map is None:
             component_map = {}
         # Check for layout

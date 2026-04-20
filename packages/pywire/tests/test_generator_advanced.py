@@ -1,57 +1,13 @@
 import ast
 import unittest
 
-import pytest
-
-from pywire.compiler.ast_nodes import LayoutDirective, ParsedPyWire, TemplateNode
+from pywire.compiler.ast_nodes import ParsedPyWire
 from pywire.compiler.codegen.generator import CodeGenerator
 
 
 class TestGeneratorAdvanced(unittest.TestCase):
     def setUp(self) -> None:
         self.generator = CodeGenerator()
-
-    @pytest.mark.skip(
-        reason="Obsolete slot-mode codegen assertions; replaced by "
-        "test_layout_as_component.py in Phase 8. To be removed in Phase 9."
-    )
-    def test_generate_layout_mode(self) -> None:
-        # Page with layout inheriting slots
-        layout = LayoutDirective(
-            name="layout", layout_path="base.wire", line=1, column=0
-        )
-        parsed = ParsedPyWire(
-            template=[
-                TemplateNode(tag="div", children=[], attributes={}, line=1, column=0)
-            ],
-            directives=[layout],
-            python_code="",
-            python_ast=ast.parse(""),
-            file_path="page.wire",
-        )
-
-        module = self.generator.generate(parsed)
-        class_def = next(n for n in module.body if isinstance(n, ast.ClassDef))
-
-        # Should have _init_slots calling super()
-        init_slots = next(
-            n
-            for n in class_def.body
-            if isinstance(n, ast.FunctionDef) and n.name == "_init_slots"
-        )
-        self.assertIsInstance(init_slots.body[0], ast.If)  # hasatrr(super(), ...)
-
-        # Should have a parent layout ID hashed
-        # hashlib.md5("base.wire".encode()).hexdigest()
-
-        # Note: path is resolved relative to cwd if not absolute, let's just check
-        # it contains a string constant
-        self.assertTrue(
-            any(
-                isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
-                for n in init_slots.body
-            )
-        )
 
     def test_generate_spa_metadata(self) -> None:
         from pywire.compiler.ast_nodes import PathDirective

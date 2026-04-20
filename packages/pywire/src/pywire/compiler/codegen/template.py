@@ -959,7 +959,7 @@ class TemplateCodegen:
         known_methods: Optional[Dict[str, int]] = None,
         wire_vars: Set[str] = set(),
     ) -> Optional[ast.Dict]:
-        """Extract HTML5 field rules from slot nodes for server-side Form validation."""
+        """Extract HTML5 field rules from form input nodes for server-side Form validation."""
         html_to_rule = {
             "required": "required",
             "pattern": "pattern",
@@ -3215,16 +3215,11 @@ class TemplateCodegen:
                 )
             )
 
-            # Identify if we need to apply scope
-            # Apply to all elements if scope_id is present
-            # BUT: do not apply to <style> tag itself (unless we want to?), or <script>.
-            # And <slot>.
+            # Don't apply scope id to <style>, <script>, or <template>.
             # <style scoped> handling is separate (reshaping content).
-
             apply_scope = scope_id and node.tag not in (
                 "style",
                 "script",
-                "slot",
                 "template",
             )
             if apply_scope:

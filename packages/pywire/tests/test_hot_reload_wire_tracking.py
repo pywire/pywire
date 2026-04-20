@@ -188,9 +188,6 @@ class TestWireTrackingWithLayout:
         loader = PageLoader()
         return loader.load(_INDEX_WIRE, implicit_layout=str(_LAYOUT_WIRE.resolve()))
 
-    @pytest.mark.skip(
-        reason="Uses legacy <slot/> layout fixtures; retire with Phase 9"
-    )
     @pytest.mark.asyncio
     async def test_wire_tracking_with_layout(self) -> None:
         PageClass = self._load_page_class()
@@ -223,21 +220,3 @@ class TestWireTrackingWithLayout:
                 "render_update returned empty regions — wire tracking broken"
             )
 
-    @pytest.mark.skip(reason="Slot renderers removed in Phase 9")
-    @pytest.mark.asyncio
-    async def test_slot_renderers_not_migrated(self) -> None:
-        """Slot renderers should be bound to the new page, not the old."""
-        PageClass = self._load_page_class()
-        req = _make_request()
-
-        old_page = _create_page(PageClass, req)
-        new_page = _create_page(PageClass, req)
-        _simulate_migration(old_page, new_page)
-
-        # Check that slot renderers are bound to new_page, not old_page
-        for layout_id, slot_map in new_page.slots.items():
-            for slot_name, renderer in slot_map.items():
-                if hasattr(renderer, "__self__"):
-                    assert renderer.__self__ is new_page, (
-                        f"Slot renderer {slot_name} bound to old page, not new page"
-                    )

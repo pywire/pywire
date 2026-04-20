@@ -1,7 +1,6 @@
 import ast
 import unittest
 
-import pytest
 from typing import Any, List, Union, cast
 
 from pywire.compiler.ast_nodes import (
@@ -137,30 +136,6 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("parts.append(await self._render_region_r1())", main_code)
         self.assertIn("attrs['data-pw-region'] = 'r1'", aux_code)
 
-    @pytest.mark.skip(reason="generate_slot_methods removed in Phase 9")
-    def test_generate_slot_methods(self) -> None:
-        # Node with slot filler: <slot name="header">...</slot>
-        node = TemplateNode(
-            tag="slot",
-            attributes={"name": "header"},
-            children=[
-                TemplateNode(tag=None, text_content="Header content", line=1, column=0)
-            ],
-            line=1,
-            column=0,
-        )
-
-        slots, aux = self.codegen.generate_slot_methods([node], file_id="test")
-        self.assertIn("header", slots)
-
-        # slots["header"] is an AsyncFunctionDef
-        func_def = slots["header"]
-        self.normalize_ast(func_def)
-        code = ast.unparse(func_def)
-
-        self.assertIn("async def _render_slot_fill_header_", code)
-        self.assertIn("parts.append('Header content')", code)
-
     def test_codegen_component_instantiation(self) -> None:
         node = TemplateNode(
             tag="MyComp", attributes={"title": "Hello"}, line=1, column=0
@@ -176,27 +151,6 @@ class TestCodegenTemplate(unittest.TestCase):
         self.assertIn("'title': 'Hello'", code)
         self.assertIn("'__is_component__': True", code)
         self.assertIn("'_style_collector': self._style_collector", code)
-
-    @pytest.mark.skip(
-        reason="Legacy slot dict codegen replaced by snippet props (Phase 9)"
-    )
-    def test_codegen_component_slots(self) -> None:
-        child1 = TemplateNode(
-            tag="div", attributes={"slot": "header"}, line=1, column=0
-        )
-        child2 = TemplateNode(tag="span", attributes={}, line=1, column=0)
-        node = TemplateNode(
-            tag="MyComp", attributes={}, children=[child1, child2], line=1, column=0
-        )
-        comp_map = {"MyComp": "MyComponent"}
-
-        func_def, _ = self.codegen.generate_render_method(
-            [node], component_map=comp_map
-        )
-        self.normalize_ast(func_def)
-        code = ast.unparse(func_def)
-        self.assertIn("'slots': {'header':", code)
-        self.assertIn("'default':", code)
 
     def test_codegen_component_events(self) -> None:
         event_attr = EventAttribute(

@@ -387,8 +387,7 @@ class BasePage:
             # Snippet props are always stored directly on ``self`` so
             # ``{$render name}`` can reach them via attribute lookup,
             # regardless of whether the component declared ``name`` in
-            # ``@props``. (``<slot name="X">`` / nested ``{$snippet X}``
-            # sugar produces snippet kwargs for undeclared slot names.)
+            # ``@props``.
             if isinstance(value, Snippet):
                 setattr(self, key, value)
                 continue
@@ -787,10 +786,6 @@ class BasePage:
         if init:
             await self._run_hooks(self.INIT_HOOKS)
 
-        # Render template (may be async for layouts with render_slot calls)
-        # Render HTML
-        # Render template (may be async for layouts with render_slot calls)
-        # Render HTML
         self._clear_wire_tracking()
         self._expr_counts.clear()
 
