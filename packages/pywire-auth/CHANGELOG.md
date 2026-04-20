@@ -5,3 +5,5 @@ All notable changes to `pywire-auth` are documented here. This project follows [
 Initial release: batteries-included authentication — OAuth2/OIDC providers (Google, GitHub, Microsoft, Facebook, Auth0, generic OIDC), a local identity provider with Argon2 password hashing, a `SQLAlchemyAuthStore` for cross-restart persistence, policy engine with claim-based guards, `AuthActions` bundling store/session/channel mutations into one call, and a live auth channel that pushes claim changes to logged-in tabs without reload.
 
 ## Unreleased
+
+_Release PR tracked by release-please._
