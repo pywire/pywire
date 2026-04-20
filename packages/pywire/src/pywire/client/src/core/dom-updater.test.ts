@@ -257,4 +257,37 @@ describe('DOMUpdater', () => {
 
     appendSpy.mockRestore()
   })
+
+  it('should defer an inline script until a preceding non-async src loads', async () => {
+    const order: string[] = []
+    ;(window as Window & { chartCtor?: () => void }).chartCtor = () => {
+      order.push('inline')
+    }
+
+    const appendSpy = vi.spyOn(document.head, 'appendChild').mockImplementation((node) => {
+      const s = node as HTMLScriptElement
+      if (s.tagName === 'SCRIPT' && s.getAttribute('src')) {
+        // Simulate async load — dispatch `load` on the microtask queue so the
+        // subsequent inline script can be observed to wait.
+        queueMicrotask(() => {
+          order.push('src-loaded')
+          s.dispatchEvent(new Event('load'))
+        })
+      }
+      return node as Node
+    })
+
+    updater.update('<div><script src="chart.js"></script><script>window.chartCtor()</script></div>')
+
+    // Inline must NOT have run yet — waiting for src load.
+    expect(order).toEqual([])
+
+    // Flush microtasks to let the simulated load fire, then the chained inline.
+    await new Promise<void>((r) => queueMicrotask(r))
+    await new Promise<void>((r) => queueMicrotask(r))
+
+    expect(order).toEqual(['src-loaded', 'inline'])
+    delete (window as Window & { chartCtor?: () => void }).chartCtor
+    appendSpy.mockRestore()
+  })
 })

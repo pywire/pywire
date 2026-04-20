@@ -237,9 +237,29 @@ export class DOMUpdater {
    * - Inline scripts use indirect eval() for global-scope execution.
    * - `<script type="module">` tags are warned about in dev mode (they cannot
    *   re-execute on SPA navigation per the browser spec).
-   * - `defer` on dynamically-inserted scripts is silently ignored by browsers.
+   *
+   * Execution order mirrors the HTML parser: a non-async `<script src>` blocks
+   * subsequent scripts until its `load` fires, so an inline script after a CDN
+   * tag sees the library it depends on. Scripts with an explicit `async`
+   * attribute are fired-and-forgotten. Returns a Promise that settles once the
+   * sequenced chain completes (useful for tests; callers may ignore it).
    */
-  private executeScripts(scripts: { script: HTMLScriptElement; inPermanent: boolean }[]): void {
+  private executeScripts(
+    scripts: { script: HTMLScriptElement; inPermanent: boolean }[]
+  ): Promise<void> {
+    let chain: Promise<void> = Promise.resolve()
+    let pendingSrc = false
+
+    const runInline = (code: string): void => {
+      try {
+        // Indirect eval runs in global scope
+        const globalEval = eval
+        globalEval(code)
+      } catch (e) {
+        logger.error('[DOMUpdater] Inline script execution failed:', e)
+      }
+    }
+
     for (const { script, inPermanent } of scripts) {
       if (inPermanent) continue
 
@@ -265,28 +285,52 @@ export class DOMUpdater {
         const existing = document.head.querySelector(`script[src="${srcAttr}"]`)
         if (existing) continue
 
-        const newScript = document.createElement('script')
-        Array.from(script.attributes).forEach((attr) => {
-          newScript.setAttribute(attr.name, attr.value)
-        })
-        try {
-          document.head.appendChild(newScript)
-        } catch {
-          // Script load errors are surfaced via the 'error' event on the element
+        const isAsync = script.hasAttribute('async')
+        if (isAsync) {
+          const newScript = document.createElement('script')
+          Array.from(script.attributes).forEach((attr) => {
+            newScript.setAttribute(attr.name, attr.value)
+          })
+          try {
+            document.head.appendChild(newScript)
+          } catch {
+            // Script load errors are surfaced via the 'error' event on the element
+          }
+        } else {
+          pendingSrc = true
+          chain = chain.then(
+            () =>
+              new Promise<void>((resolve) => {
+                const newScript = document.createElement('script')
+                Array.from(script.attributes).forEach((attr) => {
+                  newScript.setAttribute(attr.name, attr.value)
+                })
+                const done = (): void => resolve()
+                newScript.addEventListener('load', done, { once: true })
+                newScript.addEventListener('error', done, { once: true })
+                try {
+                  document.head.appendChild(newScript)
+                } catch {
+                  resolve()
+                }
+              })
+          )
         }
       } else {
         const code = script.textContent || ''
-        if (code) {
-          try {
-            // Indirect eval runs in global scope
-            const globalEval = eval
-            globalEval(code)
-          } catch (e) {
-            logger.error('[DOMUpdater] Inline script execution failed:', e)
-          }
+        if (!code) continue
+        if (pendingSrc) {
+          chain = chain.then(() => runInline(code))
+        } else {
+          // No unresolved src ahead of us — run synchronously so postupdate
+          // listeners see any side effects immediately (matches prior behavior
+          // for the common inline-only case).
+          runInline(code)
         }
       }
     }
+
+    return chain
   }
 
   /**
