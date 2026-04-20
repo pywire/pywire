@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.2.1...pywire-parser-v0.3.0) (2026-04-20)
+
+
+### Features
+
+* render regions (snippets, $render, $head) — retire slots ([#127](https://github.com/pywire/pywire/issues/127)) ([d2b48b6](https://github.com/pywire/pywire/commit/d2b48b635a4263b1568b0302e09875a5557c8004))
+
 ## [0.2.1](https://github.com/pywire/pywire/compare/pywire-parser-v0.2.0...pywire-parser-v0.2.1) (2026-04-13)
 
 
