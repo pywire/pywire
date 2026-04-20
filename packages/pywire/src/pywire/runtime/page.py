@@ -49,6 +49,62 @@ class DotDict(dict):
 
 _SITE_ID_RE = re.compile(r"^render_(?P<name>.+?)_(?P<line>\d+)_(?P<col>\d+)$")
 
+# HTML raw-text elements whose contents must be treated as opaque to tag
+# searches. User JS/CSS routinely embeds strings like ``'</head>'``,
+# ``'</body>'``, ``'<style>'``; the document-assembly code in this module
+# must not mistake those for real structural tags.
+_RAW_TEXT_SPAN_RE = re.compile(
+    r"<(script|style|textarea|title)\b[^>]*>.*?</\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _raw_text_spans(html: str) -> List[Tuple[int, int]]:
+    """Return (start, end) spans for every script/style/textarea/title element
+    in ``html``. Used to exclude those regions from manual tag searches.
+    """
+    return [(m.start(), m.end()) for m in _RAW_TEXT_SPAN_RE.finditer(html)]
+
+
+def _find_tag_outside_raw_text(
+    html: str, needle: str, *, from_end: bool = False
+) -> int:
+    """Return the index of ``needle`` in ``html`` that is NOT inside a
+    raw-text element (``<script>``, ``<style>``, ``<textarea>``, ``<title>``).
+    Returns ``-1`` if no such position exists.
+
+    With ``from_end=True``, scans right-to-left and returns the last such
+    occurrence (mirrors ``str.rpartition`` / ``rsplit``).
+    """
+    spans = _raw_text_spans(html)
+
+    def _inside(idx: int) -> bool:
+        for s, e in spans:
+            if s <= idx < e:
+                return True
+        return False
+
+    if from_end:
+        # Scan backwards: find each occurrence, take the last one not inside.
+        last = -1
+        start = 0
+        while True:
+            idx = html.find(needle, start)
+            if idx < 0:
+                return last
+            if not _inside(idx):
+                last = idx
+            start = idx + 1
+    else:
+        start = 0
+        while True:
+            idx = html.find(needle, start)
+            if idx < 0:
+                return -1
+            if not _inside(idx):
+                return idx
+            start = idx + 1
+
 
 def _parse_site_id(site_id: str) -> Tuple[str, Optional[int], Optional[int]]:
     """Split a snippet site_id back into (snippet_name, line, col)."""
@@ -765,9 +821,11 @@ class BasePage:
         head_html = self._flush_head()
         if not head_html:
             return html
-        if "</head>" in html:
-            left, _, right = html.rpartition("</head>")
-            return f"{left}{head_html}</head>{right}"
+        # Last ``</head>`` outside of any <script>/<style> — user JS may
+        # legitimately contain ``'</head>'`` as a string literal.
+        idx = _find_tag_outside_raw_text(html, "</head>", from_end=True)
+        if idx >= 0:
+            return f"{html[:idx]}{head_html}</head>{html[idx + len('</head>'):]}"
         return f"{head_html}{html}"
 
     async def _run_hooks(self, hook_list: List[str]) -> None:
@@ -881,15 +939,18 @@ class BasePage:
         # Flush {$head} contributions into the document head.
         html = self._inject_head_into(html)
 
-        # Inject styles if this is the root render (not a component or partial update).
-        # Split on the FIRST ``</head>`` — the document's real one — so that a
-        # stray ``</head>`` substring sitting inside a JS string literal later
-        # in the body doesn't hijack the injection site.
+        # Inject styles. On init=True the document has a real ``</head>`` and
+        # we target the first one that is not inside a <script>/<style> (user
+        # JS often contains ``'</head>'`` as a string). On init=False the
+        # surrounding ``<html>/<head>/<body>`` have already been stripped, so
+        # any remaining ``</head>`` is inside user content — prepend instead.
         styles = self._style_collector.render()
         if styles:
-            if "</head>" in html:
-                parts = html.split("</head>", 1)
-                html = parts[0] + f"{styles}</head>" + parts[1]
+            idx = (
+                _find_tag_outside_raw_text(html, "</head>") if init else -1
+            )
+            if idx >= 0:
+                html = f"{html[:idx]}{styles}</head>{html[idx + len('</head>'):]}"
             else:
                 html = f"{styles}{html}"
 
@@ -1053,9 +1114,17 @@ class BasePage:
                     f"{reconnect_injection}{meta_script}{client_script}{event_warning}"
                 )
 
-                if "</body>" in html:
-                    parts = html.rsplit("</body>", 1)
-                    html = parts[0] + f"{injection}</body>" + parts[1]
+                # Last ``</body>`` outside <script>/<style> — user JS may
+                # include ``'</body>'`` as a string literal before the real
+                # closing tag, and rsplit would otherwise pick that one.
+                body_idx = _find_tag_outside_raw_text(
+                    html, "</body>", from_end=True
+                )
+                if body_idx >= 0:
+                    html = (
+                        f"{html[:body_idx]}{injection}</body>"
+                        f"{html[body_idx + len('</body>'):]}"
+                    )
                 else:
                     html += injection
 
