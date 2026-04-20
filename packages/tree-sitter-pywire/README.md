@@ -2,6 +2,8 @@
 
 Tree-sitter grammar for the PyWire `.wire` file format. Supports the full block-directive vocabulary including `{$if}`, `{$for}`, `{$await}`, `{$auth}`, `{$try}`, `{$snippet}`, `{$render}`, and `{$head}`.
 
+Consumed by `pywire-parser` (via py-tree-sitter), the VS Code extension, and the Prettier plugin.
+
 <!-- SUPPORT_MESSAGE_TEMPLATE_START -->
 ## ❤️ Support pywire
 
