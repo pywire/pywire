@@ -79,7 +79,7 @@ Any attributes passed to a component that aren't declared in `@props` are collec
 ```pywire
 <!-- components/button.wire -->
 <button class="btn" {**attrs}>
-    <slot />
+    {$render children}
 </button>
 ```
 
@@ -90,14 +90,14 @@ Any attributes passed to a component that aren't declared in `@props` are collec
 </Button>
 ```
 
-## Slots
+## Children and Named Snippets
 
-Components use the `<slot />` tag to define where child content gets injected.
+Every component receives an implicit `children` prop holding whatever markup the parent wrote between the tags. Render it with `{$render children}`:
 
 ```pywire
 <!-- components/card.wire -->
 <div class="card">
-    <slot />
+    {$render children}
 </div>
 ```
 
@@ -107,6 +107,51 @@ Components use the `<slot />` tag to define where child content gets injected.
     <h2>Card Title</h2>
     <p>Card content goes here.</p>
 </Card>
+```
+
+For **multiple named regions** (header, footer, sidebar, etc.), define a named snippet in the parent and render it in the component. The paired form provides a fallback when the snippet isn't supplied:
+
+```pywire
+<!-- components/card.wire -->
+<div class="card">
+    <header>{$render header}Untitled{/render}</header>
+    {$render children}
+</div>
+```
+
+```pywire
+<!-- Usage -->
+<Card>
+    {$snippet header}Product Details{/snippet}
+    <p>Body content here.</p>
+</Card>
+```
+
+Snippets can also take parameters — useful for list rendering where the component owns the loop:
+
+```pywire
+<!-- components/list.wire -->
+---
+from pywire import props
+
+@props
+class Props:
+    items: list
+---
+<ul>
+    <li $for={item in props.items}>
+        {$render row(item)}
+    </li>
+</ul>
+```
+
+```pywire
+<!-- Usage -->
+<List items={todos}>
+    {$snippet row(todo)}
+        <input type="checkbox" checked={todo.done}> {todo.text}
+    {/snippet}
+</List>
 ```
 
 ## Scoped Styles

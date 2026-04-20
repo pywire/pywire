@@ -17,7 +17,7 @@ files:
         <nav style="border-bottom: 1px solid #ccc; margin-bottom: 1rem; padding-bottom: 1rem;">
           <strong>My App Header</strong>
         </nav>
-        <slot />
+        {$render children}
       </div>
 successCriteria:
   - type: file_contains
@@ -31,7 +31,7 @@ successCriteria:
 pagesDir: pages
 ---
 
-The `!layout` directive allows you to specify a component that should wrap the current page. The page content is injected wherever the layout component uses the `<slot />` tag.
+The `!layout` directive allows you to specify a component that should wrap the current page. The page content is injected wherever the layout component uses `{$render children}`.
 
 ### Your Task
 

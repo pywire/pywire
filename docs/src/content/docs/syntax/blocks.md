@@ -1,9 +1,9 @@
 ---
 title: Control Flow Blocks
-description: Rendering logic using {$if}, {$for}, {$await}, and {$try} blocks.
+description: Rendering logic using {$if}, {$for}, {$await}, {$try}, {$snippet}, {$render}, and {$head} blocks.
 ---
 
-PyWire provides a structured block syntax to handle dynamic rendering logic directly in your HTML. These blocks allow you to condition, loop, wait, and catch errors without writing complex Python logic inside your elements.
+PyWire provides a structured block syntax to handle dynamic rendering logic directly in your HTML. These blocks allow you to condition, loop, wait, catch errors, and reuse markup fragments — without writing complex Python logic inside your elements.
 
 ## Syntax Overview
 
@@ -184,3 +184,105 @@ The `{$try}` block creates a safety zone. If an exception occurs while rendering
     <p class="error">Unknown error rendering bio.</p>
 {/try}
 ```
+
+## Snippets (`{$snippet}`)
+
+---
+
+Snippets define **reusable, named markup fragments**. They're first-class values — you can invoke them multiple times, pass them across components as props, or leave them as defaults for consumers to override.
+
+### Syntax
+
+```pywire
+{$snippet name(param1, param2)}
+    <!-- body with access to self, enclosing locals, and params -->
+{/snippet}
+```
+
+Parameters are optional. Parameters-less form: `{$snippet name}`.
+
+### Examples
+
+**Simple inline reuse:**
+
+```pywire
+{$snippet chip(label)}
+    <span class="chip">{label}</span>
+{/snippet}
+
+{$render chip("draft")}
+{$render chip("pending")}
+{$render chip("published")}
+```
+
+**Slot-style: let parents override a section with a fallback:**
+
+```pywire
+<!-- components/card.wire -->
+<div class="card">
+    <header>{$render header}Untitled{/render}</header>
+    {$render children}
+</div>
+```
+
+```pywire
+<!-- parent usage -->
+<Card>
+    {$snippet header}Product Details{/snippet}
+    <p>...</p>
+</Card>
+```
+
+## Rendering Snippets (`{$render}`)
+
+---
+
+`{$render name(...)}` invokes a snippet. Two forms:
+
+- **Self-closing:** `{$render header(user)}` — calls the snippet, errors if it isn't defined.
+- **Paired:** `{$render header}<default/>{/render}` — the body is a fallback used when the snippet isn't supplied.
+
+The protected `children` snippet holds whatever markup a parent wrote between the component's tags:
+
+```pywire
+<!-- components/button.wire -->
+<button class="btn" {**attrs}>
+    {$render children}
+</button>
+```
+
+## Head Teleport (`{$head}`)
+
+---
+
+The `{$head}` block teleports its contents into the document `<head>`, regardless of where in the render tree it appears. Contributions from pages, layouts, and components all merge.
+
+### Syntax
+
+```pywire
+{$head}
+    <!-- any HTML; goes into the root page's <head> -->
+{/head}
+```
+
+### Examples
+
+**Per-page `<title>` and meta tags:**
+
+```pywire
+<!-- pages/post.wire -->
+{$head}
+    <title>{post.title} — My Blog</title>
+    <meta name="description" content={post.excerpt}>
+    <link rel="canonical" href={post.url}>
+{/head}
+
+<article>{post.body}</article>
+```
+
+### Merge rules
+
+- **Title:** the last `<title>` contributed by the render tree wins. Earlier titles are stripped.
+- **Everything else:** preserved in authored order. If a page contributes `<meta charset>` before `<title>`, the charset stays first.
+
+This makes layouts hands-off — they don't need to know which pages want a particular meta tag.

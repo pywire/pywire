@@ -3,7 +3,7 @@ title: Layouts
 description: Reusing UI structures with layouts.
 ---
 
-Layouts allow you to wrap multiple pages in a consistent UI structure (like headers, footers, and sidebars). A layout is a regular `.wire` file that uses the `<slot />` tag to indicate where page content should be injected.
+Layouts allow you to wrap multiple pages in a consistent UI structure (like headers, footers, and sidebars). A layout is a regular `.wire` file that uses `{$render children}` to indicate where page content should be injected.
 
 ## Creating a Layout
 
@@ -19,7 +19,7 @@ year = 2026
 </nav>
 
 <main>
-    <slot />
+    {$render children}
 </main>
 
 <footer>&copy; {year} My App</footer>
@@ -79,7 +79,7 @@ Layouts compose naturally. When a subdirectory has its own `__layout__.wire`, it
 ```pywire
 <div class="app">
     <header>My App</header>
-    <slot />
+    {$render children}
 </div>
 ```
 
@@ -89,7 +89,7 @@ Layouts compose naturally. When a subdirectory has its own `__layout__.wire`, it
 <div class="dashboard">
     <aside>Dashboard Sidebar</aside>
     <div class="content">
-        <slot />
+        {$render children}
     </div>
 </div>
 ```
@@ -117,7 +117,7 @@ def toggle_sidebar():
         </nav>
     </aside>
     <main>
-        <slot />
+        {$render children}
     </main>
 </div>
 ```
@@ -134,8 +134,48 @@ Layouts are a natural place to provide context to all child pages using `!provid
 theme = wire("light")
 ---
 <div class={f"app theme-{theme}"}>
-    <slot />
+    {$render children}
 </div>
 ```
 
 Any page or component can then inject the theme with `!inject { theme: 'THEME' }`. See [Context & Injection](/docs/concepts/context) for details.
+
+## Named Snippets and `{$head}`
+
+`{$render children}` is shorthand for the implicit `children` prop every component receives. Layouts can also define or receive **named snippets** for slots like titles or sidebars.
+
+**Page defines, layout renders:**
+
+```pywire
+<!-- pages/about.wire -->
+!layout "layouts/app_shell.wire"
+
+{$snippet title}About — My App{/snippet}
+
+<h1>About</h1>
+<p>Content goes here.</p>
+```
+
+```pywire
+<!-- layouts/app_shell.wire -->
+<title>{$render title}My App{/render}</title>
+<main>
+    {$render children}
+</main>
+```
+
+The paired form `{$render title}...{/render}` uses the body as a fallback when the page doesn't provide that snippet.
+
+**Teleporting into `<head>`:** Pages and components can contribute directly to the document `<head>` with `{$head}...{/head}`:
+
+```pywire
+<!-- pages/post.wire -->
+{$head}
+    <title>{post.title}</title>
+    <meta name="description" content={post.excerpt}>
+{/head}
+
+<article>...</article>
+```
+
+Contributions from every level of the render tree merge into the root `<head>`. The last `<title>` wins; non-title content retains author order.

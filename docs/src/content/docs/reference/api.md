@@ -123,7 +123,7 @@ def close():
     visible.value = False
 ---
 <div $if={visible} class="modal">
-    <slot />
+    {$render children}
 </div>
 ```
 
@@ -300,7 +300,7 @@ These properties are available on every page and component instance, accessible 
 | `context` | `dict`           | Inherited context from parent components via `!provide`                  |
 | `errors`  | `ErrorNamespace` | Form validation errors                                                   |
 | `loading` | `dict`           | Loading state for async operations                                       |
-| `slots`   | `dict`           | Named slot renderers                                                     |
+| `children`| `Snippet \| None`| Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`. |
 
 ## Runtime Helpers
 
