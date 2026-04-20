@@ -9,7 +9,6 @@ if TYPE_CHECKING:
 
     Form: type[BasePage]
     FileInput: type[BasePage]
-    AuthorizedView: type[BasePage]
 
 
 def __getattr__(name: str):
@@ -17,9 +16,7 @@ def __getattr__(name: str):
         return get_loader().load(_here / "form.wire")
     if name == "FileInput":
         return get_loader().load(_here / "file_input.wire")
-    if name == "AuthorizedView":
-        return get_loader().load(_here / "authorized_view.wire")
     raise AttributeError(name)
 
 
-__all__ = ["Form", "FileInput", "AuthorizedView"]
+__all__ = ["Form", "FileInput"]
