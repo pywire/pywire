@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/pywire/pywire/compare/pywire-v0.10.0...pywire-v0.11.0) (2026-04-20)
+
+
+### Features
+
+* **pywire:** {\$auth} template directive + auth runtime integration ([5717f4d](https://github.com/pywire/pywire/commit/5717f4d0cee8b03949de86ec9d8b95e396f16ff5))
+
 ## [0.10.0](https://github.com/pywire/pywire/compare/pywire-v0.9.0...pywire-v0.10.0) (2026-04-20)
 
 
