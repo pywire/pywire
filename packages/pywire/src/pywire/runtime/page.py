@@ -1,6 +1,7 @@
 """Base page class with lifecycle system."""
 
 import inspect
+import re
 import asyncio
 from collections import defaultdict
 from .events import create_event_data
@@ -44,6 +45,43 @@ class DotDict(dict):
 
 
 # EventData moved to .events
+
+
+_SITE_ID_RE = re.compile(r"^render_(?P<name>.+?)_(?P<line>\d+)_(?P<col>\d+)$")
+
+
+def _parse_site_id(site_id: str) -> Tuple[str, Optional[int], Optional[int]]:
+    """Split a snippet site_id back into (snippet_name, line, col)."""
+    m = _SITE_ID_RE.match(site_id)
+    if not m:
+        return site_id, None, None
+    return m["name"], int(m["line"]), int(m["col"])
+
+
+def _missing_snippet_message(site_id: str, class_name: str) -> str:
+    name, line, col = _parse_site_id(site_id)
+    loc = f" (line {line}, col {col})" if line is not None else ""
+    return (
+        f"{class_name}: required snippet {name!r}{loc} was not provided "
+        f"by the caller. Pass it as a named snippet (e.g. "
+        f"``{{$snippet {name}}}...{{/snippet}}``), or add a fallback "
+        f"with ``{{$render {name}}}...{{/render}}``."
+    )
+
+
+def _rewrite_snippet_typeerror(err: TypeError, site_id: str) -> TypeError:
+    """Rewrite TypeErrors from a snippet invocation to reference the
+    author-visible snippet name instead of the mangled codegen symbol."""
+    name, line, col = _parse_site_id(site_id)
+    msg = str(err)
+    # Codegen names snippet methods like ``_snippet_<name>_<l>_<c>_<n>``,
+    # nested under the enclosing render method's ``<locals>``. Strip
+    # everything up to and including that mangled call so the error
+    # speaks in snippet terms.
+    mangled_prefix = re.compile(r"^.*?\._snippet_[A-Za-z0-9_]+\(\)\s*")
+    msg = mangled_prefix.sub("", msg, count=1)
+    loc = f" (line {line}, col {col})" if line is not None else ""
+    return TypeError(f"{{$render {name}}}{loc}: {msg}")
 
 
 class BasePage:
@@ -623,10 +661,11 @@ class BasePage:
         fallback, use :meth:`_invoke_render_with_fallback`.
         """
         if snippet is None:
-            raise TypeError(
-                f"Required snippet at {site_id!r} was not provided by caller"
-            )
-        return await self._invoke_snippet_inner(snippet, site_id, args)
+            raise TypeError(_missing_snippet_message(site_id, self.__class__.__name__))
+        try:
+            return await self._invoke_snippet_inner(snippet, site_id, args)
+        except TypeError as e:
+            raise _rewrite_snippet_typeerror(e, site_id) from e
 
     async def _invoke_render_with_fallback(
         self,

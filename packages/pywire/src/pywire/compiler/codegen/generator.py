@@ -1092,6 +1092,15 @@ class CodeGenerator:
 
                 if default_val is not None:
                     kw_defaults.append(ast.parse(default_val, mode="eval").body)
+                elif name == "children":
+                    # ``children`` is a protected prop populated implicitly
+                    # from the caller's body. If the author declared it
+                    # without a default (``children: Snippet``), we default
+                    # it to ``None`` rather than making the kwarg required —
+                    # otherwise calling the component as a page (no caller
+                    # body) or self-closing it crashes before the component
+                    # can even render a fallback.
+                    kw_defaults.append(ast.Constant(value=None))
                 else:
                     kw_defaults.append(None)  # Required kwarg
 

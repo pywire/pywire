@@ -248,5 +248,98 @@ class Props:
 """
     cls = _compile_source(src, "snippet_no_fallback")
     page = cls(_make_request(), {}, {})
-    with pytest.raises(TypeError, match="Required snippet"):
+    with pytest.raises(TypeError, match="required snippet 'row'"):
         await page._render_template()
+
+
+def test_duplicate_snippet_name_rejected():
+    """Two ``{$snippet X}`` definitions at the same scope fail to parse."""
+    from pywire_parser.exceptions import PyWireSyntaxError
+
+    src = """---
+---
+{$snippet dup}<em>first</em>{/snippet}
+{$snippet dup}<strong>second</strong>{/snippet}
+{$render dup}
+"""
+    with pytest.raises(PyWireSyntaxError, match="Duplicate .*dup"):
+        PyWireParser().parse(src)
+
+
+def test_snippet_name_collides_with_frontmatter_var():
+    """``{$snippet X}`` where ``X`` is a frontmatter symbol is a compile
+    error — otherwise the frontmatter value would silently shadow the
+    snippet."""
+    from pywire_parser.exceptions import PyWireSyntaxError
+
+    src = """---
+header = "from-python"
+---
+{$snippet header}<strong>hi</strong>{/snippet}
+{$render header}
+"""
+    with pytest.raises(PyWireSyntaxError, match="collides with the frontmatter"):
+        _compile_source(src, "snippet_collision")
+
+
+@pytest.mark.asyncio
+async def test_children_prop_defaults_to_none_without_explicit_default():
+    """``children: Snippet`` (no default) must not make the page's
+    kwarg required — the caller's body supplies it implicitly."""
+    src = """---
+from pywire.core.props import props
+from pywire.core.snippet import Snippet
+
+@props
+class Props:
+    children: Snippet
+---
+<div class="wrap">{$render children}fallback{/render}</div>
+"""
+    cls = _compile_source(src, "children_no_default")
+    # Instantiating without children kwarg must not raise.
+    page = cls(_make_request(), {}, {})
+    html = await page._render_template()
+    assert "fallback" in html
+
+
+@pytest.mark.asyncio
+async def test_missing_snippet_error_names_snippet_and_class():
+    """Required-snippet error now includes the snippet name, class
+    name, and author-visible source location."""
+    src = """---
+from pywire.core.props import props
+from pywire.core.snippet import Snippet
+
+@props
+class Props:
+    children: Snippet
+---
+{$render children}
+"""
+    cls = _compile_source(src, "missing_snippet_err")
+    page = cls(_make_request(), {}, {})
+    with pytest.raises(TypeError) as excinfo:
+        await page._render_template()
+    msg = str(excinfo.value)
+    assert "MissingSnippetErrPage" in msg
+    assert "'children'" in msg
+
+
+@pytest.mark.asyncio
+async def test_render_arg_mismatch_rewrites_mangled_name():
+    """A wrong-arg-count ``{$render pair(1)}`` raises a TypeError
+    whose message references the author-visible name ``pair`` rather
+    than the codegen's internal ``_snippet_pair_<line>_<col>_<n>``."""
+    src = """---
+---
+{$snippet pair(a, b)}<span>{a}-{b}</span>{/snippet}
+{$render pair(1)}
+"""
+    cls = _compile_source(src, "arg_mismatch")
+    page = cls(_make_request(), {}, {})
+    with pytest.raises(TypeError) as excinfo:
+        await page._render_template()
+    msg = str(excinfo.value)
+    assert "{$render pair}" in msg
+    assert "_snippet_pair_" not in msg
