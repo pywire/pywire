@@ -1,6 +1,6 @@
 # tree-sitter-pywire
 
-Tree-sitter grammar for the PyWire `.wire` file format.
+Tree-sitter grammar for the PyWire `.wire` file format. Supports the full block-directive vocabulary including `{$if}`, `{$for}`, `{$await}`, `{$auth}`, `{$try}`, `{$snippet}`, `{$render}`, and `{$head}`.
 
 <!-- SUPPORT_MESSAGE_TEMPLATE_START -->
 ## ❤️ Support pywire

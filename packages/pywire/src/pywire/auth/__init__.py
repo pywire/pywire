@@ -4,6 +4,10 @@ Core abstractions shared by ``pywire-auth`` (OIDC providers, local IdP,
 database adapters) and the runtime. This module deliberately has zero
 dependencies on Starlette-level auth plumbing so it can be imported
 during codegen and at test time.
+
+Paired with the ``{$auth}`` template directive (see
+``pywire.compiler.codegen.template``) and the page-level ``!auth``
+directive, which both call through to :func:`evaluate_auth`.
 """
 
 from pywire.auth.channel import (
