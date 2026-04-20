@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Set
 
+from pywire.core.signals import Derived
 from pywire.core.wire import (
     WireBase,
     WireDict,
@@ -112,6 +113,16 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
         if name.startswith("_"):
             continue
         if name in _FRAMEWORK_ATTRS:
+            continue
+
+        # Skip framework artifacts that are rebuilt from the page class on
+        # restore — they hold no user state and are never serializable:
+        #   * bound event handlers / `def` helpers from the page's frontmatter
+        #     (stored on self by codegen for event dispatch)
+        #   * ``@derived`` computed values (Derived instances, cached lazily)
+        if isinstance(value, Derived):
+            continue
+        if callable(value) and not isinstance(value, WireBase):
             continue
 
         # Handle wire types
