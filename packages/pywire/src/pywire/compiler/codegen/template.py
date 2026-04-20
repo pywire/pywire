@@ -2816,7 +2816,9 @@ class TemplateCodegen:
                                             ),
                                             ast.keyword(
                                                 arg="scope",
-                                                value=ast.Name(id="self", ctx=ast.Load()),
+                                                value=ast.Name(
+                                                    id="self", ctx=ast.Load()
+                                                ),
                                             ),
                                         ],
                                     )

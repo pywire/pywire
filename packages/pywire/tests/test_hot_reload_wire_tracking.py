@@ -11,10 +11,9 @@ wire tracking registered on old_page instead of new_page → new_page had
 zero wire subscribers → render_update returned empty regions.
 """
 
-import asyncio
 import pytest
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock
 
 from pywire.compiler.codegen.generator import CodeGenerator
@@ -40,7 +39,6 @@ def increment():
 
 def _compile_page_class(wire_content: str) -> type:
     """Compile .wire content into a page class (no layout)."""
-    import ast as _ast
 
     parser = PyWireParser()
     generator = CodeGenerator()
@@ -219,4 +217,3 @@ class TestWireTrackingWithLayout:
             assert len(update["regions"]) > 0, (
                 "render_update returned empty regions — wire tracking broken"
             )
-

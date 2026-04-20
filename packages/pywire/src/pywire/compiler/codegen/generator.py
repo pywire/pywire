@@ -1547,8 +1547,7 @@ class CodeGenerator:
             props_unpack_stmts: List[ast.stmt] = []
             props_directive_local = cast(
                 Optional[PropsDirective],
-                self._collected_props
-                or parsed.get_directive_by_type(PropsDirective),
+                self._collected_props or parsed.get_directive_by_type(PropsDirective),
             )
             if props_directive_local:
                 for name, _, _ in props_directive_local.args:
@@ -1620,7 +1619,6 @@ class CodeGenerator:
                 # would overwrite the ``children`` prop our own parent layout
                 # (if any) passed to us. The local ``_children_snip`` is what
                 # we forward to the wrapping layout below.
-
                 # Instantiate parent layout as a component.
                 ast.Assign(
                     targets=[ast.Name(id="_layout_comp", ctx=ast.Store())],

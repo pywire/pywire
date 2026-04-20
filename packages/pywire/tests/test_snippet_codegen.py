@@ -18,7 +18,9 @@ from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.runtime.page import BasePage
 
 
-def _compile_source(source: str, module_name: str = "test_snippet_module") -> Type[BasePage]:
+def _compile_source(
+    source: str, module_name: str = "test_snippet_module"
+) -> Type[BasePage]:
     parsed = PyWireParser().parse(source, f"/virtual/{module_name}.wire")
     gen = CodeGenerator()
     module_ast = gen.generate(parsed)
@@ -31,11 +33,7 @@ def _compile_source(source: str, module_name: str = "test_snippet_module") -> Ty
     # isinstance/issubclass checks against imported BasePage can be stale).
     for name in reversed(list(ns.keys())):
         v = ns[name]
-        if (
-            isinstance(v, type)
-            and name.endswith("Page")
-            and name != "BasePage"
-        ):
+        if isinstance(v, type) and name.endswith("Page") and name != "BasePage":
             return v
     raise RuntimeError("No Page class was generated")
 
@@ -160,7 +158,9 @@ class Props:
 
 
 @pytest.mark.asyncio
-async def test_snippet_passed_to_child_component_via_nested_sugar(tmp_path, monkeypatch):
+async def test_snippet_passed_to_child_component_via_nested_sugar(
+    tmp_path, monkeypatch
+):
     """Nested ``{$snippet}`` in a component tag is passed as a prop.
 
     Compiles two files — a ``List`` component declaring a ``row``
@@ -206,6 +206,7 @@ from pkg.list_comp import List
     # Expose generated ListPage under the ``List`` name the page imports.
     list_ns["List"] = list_ns["ListPage"]
     import types as _types
+
     list_module = _types.ModuleType("pkg.list_comp")
     list_module.__dict__.update(list_ns)
     monkeypatch.setitem(sys.modules, "pkg.list_comp", list_module)

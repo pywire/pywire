@@ -15,7 +15,6 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    Union,
 )
 import logging
 
@@ -670,9 +669,7 @@ class BasePage:
                 self._region_output_cache[site_id] = prev_html
                 return prev_html
 
-        html = await self._invoke_region(
-            site_id, snippet.render, args=args
-        )
+        html = await self._invoke_region(site_id, snippet.render, args=args)
         self._snippet_invocations[site_id] = (args, html)
         self._region_output_cache[site_id] = html
         return html

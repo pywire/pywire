@@ -7,7 +7,6 @@ does. Avoids wasted wire traffic.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
 import pytest
 from starlette.requests import Request

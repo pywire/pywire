@@ -175,18 +175,12 @@ class ChildrenType:
         """Raise ``ValueError`` if ``count`` violates the constraint."""
         if self.n is not None:
             if count != self.n:
-                raise ValueError(
-                    f"Expected exactly {self.n} children, got {count}"
-                )
+                raise ValueError(f"Expected exactly {self.n} children, got {count}")
             return
         if count < self.min:
-            raise ValueError(
-                f"Expected at least {self.min} children, got {count}"
-            )
+            raise ValueError(f"Expected at least {self.min} children, got {count}")
         if self.max is not None and count > self.max:
-            raise ValueError(
-                f"Expected at most {self.max} children, got {count}"
-            )
+            raise ValueError(f"Expected at most {self.max} children, got {count}")
 
     def __repr__(self) -> str:
         if self.n is not None:

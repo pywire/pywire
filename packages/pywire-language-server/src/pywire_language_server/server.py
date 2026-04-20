@@ -2031,7 +2031,7 @@ Example:
         "finally": "**{$finally}** Block\n\nCleanup branch for a `{$try}` block.",
         "snippet": "**{$snippet}** Block\n\nDefines a named render region (snippet). Snippets can be invoked elsewhere with `{$render name(...)}` or passed to a child component as a prop.\n\n```html\n{$snippet row(item)}\n  <li>{item.label}</li>\n{/snippet}\n```",
         "render": "**{$render}** Block\n\nInvokes a snippet by name. Self-closing form calls the snippet directly; paired form uses the body as a fallback when the snippet prop is `None`.\n\n```html\n{$render row(item)}\n\n{$render header}Default Header{/render}\n```",
-        "head": "**{$head}** Block\n\nTeleports content into the document `<head>`. Contributions merge across layouts and components; the last `<title>` wins while non-title content stays in author order.\n\n```html\n{$head}\n  <meta name=\"description\" content=\"About us\">\n  <title>About — My Site</title>\n{/head}\n```",
+        "head": '**{$head}** Block\n\nTeleports content into the document `<head>`. Contributions merge across layouts and components; the last `<title>` wins while non-title content stays in author order.\n\n```html\n{$head}\n  <meta name="description" content="About us">\n  <title>About — My Site</title>\n{/head}\n```',
     }
 
     attr_hover_docs = {

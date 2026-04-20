@@ -3,7 +3,6 @@
 import sys
 import types
 import pytest
-from unittest.mock import patch
 
 
 def _make_import_app():
