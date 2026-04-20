@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.4.0...tree-sitter-pywire-v0.5.0) (2026-04-20)
+
+
+### Features
+
+* **tree-sitter-pywire:** \$auth block keyword ([5c64f63](https://github.com/pywire/pywire/commit/5c64f63ea43035fba2149442c71505d014dd59e5))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.3.10...tree-sitter-pywire-v0.4.0) (2026-04-20)
 
 
