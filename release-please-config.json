@@ -12,6 +12,10 @@
       "release-type": "python",
       "component": "pywire-parser"
     },
+    "packages/pywire-auth": {
+      "release-type": "python",
+      "component": "pywire-auth"
+    },
     "packages/pywire-language-server": {
       "release-type": "python",
       "component": "pywire-language-server"
