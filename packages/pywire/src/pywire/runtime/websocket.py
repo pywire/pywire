@@ -203,7 +203,7 @@ class WebSocketHandler:
 
                     # Root-scope invalidation triggers a full re-render on
                     # the next render_update call (see page.render_update).
-                    page._dirty_regions.add(None)  # type: ignore[arg-type]
+                    page._dirty_regions.add(None)  # ty: ignore[invalid-argument-type]
                     on_update = getattr(page, "_on_update", None)
                     if on_update is not None:
                         try:
@@ -905,11 +905,7 @@ class WebSocketHandler:
         #        logic correctly drops baseline cookies the client no
         #        longer reports.
         first_reconcile = websocket not in self._connection_reconciled
-        if (
-            cookie_header is not None
-            and first_reconcile
-            and client_cookies
-        ):
+        if cookie_header is not None and first_reconcile and client_cookies:
             for key in baseline:
                 if key not in client_cookies:
                     httponly_set.add(key)

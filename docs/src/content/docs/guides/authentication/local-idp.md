@@ -27,7 +27,7 @@ idp = LocalIdP(store=store)  # reads LOCAL_IDP_SECRET from env
 connect_auth(app, local_idp=idp)
 ```
 
-```env
+```
 # .env
 PYWIRE_SESSION_SECRET=<openssl rand -hex 32>
 LOCAL_IDP_SECRET=<openssl rand -hex 32>
@@ -68,12 +68,12 @@ target_metadata = metadata
 
 Any async SQLAlchemy driver works. Install the driver alongside `pywire-auth[sqlalchemy]`:
 
-| Backend | URL | Driver |
-|---|---|---|
-| SQLite (default) | `sqlite+aiosqlite:///./local-auth.db` | `aiosqlite` (ships with the extra) |
-| Postgres | `postgresql+asyncpg://user:pw@host/db` | `pip install asyncpg` |
-| MySQL / MariaDB | `mysql+aiomysql://user:pw@host/db` | `pip install aiomysql` |
-| SQL Server | `mssql+aioodbc://...` | `pip install aioodbc` |
+| Backend          | URL                                    | Driver                             |
+| ---------------- | -------------------------------------- | ---------------------------------- |
+| SQLite (default) | `sqlite+aiosqlite:///./local-auth.db`  | `aiosqlite` (ships with the extra) |
+| Postgres         | `postgresql+asyncpg://user:pw@host/db` | `pip install asyncpg`              |
+| MySQL / MariaDB  | `mysql+aiomysql://user:pw@host/db`     | `pip install aiomysql`             |
+| SQL Server       | `mssql+aioodbc://...`                  | `pip install aioodbc`              |
 
 Sharing one engine across the rest of your app? Pass the engine directly:
 
@@ -87,7 +87,7 @@ store = SQLAlchemyAuthStore(engine)
 
 ## Login + register flow
 
-```wire
+```pywire
 <!-- src/pages/login_local.wire -->
 ---
 error = self.query.get("error") if hasattr(self, "query") else None
@@ -107,7 +107,7 @@ error = self.query.get("error") if hasattr(self, "query") else None
 <p>No account? <a href="/register">Register</a>.</p>
 ```
 
-```wire
+```pywire
 <!-- src/pages/register.wire -->
 ---
 error = self.query.get("error") if hasattr(self, "query") else None

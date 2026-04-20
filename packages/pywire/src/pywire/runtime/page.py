@@ -1433,9 +1433,7 @@ class BasePage:
             )
             allowed = False
 
-        self._auth_states[region_id] = {
-            "status": "allowed" if allowed else "denied"
-        }
+        self._auth_states[region_id] = {"status": "allowed" if allowed else "denied"}
         self._dirty_regions.add(region_id)
         try:
             await self.push_state()

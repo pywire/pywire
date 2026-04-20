@@ -998,7 +998,9 @@ class TemplateCodegen:
             )
         )
 
-        def _render(nodes: List[TemplateNode], locals_: Optional[Set[str]] = None) -> List[ast.stmt]:
+        def _render(
+            nodes: List[TemplateNode], locals_: Optional[Set[str]] = None
+        ) -> List[ast.stmt]:
             stmts: List[ast.stmt] = []
             for n in nodes:
                 self._add_node(
@@ -1015,7 +1017,9 @@ class TemplateCodegen:
                     enable_regions=False,
                     wire_vars=wire_vars,
                 )
-            return stmts or [ast.Pass()]
+            if not stmts:
+                return [ast.Pass()]
+            return stmts
 
         pending_ast = _render(authorizing_nodes)
 
@@ -2382,7 +2386,9 @@ class TemplateCodegen:
             resolve_kwargs: List[ast.keyword] = []
             if auth_attr.policy is not None:
                 resolve_kwargs.append(
-                    ast.keyword(arg="policy", value=ast.Constant(value=auth_attr.policy))
+                    ast.keyword(
+                        arg="policy", value=ast.Constant(value=auth_attr.policy)
+                    )
                 )
             if auth_attr.claims:
                 resolve_kwargs.append(ast.keyword(arg="claims", value=claims_expr))

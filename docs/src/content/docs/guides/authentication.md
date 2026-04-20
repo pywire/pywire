@@ -58,7 +58,7 @@ engine.add_policy("AdminOnly", requires_claim=("role", "admin"))
 
 Use the page-level `!auth` directive at the top of the script section:
 
-```wire
+```pywire
 !auth {"policy": "AdminOnly", "redirect": "/login_local"}
 
 ---
@@ -73,7 +73,7 @@ If the guard denies, the page renders a 303 redirect to `redirect` (defaults to 
 
 Shorthand forms:
 
-```wire
+```pywire
 !auth
 !auth "AdminOnly"
 !auth {"claims": [["role", "admin"], ["email_verified", "true"]]}
@@ -83,7 +83,7 @@ Shorthand forms:
 
 `{$auth}` gates a region in-place — no redirect, just branch rendering:
 
-```wire
+```pywire
 {$auth policy="AdminOnly"}
     <p>Admin-only panel.</p>
 {$else}
@@ -93,7 +93,7 @@ Shorthand forms:
 
 Claim check form:
 
-```wire
+```pywire
 {$auth claims=[("role", "admin"), ("tier", "beta")]}
     <p>Beta admin features.</p>
 {/auth}
@@ -101,7 +101,7 @@ Claim check form:
 
 Async form with an explicit "authorizing" state and a bound boolean:
 
-```wire
+```pywire
 {$auth policy="AdminOnly"}
     <small>Checking permissions…</small>
 {$then allowed}
@@ -119,7 +119,7 @@ Each `{$auth}` region is evaluated independently, works inside `{$for}`, updates
 
 From a page's script block:
 
-```wire
+```pywire
 ---
 def greet():
     if self.user.is_authenticated:

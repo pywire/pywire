@@ -9,11 +9,11 @@ When an admin grants a role or revokes a session, every tab that user has open s
 
 A claim change touches three stores with different lifetimes:
 
-| Layer | Lifetime | What it does |
-|---|---|---|
-| **`AuthStore`** row | permanent | Survives logout/login. The canonical user record. |
-| **Session snapshot** | per-login | Survives hard reloads. Written by `SessionMiddleware`. |
-| **`AuthChannel` event** | memory, per-WS-connection | Fans out to every live tab for this user_id. |
+| Layer                   | Lifetime                  | What it does                                           |
+| ----------------------- | ------------------------- | ------------------------------------------------------ |
+| **`AuthStore`** row     | permanent                 | Survives logout/login. The canonical user record.      |
+| **Session snapshot**    | per-login                 | Survives hard reloads. Written by `SessionMiddleware`. |
+| **`AuthChannel` event** | memory, per-WS-connection | Fans out to every live tab for this user_id.           |
 
 Any single-layer write is wrong:
 
@@ -61,7 +61,7 @@ All without a reload.
 
 A demo page that toggles the current user's admin claim live:
 
-```wire
+```pywire
 !auth {"redirect": "/login_local"}
 
 ---
@@ -110,10 +110,10 @@ Same interface; events fan out via Redis pub/sub.
 
 ## Channel semantics
 
-| Event | What it means | Triggered by |
-|---|---|---|
-| `kind="update"` + `principal=<new>` | Replace the principal | `channel.update_principal(user_id, principal=...)` |
-| `kind="update"` + `claims=[...]` | Overlay just claims on current principal | `channel.update_principal(user_id, claims=...)` |
-| `kind="revoke"` | Drop to `ANONYMOUS` + navigate | `channel.revoke(user_id)` |
+| Event                               | What it means                            | Triggered by                                       |
+| ----------------------------------- | ---------------------------------------- | -------------------------------------------------- |
+| `kind="update"` + `principal=<new>` | Replace the principal                    | `channel.update_principal(user_id, principal=...)` |
+| `kind="update"` + `claims=[...]`    | Overlay just claims on current principal | `channel.update_principal(user_id, claims=...)`    |
+| `kind="revoke"`                     | Drop to `ANONYMOUS` + navigate           | `channel.revoke(user_id)`                          |
 
 Events are best-effort: if the subscription task crashes or the WS closes the message is dropped. Design around that — use the channel for "refresh now" triggers, not for reliable state delivery. Authoritative state is always in the `auth_store`.

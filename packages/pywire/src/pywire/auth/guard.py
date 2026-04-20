@@ -44,9 +44,7 @@ async def evaluate_auth(
     - Every claim in ``claims`` must match (type + optional value).
     - ``policy`` is looked up on the ambient ``AuthContext.engine``.
     """
-    required_claims: List[Tuple[str, Optional[str]]] = (
-        list(claims) if claims else []
-    )
+    required_claims: List[Tuple[str, Optional[str]]] = list(claims) if claims else []
 
     if not policy and not required_claims:
         return bool(principal.is_authenticated)
@@ -87,9 +85,7 @@ async def run_auth_guard(page: Any) -> Optional[Response]:
     principal = _resolve_principal(page)
     redirect = getattr(cls, "__auth_redirect__", None) or DEFAULT_REDIRECT
     policy_name: Optional[str] = getattr(cls, "__auth_policy__", None)
-    required_claims: List[Tuple[str, str]] = (
-        getattr(cls, "__auth_claims__", []) or []
-    )
+    required_claims: List[Tuple[str, str]] = getattr(cls, "__auth_claims__", []) or []
 
     allowed = await evaluate_auth(
         principal,

@@ -59,7 +59,7 @@ GitHubProvider(client_id=..., client_secret=...)
 - **Console**: <https://portal.azure.com> → Azure Active Directory → App registrations → New
 - Redirect URI: `https://<host>/auth/microsoft/callback`
 - Tenant: `common` (default — multi-tenant + personal), a specific GUID, or `organizations`
-- Create a client secret under **Certificates & secrets** — use the *Value* column
+- Create a client secret under **Certificates & secrets** — use the _Value_ column
 - Claims: `sub`, `email`, `tid` (tenant id), `oid` (object id)
 
 ```python
@@ -145,7 +145,7 @@ if all(os.environ.get(k) for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET")):
 
 The provider list is readable at `app.state.auth_providers` (list of names) — use it in your login page to render one "Sign in with X" button per configured IdP:
 
-```wire
+```pywire
 ---
 from pywire import app
 ---
