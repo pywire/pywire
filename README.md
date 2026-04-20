@@ -19,6 +19,7 @@ This is the PyWire monorepo. All packages are developed and released from here.
 | Package | Description | PyPI / Marketplace |
 |---------|-------------|-------------------|
 | [`packages/pywire`](packages/pywire) | Core framework — Starlette-based runtime, `.wire` compiler, CLI | [![PyPI](https://img.shields.io/pypi/v/pywire)](https://pypi.org/project/pywire/) |
+| [`packages/pywire-auth`](packages/pywire-auth) | Authentication — OAuth2/OIDC providers, local IdP, policies, live auth | [![PyPI](https://img.shields.io/pypi/v/pywire-auth)](https://pypi.org/project/pywire-auth/) |
 | [`packages/pywire-language-server`](packages/pywire-language-server) | LSP server for `.wire` files (completions, diagnostics, hover) | [![PyPI](https://img.shields.io/pypi/v/pywire-language-server)](https://pypi.org/project/pywire-language-server/) |
 | [`packages/create-pywire-app`](packages/create-pywire-app) | Project scaffolding CLI — `uvx create-pywire-app` | [![PyPI](https://img.shields.io/pypi/v/create-pywire-app)](https://pypi.org/project/create-pywire-app/) |
 | [`packages/vscode-pywire`](packages/vscode-pywire) | VS Code extension — syntax highlighting, LSP integration | [![VS Code](https://img.shields.io/visual-studio-marketplace/v/pywire.vscode-pywire)](https://marketplace.visualstudio.com/items?itemName=pywire.vscode-pywire) |

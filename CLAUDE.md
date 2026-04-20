@@ -36,6 +36,13 @@ uv run --extra dev pytest tests/path/to/test_file.py::test_name  # single test
 uv run --extra dev nox                     # multi-version Python tests
 ```
 
+### packages/pywire-auth
+
+```sh
+cd packages/pywire-auth
+uv run --extra sqlalchemy --extra dev pytest -q  # test suite (SQLAlchemy store included)
+```
+
 ### packages/pywire-language-server
 
 ```sh
@@ -132,4 +139,4 @@ Rules:
 - **Never use empty commits** (`--allow-empty`) to trigger releases — they fan out to ALL packages
 - To bump a specific package, modify a file inside that package's directory (e.g., touch a docstring, add a changelog note)
 - Use `chore:` prefix for CI/infra/dependency changes — release-please ignores `chore:` commits entirely
-- Valid component scopes: `pywire`, `pywire-language-server`, `tree-sitter-pywire`, `vscode-pywire`, `prettier-plugin-pywire`, `create-pywire-app`, `pywire-docs`
+- Valid component scopes: `pywire`, `pywire-auth`, `pywire-language-server`, `tree-sitter-pywire`, `vscode-pywire`, `prettier-plugin-pywire`, `create-pywire-app`, `pywire-docs`
