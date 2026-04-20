@@ -4,10 +4,6 @@ on:
   push:
     branches: [main]
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
   contents: write
   pull-requests: write
@@ -22,6 +18,9 @@ jobs:
   # job. If jobs were skipped (not failed), make a new bump commit to create a fresh release.
   release-please:
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-please-${{ github.ref }}
+      cancel-in-progress: false
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       pywire--release_created: ${{ steps.release.outputs['packages/pywire--release_created'] }}
@@ -359,6 +358,9 @@ jobs:
     name: "Sync docs release with pywire"
     needs: release-please
     if: needs.release-please.outputs.pywire--release_created == 'true'
+    concurrency:
+      group: sync-docs-release-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.check.outputs.changed }}
