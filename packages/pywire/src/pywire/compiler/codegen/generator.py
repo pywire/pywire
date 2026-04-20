@@ -1612,6 +1612,16 @@ class CodeGenerator:
             # closes over the enclosing render_template's ``self`` instead.
             body_func_name = f"_page_body_{file_hash}"
 
+            # Derive a scope_id for ``<style scoped>`` if present. Mirrors
+            # the Standard Mode branch below so layout-based pages can use
+            # scoped CSS too.
+            has_scoped_style = any(
+                getattr(n, "tag", None) == "style"
+                and "scoped" in getattr(n, "attributes", {})
+                for n in parsed.template
+            )
+            body_scope_id = file_hash[:8] if has_scoped_style else None
+
             # Unpack @props into locals at the top of the body so
             # template expressions can refer to them by bare name.
             prop_names: Set[str] = set()
@@ -1642,7 +1652,7 @@ class CodeGenerator:
                 known_imports=known_imports,
                 async_methods=async_methods,
                 component_map=component_map,
-                scope_id=None,
+                scope_id=body_scope_id,
                 initial_locals=prop_names,
                 wire_vars=wire_vars,
             )
