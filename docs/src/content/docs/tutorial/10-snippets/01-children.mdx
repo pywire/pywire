@@ -1,0 +1,64 @@
+---
+title: 'Rendering children'
+tutorial: Basic PyWire
+section: Snippets
+description: Accept child content with the protected `children` prop and `{$render children}`.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from components.panel import Panel
+      ---
+      <div>
+        <h1>Snippets</h1>
+        <Panel>
+          <p>This paragraph should appear inside the panel.</p>
+        </Panel>
+      </div>
+  - path: components/panel.wire
+    initial: |
+      <section class="panel">
+        <!-- Render whatever the parent wrote between the <Panel> tags -->
+      </section>
+
+      <style scoped>
+      .panel {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 1rem;
+        background: #f9fafb;
+      }
+      </style>
+    solution: |
+      <section class="panel">
+        {$render children}
+      </section>
+
+      <style scoped>
+      .panel {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 1rem;
+        background: #f9fafb;
+      }
+      </style>
+successCriteria:
+  - type: file_contains
+    description: 'Render the children prop with {$render children}'
+    target: components/panel.wire
+    pattern: '{$render children}'
+  - type: browser_route_text
+    description: "Verify the nested <p> renders inside the panel"
+    pattern: 'This paragraph should appear inside the panel'
+pagesDir: pages
+---
+
+Every component receives an implicit, protected prop called **`children`** — it holds whatever markup the parent wrote between the component's opening and closing tags. Render it with `{$render children}`.
+
+### Your Task
+
+1. Open `components/panel.wire`.
+2. Replace the comment with `{$render children}`.
+3. The `<p>` from `index.wire` should now appear inside the panel's styled `<section>`.
+
+`children` is a **`Snippet`** value, not a string. The framework only runs it when you render it, so wrapping children in `{$if}` or `{$for}` is free — conditionals and loops don't force the body to evaluate until needed.

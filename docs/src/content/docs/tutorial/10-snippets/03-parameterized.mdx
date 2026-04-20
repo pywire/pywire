@@ -1,0 +1,106 @@
+---
+title: 'Parameterized snippets'
+tutorial: Basic PyWire
+section: Snippets
+description: Pass values from the component into the snippet body — perfect for list rows.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from components.list import List
+      ---
+      ---
+      todos = [
+          {"text": "Write tests",       "done": True},
+          {"text": "Ship the feature",  "done": False},
+          {"text": "Take a break",      "done": False},
+      ]
+      ---
+      <div>
+        <h1>Parameterized Snippets</h1>
+        <List items={todos}>
+          <!-- 1. Define {$snippet row(todo)} here -->
+        </List>
+      </div>
+    solution: |
+      ---
+      from components.list import List
+
+      todos = [
+          {"text": "Write tests",       "done": True},
+          {"text": "Ship the feature",  "done": False},
+          {"text": "Take a break",      "done": False},
+      ]
+      ---
+      <div>
+        <h1>Parameterized Snippets</h1>
+        <List items={todos}>
+          {$snippet row(todo)}
+            <label>
+              <input type="checkbox" checked={todo['done']}>
+              <span>{todo['text']}</span>
+            </label>
+          {/snippet}
+        </List>
+      </div>
+  - path: components/list.wire
+    initial: |
+      ---
+      from pywire import props
+
+      @props
+      class Props:
+          items: list
+      ---
+      <ul class="stack">
+        <!-- 2. Loop over props.items and render the row snippet per item -->
+      </ul>
+
+      <style scoped>
+      .stack { list-style: none; padding: 0; display: grid; gap: .5rem; }
+      </style>
+    solution: |
+      ---
+      from pywire import props
+
+      @props
+      class Props:
+          items: list
+      ---
+      <ul class="stack">
+        <li $for={item in props.items}>
+          {$render row(item)}
+        </li>
+      </ul>
+
+      <style scoped>
+      .stack { list-style: none; padding: 0; display: grid; gap: .5rem; }
+      </style>
+successCriteria:
+  - type: file_contains
+    description: 'Define a parameterized snippet {$snippet row(todo)}'
+    target: pages/index.wire
+    pattern: '{$snippet row(todo)}'
+  - type: file_contains
+    description: 'Invoke it inside the loop with {$render row(item)}'
+    target: components/list.wire
+    pattern: '{$render row(item)}'
+  - type: browser_route_text
+    description: "Verify the first todo label renders"
+    pattern: 'Write tests'
+pagesDir: pages
+---
+
+Snippets can take **parameters**. The component owns the iteration (or async logic, or conditional), and hands each value to the snippet body via named params.
+
+This is the PyWire equivalent of React's "render props" pattern — but declarative and closer to the markup.
+
+### Your Task
+
+1. In `components/list.wire`, loop over `props.items` with a `<li $for={item in props.items}>` and render the snippet with `{$render row(item)}` inside each `<li>`.
+2. In `pages/index.wire`, define the snippet with a parameter: `{$snippet row(todo)}...{/snippet}`. Inside the body, reference `todo['text']` and `todo['done']`.
+3. Verify all three todos render as checkbox labels.
+
+**Why this matters:** the component controls *how* to iterate (order, pagination, virtualization, animation), and the caller controls *what* each row looks like. No rigid inheritance; just a callable snippet.
+
+Parameterless snippets are just `{$snippet name}...{/snippet}` — parens are optional when there are no params.

@@ -154,6 +154,34 @@ class Props:
 </List>
 ```
 
+### Typing `children` and named snippets
+
+PyWire exposes two annotation aliases for snippet-valued props:
+
+| Annotation | Meaning |
+|------------|---------|
+| `Snippet` | Any snippet value. Most general. |
+| `Snippet[A, B]` | Snippet taking typed parameters `(A, B)`. Carried through to tooling. |
+| `Child` | Single-child shorthand. Alias of `Snippet` — documents that the caller should pass exactly one fragment. |
+| `Children` | Many-children shorthand. Same runtime representation as `Snippet`. |
+| `Children[n]` / `Children.of(min=, max=, n=)` | Declares expected cardinality for editor tooling and future validation. |
+
+```pywire
+---
+from pywire import props
+from pywire import Snippet, Child, Children
+
+@props
+class Props:
+    children: Child                  # exactly one child
+    header:   Snippet                # zero-arg snippet
+    row:      Snippet[dict]          # called with one dict arg per row
+    tabs:     Children[min=1]        # at least one tab
+---
+```
+
+These are **type hints first** — they describe intent and are read by the LSP and prettier. Runtime cardinality enforcement for `Children[...]` is a planned follow-up; today the values themselves behave identically to `Snippet`.
+
 ## Scoped Styles
 
 Add a `<style scoped>` block to any `.wire` file to scope CSS to that component. Scoped styles won't leak to parent or sibling components.

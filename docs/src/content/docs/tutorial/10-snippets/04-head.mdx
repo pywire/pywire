@@ -1,0 +1,73 @@
+---
+title: 'Head teleport with `{$head}`'
+tutorial: Basic PyWire
+section: Snippets
+description: Contribute `<title>`, `<meta>`, and `<link>` tags from any component using `{$head}`.
+files:
+  - path: pages/index.wire
+    initial: |
+      !layout "layout.wire"
+
+      <!-- 1. Add a {$head}...{/head} block here to set the page title and a meta tag -->
+
+      <article>
+        <h1>PyWire Rocks</h1>
+        <p>This page sets its own <code>&lt;title&gt;</code> without the layout knowing about it.</p>
+      </article>
+    solution: |
+      !layout "layout.wire"
+
+      {$head}
+        <title>PyWire Rocks — My Blog</title>
+        <meta name="description" content="A post about PyWire's head teleport.">
+      {/head}
+
+      <article>
+        <h1>PyWire Rocks</h1>
+        <p>This page sets its own <code>&lt;title&gt;</code> without the layout knowing about it.</p>
+      </article>
+  - path: pages/layout.wire
+    initial: |
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>My Blog</title>
+      </head>
+      <body>
+        <main>
+          {$render children}
+        </main>
+      </body>
+      </html>
+successCriteria:
+  - type: file_contains
+    description: 'Add a {$head} block to the page'
+    target: pages/index.wire
+    pattern: '{$head}'
+  - type: file_contains
+    description: 'Set a custom <title> inside the {$head} block'
+    target: pages/index.wire
+    pattern: 'PyWire Rocks'
+  - type: browser_route_text
+    description: "Verify the page body still renders"
+    pattern: 'PyWire Rocks'
+pagesDir: pages
+---
+
+`{$head}...{/head}` **teleports** its contents into the document's `<head>`, regardless of where in the component tree it appears. Pages, layouts, and components can all contribute — their fragments merge in the root `<head>`.
+
+This means layouts don't need to know which page wants which `<meta>` tag. Each page declares what it needs, and PyWire sorts it out at render time.
+
+### Your Task
+
+1. In `pages/index.wire`, add a `{$head}...{/head}` block above the `<article>` that sets a `<title>` and a `<meta name="description">`.
+2. Inspect the rendered HTML. The layout's `<title>My Blog</title>` should be replaced by the page's title; the layout's `<meta charset>` and `<meta viewport>` should still appear first.
+
+### Merge rules
+
+- **`<title>`**: the last `<title>` contributed by the render tree wins. Earlier titles are stripped out.
+- **Everything else**: preserved in authored order. If the layout writes `<meta charset>` first, charset stays first — even if a nested component adds a title afterwards.
+
+This makes `{$head}` safe for arbitrary composition: a shared component can drop in its own `<link rel="preload">` tag, and it'll slot in without wrecking the layout's charset or viewport meta.

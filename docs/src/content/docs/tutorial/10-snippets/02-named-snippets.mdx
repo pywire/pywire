@@ -1,0 +1,92 @@
+---
+title: 'Named snippets as props'
+tutorial: Basic PyWire
+section: Snippets
+description: Let parents fill multiple named regions with `{$snippet name}` sugar.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from components.card import Card
+      ---
+      <div>
+        <h1>Named Snippets</h1>
+        <Card>
+          <!-- 1. Supply the header snippet -->
+
+          <p>The body goes inside the children slot.</p>
+        </Card>
+      </div>
+    solution: |
+      ---
+      from components.card import Card
+      ---
+      <div>
+        <h1>Named Snippets</h1>
+        <Card>
+          {$snippet header}Product Details{/snippet}
+          <p>The body goes inside the children slot.</p>
+        </Card>
+      </div>
+  - path: components/card.wire
+    initial: |
+      <div class="card">
+        <header>
+          <!-- 2. Render the header snippet, with a fallback -->
+        </header>
+        <section>
+          {$render children}
+        </section>
+      </div>
+
+      <style scoped>
+      .card { border: 1px solid #cbd5e1; border-radius: 10px; }
+      header { padding: .75rem 1rem; background: #eef2ff; font-weight: 600; }
+      section { padding: 1rem; }
+      </style>
+    solution: |
+      <div class="card">
+        <header>
+          {$render header}Untitled{/render}
+        </header>
+        <section>
+          {$render children}
+        </section>
+      </div>
+
+      <style scoped>
+      .card { border: 1px solid #cbd5e1; border-radius: 10px; }
+      header { padding: .75rem 1rem; background: #eef2ff; font-weight: 600; }
+      section { padding: 1rem; }
+      </style>
+successCriteria:
+  - type: file_contains
+    description: 'Define {$snippet header} inside <Card>'
+    target: pages/index.wire
+    pattern: '{$snippet header}'
+  - type: file_contains
+    description: 'Render it in the component with the paired fallback form'
+    target: components/card.wire
+    pattern: '{$render header}'
+  - type: browser_route_text
+    description: "Verify 'Product Details' appears as the card header"
+    pattern: 'Product Details'
+pagesDir: pages
+---
+
+Children cover the default case, but real components often have **multiple named regions** — header, footer, sidebar, and so on. PyWire exposes these as **named snippets** that the parent defines and the component renders.
+
+There are two `{$render}` forms:
+
+- **Self-closing:** `{$render header(args)}` — calls the snippet and errors if nothing was supplied.
+- **Paired:** `{$render header}Default{/render}` — the body is a **fallback** rendered only when the snippet isn't provided.
+
+Inside a component's tags, `{$snippet name}...{/snippet}` is sugar for passing the snippet as a prop. It's equivalent to writing `<Card header={my_snippet} />` but keeps the markup inline.
+
+### Your Task
+
+1. In `components/card.wire`, replace the `<header>` comment with the paired fallback form `{$render header}Untitled{/render}`.
+2. In `pages/index.wire`, replace the comment inside `<Card>` with `{$snippet header}Product Details{/snippet}`.
+3. Verify the header shows **Product Details**, and that removing the snippet would fall back to **Untitled**.
+
+Named snippets are just `Snippet` values — you can pass them explicitly via `header={some_snippet}`, compute them in Python, or reuse one snippet across multiple components.
