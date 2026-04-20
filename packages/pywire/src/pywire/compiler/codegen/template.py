@@ -1221,6 +1221,24 @@ class TemplateCodegen:
         params = snippet_attr.params
         method_name = self._snippet_method_name(name, node.line, node.column)
 
+        # A snippet binds to ``self.<name>``; a frontmatter assignment
+        # ``<name> = ...`` also writes ``self.<name>``. The first one wins,
+        # and ``__top_level_init__`` always runs before snippet binding,
+        # so any render later resolves the frontmatter value (a plain
+        # Python object) instead of the snippet — and fails with a
+        # cryptic ``'str' object has no attribute 'render'``. Surface
+        # this as a compile-time error with source context.
+        if known_globals and name in known_globals:
+            from pywire_parser.exceptions import PyWireSyntaxError
+
+            raise PyWireSyntaxError(
+                f"{{$snippet {name}}} collides with the frontmatter "
+                f"symbol {name!r}. Snippets bind to ``self.{name}`` and "
+                f"would be shadowed by the frontmatter assignment. "
+                f"Rename the snippet or the frontmatter variable.",
+                line=node.line,
+            )
+
         # Build the snippet body reusing the standard function generator
         # so `{$if}`, `{$for}`, interpolation, components, etc. all work
         # the same way as in a render method.
