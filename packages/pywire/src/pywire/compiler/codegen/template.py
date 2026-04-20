@@ -61,6 +61,7 @@ class TemplateCodegen:
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
         self._region_counter = 0
+        self._region_id_prefix = ""
         self.region_renderers: Dict[str, str] = {}
         self._expr_id_counter = 0
         self._wire_vars: Set[str] = set()
@@ -87,6 +88,7 @@ class TemplateCodegen:
         initial_locals: Optional[Set[str]] = None,
         known_imports: Optional[Set[str]] = None,
         wire_vars: Set[str] = set(),
+        region_id_prefix: str = "",
     ) -> Tuple[ast.AsyncFunctionDef, List[ast.AsyncFunctionDef]]:
         """
         Generate standard _render_template method.
@@ -94,6 +96,7 @@ class TemplateCodegen:
         """
         self._reset_state()
         self._wire_vars = wire_vars
+        self._region_id_prefix = region_id_prefix
         # Check for explicit spread
         has_spread = self._has_spread_attribute(template_nodes)
         implicit_root_source = "attrs" if not has_spread and layout_id else None
@@ -619,7 +622,8 @@ class TemplateCodegen:
 
     def _next_region_id(self) -> str:
         self._region_counter += 1
-        return f"r{self._region_counter}"
+        suffix = f"r{self._region_counter}"
+        return f"{self._region_id_prefix}{suffix}" if self._region_id_prefix else suffix
 
     def _node_is_dynamic(
         self, node: TemplateNode, known_globals: Optional[Set[str]] = None

@@ -1655,6 +1655,7 @@ class CodeGenerator:
                 scope_id=body_scope_id,
                 initial_locals=prop_names,
                 wire_vars=wire_vars,
+                region_id_prefix=f"{file_hash}_",
             )
             assert body_func is not None
             body_func.name = body_func_name
@@ -1804,17 +1805,19 @@ class CodeGenerator:
             # needed for ``<style scoped>`` CSS scoping.
             layout_id = None
             scope_id = None
+            std_file_hash = ""
 
             if parsed.file_path:
                 import hashlib
 
                 layout_id_hash = hashlib.md5(str(parsed.file_path).encode()).hexdigest()
+                std_file_hash = layout_id_hash[:8]
                 has_scoped_style = any(
                     n.tag == "style" and "scoped" in n.attributes
                     for n in parsed.template
                 )
                 if has_scoped_style:
-                    scope_id = layout_id_hash[:8]
+                    scope_id = std_file_hash
 
             # Extract Props to Unpack
 
@@ -1853,6 +1856,7 @@ class CodeGenerator:
                 scope_id=scope_id,
                 initial_locals=prop_names,
                 wire_vars=wire_vars,
+                region_id_prefix=f"{std_file_hash}_" if std_file_hash else "",
             )
 
             # Prepend unpack statements to render_func body
