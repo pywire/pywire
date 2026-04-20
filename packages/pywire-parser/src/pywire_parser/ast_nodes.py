@@ -255,6 +255,22 @@ class HeadAttribute(SpecialAttribute):
 
 
 @dataclass
+class AuthAttribute(SpecialAttribute):
+    """{$auth policy="X" claims=[...]} marker.
+
+    Region-scoped auth gate. Parallel to the page-level ``!auth``
+    directive but evaluates per-region and renders an "allowed" or
+    "denied" branch rather than redirecting the whole page.
+    """
+
+    policy: Optional[str] = None
+    claims: Optional[List[Tuple[str, Optional[str]]]] = None
+
+    def __str__(self) -> str:
+        return f"AuthAttribute(policy={self.policy}, claims={self.claims})"
+
+
+@dataclass
 class EventAttribute(SpecialAttribute):
     """@click={handler_name} or @click={handler(arg1)}."""
 

@@ -3,11 +3,12 @@
 import ast
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pywire_parser.ts_parser import parse as _ts_parse
 
 from pywire_parser.ast_nodes import (
+    AuthAttribute,
     AwaitAttribute,
     CatchAttribute,
     ElifAttribute,
@@ -258,6 +259,7 @@ class PyWireParser:
             ForAttribute,
             TryAttribute,
             AwaitAttribute,
+            AuthAttribute,
             SnippetAttribute,
             HeadAttribute,
         )
@@ -448,6 +450,18 @@ class PyWireParser:
             node.special_attributes.append(
                 InterpolationNode(
                     expression=expr, is_raw=True, line=rn.line, column=rn.column
+                )
+            )
+        elif kw == "auth":
+            policy, claims = _parse_auth_kwargs(expr or "")
+            node.special_attributes.append(
+                AuthAttribute(
+                    name="$auth",
+                    value="",
+                    policy=policy,
+                    claims=claims,
+                    line=rn.line,
+                    column=rn.column,
                 )
             )
         elif kw == "snippet":
@@ -744,3 +758,71 @@ class PyWireParser:
                     regular[name] = val_str
 
         return regular, special
+
+
+def _parse_auth_kwargs(
+    expr: str,
+) -> Tuple[Optional[str], Optional[List[Tuple[str, Optional[str]]]]]:
+    """Parse ``{$auth policy=... claims=[...]}`` expression text.
+
+    Accepts kwargs or a positional string (treated as ``policy``). Returns
+    ``(policy, claims)`` — either may be ``None`` when omitted.
+
+    Claims entries may be strings (claim type, any value) or
+    tuples/lists of ``(type, value)``. Parse failures silently degrade to
+    ``(None, None)`` — runtime evaluation fails closed.
+    """
+    raw = expr.strip()
+    if not raw:
+        return None, None
+
+    # Wrap as call so we can read keywords uniformly.
+    try:
+        wrapped = ast.parse(f"_auth_call({raw})", mode="eval")
+    except (SyntaxError, ValueError):
+        return None, None
+
+    call = wrapped.body
+    if not isinstance(call, ast.Call):
+        return None, None
+
+    policy: Optional[str] = None
+    claims: Optional[List[Tuple[str, Optional[str]]]] = None
+
+    # Positional string → policy (matches page-level !auth "Name" shorthand).
+    if call.args:
+        first = call.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            policy = first.value
+
+    for kw in call.keywords:
+        if kw.arg == "policy":
+            v = kw.value
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                policy = v.value
+        elif kw.arg == "claims":
+            v = kw.value
+            if not isinstance(v, ast.List):
+                continue
+            parsed: List[Tuple[str, Optional[str]]] = []
+            ok = True
+            for item in v.elts:
+                if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                    parsed.append((item.value, None))
+                    continue
+                if isinstance(item, (ast.List, ast.Tuple)) and len(item.elts) == 2:
+                    elts = item.elts
+                    if all(
+                        isinstance(e, ast.Constant) and isinstance(e.value, str)
+                        for e in elts
+                    ):
+                        parsed.append(
+                            (elts[0].value, elts[1].value)  # type: ignore[attr-defined]
+                        )
+                        continue
+                ok = False
+                break
+            if ok:
+                claims = parsed
+
+    return policy, claims
