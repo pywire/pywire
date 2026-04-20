@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.3.0...vscode-pywire-v0.4.0) (2026-04-20)
+
+
+### Features
+
+* render regions (snippets, $render, $head) — retire slots ([#127](https://github.com/pywire/pywire/issues/127)) ([d2b48b6](https://github.com/pywire/pywire/commit/d2b48b635a4263b1568b0302e09875a5557c8004))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.2.2...vscode-pywire-v0.3.0) (2026-04-10)
 
 
