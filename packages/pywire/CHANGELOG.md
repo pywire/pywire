@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4](https://github.com/pywire/pywire/compare/pywire-v0.11.3...pywire-v0.11.4) (2026-04-20)
+
+
+### Bug Fixes
+
+* **pywire:** skip &lt;script&gt;/&lt;style&gt; bodies when searching HTML for structural tags ([a5515da](https://github.com/pywire/pywire/commit/a5515daf7328587ed92715e356c559e2eaed5da3))
+
 ## [0.11.3](https://github.com/pywire/pywire/compare/pywire-v0.11.2...pywire-v0.11.3) (2026-04-20)
 
 
