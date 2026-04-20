@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/pywire/pywire/compare/pywire-v0.11.0...pywire-v0.11.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* **pywire:** enable &lt;style scoped&gt; on layout-based pages ([07af048](https://github.com/pywire/pywire/commit/07af048f7b96749ecd08ec4b0b411df437686241))
+
 ## [0.11.0](https://github.com/pywire/pywire/compare/pywire-v0.10.0...pywire-v0.11.0) (2026-04-20)
 
 
