@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.3.0...pywire-parser-v0.4.0) (2026-04-20)
+
+
+### Features
+
+* **pywire-parser:** AuthAttribute AST node for {\$auth} blocks ([1670cdf](https://github.com/pywire/pywire/commit/1670cdf726e66cda4b0c1930f701aabc691f5b2a))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.2.1...pywire-parser-v0.3.0) (2026-04-20)
 
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire-parser"
-version = "0.3.0"
+version = "0.4.0"
 description = "Pure-Python parser for PyWire .wire files using tree-sitter"
 authors = [
     { name = "Reece Holmdahl", email = "reece@pywire.dev" },
