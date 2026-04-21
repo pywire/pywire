@@ -67,11 +67,11 @@ jobs:
             pywire-docs:
               - 'docs/**'
 
-  # pywire-parser: parser + analysis engine. No upstream deps inside the repo.
+  # pywire-parser: parser + analysis engine. Wraps tree-sitter-pywire.
   check-pywire-parser:
     name: "Check PyWire Parser"
     needs: changes
-    if: needs.changes.outputs.parser == 'true'
+    if: needs.changes.outputs.parser == 'true' || needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,11 +100,15 @@ jobs:
         run: cd packages/pywire-templates && ./scripts/check
 
   # pywire core: framework + Python runtime + TS client bundle.
-  # Reruns when parser changes (compiler uses PyWireParser).
+  # Reruns when parser changes (compiler uses PyWireParser) or when the
+  # tree-sitter grammar changes (parser wraps it).
   check-pywire:
     name: "Check PyWire Core"
     needs: changes
-    if: needs.changes.outputs.pywire == 'true' || needs.changes.outputs.parser == 'true'
+    if: >
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,7 +126,7 @@ jobs:
         run: cd packages/pywire && ./scripts/check
 
   # pywire-cli: CLI tools. Depends on pywire (runtime), pywire-parser (analysis),
-  # pywire-templates (deploy renders).
+  # pywire-templates (deploy renders), tree-sitter-pywire (via parser).
   check-pywire-cli:
     name: "Check PyWire CLI"
     needs: changes
@@ -130,7 +134,8 @@ jobs:
       needs.changes.outputs.cli == 'true' ||
       needs.changes.outputs.pywire == 'true' ||
       needs.changes.outputs.parser == 'true' ||
-      needs.changes.outputs.templates == 'true'
+      needs.changes.outputs.templates == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -158,14 +163,16 @@ jobs:
       - name: Run Checks
         run: cd packages/pywire-auth && ./scripts/check
 
-  # Language Server: depends on pywire (runtime types) + pywire-parser (analysis).
+  # Language Server: depends on pywire (runtime types), pywire-parser (analysis),
+  # tree-sitter-pywire (via parser).
   check-language-server:
     name: "Check Language Server"
     needs: changes
     if: >
       needs.changes.outputs.ls == 'true' ||
       needs.changes.outputs.pywire == 'true' ||
-      needs.changes.outputs.parser == 'true'
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
