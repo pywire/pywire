@@ -65,8 +65,8 @@ def build_project(
     if pages_dir is None:
         pages_dir = Path("pages")
 
-    from pywire.cli.validate import validate_project
     from pywire.compiler.build_artifacts import build_artifacts
+    from pywire.compiler.validate import validate_project
 
     errors = validate_project(pages_dir=pages_dir)
     if errors:
