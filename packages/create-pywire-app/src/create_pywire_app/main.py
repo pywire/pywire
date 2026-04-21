@@ -736,9 +736,7 @@ def main():
                     questionary.Choice(
                         "Path-based", value="path", checked=True, shortcut_key="p"
                     ),
-                    questionary.Choice(
-                        "Explicit", value="explicit", shortcut_key="e"
-                    ),
+                    questionary.Choice("Explicit", value="explicit", shortcut_key="e"),
                 ],
                 qmark="?",
                 pointer=">",

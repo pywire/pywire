@@ -47,20 +47,13 @@ class TestPW001NonSerializableWire:
         assert pw001[0].severity == Severity.WARNING
 
     def test_suffix_heuristic_flagged(self) -> None:
-        diags = _analyze(
-            "---\n"
-            "db = wire(DatabaseConnection())\n"
-            "---\n"
-            "<p>{db}</p>\n"
-        )
+        diags = _analyze("---\ndb = wire(DatabaseConnection())\n---\n<p>{db}</p>\n")
         pw001 = [d for d in diags if d.code == "PW001"]
         assert len(pw001) == 1
         assert "Connection" in pw001[0].message
 
     def test_lambda_flagged(self) -> None:
-        diags = _analyze(
-            "---\nfn = wire(lambda: 1)\n---\n<p>{fn}</p>\n"
-        )
+        diags = _analyze("---\nfn = wire(lambda: 1)\n---\n<p>{fn}</p>\n")
         pw001 = [d for d in diags if d.code == "PW001"]
         assert len(pw001) == 1
         assert "callable" in pw001[0].message.lower()
@@ -124,23 +117,17 @@ class TestPW002WriteInsideDerived:
 
 class TestPW003RedundantValueInInterpolation:
     def test_wire_dot_value_flagged(self) -> None:
-        diags = _analyze(
-            "---\ncount = wire(0)\n---\n<p>{count.value}</p>\n"
-        )
+        diags = _analyze("---\ncount = wire(0)\n---\n<p>{count.value}</p>\n")
         pw003 = [d for d in diags if d.code == "PW003"]
         assert len(pw003) == 1
         assert pw003[0].severity == Severity.INFO
 
     def test_bare_wire_ok(self) -> None:
-        diags = _analyze(
-            "---\ncount = wire(0)\n---\n<p>{count}</p>\n"
-        )
+        diags = _analyze("---\ncount = wire(0)\n---\n<p>{count}</p>\n")
         assert [d for d in diags if d.code == "PW003"] == []
 
     def test_non_wire_attribute_ok(self) -> None:
-        diags = _analyze(
-            "---\nuser = {'name': 'alice'}\n---\n<p>{user.name}</p>\n"
-        )
+        diags = _analyze("---\nuser = {'name': 'alice'}\n---\n<p>{user.name}</p>\n")
         assert [d for d in diags if d.code == "PW003"] == []
 
 

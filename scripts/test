@@ -1,4 +1,23 @@
 #!/bin/sh -e
 
+# Run tests for every Python package in the workspace.
+# CI does this per-package via dedicated jobs; this script is for local
+# developer convenience (run everything in one shot).
+
 echo "=== Running PyWire Core Tests ==="
-(cd packages/pywire && ./scripts/test)
+(cd packages/pywire && ./scripts/test "$@")
+
+echo "=== Running PyWire Parser Tests ==="
+(cd packages/pywire-parser && ./scripts/test "$@")
+
+echo "=== Running PyWire CLI Tests ==="
+(cd packages/pywire-cli && ./scripts/test "$@")
+
+echo "=== Running PyWire Auth Tests ==="
+(cd packages/pywire-auth && ./scripts/test "$@")
+
+echo "=== Running PyWire Language Server Tests ==="
+(cd packages/pywire-language-server && ./scripts/test "$@")
+
+echo "=== Running Create PyWire App Tests ==="
+(cd packages/create-pywire-app && ./scripts/test "$@")

@@ -7,12 +7,17 @@ on:
     branches: [main, "feat/**"]
 
 jobs:
-  # Determine which packages changed
+  # Determine which packages changed. Each package has its own filter; jobs
+  # combine filters for upstream dependencies so a change to e.g. pywire-parser
+  # reruns every downstream package's tests, but nothing else.
   changes:
     runs-on: ubuntu-latest
     outputs:
       pywire: ${{ steps.filter.outputs.pywire }}
+      parser: ${{ steps.filter.outputs.parser }}
       cli: ${{ steps.filter.outputs.cli }}
+      templates: ${{ steps.filter.outputs.templates }}
+      auth: ${{ steps.filter.outputs.auth }}
       ls: ${{ steps.filter.outputs.ls }}
       vscode: ${{ steps.filter.outputs.vscode }}
       prettier: ${{ steps.filter.outputs.prettier }}
@@ -39,13 +44,16 @@ jobs:
           filters: |
             pywire:
               - 'packages/pywire/**'
+            parser:
               - 'packages/pywire-parser/**'
             cli:
               - 'packages/pywire-cli/**'
+            templates:
               - 'packages/pywire-templates/**'
+            auth:
+              - 'packages/pywire-auth/**'
             ls:
               - 'packages/pywire-language-server/**'
-              - 'packages/pywire-parser/**'
             vscode:
               - 'packages/vscode-pywire/**'
             prettier:
@@ -59,11 +67,44 @@ jobs:
             pywire-docs:
               - 'docs/**'
 
-  # PyWire Core: lint, test
+  # pywire-parser: parser + analysis engine. No upstream deps inside the repo.
+  check-pywire-parser:
+    name: "Check PyWire Parser"
+    needs: changes
+    if: needs.changes.outputs.parser == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync Dependencies
+        run: uv sync
+      - name: Run Checks
+        run: cd packages/pywire-parser && ./scripts/check
+
+  # pywire-templates: Jinja deploy templates. Lint only — consumers test renders.
+  check-pywire-templates:
+    name: "Check PyWire Templates"
+    needs: changes
+    if: needs.changes.outputs.templates == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync Dependencies
+        run: uv sync
+      - name: Run Checks
+        run: cd packages/pywire-templates && ./scripts/check
+
+  # pywire core: framework + Python runtime + TS client bundle.
+  # Reruns when parser changes (compiler uses PyWireParser).
   check-pywire:
     name: "Check PyWire Core"
     needs: changes
-    if: needs.changes.outputs.pywire == 'true'
+    if: needs.changes.outputs.pywire == 'true' || needs.changes.outputs.parser == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,11 +121,16 @@ jobs:
       - name: Python Checks
         run: cd packages/pywire && ./scripts/check
 
-  # PyWire CLI: lint, test
+  # pywire-cli: CLI tools. Depends on pywire (runtime), pywire-parser (analysis),
+  # pywire-templates (deploy renders).
   check-pywire-cli:
     name: "Check PyWire CLI"
     needs: changes
-    if: needs.changes.outputs.cli == 'true'
+    if: >
+      needs.changes.outputs.cli == 'true' ||
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,11 +142,30 @@ jobs:
       - name: Run Checks
         run: cd packages/pywire-cli && ./scripts/check
 
-  # Language Server: lint, test
+  # pywire-auth: auth providers + stores. Depends on pywire.
+  check-pywire-auth:
+    name: "Check PyWire Auth"
+    needs: changes
+    if: needs.changes.outputs.auth == 'true' || needs.changes.outputs.pywire == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync Dependencies
+        run: uv sync --extra sqlalchemy --extra dev
+      - name: Run Checks
+        run: cd packages/pywire-auth && ./scripts/check
+
+  # Language Server: depends on pywire (runtime types) + pywire-parser (analysis).
   check-language-server:
     name: "Check Language Server"
     needs: changes
-    if: needs.changes.outputs.ls == 'true'
+    if: >
+      needs.changes.outputs.ls == 'true' ||
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -161,11 +226,11 @@ jobs:
       - name: Cargo Tests
         run: cd packages/tree-sitter-pywire && cargo test
 
-  # Create PyWire App: lint
+  # create-pywire-app: depends on pywire-templates for deploy renders.
   check-create-app:
     name: "Check Create PyWire App"
     needs: changes
-    if: needs.changes.outputs.create-app == 'true'
+    if: needs.changes.outputs.create-app == 'true' || needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,11 +242,11 @@ jobs:
       - name: Run Checks
         run: cd packages/create-pywire-app && ./scripts/check
 
-  # Examples: lint
+  # Examples: verify demos still compile + pass smoke tests against pywire.
   check-examples:
     name: "Check Examples"
     needs: changes
-    if: needs.changes.outputs.examples == 'true'
+    if: needs.changes.outputs.examples == 'true' || needs.changes.outputs.pywire == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -211,26 +276,3 @@ jobs:
         run: pnpm install
       - name: Run Checks
         run: cd docs && pnpm check
-
-  # Python Tests (run when core or LS changes)
-  python-tests:
-    name: "Python Tests"
-    needs: changes
-    if: needs.changes.outputs.pywire == 'true' || needs.changes.outputs.ls == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Install Workspace
-        run: scripts/install
-      - name: Install Playwright Browsers
-        run: uv run playwright install --with-deps
-      - name: Run Tests
-        run: scripts/test

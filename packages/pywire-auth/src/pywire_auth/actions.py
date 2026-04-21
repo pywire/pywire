@@ -142,18 +142,14 @@ class AuthActions:
         state = getattr(getattr(self._app, "app", None), "state", None)
         return getattr(state, "auth_store", None) if state is not None else None
 
-    async def _write_session(
-        self, request: Any, principal: ClaimsPrincipal
-    ) -> None:
+    async def _write_session(self, request: Any, principal: ClaimsPrincipal) -> None:
         session_store = getattr(self._app, "session_store", None)
         sid = self._session_id(request)
         if session_store is None or not sid:
             return
         data = await session_store.get(sid) or {}
         write_principal_to_session(data, principal)
-        await session_store.set(
-            sid, data, ttl=getattr(self._app, "session_ttl", 1800)
-        )
+        await session_store.set(sid, data, ttl=getattr(self._app, "session_ttl", 1800))
 
     @staticmethod
     def _session_id(request: Any) -> Optional[str]:

@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running checks for pywire-parser..."
+
+echo "-> ruff format"
+uv run ruff format --check src/ tests/
+
+echo "-> ruff lint"
+uv run ruff check src/ tests/
+
+# TODO: ty check (parser pkg has existing type issues untouched by this branch)
+
+echo "-> pytest"
+uv run --package pywire-parser pytest tests/

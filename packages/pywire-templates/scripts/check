@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running checks for pywire-templates..."
+
+echo "-> ruff format"
+uv run ruff format --check src/
+
+echo "-> ruff lint"
+uv run ruff check src/
+
+echo "-> ty"
+uv run ty check src/
+
+# No tests — template renders are exercised by pywire-cli and create-pywire-app.

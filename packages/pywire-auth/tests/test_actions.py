@@ -8,7 +8,6 @@ import pytest
 
 from pywire.auth import (
     Claim,
-    ClaimsPrincipal,
     MemoryAuthChannel,
     read_principal_from_session,
 )
@@ -23,9 +22,7 @@ class _SessionStore:
     async def get(self, sid: str) -> Optional[Dict[str, Any]]:
         return self._data.get(sid)
 
-    async def set(
-        self, sid: str, data: Dict[str, Any], *, ttl: int = 0
-    ) -> None:
+    async def set(self, sid: str, data: Dict[str, Any], *, ttl: int = 0) -> None:
         self._data[sid] = dict(data)
 
 
@@ -71,13 +68,15 @@ async def test_grant_writes_all_three_layers() -> None:
         # something to overwrite.
         await app.session_store.set(
             "sid-1",
-            {"auth": {
-                "is_authenticated": True,
-                "user_id": principal.user_id,
-                "name": principal.name,
-                "claims": [(c.type, c.value) for c in principal.claims],
-                "raw": {},
-            }},
+            {
+                "auth": {
+                    "is_authenticated": True,
+                    "user_id": principal.user_id,
+                    "name": principal.name,
+                    "claims": [(c.type, c.value) for c in principal.claims],
+                    "raw": {},
+                }
+            },
         )
 
         new_principal = await actions.grant(principal, request, "role", "admin")
@@ -107,9 +106,7 @@ async def test_grant_writes_all_three_layers() -> None:
 @pytest.mark.asyncio
 async def test_revoke_claim_removes_from_all_layers() -> None:
     actions, app, idp, _ = await _build()
-    uid = await idp.create_user(
-        email="a@b.c", password="pw", claims={"role": "admin"}
-    )
+    uid = await idp.create_user(email="a@b.c", password="pw", claims={"role": "admin"})
     principal = await idp.principal_for_user(uid)
     assert principal is not None
     assert principal.has_claim("role", "admin")
@@ -133,13 +130,16 @@ async def test_revoke_session_clears_and_fires_revoke_event() -> None:
     # Seed the session.
     await app.session_store.set(
         "sid-1",
-        {"auth": {
-            "is_authenticated": True,
-            "user_id": principal.user_id,
-            "name": "",
-            "claims": [],
-            "raw": {},
-        }, "_refresh_token": "rt"},
+        {
+            "auth": {
+                "is_authenticated": True,
+                "user_id": principal.user_id,
+                "name": "",
+                "claims": [],
+                "raw": {},
+            },
+            "_refresh_token": "rt",
+        },
     )
 
     request = _FakeRequest("sid-1")

@@ -68,7 +68,10 @@ jobs:
 
           checks=(
             "Check PyWire Core"
+            "Check PyWire Parser"
             "Check PyWire CLI"
+            "Check PyWire Templates"
+            "Check PyWire Auth"
             "Check Language Server"
             "Check VS Code Extension"
             "Check Prettier Plugin"
@@ -76,7 +79,6 @@ jobs:
             "Check Create PyWire App"
             "Check Examples"
             "Check PyWire Docs"
-            "Python Tests"
           )
 
           echo "$prs" | jq -c '.[]' | while read -r pr; do
