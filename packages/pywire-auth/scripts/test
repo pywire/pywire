@@ -3,4 +3,4 @@ set -e
 
 echo "🧪 Running tests for pywire-auth..."
 
-uv run --package pywire-auth pytest tests/ "$@"
+uv run --package pywire-auth --extra sqlalchemy --extra dev pytest tests/ "$@"
