@@ -22,9 +22,9 @@ This is the PyWire monorepo. All packages are developed and released from here.
 | [`packages/pywire-auth`](packages/pywire-auth) | Authentication — OAuth2/OIDC providers, local IdP, policies, live auth | [![PyPI](https://img.shields.io/pypi/v/pywire-auth)](https://pypi.org/project/pywire-auth/) |
 | [`packages/pywire-language-server`](packages/pywire-language-server) | LSP server for `.wire` files (completions, diagnostics, hover) | [![PyPI](https://img.shields.io/pypi/v/pywire-language-server)](https://pypi.org/project/pywire-language-server/) |
 | [`packages/create-pywire-app`](packages/create-pywire-app) | Project scaffolding CLI — `uvx create-pywire-app` | [![PyPI](https://img.shields.io/pypi/v/create-pywire-app)](https://pypi.org/project/create-pywire-app/) |
-| [`packages/vscode-pywire`](packages/vscode-pywire) | VS Code extension — syntax highlighting, LSP integration | [![VS Code](https://img.shields.io/visual-studio-marketplace/v/pywire.vscode-pywire)](https://marketplace.visualstudio.com/items?itemName=pywire.vscode-pywire) |
-| [`packages/prettier-plugin-pywire`](packages/prettier-plugin-pywire) | Prettier formatter for `.wire` files | [![npm](https://img.shields.io/npm/v/prettier-plugin-pywire)](https://www.npmjs.com/package/prettier-plugin-pywire) |
-| [`packages/tree-sitter-pywire`](packages/tree-sitter-pywire) | Tree-sitter grammar for `.wire` syntax | [![crates.io](https://img.shields.io/crates/v/tree-sitter-pywire)](https://crates.io/crates/tree-sitter-pywire) |
+| [`packages/vscode-pywire`](packages/vscode-pywire) | VS Code extension — syntax highlighting, LSP integration | [![VS Code](https://vsmarketplacebadges.dev/version-short/pywire.pywire.svg)](https://marketplace.visualstudio.com/items?itemName=pywire.pywire) |
+| [`packages/prettier-plugin-pywire`](packages/prettier-plugin-pywire) | Prettier formatter for `.wire` files | - |
+| [`packages/tree-sitter-pywire`](packages/tree-sitter-pywire) | Tree-sitter grammar for `.wire` syntax | [![PyPI](https://img.shields.io/pypi/v/pywire-auth)](https://pypi.org/project/tree-sitter-pywire/) |
 | [`docs`](docs) | Documentation site — [pywire.dev/docs](https://pywire.dev/docs) | — |
 
 ---
@@ -55,17 +55,11 @@ irm pywire.dev/install.ps1 | iex
 
 PyWire pages are `.wire` files — a template format that embeds Python, HTML, CSS, and even JS in a single file:
 
-```wire
+```pywire
 ---
 count = wire(0)
-
-def increment(self):
-    self.count += 1
-
 ---
-<button @click="increment">
-    Clicked {{ count }} times
-</button>
+<button @click={count += 1}>Clicked {count} times</button>
 ```
 
 - **Server renders HTML** on initial load and after every event
