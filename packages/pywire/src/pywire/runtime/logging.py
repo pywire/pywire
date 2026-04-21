@@ -5,8 +5,6 @@ import logging
 import sys
 from typing import IO, Any, Callable, Coroutine, Iterable
 
-from rich.text import Text
-
 # Context variable to hold the log callback for the current request/session
 # Callback signature: async def callback(message: str)
 log_callback_ctx: contextvars.ContextVar[
@@ -37,6 +35,8 @@ class ContextAwareStdout:
             # in the browser console.
             if "\x1b" in message:
                 try:
+                    from rich.text import Text
+
                     plain = Text.from_ansi(message).plain
                 except Exception:
                     plain = message
@@ -113,6 +113,8 @@ class BrowserLogForwarder(logging.Handler):
         try:
             raw = record.getMessage()
             try:
+                from rich.text import Text
+
                 plain = Text.from_markup(raw).plain
             except Exception:
                 plain = raw
