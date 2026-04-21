@@ -407,8 +407,11 @@ def build(
         if deploy_public.exists():
             shutil.rmtree(deploy_public)
 
-        # PyWire framework JS
-        pywire_static_src = Path(__file__).parent.parent / "static"
+        # PyWire framework JS — resolve from installed pywire package, not
+        # from this file's location (pywire-cli now lives in its own package).
+        import pywire
+
+        pywire_static_src = Path(pywire.__file__).parent / "static"
         pywire_static_dest = deploy_public / "_pywire" / "static"
         if pywire_static_src.exists():
             pywire_static_dest.mkdir(parents=True, exist_ok=True)

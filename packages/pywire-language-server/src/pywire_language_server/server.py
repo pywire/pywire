@@ -1451,12 +1451,14 @@ def _analysis_diagnostics(uri: str, text: str) -> List[Diagnostic]:
     path = _uri_to_path(uri) or uri
     try:
         parsed = PyWireParser().parse(text, file_path=path)
-    except Exception:
+    except Exception as e:
+        logger.warning("analysis: parse failed for %s: %s", path, e)
         return []
 
     try:
         diags = analyze(parsed, path)
-    except Exception:
+    except Exception as e:
+        logger.warning("analysis: engine error for %s: %s", path, e)
         return []
 
     out: List[Diagnostic] = []

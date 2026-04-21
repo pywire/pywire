@@ -41,6 +41,19 @@ def _deco_name(deco: ast.expr) -> str | None:
     return None
 
 
+def _walk_same_scope(node: ast.AST):
+    """Like ast.walk, but do not descend into nested function / lambda scopes.
+
+    A `def helper():` *defined* inside a derived body is not *executed* during
+    the derived computation — writes there shouldn't trigger PW002.
+    """
+    yield node
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        yield from _walk_same_scope(child)
+
+
 def _target_wire_name(target: ast.expr, wire_names: Set[str]) -> str | None:
     """Return the wire name being written to, if any."""
     if isinstance(target, ast.Name) and target.id in wire_names:
@@ -70,7 +83,7 @@ class WriteInsideDerived(Rule):
             return
 
         for body_node in _derived_bodies(module):
-            for sub in ast.walk(body_node):
+            for sub in _walk_same_scope(body_node):
                 targets: list[ast.expr] = []
                 if isinstance(sub, ast.Assign):
                     targets = list(sub.targets)
@@ -98,6 +111,3 @@ class WriteInsideDerived(Rule):
                             "or event handler."
                         ),
                     )
-
-            # Writes to derived itself via augassign elsewhere
-            continue

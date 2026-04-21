@@ -599,9 +599,22 @@ def main():
     )
     args = parser.parse_args()
 
-    # Non-interactive mode triggers when --yes is set OR a project path is
-    # supplied alongside a template (Cargo / pnpm convention).
-    non_interactive = args.yes or (args.project_path is not None and args.template is not None)
+    # --yes triggers full non-interactive mode (all prompts default).
+    # Without --yes, any provided flag skips only its own prompt (partial
+    # non-interactive — matches pnpm/cargo convention).
+    non_interactive = args.yes
+
+    # When running non-interactive, refuse to scaffold into a non-empty
+    # directory so we don't silently clobber existing work.
+    if non_interactive:
+        target = Path(args.project_path or "./my-pywire-app").expanduser().resolve()
+        if target.exists() and any(target.iterdir()):
+            print(
+                f"Error: target directory '{target}' exists and is not empty. "
+                "Pass a different PROJECT_PATH or remove the directory first.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     # Check for local override for testing (highest priority)
     use_local = os.environ.get("USE_LOCAL_PYWIRE") == "1"

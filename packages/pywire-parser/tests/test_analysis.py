@@ -105,6 +105,22 @@ class TestPW002WriteInsideDerived:
         )
         assert [d for d in diags if d.code == "PW002"] == []
 
+    def test_nested_function_body_not_flagged(self) -> None:
+        # Writing to a wire inside a helper function DEFINED in a derived
+        # body is fine — the helper is not itself the derived computation.
+        diags = _analyze(
+            "---\n"
+            "count = wire(0)\n"
+            "@derived\n"
+            "def safe():\n"
+            "    def _callback():\n"
+            "        count.value = 1\n"
+            "    return count.value + 1\n"
+            "---\n"
+            "<p>{safe}</p>\n"
+        )
+        assert [d for d in diags if d.code == "PW002"] == []
+
 
 class TestPW003RedundantValueInInterpolation:
     def test_wire_dot_value_flagged(self) -> None:
