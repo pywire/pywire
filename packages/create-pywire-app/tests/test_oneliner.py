@@ -29,7 +29,9 @@ def _run(argv: list[str], *, cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *a, **kw: subprocess.CompletedProcess(args=a, returncode=0, stdout="", stderr=""),
+        lambda *a, **kw: subprocess.CompletedProcess(
+            args=a, returncode=0, stdout="", stderr=""
+        ),
     )
     # Short-circuit the version resolver so we don't hit the network.
     monkeypatch.setattr(cpa_main, "resolve_pywire_version", lambda _dep: "0.0.0")
@@ -54,7 +56,9 @@ def _read_pyproject(path: Path) -> str:
 class TestBaselineYes:
     """-y with no other flags: defaults to counter + path + src + no adapters."""
 
-    def test_generates_project(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_generates_project(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "app"
         _run(
             [str(project), "-y", "--no-install", "--no-git"],
@@ -63,7 +67,9 @@ class TestBaselineYes:
         )
         _assert_has(project, "pyproject.toml", "README.md", "src", ".gitignore")
 
-    def test_default_template_is_counter(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_template_is_counter(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "app"
         _run(
             [str(project), "-y", "--no-install", "--no-git"],
@@ -74,7 +80,9 @@ class TestBaselineYes:
         pages = project / "src" / "pages"
         assert (pages / "index.wire").exists()
 
-    def test_no_deploy_adapters_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_deploy_adapters_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "app"
         _run(
             [str(project), "-y", "--no-install", "--no-git"],
@@ -104,7 +112,9 @@ class TestTemplateVariations:
         )
         _assert_has(project, "pyproject.toml", "src", "src/pages")
 
-    def test_saas_gets_sqlalchemy_dep(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_saas_gets_sqlalchemy_dep(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "saas-app"
         _run(
             [str(project), "-y", "--template", "saas", "--no-install", "--no-git"],
@@ -114,7 +124,9 @@ class TestTemplateVariations:
         content = _read_pyproject(project)
         assert "sqlalchemy" in content.lower()
 
-    def test_blog_gets_markdown_dep(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_blog_gets_markdown_dep(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "blog-app"
         _run(
             [str(project), "-y", "--template", "blog", "--no-install", "--no-git"],
@@ -198,9 +210,13 @@ class TestDeployAdapters:
             cwd=tmp_path,
             monkeypatch=monkeypatch,
         )
-        _assert_has(project, "wrangler.toml", "entry.py", "pywire_do.py", ".wranglerignore")
+        _assert_has(
+            project, "wrangler.toml", "entry.py", "pywire_do.py", ".wranglerignore"
+        )
 
-    def test_multiple_adapters(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_multiple_adapters(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "multi-app"
         _run(
             [
@@ -224,7 +240,9 @@ class TestDeployAdapters:
 
 
 class TestLayoutAndRouting:
-    def test_no_src_flat_layout(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_src_flat_layout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "flat-app"
         _run(
             [
@@ -243,7 +261,9 @@ class TestLayoutAndRouting:
         _assert_has(project, "pages")
         _assert_missing(project, "src")
 
-    def test_explicit_routing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_explicit_routing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "explicit-app"
         _run(
             [
@@ -263,7 +283,9 @@ class TestLayoutAndRouting:
 
 
 class TestRedisScaling:
-    def test_redis_with_docker_adapter(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_redis_with_docker_adapter(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "redis-app"
         _run(
             [
@@ -305,7 +327,9 @@ class TestGuards:
         # Original file must survive.
         assert (project / "stuff.txt").read_text() == "do not clobber"
 
-    def test_empty_existing_dir_ok(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_empty_existing_dir_ok(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         project = tmp_path / "empty"
         project.mkdir()
         _run(
@@ -328,7 +352,9 @@ class TestSubprocessGating:
             cmd = args[0] if args else kwargs.get("args")
             if isinstance(cmd, (list, tuple)):
                 calls.append(list(cmd))
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="", stderr=""
+            )
 
         monkeypatch.setattr(subprocess, "run", recorder)
         monkeypatch.setattr(cpa_main, "resolve_pywire_version", lambda _dep: "0.0.0")
