@@ -63,7 +63,7 @@ click.rich_click.COMMAND_GROUPS = {
     "pywire": [
         {
             "name": "Commands",
-            "commands": ["dev", "run", "build", "deploy"],
+            "commands": ["dev", "run", "build", "check", "deploy"],
         },
         {
             "name": "Configuration",
@@ -346,6 +346,24 @@ def build(
         resolved_pages_dir = Path("pages")
 
     from pywire.compiler.build import build_project
+    from pywire_cli.check import collect_diagnostics, format_rich, summarize
+
+    pre_diags = collect_diagnostics(resolved_pages_dir)
+    pre_summary = summarize(pre_diags)
+    if pre_diags:
+        format_rich(pre_diags, console)
+        if pre_summary.errors:
+            console.print(
+                f"\n[bold red]Build blocked: "
+                f"{pre_summary.errors} analysis error(s).[/] "
+                "Fix them or run [cyan]pywire check[/] for details."
+            )
+            sys.exit(1)
+        console.print(
+            f"[yellow]Continuing with "
+            f"{pre_summary.warnings} warning(s), "
+            f"{pre_summary.infos} info(s)[/]"
+        )
 
     # Resolve static_dir for asset fingerprinting
     resolved_static_dir = None
@@ -421,6 +439,101 @@ def build(
             "✅ Static assets → [cyan].pywire/deploy/public/[/] "
             "(served by Cloudflare edge CDN)"
         )
+
+
+@cli.command()
+@click.argument("app", required=False)
+@click.option(
+    "--pages-dir",
+    default=None,
+    help="Override pages directory (default: app.pages_dir or ./pages).",
+)
+@click.option(
+    "--rule",
+    "rules",
+    multiple=True,
+    help="Only run specific rules (e.g. --rule PW001 --rule PW003). Default: all.",
+)
+@click.option(
+    "--plain",
+    is_flag=True,
+    help="Emit ruff-style plain text (file:line:col: severity [code] message).",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Exit 1 on any warning or info (CI mode). Default exits 1 only on errors.",
+)
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="(Stub — not implemented yet) Attempt to apply suggested fixes.",
+)
+def check(
+    app: Optional[str],
+    pages_dir: Optional[str],
+    rules: tuple[str, ...],
+    plain: bool,
+    strict: bool,
+    fix: bool,
+) -> None:
+    """Run static analysis on a PyWire project."""
+    from pywire_cli.check import (
+        collect_diagnostics,
+        format_plain,
+        format_rich,
+        summarize,
+    )
+
+    if fix:
+        console.print(
+            "[yellow]--fix is not implemented yet.[/] "
+            "See pywire_parser/analysis/ROADMAP.md for the fix protocol plan."
+        )
+
+    if pages_dir:
+        resolved = Path(pages_dir)
+    else:
+        if not app:
+            try:
+                app = _discover_app_str()
+            except Exception:
+                app = None
+        if app:
+            try:
+                inst = import_app(app)
+                resolved = (
+                    Path(inst.pages_dir)
+                    if hasattr(inst, "pages_dir")
+                    else Path("pages")
+                )
+            except Exception:
+                resolved = Path("pages")
+        else:
+            resolved = Path("pages")
+
+    rule_codes = list(rules) if rules else None
+    diags = collect_diagnostics(resolved, rule_codes=rule_codes)
+
+    if plain:
+        if diags:
+            click.echo(format_plain(diags))
+    else:
+        if not diags:
+            console.print("[green]✓ No issues found.[/]")
+        else:
+            format_rich(diags, console)
+
+    summary = summarize(diags, strict=strict)
+    if not plain and summary.total > 0:
+        console.print(
+            f"\n[dim]{summary.errors} error(s), "
+            f"{summary.warnings} warning(s), "
+            f"{summary.infos} info(s)[/]"
+        )
+
+    if summary.exit_code != 0:
+        sys.exit(summary.exit_code)
 
 
 @cli.command()
