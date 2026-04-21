@@ -7,7 +7,7 @@ from typing import Any
 
 import jinja2
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def _deploy_env() -> jinja2.Environment:
