@@ -57,7 +57,7 @@ def pywire_server(test_app_dir, server_port):
     cmd = [
         sys.executable,
         "-m",
-        "pywire.cli.main",
+        "pywire_cli.main",
         "dev",
         "app:app",
         "--host",

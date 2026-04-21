@@ -189,12 +189,8 @@ class SQLAlchemyAuthStore:
             return
         await self._ensure_schema()
         # Separate known columns from extras.
-        known = {
-            k: v for k, v in fields.items() if k in ("email", "name", "claims")
-        }
-        extra_updates = {
-            k: v for k, v in fields.items() if k not in known
-        }
+        known = {k: v for k, v in fields.items() if k in ("email", "name", "claims")}
+        extra_updates = {k: v for k, v in fields.items() if k not in known}
         async with self._engine.begin() as conn:
             if known:
                 await conn.execute(
@@ -280,9 +276,7 @@ class SQLAlchemyAuthStore:
             ).first()
             if existing is None:
                 await conn.execute(
-                    credentials_table.insert().values(
-                        user_id=user_id, pw_hash=hash
-                    )
+                    credentials_table.insert().values(user_id=user_id, pw_hash=hash)
                 )
             else:
                 await conn.execute(

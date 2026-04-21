@@ -3,6 +3,8 @@
   "packages/pywire": "0.11.4",
   "packages/pywire-parser": "0.4.0",
   "packages/pywire-auth": "0.1.1",
+  "packages/pywire-cli": "0.1.0",
+  "packages/pywire-templates": "0.1.0",
   "packages/tree-sitter-pywire": "0.5.0",
   "packages/vscode-pywire": "0.4.0",
   "packages/prettier-plugin-pywire": "0.3.0",

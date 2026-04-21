@@ -3,7 +3,7 @@ title: CLI Reference
 description: Comprehensive guide to the pywire command-line interface.
 ---
 
-The `pywire` CLI is your primary tool for developing, building, and serving applications.
+The `pywire` CLI is your primary tool for developing, building, and serving applications. It ships as a separate [`pywire-cli`](https://pypi.org/project/pywire-cli) package; installing `pywire[cli]` pulls it in transparently.
 
 ## Global Flags
 
@@ -68,6 +68,31 @@ pywire build [APP] [OPTIONS]
 - `--optimize`: Compile bytecode with optimization (python `-O`).
 - `--out-dir TEXT`: Output directory (default: `.pywire/build`).
 - `--pages-dir TEXT`: Override pages directory.
+
+## `pywire check`
+
+Runs static analysis on your project's `.wire` files. Flags non-serializable `wire()` initial values, writes to wires inside a `derived()` body, redundant `{x.value}` interpolation, and more as the rule set grows.
+
+```sh
+pywire check [APP] [OPTIONS]
+```
+
+**Options:**
+
+- `--pages-dir TEXT`: Override pages directory.
+- `--rule CODE`: Only run specific rules (e.g. `--rule PW001 --rule PW003`). Repeatable. Default: all rules.
+- `--plain`: Emit ruff-style plain text (`file:line:col: severity [code] message`) for CI / greppable logs.
+- `--strict`: Exit 1 on any warning or info. Default exits 1 only on errors.
+- `--fix`: Stub — not implemented yet.
+
+`pywire build` runs the same analysis automatically and blocks on any `error`-severity diagnostic.
+
+**Rule codes:**
+
+- `PW001` — `wire()` assigned a non-serializable initial value
+- `PW002` — wire write inside a `derived()` body (raises `ReactivityError`)
+- `PW003` — redundant `.value` in template interpolation
+- `PW004`–`PW010` — stubbed for upcoming releases
 
 ## `pywire deploy`
 

@@ -16,6 +16,14 @@
       "release-type": "python",
       "component": "pywire-auth"
     },
+    "packages/pywire-cli": {
+      "release-type": "python",
+      "component": "pywire-cli"
+    },
+    "packages/pywire-templates": {
+      "release-type": "python",
+      "component": "pywire-templates"
+    },
     "packages/pywire-language-server": {
       "release-type": "python",
       "component": "pywire-language-server"

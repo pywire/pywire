@@ -6,14 +6,14 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from pywire.cli.deploy import (
+from pywire_cli.deploy import (
     generate_dockerfile,
     generate_fly_toml,
     generate_railway_json,
     generate_render_yaml,
     validate_deploy_config,
 )
-from pywire.cli.main import cli
+from pywire_cli.main import cli
 
 
 class TestGenerateDockerfile:

@@ -15,9 +15,11 @@ members = [
     "demo-snippets",
     "pywire",
     "pywire-auth",
+    "pywire-cli",
     "pywire-language-server",
     "pywire-monorepo",
     "pywire-parser",
+    "pywire-templates",
     "tree-sitter-pywire",
     "v04-validation",
 ]
@@ -545,10 +547,11 @@ toml = [
 
 [[package]]
 name = "create-pywire-app"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
+    { name = "pywire-templates" },
     { name = "questionary" },
     { name = "rich" },
 ]
@@ -568,6 +571,7 @@ requires-dist = [
     { name = "nox", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "pywire-templates", editable = "packages/pywire-templates" },
     { name = "questionary", specifier = ">=2.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'" },
@@ -1853,7 +1857,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.9.0"
+version = "0.11.3"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "msgpack" },
@@ -1866,19 +1870,13 @@ build = [
     { name = "pywire-parser" },
 ]
 cli = [
-    { name = "jinja2" },
-    { name = "pywire-parser" },
-    { name = "rich-click" },
-    { name = "textual" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "watchfiles" },
+    { name = "pywire-cli" },
 ]
 dev = [
     { name = "black" },
     { name = "build" },
     { name = "coverage" },
     { name = "httpx" },
-    { name = "jinja2" },
     { name = "msgpack-types" },
     { name = "nox" },
     { name = "pydantic" },
@@ -1886,13 +1884,9 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-playwright" },
-    { name = "pywire-parser" },
-    { name = "rich-click" },
+    { name = "pywire-cli" },
     { name = "ruff" },
-    { name = "textual" },
     { name = "ty" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "watchfiles" },
 ]
 forms = [
     { name = "pydantic" },
@@ -1918,7 +1912,6 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "hypercorn", marker = "extra == 'http3'", specifier = ">=0.14.0" },
-    { name = "jinja2", marker = "extra == 'cli'", specifier = ">=3.1.0" },
     { name = "msgpack", specifier = ">=1.0.0" },
     { name = "msgpack-types", marker = "extra == 'dev'" },
     { name = "nox", marker = "extra == 'dev'" },
@@ -1928,17 +1921,13 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-playwright", marker = "extra == 'dev'" },
     { name = "python-multipart", specifier = ">=0.0.6" },
-    { name = "pywire", extras = ["build"], marker = "extra == 'cli'", editable = "packages/pywire" },
     { name = "pywire", extras = ["cli", "forms"], marker = "extra == 'dev'", editable = "packages/pywire" },
+    { name = "pywire-cli", marker = "extra == 'cli'", editable = "packages/pywire-cli" },
     { name = "pywire-parser", marker = "extra == 'build'", editable = "packages/pywire-parser" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.0" },
-    { name = "rich-click", marker = "extra == 'cli'", specifier = ">=1.9.6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "starlette", specifier = ">=0.35.0" },
-    { name = "textual", marker = "extra == 'cli'", specifier = ">=7.4.0" },
     { name = "ty", marker = "extra == 'dev'" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'cli'", specifier = ">=0.27.0" },
-    { name = "watchfiles", marker = "extra == 'cli'", specifier = ">=0.21.0" },
 ]
 provides-extras = ["forms", "build", "cli", "dev", "http3", "redis"]
 
@@ -1947,7 +1936,7 @@ dev = [{ name = "mypy", specifier = ">=1.19.1" }]
 
 [[package]]
 name = "pywire-auth"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/pywire-auth" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -1988,8 +1977,48 @@ requires-dist = [
 provides-extras = ["google", "github", "microsoft", "facebook", "apple", "auth0", "sqlalchemy", "redis", "dev"]
 
 [[package]]
+name = "pywire-cli"
+version = "0.1.0"
+source = { editable = "packages/pywire-cli" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "pywire", extra = ["build"] },
+    { name = "pywire-templates" },
+    { name = "rich-click" },
+    { name = "textual" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "watchfiles" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
+    { name = "pywire", extras = ["build"], editable = "packages/pywire" },
+    { name = "pywire-templates", editable = "packages/pywire-templates" },
+    { name = "rich-click", specifier = ">=1.9.6" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "textual", specifier = ">=7.4.0" },
+    { name = "ty", marker = "extra == 'dev'" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
+    { name = "watchfiles", specifier = ">=0.21.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "pywire-language-server"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
@@ -2048,7 +2077,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.2.1"
+version = "0.4.0"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
@@ -2060,6 +2089,17 @@ requires-dist = [
     { name = "tree-sitter", specifier = ">=0.23" },
     { name = "tree-sitter-pywire", editable = "packages/tree-sitter-pywire" },
 ]
+
+[[package]]
+name = "pywire-templates"
+version = "0.1.0"
+source = { editable = "packages/pywire-templates" }
+dependencies = [
+    { name = "jinja2" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jinja2", specifier = ">=3.1.0" }]
 
 [[package]]
 name = "pyyaml"
@@ -2429,7 +2469,7 @@ wheels = [
 
 [[package]]
 name = "tree-sitter-pywire"
-version = "0.3.10"
+version = "0.5.0"
 source = { editable = "packages/tree-sitter-pywire" }
 
 [package.optional-dependencies]

@@ -29,7 +29,6 @@ from pywire.auth import (
     clear_principal_from_session,
     write_principal_to_session,
 )
-from pywire.auth.session import AUTH_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +99,7 @@ def build_routes(
             # Cap: keep the N most recently added entries (dict insertion
             # order preserves recency).
             if len(pending) > _MAX_PENDING_STATES:
-                for stale_key in list(pending)[: -_MAX_PENDING_STATES]:
+                for stale_key in list(pending)[:-_MAX_PENDING_STATES]:
                     pending.pop(stale_key, None)
             data[STATE_KEY] = pending
             await ctx.session_store.set(session_id, data, ttl=ctx.session_ttl)
@@ -262,9 +261,7 @@ async def _upsert_oidc_user(
     if not subject:
         return principal
 
-    provider_claims = {
-        c.type: c.value for c in principal.claims if c.type != "sub"
-    }
+    provider_claims = {c.type: c.value for c in principal.claims if c.type != "sub"}
     email = next(
         (c.value for c in principal.claims if c.type == "email"),
         provider_claims.get("email", ""),
@@ -288,13 +285,9 @@ async def _upsert_oidc_user(
                 exc_info=True,
             )
         try:
-            await store.link_provider(
-                subject, provider_name, subject, provider_claims
-            )
+            await store.link_provider(subject, provider_name, subject, provider_claims)
         except Exception:
-            logger.warning(
-                "auth_store link_provider failed", exc_info=True
-            )
+            logger.warning("auth_store link_provider failed", exc_info=True)
         # First login — provider claims ARE the canonical state.
         return principal
 

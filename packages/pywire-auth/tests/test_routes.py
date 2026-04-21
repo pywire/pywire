@@ -395,9 +395,7 @@ def test_oidc_callback_upserts_user_and_merges_stored_claims() -> None:
 
     # Simulate a grant — app wrote role=admin to the store.
     _asyncio.new_event_loop().run_until_complete(
-        store.update_user(
-            "google-sub-123", claims={"email": "a@b.c", "role": "admin"}
-        )
+        store.update_user("google-sub-123", claims={"email": "a@b.c", "role": "admin"})
     )
 
     # Second login — principal should be rebuilt with merged claims.
@@ -412,9 +410,7 @@ def test_oidc_callback_upserts_user_and_merges_stored_claims() -> None:
     resp = client.get("/auth/fake/callback?code=c&state=s2")
     assert resp.status_code == 303
     # Session should now carry the merged admin claim.
-    session_claims = dict(
-        session_store._data["sid-1"]["auth"]["claims"]
-    )
+    session_claims = dict(session_store._data["sid-1"]["auth"]["claims"])
     assert session_claims.get("role") == "admin"
     assert session_claims.get("email") == "a@b.c"
 

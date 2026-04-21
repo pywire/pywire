@@ -27,9 +27,7 @@ class AuthDirectiveParser(DirectiveParser):
         stripped = line.strip()
         return stripped == "!auth" or stripped.startswith("!auth ")
 
-    def parse(
-        self, line: str, line_num: int, col_num: int
-    ) -> Optional[AuthDirective]:
+    def parse(self, line: str, line_num: int, col_num: int) -> Optional[AuthDirective]:
         match = self.PATTERN.match(line.strip())
         if not match:
             return None
@@ -99,9 +97,7 @@ class AuthDirectiveParser(DirectiveParser):
             column=col_num,
         )
 
-    def _parse_claims_list(
-        self, v: ast.List
-    ) -> Optional[List[Tuple[str, str]]]:
+    def _parse_claims_list(self, v: ast.List) -> Optional[List[Tuple[str, str]]]:
         parsed: List[Tuple[str, str]] = []
         for item in v.elts:
             if isinstance(item, ast.Constant) and isinstance(item.value, str):

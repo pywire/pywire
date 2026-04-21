@@ -29,6 +29,10 @@ jobs:
       pywire-parser--tag_name: ${{ steps.release.outputs['packages/pywire-parser--tag_name'] }}
       pywire-auth--release_created: ${{ steps.release.outputs['packages/pywire-auth--release_created'] }}
       pywire-auth--tag_name: ${{ steps.release.outputs['packages/pywire-auth--tag_name'] }}
+      pywire-cli--release_created: ${{ steps.release.outputs['packages/pywire-cli--release_created'] }}
+      pywire-cli--tag_name: ${{ steps.release.outputs['packages/pywire-cli--tag_name'] }}
+      pywire-templates--release_created: ${{ steps.release.outputs['packages/pywire-templates--release_created'] }}
+      pywire-templates--tag_name: ${{ steps.release.outputs['packages/pywire-templates--tag_name'] }}
       pywire-language-server--release_created: ${{ steps.release.outputs['packages/pywire-language-server--release_created'] }}
       pywire-language-server--tag_name: ${{ steps.release.outputs['packages/pywire-language-server--tag_name'] }}
       vscode-pywire--release_created: ${{ steps.release.outputs['packages/vscode-pywire--release_created'] }}
@@ -64,6 +68,10 @@ jobs:
 
           checks=(
             "Check PyWire Core"
+            "Check PyWire Parser"
+            "Check PyWire CLI"
+            "Check PyWire Templates"
+            "Check PyWire Auth"
             "Check Language Server"
             "Check VS Code Extension"
             "Check Prettier Plugin"
@@ -71,7 +79,6 @@ jobs:
             "Check Create PyWire App"
             "Check Examples"
             "Check PyWire Docs"
-            "Python Tests"
           )
 
           echo "$prs" | jq -c '.[]' | while read -r pr; do
@@ -297,6 +304,40 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/pywire-auth/dist/
+
+  # Publish pywire-cli to PyPI
+  publish-pywire-cli:
+    name: "Publish pywire-cli to PyPI"
+    needs: release-please
+    if: needs.release-please.outputs.pywire-cli--release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-cli
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/pywire-cli/dist/
+
+  # Publish pywire-templates to PyPI
+  publish-pywire-templates:
+    name: "Publish pywire-templates to PyPI"
+    needs: release-please
+    if: needs.release-please.outputs.pywire-templates--release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --out-dir dist
+        working-directory: packages/pywire-templates
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/pywire-templates/dist/
 
   # Publish language server to PyPI
   publish-language-server:
