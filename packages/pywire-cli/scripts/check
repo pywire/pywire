@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running checks for pywire-cli..."
+
+echo "Running ruff format..."
+uv run --with ruff ruff format --check src/ tests/
+
+echo "Running ruff lint..."
+uv run --with ruff ruff check src/ tests/
+
+echo "Running ty check..."
+uv run --with ty ty check src/
+
+echo "Running tests..."
+uv run --package pywire-cli pytest tests/

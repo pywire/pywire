@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       pywire: ${{ steps.filter.outputs.pywire }}
+      cli: ${{ steps.filter.outputs.cli }}
       ls: ${{ steps.filter.outputs.ls }}
       vscode: ${{ steps.filter.outputs.vscode }}
       prettier: ${{ steps.filter.outputs.prettier }}
@@ -38,8 +39,13 @@ jobs:
           filters: |
             pywire:
               - 'packages/pywire/**'
+              - 'packages/pywire-parser/**'
+            cli:
+              - 'packages/pywire-cli/**'
+              - 'packages/pywire-templates/**'
             ls:
               - 'packages/pywire-language-server/**'
+              - 'packages/pywire-parser/**'
             vscode:
               - 'packages/vscode-pywire/**'
             prettier:
@@ -73,6 +79,22 @@ jobs:
         run: uv run playwright install --with-deps
       - name: Python Checks
         run: cd packages/pywire && ./scripts/check
+
+  # PyWire CLI: lint, test
+  check-pywire-cli:
+    name: "Check PyWire CLI"
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync Dependencies
+        run: uv sync
+      - name: Run Checks
+        run: cd packages/pywire-cli && ./scripts/check
 
   # Language Server: lint, test
   check-language-server:
