@@ -530,11 +530,78 @@ def main():
     console.clear()
 
     # Parse arguments
-    parser = argparse.ArgumentParser(description="Create a new PyWire application")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Create a new PyWire application. Run without flags for the "
+            "interactive wizard, or pass a PROJECT_PATH with --yes / "
+            "--template / --deploy for non-interactive scaffolding."
+        )
+    )
+    parser.add_argument(
+        "project_path",
+        nargs="?",
+        default=None,
+        help="Target directory (skips path prompt when provided).",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Non-interactive: accept defaults for every unprovided option.",
+    )
+    parser.add_argument(
+        "--template",
+        choices=["skeleton", "counter", "blog", "saas"],
+        default=None,
+        help="Starting template. Default: counter.",
+    )
+    parser.add_argument(
+        "--deploy",
+        action="append",
+        choices=["docker", "render", "fly", "railway", "cloudflare"],
+        default=None,
+        help="Deploy adapter (repeat to pick multiple). Default: none.",
+    )
+    parser.add_argument(
+        "--routing",
+        choices=["path", "explicit"],
+        default=None,
+        help="Routing strategy. Default: path.",
+    )
+    parser.add_argument(
+        "--no-src",
+        action="store_true",
+        help="Flat layout instead of src/ layout.",
+    )
+    parser.add_argument(
+        "--no-git",
+        action="store_true",
+        help="Skip git init + initial commit.",
+    )
+    parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Skip uv sync.",
+    )
+    parser.add_argument(
+        "--redis",
+        action="store_true",
+        help="Enable Redis/Valkey for multi-worker scaling.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Worker count when --redis is set. Default: 4.",
+    )
     parser.add_argument(
         "--pywire-version", help="Specify a specific version of pywire to install"
     )
     args = parser.parse_args()
+
+    # Non-interactive mode triggers when --yes is set OR a project path is
+    # supplied alongside a template (Cargo / pnpm convention).
+    non_interactive = args.yes or (args.project_path is not None and args.template is not None)
 
     # Check for local override for testing (highest priority)
     use_local = os.environ.get("USE_LOCAL_PYWIRE") == "1"
@@ -591,70 +658,102 @@ def main():
     if use_local:
         console.print("[yellow]WARNING: Using local pywire dependency[/yellow]")
 
+    adapter_label = {
+        "docker": "Docker (Dockerfile)",
+        "render": "Render (render.yaml)",
+        "fly": "Fly.io (fly.toml + Dockerfile)",
+        "railway": "Railway (Dockerfile)",
+        "cloudflare": "Cloudflare Workers (wrangler.toml)",
+    }
+
     try:
         # Project Location
-        project_location = questionary.path(
-            "Where should we initialize the system?",
-            default="./my-pywire-app",
-            style=questionary.Style(
-                [
-                    ("qmark", "fg:#00ffff bold"),
-                    ("question", "bold"),
-                    ("answer", "fg:#00ffff"),
-                ]
-            ),
-        ).unsafe_ask()
+        if args.project_path is not None:
+            project_location = args.project_path
+        elif non_interactive:
+            project_location = "./my-pywire-app"
+        else:
+            project_location = questionary.path(
+                "Where should we initialize the system?",
+                default="./my-pywire-app",
+                style=questionary.Style(
+                    [
+                        ("qmark", "fg:#00ffff bold"),
+                        ("question", "bold"),
+                        ("answer", "fg:#00ffff"),
+                    ]
+                ),
+            ).unsafe_ask()
 
         project_path = Path(project_location).expanduser().resolve()
         project_name = project_path.name
 
         # Project Template
-        template = questionary.select(
-            "Select a starting template:",
-            choices=[
-                questionary.Choice("Skeleton (minimal)", value="skeleton"),
-                questionary.Choice("Counter", value="counter"),
-                questionary.Choice("Blog/Portfolio (Markdown + SQLite)", value="blog"),
-                questionary.Choice(
-                    "SaaS Starter (Stripe + SQLAlchemy + Auth Stub)", value="saas"
-                ),
-            ],
-            default="counter",
-            pointer=">",
-        ).unsafe_ask()
+        if args.template is not None:
+            template = args.template
+        elif non_interactive:
+            template = "counter"
+        else:
+            template = questionary.select(
+                "Select a starting template:",
+                choices=[
+                    questionary.Choice("Skeleton (minimal)", value="skeleton"),
+                    questionary.Choice("Counter", value="counter"),
+                    questionary.Choice(
+                        "Blog/Portfolio (Markdown + SQLite)", value="blog"
+                    ),
+                    questionary.Choice(
+                        "SaaS Starter (Stripe + SQLAlchemy + Auth Stub)",
+                        value="saas",
+                    ),
+                ],
+                default="counter",
+                pointer=">",
+            ).unsafe_ask()
 
         # Routing Strategy
-        routing_strategy = questionary.select(
-            "Choose a routing architecture:",
-            choices=[
-                questionary.Choice(
-                    "Path-based", value="path", checked=True, shortcut_key="p"
-                ),
-                questionary.Choice("Explicit", value="explicit", shortcut_key="e"),
-            ],
-            qmark="?",
-            pointer=">",
-        ).unsafe_ask()
+        if args.routing is not None:
+            routing_strategy = args.routing
+        elif non_interactive:
+            routing_strategy = "path"
+        else:
+            routing_strategy = questionary.select(
+                "Choose a routing architecture:",
+                choices=[
+                    questionary.Choice(
+                        "Path-based", value="path", checked=True, shortcut_key="p"
+                    ),
+                    questionary.Choice(
+                        "Explicit", value="explicit", shortcut_key="e"
+                    ),
+                ],
+                qmark="?",
+                pointer=">",
+            ).unsafe_ask()
 
         # Project Structure
-        use_src = questionary.confirm(
-            "Use 'src/' directory layout?",
-            default=True,
-            auto_enter=False,
-            instruction=" (Y/n) Recommended for larger projects ",
-        ).unsafe_ask()
+        if args.no_src:
+            use_src = False
+        elif non_interactive:
+            use_src = True
+        else:
+            use_src = questionary.confirm(
+                "Use 'src/' directory layout?",
+                default=True,
+                auto_enter=False,
+                instruction=" (Y/n) Recommended for larger projects ",
+            ).unsafe_ask()
 
         # Deployment Adapters
-        adapters = questionary.checkbox(
-            "Select deployment adapters to configure:",
-            choices=[
-                "Docker (Dockerfile)",
-                "Render (render.yaml)",
-                "Fly.io (fly.toml + Dockerfile)",
-                "Railway (Dockerfile)",
-                "Cloudflare Workers (wrangler.toml)",
-            ],
-        ).unsafe_ask()
+        if args.deploy is not None:
+            adapters = [adapter_label[d] for d in args.deploy]
+        elif non_interactive:
+            adapters = []
+        else:
+            adapters = questionary.checkbox(
+                "Select deployment adapters to configure:",
+                choices=list(adapter_label.values()),
+            ).unsafe_ask()
 
         if "Cloudflare Workers (wrangler.toml)" in adapters:
             console.print(
@@ -675,25 +774,35 @@ def main():
         }
         has_docker_platform = bool(set(adapters or []) & _docker_platforms)
         if adapters and has_docker_platform:
-            redis_enabled = questionary.confirm(
-                "Enable Redis/Valkey for multi-worker scaling?\n"
-                "  (Increases resource usage and may cost more on paid hosting tiers)",
-                default=False,
-                auto_enter=False,
-                instruction=" (y/N) ",
-            ).unsafe_ask()
+            if args.redis:
+                redis_enabled = True
+            elif non_interactive:
+                redis_enabled = False
+            else:
+                redis_enabled = questionary.confirm(
+                    "Enable Redis/Valkey for multi-worker scaling?\n"
+                    "  (Increases resource usage and may cost more on paid hosting tiers)",
+                    default=False,
+                    auto_enter=False,
+                    instruction=" (y/N) ",
+                ).unsafe_ask()
 
             if redis_enabled:
-                workers_str = questionary.text(
-                    "Number of workers:",
-                    default="4",
-                    validate=lambda v: (
-                        True
-                        if v.isdigit() and int(v) > 0
-                        else "Enter a positive number"
-                    ),
-                ).unsafe_ask()
-                workers = int(workers_str)
+                if args.workers is not None:
+                    workers = args.workers
+                elif non_interactive:
+                    workers = 4
+                else:
+                    workers_str = questionary.text(
+                        "Number of workers:",
+                        default="4",
+                        validate=lambda v: (
+                            True
+                            if v.isdigit() and int(v) > 0
+                            else "Enter a positive number"
+                        ),
+                    ).unsafe_ask()
+                    workers = int(workers_str)
 
         # Generate project
         console.print()
@@ -701,7 +810,8 @@ def main():
         with console.status(
             "[bold cyan]Synthesizing project structure...", spinner="simpleDots"
         ):
-            time.sleep(1.0)
+            if not non_interactive:
+                time.sleep(0.5)
 
             generator = ProjectGenerator(
                 project_path=project_path,
@@ -718,17 +828,19 @@ def main():
 
             # Initialize git repo
             git_initialized = False
-            try:
-                subprocess.run(
-                    ["git", "init"],
-                    cwd=project_path,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                git_initialized = True
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                pass  # Silently skip if git is not available
+            if not args.no_git:
+                try:
+                    subprocess.run(
+                        ["git", "init"],
+                        cwd=project_path,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    git_initialized = True
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    pass  # Silently skip if git is not available
+
             if git_initialized:
                 try:
                     subprocess.run(
@@ -758,42 +870,51 @@ def main():
 
         # UV SYNC
         sync_success = False
-        with console.status(
-            "[bold cyan]Initializing environment (uv sync)...", spinner="bouncingBar"
-        ):
-            try:
-                env = os.environ.copy()
-                env.pop("VIRTUAL_ENV", None)
+        if args.no_install:
+            console.print("[dim]Skipping uv sync (--no-install)[/dim]")
+        else:
+            with console.status(
+                "[bold cyan]Initializing environment (uv sync)...",
+                spinner="bouncingBar",
+            ):
+                try:
+                    env = os.environ.copy()
+                    env.pop("VIRTUAL_ENV", None)
 
-                sync_cmd = ["uv", "sync"]
-                if not use_local:
-                    # Prevent inheriting workspace source overrides (e.g. pywire = { workspace = true })
-                    # so the generated uv.lock always resolves pywire from PyPI, not a local path.
-                    sync_cmd.append("--no-sources")
-                subprocess.run(
-                    sync_cmd,
-                    cwd=project_path,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                )
-                console.print("[green]✓[/green] Environment optimized")
-                sync_success = True
-            except subprocess.CalledProcessError as e:
-                console.print("[red]✗[/red] Failed to sync environment")
-                console.print(e.stderr)
-            except FileNotFoundError:
-                console.print("[yellow]![/yellow] uv not found, skipping sync")
+                    sync_cmd = ["uv", "sync"]
+                    if not use_local:
+                        # Prevent inheriting workspace source overrides (e.g. pywire = { workspace = true })
+                        # so the generated uv.lock always resolves pywire from PyPI, not a local path.
+                        sync_cmd.append("--no-sources")
+                    subprocess.run(
+                        sync_cmd,
+                        cwd=project_path,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        env=env,
+                    )
+                    console.print("[green]✓[/green] Environment optimized")
+                    sync_success = True
+                except subprocess.CalledProcessError as e:
+                    console.print("[red]✗[/red] Failed to sync environment")
+                    console.print(e.stderr)
+                except FileNotFoundError:
+                    console.print("[yellow]![/yellow] uv not found, skipping sync")
 
-        next_action = questionary.select(
-            "What would you like to do next?",
-            choices=[
-                questionary.Choice("Start development server", value="start"),
-                questionary.Choice("Show instructions and exit", value="instructions"),
-            ],
-            pointer=">",
-        ).unsafe_ask()
+        if non_interactive:
+            next_action = "instructions"
+        else:
+            next_action = questionary.select(
+                "What would you like to do next?",
+                choices=[
+                    questionary.Choice("Start development server", value="start"),
+                    questionary.Choice(
+                        "Show instructions and exit", value="instructions"
+                    ),
+                ],
+                pointer=">",
+            ).unsafe_ask()
 
         should_show_instructions = next_action == "instructions"
         if next_action == "start":
