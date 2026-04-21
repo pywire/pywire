@@ -1428,8 +1428,56 @@ def validate(ls: LanguageServer, uri: str):
                 )
             )
 
+        diagnostics.extend(_analysis_diagnostics(uri, doc.text))
         doc.diagnostics = diagnostics
         _publish_diagnostics(ls, uri)
+
+
+_analysis_severity_map = {
+    "error": DiagnosticSeverity.Error,
+    "warning": DiagnosticSeverity.Warning,
+    "info": DiagnosticSeverity.Information,
+}
+
+
+def _analysis_diagnostics(uri: str, text: str) -> List[Diagnostic]:
+    """Run the pywire_parser.analysis engine on a document and convert to LSP."""
+    try:
+        from pywire_parser.analysis import analyze
+        from pywire_parser.parser import PyWireParser
+    except Exception:
+        return []
+
+    path = _uri_to_path(uri) or uri
+    try:
+        parsed = PyWireParser().parse(text, file_path=path)
+    except Exception:
+        return []
+
+    try:
+        diags = analyze(parsed, path)
+    except Exception:
+        return []
+
+    out: List[Diagnostic] = []
+    for d in diags:
+        line = max(0, d.line - 1)  # analysis is 1-indexed, LSP is 0-indexed
+        col = max(0, d.column)
+        out.append(
+            Diagnostic(
+                range=Range(
+                    start=Position(line=line, character=col),
+                    end=Position(line=line, character=col + 1),
+                ),
+                message=d.message + (f"\n\n{d.hint}" if d.hint else ""),
+                severity=_analysis_severity_map.get(
+                    d.severity.value, DiagnosticSeverity.Warning
+                ),
+                code=d.code,
+                source="pywire",
+            )
+        )
+    return out
 
 
 def _map_generated_position(
