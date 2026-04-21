@@ -91,8 +91,11 @@ tree-sitter test
 docs/                         # Interactive documentation site (Astro + Starlight + Pyodide)
 packages/
   pywire/                     # Core Python framework (Python + TS client)
-  pywire-parser/              # Shared .wire file parser (Python, py-tree-sitter)
+  pywire-cli/                 # CLI tooling: dev, run, build, deploy, check
+  pywire-parser/              # Shared .wire file parser + analysis engine
+  pywire-templates/           # Shared Jinja2 templates (deploy configs)
   pywire-language-server/     # LSP server (Python, pygls)
+  pywire-auth/                # Auth providers + identity stores
   create-pywire-app/          # Project scaffolding CLI (Python)
   vscode-pywire/              # VS Code extension (TypeScript)
   prettier-plugin-pywire/     # Prettier formatter for .wire files (TypeScript)
@@ -139,4 +142,4 @@ Rules:
 - **Never use empty commits** (`--allow-empty`) to trigger releases — they fan out to ALL packages
 - To bump a specific package, modify a file inside that package's directory (e.g., touch a docstring, add a changelog note)
 - Use `chore:` prefix for CI/infra/dependency changes — release-please ignores `chore:` commits entirely
-- Valid component scopes: `pywire`, `pywire-auth`, `pywire-language-server`, `tree-sitter-pywire`, `vscode-pywire`, `prettier-plugin-pywire`, `create-pywire-app`, `pywire-docs`
+- Valid component scopes: `pywire`, `pywire-auth`, `pywire-cli`, `pywire-language-server`, `pywire-parser`, `pywire-templates`, `tree-sitter-pywire`, `vscode-pywire`, `prettier-plugin-pywire`, `create-pywire-app`, `pywire-docs`
