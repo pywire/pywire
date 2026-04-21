@@ -9,8 +9,11 @@ import logging
 from rich.console import Console
 from rich.text import Text
 
-# Force terminal to ensure ANSI codes are generated even when piped to TUI
-console = Console(force_terminal=True, markup=True)
+# Force terminal to ensure ANSI codes are generated even when piped to TUI.
+# Write to the real stdout so Rich output bypasses the per-request stdout
+# interceptor — ANSI stays in the terminal, and the browser gets clean
+# messages via BrowserLogForwarder instead.
+console = Console(force_terminal=True, markup=True, file=sys.__stdout__)
 
 # Module-level logger — handler/level configured in run_dev_server() at startup
 _dev_logger = logging.getLogger("pywire.dev")
@@ -263,9 +266,26 @@ async def run_dev_server(
             pywire_src_dir = Path(pywire.__file__).parent
 
             # Install logging interceptor for print capture
-            from pywire.runtime.logging import install_logging_interceptor
+            from pywire.runtime.logging import (
+                install_browser_log_forwarder,
+                install_logging_interceptor,
+            )
 
             install_logging_interceptor()
+            # Forward structured log records (no ANSI, no Rich markup) to any
+            # per-request log callback set via log_callback_ctx.
+            install_browser_log_forwarder(
+                [
+                    "",  # root
+                    "pywire.dev",
+                    "uvicorn",
+                    "uvicorn.error",
+                    "uvicorn.access",
+                    "hypercorn",
+                    "hypercorn.error",
+                    "hypercorn.access",
+                ]
+            )
 
             if not pages_dir.exists():
                 _dev_logger.warning(
