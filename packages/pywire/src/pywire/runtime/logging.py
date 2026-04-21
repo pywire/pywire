@@ -35,9 +35,12 @@ class ContextAwareStdout:
             # Schedule the callback. Strip ANSI via Rich's structured parser
             # so user code that prints colored output still renders cleanly
             # in the browser console.
-            try:
-                plain = Text.from_ansi(message).plain
-            except Exception:
+            if "\x1b" in message:
+                try:
+                    plain = Text.from_ansi(message).plain
+                except Exception:
+                    plain = message
+            else:
                 plain = message
             try:
                 loop = asyncio.get_running_loop()
