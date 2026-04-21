@@ -553,7 +553,7 @@ def start_tui(
     cmd = [
         sys.executable,
         "-m",
-        "pywire.cli.main",
+        "pywire_cli.main",
         "dev",
         app_path,
         "--no-tui",

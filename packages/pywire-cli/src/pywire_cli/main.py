@@ -18,7 +18,7 @@ except ImportError:
     sys.exit(1)
 
 from pywire import __version__
-from pywire.cli.config import config_command
+from pywire_cli.config import config_command
 
 console = Console()
 
@@ -248,7 +248,7 @@ def dev(
     """Start development server."""
     import asyncio
 
-    from pywire.cli.config import get_setting
+    from pywire_cli.config import get_setting
     from pywire.runtime.dev_server import run_dev_server
 
     # Resolve TUI setting: CLI flag > settings.toml > default (False)
@@ -288,7 +288,7 @@ def dev(
             )
         )
     else:
-        from pywire.cli.tui import start_tui
+        from pywire_cli.tui import start_tui
 
         start_tui(
             app_path=app,
@@ -408,7 +408,7 @@ def build(
             shutil.copytree(user_static, user_static_dest)
 
         # Regenerate pywire_do.py (contains app import path)
-        from pywire.cli.deploy import generate_cf_durable_object
+        from pywire_cli.deploy import generate_cf_durable_object
 
         do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
         (Path.cwd() / "pywire_do.py").write_text(do_content)
@@ -525,7 +525,7 @@ def deploy(
     redis: bool,
 ) -> None:
     """Generate deployment configuration for your PyWire app."""
-    from pywire.cli.deploy import (
+    from pywire_cli.deploy import (
         generate_dockerfile,
         generate_fly_toml,
         generate_railway_json,
@@ -630,7 +630,7 @@ def deploy(
             ("Dockerfile", generate_dockerfile(project_root, workers=workers))
         )
     elif platform == "cloudflare":
-        from pywire.cli.deploy import (
+        from pywire_cli.deploy import (
             generate_wrangler_toml,
             generate_cf_entry,
             generate_cf_durable_object,
