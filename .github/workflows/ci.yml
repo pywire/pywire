@@ -159,7 +159,7 @@ jobs:
         with:
           enable-cache: true
       - name: Sync Dependencies
-        run: uv sync --extra sqlalchemy --extra dev
+        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-auth && ./scripts/check
 
