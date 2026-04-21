@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 import questionary
 import tomllib
 from jinja2 import Environment, PackageLoader, select_autoescape
+from pywire_templates import render_deploy_template
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -454,8 +455,7 @@ class ProjectGenerator:
 
     def _generate_dockerfile(self) -> None:
         """Generate Dockerfile (templated with workers count)."""
-        context = {"workers": self.workers}
-        content = self.renderer.render("common/Dockerfile.j2", context)
+        content = render_deploy_template("Dockerfile.j2", workers=self.workers)
         (self.project_path / "Dockerfile").write_text(content)
 
     def _generate_adapters(self) -> None:
@@ -464,38 +464,37 @@ class ProjectGenerator:
             self._generate_dockerfile()
 
         if "Render (render.yaml)" in self.adapters:
-            context = {
-                "project_name": self.project_name,
-                "redis_enabled": self.redis_enabled,
-            }
-            content = self.renderer.render("common/render.yaml.j2", context)
+            content = render_deploy_template(
+                "render.yaml.j2",
+                project_name=self.project_name,
+                redis_enabled=self.redis_enabled,
+            )
             (self.project_path / "render.yaml").write_text(content)
-            # Render uses Docker — generate Dockerfile
             if not (self.project_path / "Dockerfile").exists():
                 self._generate_dockerfile()
 
         if "Fly.io (fly.toml + Dockerfile)" in self.adapters:
-            context = {"project_name": self.project_name}
-            content = self.renderer.render("common/fly.toml.j2", context)
+            content = render_deploy_template(
+                "fly.toml.j2", project_name=self.project_name
+            )
             (self.project_path / "fly.toml").write_text(content)
-            # Fly.io uses Docker for builds
             if not (self.project_path / "Dockerfile").exists():
                 self._generate_dockerfile()
 
         if "Railway (Dockerfile)" in self.adapters:
-            # Railway auto-detects Dockerfiles — just generate one
+            content = render_deploy_template("railway.json.j2")
+            (self.project_path / "railway.json").write_text(content)
             if not (self.project_path / "Dockerfile").exists():
                 self._generate_dockerfile()
 
         if "Cloudflare Workers (wrangler.toml)" in self.adapters:
-            # Determine module path based on project layout
             app_module = "src.main" if self.use_src else "main"
-            context = {
-                "project_name": self.project_name,
-                "app_module": app_module,
-                "app_attr": "app",
-            }
-            wrangler_content = self.renderer.render("common/wrangler.toml.j2", context)
+            wrangler_content = render_deploy_template(
+                "wrangler.toml.j2",
+                project_name=self.project_name,
+                app_module=app_module,
+                app_attr="app",
+            )
             (self.project_path / "wrangler.toml").write_text(wrangler_content)
 
             # Exclude local .venv from CF bundle to avoid duplicate packages
@@ -503,13 +502,13 @@ class ProjectGenerator:
                 ".venv/\n.git/\n__pycache__/\n.pywire/build/\n"
             )
 
-            entry_content = self.renderer.render("common/entry.py.j2", context)
+            entry_content = render_deploy_template(
+                "entry.py.j2", app_module=app_module, app_attr="app"
+            )
             (self.project_path / "entry.py").write_text(entry_content)
 
-            # Generate Durable Object class for session + WebSocket handling
-            do_content = self.renderer.render(
-                "common/pywire_do.py.j2",
-                {"app_module": app_module, "app_attr": "app"},
+            do_content = render_deploy_template(
+                "pywire_do.py.j2", app_module=app_module, app_attr="app"
             )
             (self.project_path / "pywire_do.py").write_text(do_content)
 

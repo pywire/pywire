@@ -551,6 +551,7 @@ version = "0.9.0"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
+    { name = "pywire-templates" },
     { name = "questionary" },
     { name = "rich" },
 ]
@@ -570,6 +571,7 @@ requires-dist = [
     { name = "nox", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "pywire-templates", editable = "packages/pywire-templates" },
     { name = "questionary", specifier = ">=2.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'" },
