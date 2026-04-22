@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/pywire/pywire/compare/pywire-v0.12.0...pywire-v0.12.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* promote pywire-parser to base dep; refresh LS install; 5min update poll ([9823396](https://github.com/pywire/pywire/commit/9823396f1b8e57ae40331cc685af79285032d78f))
+
 ## [0.12.0](https://github.com/pywire/pywire/compare/pywire-v0.11.4...pywire-v0.12.0) (2026-04-22)
 
 
