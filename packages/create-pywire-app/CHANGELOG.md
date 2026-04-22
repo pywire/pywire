@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.9.0...create-pywire-app-v0.10.0) (2026-04-22)
+
+
+### Features
+
+* split pywire CLI, add pywire check static analysis, oneliner scaffolder ([#156](https://github.com/pywire/pywire/issues/156)) ([d2b8a9d](https://github.com/pywire/pywire/commit/d2b8a9dff0871ff1d9b4cabc64a855842c48fbb6))
+
 ## [0.9.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.8.0...create-pywire-app-v0.9.0) (2026-04-20)
 
 
