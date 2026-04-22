@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.4.0...vscode-pywire-v0.5.0) (2026-04-22)
+
+
+### Features
+
+* **vscode-pywire:** install language server at runtime ([#168](https://github.com/pywire/pywire/issues/168)) ([e3e15d0](https://github.com/pywire/pywire/commit/e3e15d08b169c6da2d6836affa0e9305c4534b3f))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.3.0...vscode-pywire-v0.4.0) (2026-04-20)
 
 
