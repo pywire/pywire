@@ -13,3 +13,9 @@ if [ -d "packages/pywire" ]; then
     echo "-> Installing PyWire core dependencies and building assets..."
     (cd packages/pywire && ./scripts/install)
 fi
+
+# Prettier plugin must be built so vscode-pywire can bundle its dist/index.cjs
+if [ -d "packages/prettier-plugin-pywire" ]; then
+    echo "-> Building prettier-plugin-pywire..."
+    (cd packages/prettier-plugin-pywire && pnpm run build)
+fi

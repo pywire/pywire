@@ -644,11 +644,19 @@ export function activate(context: ExtensionContext) {
       const { venvPython, installedVersion } = await ensureLSInstalled(context, output)
       log(`Language server ${installedVersion} at ${venvPython}`)
 
+      const venvBinDir = path.dirname(venvPython)
+      const pathSep = process.platform === 'win32' ? ';' : ':'
+      const childEnv = {
+        ...process.env,
+        PATH: `${venvBinDir}${pathSep}${process.env.PATH ?? ''}`,
+        VIRTUAL_ENV: path.dirname(venvBinDir),
+      }
+
       const serverOptions: ServerOptions = {
         command: venvPython,
         args: ['-m', 'pywire_language_server'],
         options: {
-          env: { ...process.env },
+          env: childEnv,
         },
       }
 
