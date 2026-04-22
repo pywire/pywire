@@ -77,6 +77,15 @@
           "type": "boolean",
           "default": false,
           "description": "Disable periodic checks for PyWire updates."
+        },
+        "pywire.languageServer.version": {
+          "type": "string",
+          "default": "latest",
+          "description": "Version of pywire-language-server to install in the extension-managed venv. Use 'latest' to follow PyPI, or pin to a specific version (e.g. '0.5.0')."
+        },
+        "pywire.languageServer.customPath": {
+          "type": "string",
+          "description": "Absolute path to a Python interpreter in a venv that already has pywire-language-server installed. When set, bypasses the extension-managed venv."
         }
       }
     },
@@ -144,7 +153,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run sync-node-deps && pnpm run bundle-deps && pnpm run package",
+    "vscode:prepublish": "pnpm run sync-node-deps && pnpm run package",
     "compile": "pnpm run check-types && node build.js",
     "watch": "concurrently \"pnpm run watch:esbuild\" \"pnpm run watch:tsc\"",
     "watch:esbuild": "node build.js --watch",
@@ -152,7 +161,6 @@
     "package": "pnpm run check-types && node build.js --production",
     "vsix": "pnpm run vscode:prepublish && npx @vscode/vsce package --no-dependencies",
     "check-types": "tsc --noEmit -p ./",
-    "bundle-deps": "./scripts/bundle-deps",
     "sync-node-deps": "./scripts/sync-node-deps",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

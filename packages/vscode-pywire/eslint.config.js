@@ -6,7 +6,7 @@ import globals from 'globals'
 export default [
   // Ignore patterns
   {
-    ignores: ['out/**', 'node_modules/**', 'bundled/**'],
+    ignores: ['out/**', 'node_modules/**'],
   },
 
   // Base configuration
