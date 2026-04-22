@@ -22,7 +22,7 @@ let hooks: UpdateHooks | null = null
 export function setupUpdateCheck(context: vscode.ExtensionContext, updateHooks: UpdateHooks) {
   hooks = updateHooks
   setTimeout(() => checkForUpdates(context), 5000)
-  const interval = setInterval(() => checkForUpdates(context), 10 * 60 * 1000)
+  const interval = setInterval(() => checkForUpdates(context), 5 * 60 * 1000)
   context.subscriptions.push({ dispose: () => clearInterval(interval) })
 }
 

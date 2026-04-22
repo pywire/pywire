@@ -27,6 +27,7 @@ dependencies = [
     "starlette>=0.35.0",
     "python-multipart>=0.0.6",
     "msgpack>=1.0.0",
+    "pywire-parser>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,7 @@ forms = [
     "pydantic>=2.0.0",
 ]
 build = [
-    "pywire-parser>=0.1.0",
+    "pywire-parser>=0.5.0",
 ]
 cli = [
     "pywire-cli",

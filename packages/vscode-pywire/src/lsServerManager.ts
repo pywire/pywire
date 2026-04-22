@@ -234,10 +234,14 @@ async function installLS(
   spec: string,
   log: OutputChannel
 ): Promise<void> {
-  const args = ['pip', 'install', '--python', venvPython, spec]
-  const res = await execCapture(uv, args, log)
-  if (res.code !== 0) {
-    throw new Error(`uv pip install ${spec} failed: ${res.stderr || res.stdout}`)
+  const baseArgs = ['pip', 'install', '--python', venvPython]
+  const pkgName = spec.split('==')[0]
+  const res = await execCapture(uv, [...baseArgs, '--refresh-package', pkgName, spec], log)
+  if (res.code === 0) return
+  log.appendLine(`Install failed, retrying with --refresh: ${res.stderr || res.stdout}`)
+  const retry = await execCapture(uv, [...baseArgs, '--refresh', spec], log)
+  if (retry.code !== 0) {
+    throw new Error(`uv pip install ${spec} failed: ${retry.stderr || retry.stdout}`)
   }
 }
 
