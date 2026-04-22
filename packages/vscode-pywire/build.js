@@ -111,20 +111,7 @@ async function main() {
             })
             console.log('[watch] build finished')
 
-            // Copy lsp_launcher.py to out/ after successful build
             if (result.errors.length === 0) {
-              try {
-                const outDir = join(projectRoot, 'out')
-                mkdirSync(outDir, { recursive: true })
-                copyFileSync(
-                  join(projectRoot, 'src/lsp_launcher.py'),
-                  join(outDir, 'lsp_launcher.py')
-                )
-                console.log('Copied lsp_launcher.py to out/')
-              } catch (e) {
-                console.error('Failed to copy lsp_launcher.py:', e)
-              }
-
               // Copy prettier modules to out/node_modules for runtime resolution
               try {
                 const outNodeModulesDir = join(projectRoot, 'out', 'node_modules')

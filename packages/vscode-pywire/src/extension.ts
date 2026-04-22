@@ -14,7 +14,6 @@ import {
   TextEditorEdit,
   TextEdit,
   DocumentHighlight,
-  extensions,
   Uri,
   TextDocument,
   Hover,
@@ -29,6 +28,7 @@ import {
 } from 'vscode'
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node'
 import { setupUpdateCheck, performUpdate } from './updateCheck'
+import { ensureLSInstalled } from './lsServerManager'
 
 type PrettierModule = typeof import('prettier')
 type PrettierPlugin = import('prettier').Plugin
@@ -614,12 +614,6 @@ export function activate(context: ExtensionContext) {
   )
   context.subscriptions.push(formattingProvider)
 
-  // Path to LSP server script (launcher)
-  const serverScript = context.asAbsolutePath(path.join('out', 'lsp_launcher.py'))
-
-  console.log('LSP server script:', serverScript)
-  log(`LSP server script: ${serverScript}`)
-
   // Function to stop the language client and clean up subscriptions
   async function stopLanguageClient() {
     // Dispose all client-related subscriptions
@@ -645,39 +639,14 @@ export function activate(context: ExtensionContext) {
 
   // Function to start the language client
   async function startLanguageClient() {
-    // Get Python path from settings
     const config = workspace.getConfiguration('pywire')
-    let pythonPath = config.get<string>('pythonPath')
     try {
-      // If no explicit path set, try to get it from the Python extension
-      if (!pythonPath) {
-        const pythonExtension = extensions.getExtension('ms-python.python')
-        if (pythonExtension) {
-          if (!pythonExtension.isActive) {
-            await pythonExtension.activate()
-          }
-          const exports = pythonExtension.exports
-          // Use the public API to get the execution details
-          if (exports.settings && exports.settings.getExecutionDetails) {
-            const executionDetails = exports.settings.getExecutionDetails(
-              workspace.workspaceFolders?.[0]?.uri
-            )
-            pythonPath = executionDetails?.execCommand?.[0]
-          }
-        }
-      }
+      const { venvPython, installedVersion } = await ensureLSInstalled(context, output)
+      log(`Language server ${installedVersion} at ${venvPython}`)
 
-      if (!pythonPath) {
-        // Last resort fallback
-        pythonPath = 'python3'
-      }
-      console.log(`Using Python interpreter: ${pythonPath}`)
-      log(`Using Python interpreter: ${pythonPath}`)
-
-      // Server options - how to start the server
       const serverOptions: ServerOptions = {
-        command: pythonPath,
-        args: [serverScript],
+        command: venvPython,
+        args: ['-m', 'pywire_language_server'],
         options: {
           env: { ...process.env },
         },
@@ -801,7 +770,7 @@ export function activate(context: ExtensionContext) {
   startLanguageClient()
 
   // Setup periodic update checks
-  setupUpdateCheck(context)
+  setupUpdateCheck(context, { output, restartClient: restartLanguageClient })
 }
 
 export function deactivate(): Promise<void> | undefined {
