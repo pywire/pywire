@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/pywire/pywire/compare/pywire-language-server-v0.6.0...pywire-language-server-v0.6.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **pywire-language-server:** recognize auth directive/block and dual-form render ([b920efb](https://github.com/pywire/pywire/commit/b920efbd1c9ca97be21b512638ce61f78c983095))
+
 ## [0.6.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.5.0...pywire-language-server-v0.6.0) (2026-04-22)
 
 
