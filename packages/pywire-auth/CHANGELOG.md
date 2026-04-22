@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/pywire/pywire/compare/pywire-auth-v0.1.1...pywire-auth-v0.2.0) (2026-04-21)
+
+
+### Features
+
+* split pywire CLI, add pywire check static analysis, oneliner scaffolder ([#156](https://github.com/pywire/pywire/issues/156)) ([d2b8a9d](https://github.com/pywire/pywire/commit/d2b8a9dff0871ff1d9b4cabc64a855842c48fbb6))
+
 ## [0.1.1](https://github.com/pywire/pywire/compare/pywire-auth-v0.1.0...pywire-auth-v0.1.1) (2026-04-20)
 
 
