@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
     "tree-sitter>=0.23",
-    "tree-sitter-pywire>=0.3.0",
+    "tree-sitter-pywire>=0.5.0",
 ]
 
 [tool.hatch.build.targets.wheel]
