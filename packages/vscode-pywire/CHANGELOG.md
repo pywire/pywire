@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/pywire/pywire/compare/vscode-pywire-v0.5.0...vscode-pywire-v0.5.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **vscode-pywire:** prepend venv bin to PATH so LS finds ty ([e373b61](https://github.com/pywire/pywire/commit/e373b61e4da66fb4f605a946877c2b12c8c5ba1a))
+
 ## [0.5.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.4.0...vscode-pywire-v0.5.0) (2026-04-22)
 
 
