@@ -52,6 +52,7 @@ class Transpiler:
         self.directive_ranges: Dict[str, Tuple[int, int]] = {}
         self.path_routes: Dict[str, str] = {}
         self.in_script_tag = False
+        self.has_auth = False
 
         self.current_line_idx = 0
         self.generated_line_idx = 0  # 0-indexed
@@ -654,6 +655,8 @@ class Transpiler:
                     self.generated_line_idx += 1
             elif stripped.startswith("!layout"):
                 pass  # skip for now
+            elif stripped == "!auth" or stripped.startswith("!auth "):
+                self.has_auth = True
 
     def _find_python_fences(self) -> Tuple[Optional[int], Optional[int]]:
         fence_re = re.compile(r"^\s*-{3,}\s*$", re.IGNORECASE)
@@ -702,3 +705,7 @@ class Transpiler:
         _append(
             "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\ndef asset(path: str) -> str: ...\ndef set_cookie(key: str, value: str = '', *, max_age: int | None = None, expires: int | None = None, path: str = '/', domain: str | None = None, secure: bool = False, httponly: bool = False, samesite: str | None = 'lax') -> None: ...\ndef delete_cookie(key: str, *, path: str = '/', domain: str | None = None) -> None: ...\n\n"
         )
+        if self.has_auth:
+            _append(
+                "from pywire.auth.principal import ClaimsPrincipal\nuser: ClaimsPrincipal\n\n"
+            )

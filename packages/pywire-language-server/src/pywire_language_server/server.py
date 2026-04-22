@@ -63,21 +63,26 @@ KNOWN_BLOCKS = {
     "snippet",
     "render",
     "head",
+    "auth",
 }
 # Block keywords that start a block (require a closing {/tag}).
 # ``render`` is dual-form: unclosed ``{$render name}`` calls a snippet;
 # paired ``{$render name}fallback{/render}`` also accepts a closer, so
 # both here and in BLOCK_CLOSERS.
-BLOCK_OPENERS = {"if", "for", "await", "try", "snippet", "render", "head"}
+BLOCK_OPENERS = {"if", "for", "await", "try", "snippet", "render", "head", "auth"}
 # Block keywords that are continuations (must appear inside an opener)
 BLOCK_CONTINUATIONS = {"elif", "else", "then", "catch", "except", "finally"}
 # Closing tags that are valid
-BLOCK_CLOSERS = {"if", "for", "await", "try", "snippet", "render", "head"}
+BLOCK_CLOSERS = {"if", "for", "await", "try", "snippet", "render", "head", "auth"}
+# Openers whose closing tag is optional (dual-form: self-closing or paired
+# with a body). Skipped during stack tracking so an unpaired opener does
+# not raise ``Unclosed block`` and a stray closer is tolerated.
+OPTIONAL_CLOSE = {"render"}
 
 # Valid attribute keywords: used as $keyword on HTML elements
 KNOWN_ATTRIBUTES = {"if", "show", "for", "key", "ref", "permanent", "reload"}
 
-KNOWN_DIRECTIVES = {"!layout", "!path", "!no_spa"}
+KNOWN_DIRECTIVES = {"!layout", "!path", "!no_spa", "!auth"}
 
 
 class VirtualFileManager:
@@ -1328,7 +1333,8 @@ def validate(ls: LanguageServer, uri: str):
                             )
                         )
                     elif keyword in BLOCK_OPENERS:
-                        block_stack.append((keyword, idx, start_col))
+                        if keyword not in OPTIONAL_CLOSE:
+                            block_stack.append((keyword, idx, start_col))
                     elif keyword in BLOCK_CONTINUATIONS:
                         if not block_stack:
                             diagnostics.append(
@@ -1379,6 +1385,8 @@ def validate(ls: LanguageServer, uri: str):
                                 severity=DiagnosticSeverity.Error,
                             )
                         )
+                    elif keyword in OPTIONAL_CLOSE:
+                        pass
                     elif not block_stack:
                         diagnostics.append(
                             Diagnostic(
