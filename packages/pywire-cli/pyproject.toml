@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Command-line tools for PyWire projects: dev, build, deploy, check"
 authors = [
     { name = "Reece Holmdahl", email = "reece@pywire.dev" },
