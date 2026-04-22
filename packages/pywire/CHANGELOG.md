@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/pywire/pywire/compare/pywire-v0.11.4...pywire-v0.12.0) (2026-04-22)
+
+
+### Features
+
+* split pywire CLI, add pywire check static analysis, oneliner scaffolder ([#156](https://github.com/pywire/pywire/issues/156)) ([d2b8a9d](https://github.com/pywire/pywire/commit/d2b8a9dff0871ff1d9b4cabc64a855842c48fbb6))
+
+
+### Bug Fixes
+
+* **pywire:** lazy-import rich in runtime logging ([#166](https://github.com/pywire/pywire/issues/166)) ([11f82eb](https://github.com/pywire/pywire/commit/11f82ebd932f7ca963f3e9f4442d9ebdf99f72c1))
+* **pywire:** strip ANSI + Rich markup from browser-forwarded logs ([#157](https://github.com/pywire/pywire/issues/157)) ([1e228b0](https://github.com/pywire/pywire/commit/1e228b0da9d7cf74847ce5547b1271bfed6facf5))
+
 ## [0.11.4](https://github.com/pywire/pywire/compare/pywire-v0.11.3...pywire-v0.11.4) (2026-04-20)
 
 
