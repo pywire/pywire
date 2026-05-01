@@ -218,6 +218,29 @@ bio = "<strong>Alice</strong> is a developer."
 > [!CAUTION]
 > Never use `{$html ...}` with untrusted user input — it bypasses XSS protection.
 
+## Memoization
+
+Components are memoized by default. A component's template body only re-renders when:
+
+- one of its props changes (by equality), or
+- a wire it read during the previous render is written.
+
+Unrelated wire updates elsewhere on the page don't invalidate the component. Pure components compose freely without paying for re-render work they don't need.
+
+To opt a single call site out of memoization — for example to force a fresh render every cycle when the component reads impure values like `datetime.now()` or `uuid.uuid4()` — wrap the call in [`{$dynamic}`](/docs/syntax/blocks#memoization-escape-dynamic):
+
+```pywire
+<!-- Memoized: re-renders only when `count` changes -->
+<Counter label="memo" initial={count.value} />
+
+<!-- Bypassed: body re-runs every page render -->
+{$dynamic}
+    <Counter label="always-fresh" initial={count.value} />
+{/dynamic}
+```
+
+Memoization safety is a property of how a component is *used*, not how it's defined — wrap at the call site, not the definition.
+
 ## Component Refs
 
 Parents can get a reference to a child component using `$ref` and call any method decorated with `@expose`:
