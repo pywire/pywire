@@ -666,21 +666,37 @@ class WebSocketHandler:
                 await websocket.send_bytes(msgpack.packb(payload))
                 return
 
-            # 5. Success (200) — send body HTML and set up local page instance
+            # 5. Success (200) — send body HTML and set up local page instance.
+            # Resolve the new page first so we can both attach meta to the
+            # response payload AND set it up as the connection's active
+            # page below (single resolve_page call, not two).
+            old_page = self.connection_pages.get(websocket)
+            result = resolve_page(
+                self.app.router, path, base_scope=dict(websocket.scope)
+            )
+
             html = response.body.decode("utf-8")
             payload: Dict[str, Any] = {"type": "update", "html": html}
             if cookie_commands:
                 payload["commands"] = cookie_commands
+
+            # Include per-page meta so the client can re-evaluate
+            # `!no_interactive` after SPA nav. The internal dispatch
+            # rendered with init=False so the response body has no
+            # `_pywire_spa_meta` script tag — without this, the client
+            # carries the previous page's `pageInteractive` value.
+            if result:
+                payload["meta"] = {
+                    "page_interactive": not bool(
+                        getattr(result[0], "__no_interactive__", False)
+                    ),
+                }
+
             await websocket.send_bytes(msgpack.packb(payload))
 
-            # 6. Create local page instance for WS state management
-            #    (The internal dispatch already rendered the page — this instance
-            #    is for handling subsequent events on the new page.)
-            old_page = self.connection_pages.get(websocket)
-
-            result = resolve_page(
-                self.app.router, path, base_scope=dict(websocket.scope)
-            )
+            # 6. Continue setting up the local page instance for WS state
+            #    management (The internal dispatch already rendered the page
+            #    — this instance is for handling subsequent events on the new page.)
             if result:
                 new_page, _params, _variant_name = result
 

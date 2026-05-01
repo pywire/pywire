@@ -221,6 +221,13 @@ export class DOMUpdater {
     const extracted: { script: HTMLScriptElement; inPermanent: boolean }[] = []
 
     for (const script of scripts) {
+      // Leave PyWire's JSON metadata script in place so morphdom can
+      // update its content from the new HTML — otherwise SPA nav between
+      // pages with different `!no_interactive` flags ends up with stale
+      // meta because the old script is preserved by onBeforeNodeDiscarded
+      // and the new one was extracted out before morphdom ran.
+      if (script.id === '_pywire_spa_meta') continue
+
       // Check if this script is inside a data-pw-permanent element
       const inPermanent = !!script.closest('[data-pw-permanent]')
       extracted.push({ script, inPermanent })

@@ -70,6 +70,7 @@ export interface ServerMessage {
   commands?: Command[]
   session_id?: string
   session_restored?: boolean
+  meta?: { page_interactive?: boolean; [key: string]: unknown }
 }
 
 export interface NavigateMessage {

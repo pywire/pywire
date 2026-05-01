@@ -19,6 +19,7 @@ from pywire.compiler.ast_nodes import (
     ExceptAttribute,
     FinallyAttribute,
     ForAttribute,
+    DynamicAttribute,
     HeadAttribute,
     IfAttribute,
     InterpolationNode,
@@ -63,8 +64,25 @@ class TemplateCodegen:
         self._region_counter = 0
         self._region_id_prefix = ""
         self.region_renderers: Dict[str, str] = {}
+        # Region IDs whose codegen happened under `{$dynamic}`. These regions
+        # are force-marked dirty in `render_update` so the bypass kwarg on
+        # inner `_invoke_render`/`_invoke_component` calls actually executes.
+        self.dynamic_regions: Set[str] = set()
+        # Stack of region IDs being codegen'd. Pushed when entering
+        # `_generate_region_method`, popped on exit. Used by the
+        # `DynamicAttribute` branch to tag the *enclosing* region as
+        # dynamic (so impure expressions adjacent to a `{$dynamic}` block
+        # in the same region still re-execute every cycle).
+        self._region_codegen_stack: List[str] = []
         self._expr_id_counter = 0
         self._wire_vars: Set[str] = set()
+        # Codegen-time depth counter for `{$dynamic}` blocks. Walking into
+        # a DynamicAttribute increments it; walking out decrements. Any
+        # ``_invoke_render`` or ``_invoke_component`` call emitted while
+        # this is > 0 gets a ``_pw_bypass_memo=True`` kwarg, so memoization
+        # is suppressed even when the wrapping block isn't traversed at
+        # render time (e.g. partial ``render_update``).
+        self._dynamic_codegen_depth: int = 0
         # Dev mode: readable ref IDs vs short hashes.
         # Defaults to checking PYWIRE_DEBUG env var at compile time.
         if dev_mode is not None:
@@ -123,6 +141,8 @@ class TemplateCodegen:
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
+        self.dynamic_regions = set()
+        self._region_codegen_stack = []
         self._wire_vars = set()
         self._expr_id_counter = 0
         self._wire_vars = set()
@@ -661,21 +681,25 @@ class TemplateCodegen:
         scope_id: Optional[str],
         implicit_root_source: Optional[str],
     ) -> ast.AsyncFunctionDef:
-        func_def = self._generate_function(
-            [node],
-            func_name,
-            is_async=True,
-            layout_id=layout_id,
-            known_methods=known_methods,
-            known_globals=known_globals,
-            known_imports=known_imports,
-            async_methods=async_methods,
-            component_map=component_map,
-            scope_id=scope_id,
-            implicit_root_source=implicit_root_source,
-            enable_regions=False,
-            root_region_id=region_id,
-        )
+        self._region_codegen_stack.append(region_id)
+        try:
+            func_def = self._generate_function(
+                [node],
+                func_name,
+                is_async=True,
+                layout_id=layout_id,
+                known_methods=known_methods,
+                known_globals=known_globals,
+                known_imports=known_imports,
+                async_methods=async_methods,
+                component_map=component_map,
+                scope_id=scope_id,
+                implicit_root_source=implicit_root_source,
+                enable_regions=False,
+                root_region_id=region_id,
+            )
+        finally:
+            self._region_codegen_stack.pop()
 
         if len(func_def.body) < 3:
             return func_def
@@ -1574,6 +1598,11 @@ class TemplateCodegen:
             fallback_func.args.args = []
             body.append(fallback_func)
 
+            bypass_kwargs = (
+                [ast.keyword(arg="_pw_bypass_memo", value=ast.Constant(value=True))]
+                if self._dynamic_codegen_depth > 0
+                else []
+            )
             call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id="self", ctx=ast.Load()),
@@ -1586,9 +1615,14 @@ class TemplateCodegen:
                     ast.Name(id=fallback_method, ctx=ast.Load()),
                     *arg_exprs,
                 ],
-                keywords=[],
+                keywords=bypass_kwargs,
             )
         else:
+            bypass_kwargs = (
+                [ast.keyword(arg="_pw_bypass_memo", value=ast.Constant(value=True))]
+                if self._dynamic_codegen_depth > 0
+                else []
+            )
             call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id="self", ctx=ast.Load()),
@@ -1600,7 +1634,7 @@ class TemplateCodegen:
                     ast.Constant(value=site_id),
                     *arg_exprs,
                 ],
-                keywords=[],
+                keywords=bypass_kwargs,
             )
 
         append_stmt = ast.Expr(
@@ -2352,6 +2386,8 @@ class TemplateCodegen:
             region_id = f"auth_{node.line}_{node.column}".replace("-", "_")
             method_name = f"_render_auth_{region_id}"
             self.region_renderers[region_id] = method_name
+            if self._dynamic_codegen_depth > 0:
+                self.dynamic_regions.add(region_id)
 
             aux_func = self._generate_auth_renderer(
                 method_name,
@@ -2594,6 +2630,8 @@ class TemplateCodegen:
             region_id = f"await_{node.line}_{node.column}".replace("-", "_")
             method_name = f"_render_await_{region_id}"
             self.region_renderers[region_id] = method_name
+            if self._dynamic_codegen_depth > 0:
+                self.dynamic_regions.add(region_id)
 
             # Generate the region renderer function
             real_await_children = node.children
@@ -2859,6 +2897,51 @@ class TemplateCodegen:
                 scope_id,
                 wire_vars=wire_vars,
             )
+            return
+
+        dynamic_attr = next(
+            (a for a in node.special_attributes if isinstance(a, DynamicAttribute)),
+            None,
+        )
+        if dynamic_attr:
+            # `{$dynamic}...{/dynamic}` — opt children out of memoization.
+            # Tracked at codegen time (not runtime) so the decision survives
+            # partial `render_update` cycles where the wrapping block isn't
+            # traversed but its descendants' generated code still needs to
+            # bypass the snippet/component cache.
+            #
+            # Tag the *enclosing* region (top of the codegen stack) as
+            # dynamic so it force-dirties on every render — that ensures
+            # impure expressions adjacent to the dynamic block in the same
+            # region (e.g. `<p>{counter()}</p>` siblings, or wire-free
+            # impure content inside the dynamic block) still re-execute.
+            if self._region_codegen_stack:
+                self.dynamic_regions.add(self._region_codegen_stack[-1])
+            self._dynamic_codegen_depth += 1
+            try:
+                for child in node.children:
+                    self._add_node(
+                        child,
+                        body,
+                        local_vars=local_vars,
+                        bound_var=bound_var,
+                        layout_id=layout_id,
+                        known_methods=known_methods,
+                        known_globals=known_globals,
+                        known_imports=known_imports,
+                        async_methods=async_methods,
+                        component_map=component_map,
+                        scope_id=scope_id,
+                        parts_var=parts_var,
+                        # Propagate the caller's `enable_regions` — don't
+                        # accidentally re-enable sub-region creation for
+                        # descendants that are already inside an enclosing
+                        # region's render method (where `enable_regions=False`).
+                        enable_regions=enable_regions,
+                        wire_vars=wire_vars,
+                    )
+            finally:
+                self._dynamic_codegen_depth -= 1
             return
 
         if node.tag == "slot":
@@ -3305,14 +3388,21 @@ class TemplateCodegen:
                 )
 
             # 9. Finally, render the component template (and clean up its stale children)
+            # Routed through ``self._invoke_component`` so prop-memoization
+            # and ``{$dynamic}`` opt-out apply uniformly.
+            comp_bypass_kwargs = (
+                [ast.keyword(arg="_pw_bypass_memo", value=ast.Constant(value=True))]
+                if self._dynamic_codegen_depth > 0
+                else []
+            )
             render_call = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id=comp_var, ctx=ast.Load()),
-                    attr="_render_and_cleanup",
+                    value=ast.Name(id="self", ctx=ast.Load()),
+                    attr="_invoke_component",
                     ctx=ast.Load(),
                 ),
-                args=[],
-                keywords=[],
+                args=[ast.Name(id=comp_var, ctx=ast.Load())],
+                keywords=comp_bypass_kwargs,
             )
 
             append_stmt = ast.Expr(
@@ -3483,6 +3573,8 @@ class TemplateCodegen:
                 region_id = self._next_region_id()
                 method_name = f"_render_region_{region_id}"
                 self.region_renderers[region_id] = method_name
+                if self._dynamic_codegen_depth > 0:
+                    self.dynamic_regions.add(region_id)
                 self.auxiliary_functions.append(
                     self._generate_region_method(
                         node,
@@ -3674,6 +3766,15 @@ class TemplateCodegen:
                 ast.Assign(
                     targets=[ast.Name(id="attrs", ctx=ast.Store())],
                     value=ast.Dict(keys=[], values=[]),
+                )
+            )
+            # normalize_attr handles class/style dict & list bindings;
+            # imported here so reactive-attr emission below can reference it.
+            body.append(
+                ast.ImportFrom(
+                    module="pywire.runtime.attrs",
+                    names=[ast.alias(name="normalize_attr", asname=None)],
+                    level=0,
                 )
             )
 
@@ -4400,12 +4501,14 @@ class TemplateCodegen:
                                                 ],
                                                 value=ast.Call(
                                                     func=ast.Name(
-                                                        id="str", ctx=ast.Load()
+                                                        id="normalize_attr",
+                                                        ctx=ast.Load(),
                                                     ),
                                                     args=[
+                                                        ast.Constant(value=attr.name),
                                                         ast.Name(
                                                             id="_r_val", ctx=ast.Load()
-                                                        )
+                                                        ),
                                                     ],
                                                     keywords=[],
                                                 ),
