@@ -335,4 +335,74 @@ The `{$head}` block teleports its contents into the document `<head>`, regardles
 - **Title:** the last `<title>` contributed by the render tree wins. Earlier titles are stripped.
 - **Everything else:** preserved in authored order. If a page contributes `<meta charset>` before `<title>`, the charset stays first.
 
+## Memoization Escape (`{$dynamic}`)
+
+---
+
+PyWire memoizes regions, snippets, and components by default — they only re-render when the wires they read change (or, for snippets, when their args change). This is a free perf win for pure markup, but breaks impure work like `datetime.now()`, `random.choice()`, side-effecting counters, or per-render UUIDs.
+
+The `{$dynamic}` block opts a region of template out of memoization. Anything inside re-runs every render, regardless of wire/arg equality.
+
+### Syntax
+
+```pywire
+{$dynamic}
+    <!-- contents re-render every cycle -->
+{/dynamic}
+```
+
+### Examples
+
+**Impure expression:**
+
+```pywire
+<p>Last rendered: {$dynamic}{datetime.now().isoformat()}{/dynamic}</p>
+```
+
+**Bypass snippet memoization:**
+
+```pywire
+{$snippet row(x)}
+    <li>{x} ({uuid.uuid4()})</li>
+{/snippet}
+
+<!-- Memoized: same args → same row, uuid frozen on first render. -->
+<ul>{$render row(1)}</ul>
+
+<!-- Bypassed: row body re-runs every render, fresh uuid each time. -->
+<ul>{$dynamic}{$render row(1)}{/dynamic}</ul>
+```
+
+**Bypass component memoization:**
+
+```pywire
+<!-- card body re-runs only when its props or wires change -->
+<Counter label="card-A" initial={a.value} />
+
+<!-- card body re-runs every page render -->
+{$dynamic}
+    <Counter label="always-fresh" initial={a.value} />
+{/dynamic}
+```
+
+### Notes
+
+- The escape is **caller-side**: wrap each call site that needs to be impure. Defining a snippet or component as inherently dynamic isn't supported — that's intentional, since memoization safety is a property of how a thing is used, not how it's defined.
+- The bypass applies to the entire subtree: snippets, regions, components, and slot content all get re-rendered.
+- Wires inside `{$dynamic}` still update reactively. The block only suppresses the memo wrapper, not reactivity.
+
+## Oneliner Blocks
+
+---
+
+Paired blocks (`{$if}`, `{$for}`, `{$with}`, `{$dynamic}`) can be written on a single line when the body is short:
+
+```pywire
+{$if user.is_admin}<AdminBadge />{/if}
+{$for tag in tags, key=tag}<span class="tag">{tag}</span>{/for}
+<p>{$dynamic}{datetime.now()}{/dynamic}</p>
+```
+
+Multi-line form is still preferred for non-trivial bodies — oneliner is an ergonomic shortcut, not a separate construct.
+
 This makes layouts hands-off — they don't need to know which pages want a particular meta tag.

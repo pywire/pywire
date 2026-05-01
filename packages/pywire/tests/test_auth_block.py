@@ -53,9 +53,7 @@ def _engine_with_admin_policy() -> PolicyEngine:
 
 
 async def _render_twice(cls, user: ClaimsPrincipal, engine: PolicyEngine):
-    ctx = AuthContext(
-        principal=user, engine=engine, channel=MemoryAuthChannel()
-    )
+    ctx = AuthContext(principal=user, engine=engine, channel=MemoryAuthChannel())
     tok = set_auth_context(ctx)
     try:
         page = cls(request=None, params={}, query={}, path={}, url=None)
@@ -78,7 +76,9 @@ def test_parser_emits_auth_attribute_with_policy():
     from pywire_parser import PyWireParser
     from pywire_parser.ast_nodes import AuthAttribute
 
-    result = PyWireParser().parse('---\n---\n{$auth policy="AdminOnly"}<p>x</p>{/auth}\n')
+    result = PyWireParser().parse(
+        '---\n---\n{$auth policy="AdminOnly"}<p>x</p>{/auth}\n'
+    )
     attrs = [
         a
         for n in result.template
@@ -178,9 +178,7 @@ async def test_policy_denied_renders_denied_body():
 
 @pytest.mark.asyncio
 async def test_no_else_branch_hides_denied_body():
-    cls = _compile(
-        '<div>{$auth policy="AdminOnly"}<p>admin</p>{/auth}</div>'
-    )
+    cls = _compile('<div>{$auth policy="AdminOnly"}<p>admin</p>{/auth}</div>')
     _, resolved = await _render_twice(
         cls, _admin_principal(False), _engine_with_admin_policy()
     )
@@ -192,14 +190,10 @@ async def test_claim_check_matches_value():
     cls = _compile(
         '<div>{$auth claims=[("role","admin")]}<p>a</p>{$else}<p>d</p>{/auth}</div>'
     )
-    _, resolved = await _render_twice(
-        cls, _admin_principal(True), PolicyEngine()
-    )
+    _, resolved = await _render_twice(cls, _admin_principal(True), PolicyEngine())
     assert "<p>a</p>" in resolved
 
-    _, resolved = await _render_twice(
-        cls, _admin_principal(False), PolicyEngine()
-    )
+    _, resolved = await _render_twice(cls, _admin_principal(False), PolicyEngine())
     assert "<p>d</p>" in resolved
 
 
@@ -240,7 +234,7 @@ async def test_authorizing_body_shows_on_first_render_before_task_completes():
 
 @pytest.mark.asyncio
 async def test_anonymous_with_no_args_denies():
-    cls = _compile('<div>{$auth}<p>in</p>{$else}<p>out</p>{/auth}</div>')
+    cls = _compile("<div>{$auth}<p>in</p>{$else}<p>out</p>{/auth}</div>")
     anon = ClaimsPrincipal(is_authenticated=False)
     _, resolved = await _render_twice(cls, anon, PolicyEngine())
     assert "<p>out</p>" in resolved
@@ -251,9 +245,7 @@ async def test_unknown_policy_fails_closed():
     cls = _compile(
         '<div>{$auth policy="DoesNotExist"}<p>in</p>{$else}<p>out</p>{/auth}</div>'
     )
-    _, resolved = await _render_twice(
-        cls, _admin_principal(True), PolicyEngine()
-    )
+    _, resolved = await _render_twice(cls, _admin_principal(True), PolicyEngine())
     assert "<p>out</p>" in resolved
 
 
@@ -262,7 +254,7 @@ async def test_nested_inside_for_loop():
     """One {$auth} per iteration evaluates independently."""
     cls = _compile(
         "<ul>"
-        '{$for x in items}'
+        "{$for x in items}"
         '<li>{$auth claims=[("role","admin")]}[admin]{$else}[user]{/auth}{x}</li>'
         "{/for}"
         "</ul>"

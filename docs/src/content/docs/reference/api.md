@@ -366,13 +366,13 @@ Also available as `$event` for compatibility with other frameworks.
 
 **Example:**
 
-```html
+```pywire
 <!-- Accessing input value -->
-<input @input="{update_text(event.value)}" />
+<input @input={update_text(event.value)} />
 
 <!-- Accessing specific key press -->
-<input @keydown="{handle_key(event.key)}" />
+<input @keydown={handle_key(event.key)} />
 
 <!-- Debugging event data -->
-<button @click="{print(event.id, event.type)}">Debug</button>
+<button @click={print(event.id, event.type)}>Debug</button>
 ```

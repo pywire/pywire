@@ -37,9 +37,9 @@ def increment():
 ---
 <h1>Count: {count}</h1>
 
-<button @click="{increment}" $disabled="{count >= 10}"> Increment (Max 10)</button>
+<button @click={increment} $disabled={count >= 10}> Increment (Max 10)</button>
 
-<p $show="{count > 5}" style="color: red;"> High count alert!</p>
+<p $show={count > 5} style="color: red;"> High count alert!</p>
 ```
 
 In the next sections, we'll dive deeper into the `.wire` file format and how reactivity works.

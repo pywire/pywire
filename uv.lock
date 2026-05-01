@@ -2020,7 +2020,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },

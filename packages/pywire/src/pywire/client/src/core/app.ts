@@ -27,6 +27,13 @@ export interface PyWireConfig extends TransportConfig {
   reconnectOverlay?: boolean
   /** When false, no WebSocket/transport is used — SPA navigation via HTTP fetch */
   interactive?: boolean
+  /**
+   * Per-page opt-out of interactivity (`!no_interactive` directive).
+   * When false, the WebSocket stays connected (so SPA navigation back to
+   * an interactive page is seamless), but event handlers, wire
+   * subscriptions, and ref tracking are NOT wired up for the current page.
+   */
+  pageInteractive?: boolean
 }
 
 const DEFAULT_CONFIG: PyWireConfig = {
@@ -36,6 +43,7 @@ const DEFAULT_CONFIG: PyWireConfig = {
   enableHTTP: true,
   debug: false,
   interactive: true,
+  pageInteractive: true,
 }
 
 /**
@@ -160,8 +168,13 @@ export class PyWireApp {
 
     this.setupSPANavigation()
 
-    // Event delegation runs in both modes — SSR needs it so `@submit`
-    // handlers swap the form submit for `httpFormSubmit` (fetch + morph).
+    // Event delegation + ref wiring run in both modes. The handlers
+    // themselves runtime-check `pageInteractive` at dispatch time
+    // (handler.ts), so attaching them up-front is harmless on a
+    // non-interactive page and ensures they're already wired when SPA
+    // nav lands on an interactive page later. Avoids the bug where
+    // hard-loading a `!no_interactive` page leaves events unbound for
+    // the rest of the SPA session.
     this.eventHandler.init()
     this.refManager.init()
 
@@ -232,6 +245,9 @@ export class PyWireApp {
         this.mountPath = typeof meta.mount_path === 'string' ? meta.mount_path : ''
         if (meta.interactive !== undefined) {
           this.config.interactive = !!meta.interactive
+        }
+        if (meta.page_interactive !== undefined) {
+          this.config.pageInteractive = !!meta.page_interactive
         }
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
@@ -467,6 +483,9 @@ export class PyWireApp {
       const html = await response.text()
       this.updater.update(html)
       this.eventHandler?.refreshListeners()
+      // The new page may have a different `!no_interactive` setting —
+      // re-read the meta script so the per-page flag is current.
+      this.loadSPAMetadata()
 
       document.dispatchEvent(
         new CustomEvent('pywire:navigate', {
@@ -575,6 +594,19 @@ export class PyWireApp {
         } else if (msg.html) {
           this.updater.update(msg.html)
           this.eventHandler.refreshListeners()
+          // Full HTML replacement (e.g. WS-driven PJAX nav) — re-read meta
+          // so per-page `!no_interactive` flag tracks the current page.
+          this.loadSPAMetadata()
+        }
+
+        // Per-update meta (sent by server `render_update`) — keeps
+        // `pageInteractive` in sync after SPA nav, since SPA-nav responses
+        // (regions or fragment) don't include the `_pywire_spa_meta`
+        // script tag the client otherwise reads.
+        if (msg.meta && typeof msg.meta === 'object') {
+          if (msg.meta.page_interactive !== undefined) {
+            this.config.pageInteractive = !!msg.meta.page_interactive
+          }
         }
 
         // If this update was triggered by a PJAX navigation (relocate),

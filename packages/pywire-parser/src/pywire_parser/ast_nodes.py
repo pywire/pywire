@@ -40,6 +40,14 @@ class NoSpaDirective(Directive):
 
 
 @dataclass
+class NoInteractiveDirective(Directive):
+    """!no_interactive - render this page statically; keep WS connection alive but skip event/wire wiring for this page."""
+
+    def __str__(self) -> str:
+        return "NoInteractiveDirective()"
+
+
+@dataclass
 class LayoutDirective(Directive):
     """!layout "path/to/layout.pywire" """
 
@@ -252,6 +260,18 @@ class HeadAttribute(SpecialAttribute):
 
     def __str__(self) -> str:
         return "HeadAttribute()"
+
+
+@dataclass
+class DynamicAttribute(SpecialAttribute):
+    """{$dynamic}...{/dynamic} — opt the wrapped subtree out of memoization.
+
+    Bypasses RenderUnit caching for any region/snippet/slot/component
+    rendered inside the block. Body lives in parent TemplateNode.children.
+    """
+
+    def __str__(self) -> str:
+        return "DynamicAttribute()"
 
 
 @dataclass

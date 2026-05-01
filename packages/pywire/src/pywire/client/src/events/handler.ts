@@ -146,6 +146,14 @@ export class UnifiedEventHandler {
    * Main event handler.
    */
   private async handleEvent(e: Event): Promise<void> {
+    // Per-page !no_interactive opt-out. The flag may flip between SPA
+    // navigations, so check at dispatch time. The handler stays attached
+    // (cheap) but we ignore events while the current page declares itself
+    // non-interactive.
+    if (this.app.getConfig().pageInteractive === false) {
+      return
+    }
+
     const eventType = e.type
 
     // File inputs can retain a prior custom validity error unless we clear it

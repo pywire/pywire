@@ -62,6 +62,10 @@ class WireBase:
         self._parent = parent
         self._field = field
         self._frozen = False
+        # Per-wire write counter. Bumped on every `_notify_write`. Used
+        # by component-level memoization to invalidate only when wires
+        # this specific component reads have been written.
+        self._write_seq: int = 0
 
     def _track_read(self, field: str = "value") -> None:
         if self._frozen:
@@ -105,6 +109,10 @@ class WireBase:
             raise ReactivityError(
                 f"Cannot modify wire state inside a derived (derived fn={_TRACKING_STACK[-1].fn.__name__})"
             )
+
+        # Bump write seq so component-memo callers can detect changes to
+        # the specific wires they captured during their last render.
+        self._write_seq += 1
 
         # Notify parent if this is a proxy
         if self._parent:

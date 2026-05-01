@@ -77,3 +77,82 @@ Head teleport
       close_name: (tag_name))
     (end_brace_block
       name: (block_keyword))))
+
+==============================
+Dynamic block (memoization escape)
+==============================
+
+{$dynamic}
+  <p>{datetime.now()}</p>
+{/dynamic}
+
+---
+
+(source_file
+  (template_section
+    (brace_block
+      keyword: (block_keyword))
+    (tag
+      name: (tag_name)
+      (interpolation
+        expr: (python_code))
+      close_name: (tag_name))
+    (end_brace_block
+      name: (block_keyword))))
+
+==============================
+Dynamic wrapping render invocation
+==============================
+
+{$dynamic}
+  {$render row(item)}
+{/dynamic}
+
+---
+
+(source_file
+  (template_section
+    (brace_block
+      keyword: (block_keyword))
+    (brace_block
+      keyword: (block_keyword)
+      expression: (python_code))
+    (end_brace_block
+      name: (block_keyword))))
+
+==============================
+Oneliner if block
+==============================
+
+{$if cond}A{/if}
+
+---
+
+(source_file
+  (template_section
+    (brace_block
+      keyword: (block_keyword)
+      expression: (python_code))
+    (text)
+    (end_brace_block
+      name: (block_keyword))))
+
+==============================
+Oneliner if/else block
+==============================
+
+{$if cond}A{$else}B{/if}
+
+---
+
+(source_file
+  (template_section
+    (brace_block
+      keyword: (block_keyword)
+      expression: (python_code))
+    (text)
+    (brace_block
+      keyword: (block_keyword))
+    (text)
+    (end_brace_block
+      name: (block_keyword))))

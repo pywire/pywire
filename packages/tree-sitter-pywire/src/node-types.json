@@ -606,6 +606,10 @@
     "named": true
   },
   {
+    "type": "dynamic",
+    "named": false
+  },
+  {
     "type": "elif",
     "named": false
   },

@@ -9,6 +9,7 @@ from pywire.compiler.ast_nodes import (
     Directive,
     EventAttribute,
     LayoutDirective,
+    NoInteractiveDirective,
     NoSpaDirective,
     ParsedPyWire,
     PathDirective,
@@ -1025,6 +1026,18 @@ class CodeGenerator:
             )
         )
 
+        # !no_interactive — page renders statically; WS stays connected
+        # but client skips event/wire wiring for this page.
+        no_interactive = (
+            parsed.get_directive_by_type(NoInteractiveDirective) is not None
+        )
+        stmts.append(
+            ast.Assign(
+                targets=[ast.Name(id="__no_interactive__", ctx=ast.Store())],
+                value=ast.Constant(value=bool(no_interactive)),
+            )
+        )
+
         # __sibling_paths__ = ['/path1', '/path2', ...]
         if path_directive and not path_directive.is_simple_string:
             paths = list(path_directive.routes.values())
@@ -1880,5 +1893,23 @@ class CodeGenerator:
                     value=ast.Dict(keys=region_keys, values=region_vals),
                 )
             )
+
+            dyn = self.template_codegen.dynamic_regions
+            if dyn:
+                binding_funcs.append(
+                    ast.Assign(
+                        targets=[ast.Name(id="__dynamic_regions__", ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Name(id="frozenset", ctx=ast.Load()),
+                            args=[
+                                ast.Tuple(
+                                    elts=[ast.Constant(value=r) for r in sorted(dyn)],
+                                    ctx=ast.Load(),
+                                )
+                            ],
+                            keywords=[],
+                        ),
+                    )
+                )
 
         return render_func, binding_funcs

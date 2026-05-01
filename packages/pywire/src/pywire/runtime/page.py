@@ -255,6 +255,18 @@ class BasePage:
         self._expr_counts: Dict[str, int] = defaultdict(int)
         self._capturing_deps: bool = False
         self._captured_deps: Set[Tuple[Any, str]] = set()
+        # Counter for active dynamic-region renders. While >0, ``_render_expr``
+        # bypasses ``_static_cache`` so impure dep-free expressions
+        # (datetime.now(), counters, random) re-execute every cycle.
+        self._dynamic_render_depth: int = 0
+
+        # Component memoization (used by ``_invoke_component``). On a
+        # cache hit we return ``_pw_memo_html`` without re-rendering.
+        # Captured deps are (wire, field) → ``_write_seq`` snapshots.
+        self._pw_resolve_props: Optional[Dict[str, Any]] = None
+        self._pw_memo_props: Optional[Dict[str, Any]] = None
+        self._pw_memo_html: Optional[str] = None
+        self._pw_memo_dep_versions: Optional[Dict[Tuple[Any, str], int]] = None
 
         # Render-region (snippet) system:
         # - ``_head_buffer``: accumulator for ``{$head}...{/head}`` contributions
@@ -270,6 +282,14 @@ class BasePage:
         else:
             self._head_buffer = HeadBuffer()
         self._snippet_invocations: Dict[str, Tuple[Any, str]] = {}
+        # Monotonic counter bumped on every wire write that targets this
+        # page. Components snapshot this seq when caching their rendered
+        # HTML; on the next render, a higher seq invalidates the cache.
+        # This is broader than ``_dirty_regions`` (which only tracks wires
+        # the parent's regions read), so it correctly invalidates a parent
+        # component's cache when a wire READ inside a CHILD component is
+        # later written.
+        self._wire_write_seq: int = 0
         # Output-equality cache for the general region system. Keyed by
         # ``region_id``; value is the last rendered HTML. Used by
         # ``render_update`` to skip morphdom patches when a dirty region
@@ -498,19 +518,124 @@ class BasePage:
 
         self.attrs = fallback_attrs
 
+    async def _invoke_component(
+        self, comp: "BasePage", _pw_bypass_memo: bool = False
+    ) -> str:
+        """Render a child component with prop-memoization.
+
+        Memoizes the component's rendered HTML keyed on:
+
+        - ``comp.attrs`` (props equality)
+        - The set of wires the component read on its last render, plus
+          each wire's ``_write_seq`` snapshot at that time.
+
+        On subsequent invocations, if props compare equal AND none of the
+        previously-captured wires has been written since, the cached HTML
+        is reused. Bumping a wire that the component didn't read does
+        NOT invalidate its cache.
+
+        Inside a ``{$dynamic}`` block (codegen sets
+        ``_pw_bypass_memo=True``) the cache is bypassed entirely.
+        """
+        if _pw_bypass_memo:
+            comp._dynamic_render_depth += 1
+            try:
+                return await comp._render_and_cleanup()
+            finally:
+                comp._dynamic_render_depth -= 1
+
+        # Memo key = real props captured at ``_resolve_component`` time
+        # (real props get setattr'd onto the comp instance and don't show
+        # up in ``comp.attrs``). Fall back to ``attrs`` for components
+        # invoked outside the codegen path.
+        snap_source = getattr(comp, "_pw_resolve_props", None)
+        if snap_source is None:
+            snap_source = comp.attrs
+        try:
+            props_snapshot = dict(snap_source)
+        except Exception:
+            return await comp._render_and_cleanup()
+
+        prev_props = getattr(comp, "_pw_memo_props", None)
+        prev_html: Optional[str] = getattr(comp, "_pw_memo_html", None)
+        prev_dep_versions: Optional[Dict[Tuple[Any, str], int]] = getattr(
+            comp, "_pw_memo_dep_versions", None
+        )
+        if prev_props is not None and prev_html is not None:
+            try:
+                same_props = prev_props == props_snapshot
+            except Exception:
+                same_props = False
+            if same_props:
+                stale = False
+                if prev_dep_versions:
+                    for (wire_obj, _field), prev_seq in prev_dep_versions.items():
+                        cur_seq = getattr(wire_obj, "_write_seq", None)
+                        if cur_seq != prev_seq:
+                            stale = True
+                            break
+                if not stale:
+                    return prev_html
+
+        # Cache miss: render the child under its own render context so wire
+        # reads route to ``comp._register_wire_read`` (registering on the
+        # component's per-region dep map), not the parent's. After render,
+        # snapshot every (wire, field) the comp's regions read this cycle
+        # plus their ``_write_seq`` for next-call invalidation.
+        from pywire.core.wire import set_render_context, reset_render_context
+
+        # Drop the prior cumulative dep map so we capture a fresh, accurate
+        # set on this render — otherwise wires read on past renders but no
+        # longer touched would falsely invalidate the cache when bumped.
+        comp._region_dependencies.clear()
+        comp._wire_subscribers.clear()
+
+        token = set_render_context(comp, "_component_root")
+        try:
+            html = await comp._render_and_cleanup()
+        finally:
+            reset_render_context(token)
+
+        captured: Set[Tuple[Any, str]] = set()
+        for keys in comp._region_dependencies.values():
+            captured |= keys
+        dep_versions: Dict[Tuple[Any, str], int] = {
+            key: getattr(key[0], "_write_seq", 0) for key in captured
+        }
+
+        comp._pw_memo_props = props_snapshot  # type: ignore[attr-defined]
+        comp._pw_memo_html = html  # type: ignore[attr-defined]
+        comp._pw_memo_dep_versions = dep_versions  # type: ignore[attr-defined]
+        return html
+
     def _resolve_component(
         self, key: str, cls: type["BasePage"], **kwargs: Any
     ) -> "BasePage":
         self._active_component_keys.add(key)
 
+        # Snapshot non-framework, non-slot props for memoization. Real props
+        # (e.g. ``initial=a.value``) become instance attrs via
+        # ``_update_props`` rather than landing in ``comp.attrs``, so
+        # ``_invoke_component`` cannot recover them from the comp instance.
+        # Capture them here at the call site instead. Slot ``Snippet``s are
+        # excluded — they are fresh closures each render and would always
+        # invalidate the cache.
+        memo_props = {
+            k: v
+            for k, v in kwargs.items()
+            if not cls._is_framework_prop_key(k) and not isinstance(v, Snippet)
+        }
+
         component = self._components.get(key)
         if component is not None and isinstance(component, cls):
             component._update_props(kwargs)
+            component._pw_resolve_props = memo_props  # type: ignore[attr-defined]
             return component
 
         kwargs["_parent_page"] = self
         kwargs["_component_key"] = key
         instance = cls(**kwargs)
+        instance._pw_resolve_props = memo_props  # type: ignore[attr-defined]
 
         snapshot = self._component_state_snapshots.pop(key, None)
         if snapshot:
@@ -705,6 +830,7 @@ class BasePage:
         snippet: Optional[Snippet],
         site_id: str,
         *args: Any,
+        _pw_bypass_memo: bool = False,
     ) -> str:
         """Render a snippet at invocation site ``site_id`` with ``args``.
 
@@ -715,6 +841,11 @@ class BasePage:
         that tracks wire reads at ``site_id``, caches the output, and
         returns it.
 
+        ``_pw_bypass_memo`` is set by codegen for invocations that live
+        inside a ``{$dynamic}`` block, including descendants — guarantees
+        the bypass survives partial ``render_update`` cycles where the
+        wrapping block isn't traversed.
+
         Raises ``TypeError`` if ``snippet`` is ``None`` — a required
         snippet prop was not provided. For optional snippets with a
         fallback, use :meth:`_invoke_render_with_fallback`.
@@ -722,7 +853,9 @@ class BasePage:
         if snippet is None:
             raise TypeError(_missing_snippet_message(site_id, self.__class__.__name__))
         try:
-            return await self._invoke_snippet_inner(snippet, site_id, args)
+            return await self._invoke_snippet_inner(
+                snippet, site_id, args, bypass_memo=_pw_bypass_memo
+            )
         except TypeError as e:
             raise _rewrite_snippet_typeerror(e, site_id) from e
 
@@ -732,6 +865,7 @@ class BasePage:
         site_id: str,
         fallback: Callable[..., Awaitable[str]],
         *args: Any,
+        _pw_bypass_memo: bool = False,
     ) -> str:
         """Render ``snippet`` at ``site_id``; on ``None`` run ``fallback``.
 
@@ -742,11 +876,33 @@ class BasePage:
             # Fallback runs under the same site_id so its wire reads
             # invalidate this site if they change.
             return await self._invoke_region(site_id, fallback, args=())
-        return await self._invoke_snippet_inner(snippet, site_id, args)
+        return await self._invoke_snippet_inner(
+            snippet, site_id, args, bypass_memo=_pw_bypass_memo
+        )
 
     async def _invoke_snippet_inner(
-        self, snippet: Snippet, site_id: str, args: Tuple[Any, ...]
+        self,
+        snippet: Snippet,
+        site_id: str,
+        args: Tuple[Any, ...],
+        bypass_memo: bool = False,
     ) -> str:
+        # `{$dynamic}` block at codegen time: bypass memoization entirely.
+        # Drop any prior cache entry so a later render outside the dynamic
+        # block can't serve stale output, and run the body fresh. Also bump
+        # `_dynamic_render_depth` so impure dep-free expressions inside the
+        # snippet body (e.g. side-effect counters) bypass `_static_cache`.
+        if bypass_memo:
+            self._snippet_invocations.pop(site_id, None)
+            self._dirty_regions.discard(site_id)
+            self._dynamic_render_depth += 1
+            try:
+                html = await self._invoke_region(site_id, snippet.render, args=args)
+            finally:
+                self._dynamic_render_depth -= 1
+            self._region_output_cache[site_id] = html
+            return html
+
         # If a wire write marked this site dirty since the last render,
         # drop the cache entry before checking for a hit.
         if site_id in self._dirty_regions:
@@ -1043,6 +1199,7 @@ class BasePage:
                     pass
 
                 sibling_paths_raw = getattr(self, "__sibling_paths__", []) or []
+                page_no_interactive = bool(getattr(self, "__no_interactive__", False))
                 meta = {
                     "sibling_paths": [_prefix(p) for p in sibling_paths_raw],
                     "all_paths": [_prefix(p) for p in all_wire_paths],
@@ -1053,6 +1210,9 @@ class BasePage:
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
                     "interactive": interactive_mode,
+                    # Per-page !no_interactive: WebSocket stays connected,
+                    # but the client skips event/wire wiring on this page.
+                    "page_interactive": not page_no_interactive,
                     "dev_reload_url": dev_reload_url,
                 }
                 import json
@@ -1177,8 +1337,22 @@ class BasePage:
         self._expr_counts[static_id] += 1
         instance_id = f"{static_id}:{count}"
 
+        # Inside a `{$dynamic}` region, never serve or store a cached value —
+        # impure dep-free expressions (datetime.now(), counters, random)
+        # must re-execute every cycle. Detect via render-context region_id
+        # so this works for both full and partial render paths.
+        bypass = self._dynamic_render_depth > 0
+        if not bypass:
+            dyn = getattr(self, "__dynamic_regions__", None)
+            if dyn:
+                from pywire.core.wire import _render_context
+
+                ctx = _render_context.get()
+                if ctx is not None and ctx[1] in dyn:
+                    bypass = True
+
         # If cached, return it
-        if instance_id in self._static_cache:
+        if not bypass and instance_id in self._static_cache:
             return self._static_cache[instance_id]
 
         # Otherwise compute and potentially cache
@@ -1196,8 +1370,9 @@ class BasePage:
             self._capturing_deps = prev_capturing
             self._captured_deps = prev_captured
 
-        # If no wire dependencies, cache it
-        if not deps:
+        # If no wire dependencies, cache it (unless we're inside a
+        # `{$dynamic}` region where caching is suppressed).
+        if not deps and not bypass:
             self._static_cache[instance_id] = result
 
         return result
@@ -1215,6 +1390,13 @@ class BasePage:
             self._captured_deps.add(key)
 
     def _invalidate_wire(self, wire_obj: Any, field: str) -> None:
+        # Bump the global wire-write counter. Components snapshot this on
+        # render and use it to invalidate their cache when ANY wire write
+        # happens, even one that doesn't go through region tracking
+        # (covers wires read inside child components whose region context
+        # belongs to the child, not the parent).
+        self._wire_write_seq += 1
+
         regions = set()
         key = (wire_obj, field)
         if key in self._wire_subscribers:
@@ -1274,6 +1456,21 @@ class BasePage:
             _request_ctx.reset(token)
 
     async def render_update(self, init: bool = False) -> Dict[str, Any]:
+        # `{$dynamic}` regions force-dirty on every update so the bypass kwarg
+        # on inner _invoke_render/_invoke_component calls actually executes.
+        dynamic_regions = getattr(self, "__dynamic_regions__", None)
+        if dynamic_regions:
+            self._dirty_regions.update(dynamic_regions)
+
+        # Send fresh page_interactive on every SPA-nav response so the client
+        # re-evaluates whether to wire up event handlers for this page.
+        # Initial full-page render emits this in the `_pywire_spa_meta`
+        # script tag; SPA-nav responses don't include that tag, so the
+        # client picks the value off the response payload instead.
+        update_meta = {
+            "page_interactive": not bool(getattr(self, "__no_interactive__", False)),
+        }
+
         # Optimization: If we have region renderers (compiled page) and this is a partial update (init=False),
         # check if we really need to update anything.
         if hasattr(self, "__region_renderers__") and (self._dirty_regions or not init):
@@ -1286,6 +1483,7 @@ class BasePage:
                     commands = (commands or []) + cookie_cmds
                 if commands:
                     result["commands"] = commands
+                result["meta"] = update_meta
                 return result
 
             logger.debug(f"render_update: dirty_regions={self._dirty_regions}")
@@ -1311,7 +1509,12 @@ class BasePage:
                     if not renderer:
                         continue
 
+                    is_dynamic = (
+                        dynamic_regions is not None and region_id in dynamic_regions
+                    )
                     token = set_render_context(self, region_id)
+                    if is_dynamic:
+                        self._dynamic_render_depth += 1
                     try:
                         if inspect.iscoroutinefunction(renderer):
                             region_html = await renderer()
@@ -1327,6 +1530,8 @@ class BasePage:
                         has_root_dirty = True
                         break
                     finally:
+                        if is_dynamic:
+                            self._dynamic_render_depth -= 1
                         reset_render_context(token)
 
                     stripped_html = region_html.lstrip()
@@ -1358,7 +1563,7 @@ class BasePage:
                     self._dirty_regions.clear()
 
                     # If we successfully generated partial updates, return them
-                    result = {"type": "regions", "regions": updates}
+                    result: Dict[str, Any] = {"type": "regions", "regions": updates}
                     logger.debug("RENDER-UPDATE-REGIONS: %s", updates)
 
                     # 2. Collect commands from all refs (recursively)
@@ -1369,6 +1574,7 @@ class BasePage:
                     if commands:
                         result["commands"] = commands
 
+                    result["meta"] = update_meta
                     return result
 
         # Flush cookie commands before render() (which would apply them to the
@@ -1406,6 +1612,7 @@ class BasePage:
             commands = (commands or []) + cookie_cmds
         if commands:
             result["commands"] = commands
+        result["meta"] = update_meta
         return result
 
     async def push_state(self) -> None:
