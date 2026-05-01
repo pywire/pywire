@@ -101,9 +101,9 @@ When validation fails, errors are available on the form ref's `errors` namespace
 
 You can bind validation attributes dynamically.
 
-```html
+```pywire
 <!-- Field is required only if 'is_company' checkbox is checked -->
-<input name="company_name" required="{is_company}" />
+<input name="company_name" required={is_company} />
 ```
 
 ## Pydantic Model Integration

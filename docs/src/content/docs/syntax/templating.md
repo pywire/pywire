@@ -67,6 +67,45 @@ id = "main-image"
 <img {src} {id} />
 ```
 
+### `class` and `style` Bindings
+
+The `class` and `style` attributes accept structured values in addition to plain strings, so you don't have to build the string yourself.
+
+**`class`:**
+
+- **String** — passes through unchanged.
+- **List / tuple** — truthy items are space-joined; falsy items are dropped.
+- **Dict** — keys whose values are truthy are space-joined.
+
+```pywire
+---
+is_active = wire(True)
+is_disabled = wire(False)
+size = wire("lg")
+---
+<!-- list form -->
+<button class={["btn", size, is_active and "active"]}>Click</button>
+
+<!-- dict form (the most readable for many flags) -->
+<button class={{"btn": True, "active": is_active, "disabled": is_disabled}}>
+    Click
+</button>
+```
+
+**`style`:**
+
+- **String** — passes through unchanged.
+- **Dict** — `key: value` pairs are joined with `;`. Entries with `None` values are dropped.
+
+```pywire
+---
+theme = wire("dark")
+---
+<div style={{"color": "red", "background": theme, "border": None}}>
+    Styled content
+</div>
+```
+
 ### Boolean Attributes
 
 Framework attributes like `$disabled`, `$checked`, and `$readonly` accept a boolean expression and add or remove the attribute accordingly.

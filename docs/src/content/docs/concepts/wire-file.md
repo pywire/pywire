@@ -44,3 +44,31 @@ The HTML block supports:
 - **Attributes**: `attr={value}` or `{attr}`
 - **Events**: `@click={handler}`
 - **Control Flow**: `$if`, `$for`
+
+## Page Directives
+
+Directives are line-level metadata declared above the Python block. They configure how the page is routed, rendered, or wired up at runtime.
+
+| Directive         | Purpose                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `!path "..."`     | Sets the URL pattern this page handles.                                              |
+| `!layout "..."`   | Wraps the page in a parent layout.                                                   |
+| `!auth ...`       | Gates the page on an auth policy.                                                    |
+| `!no_spa`         | Opts the page out of SPA navigation; renders as a full-page reload.                  |
+| `!no_interactive` | Renders the page as static HTML — skips event handlers and ref wiring on the client. |
+
+### `!no_interactive`
+
+Mark a page as fully static for the client: no event handlers wire up, no refs, no per-handler dispatch. The WebSocket **stays connected** (so SPA navigation back to an interactive page resumes seamlessly without reconnecting), but the page itself behaves as plain HTML.
+
+Use it for pages that don't need interactivity — marketing pages, docs, error pages — to avoid paying for client-side bookkeeping.
+
+```pywire
+!path "/about"
+!no_interactive
+
+<h1>About PyWire</h1>
+<p>Server-rendered. No JS handlers attached.</p>
+```
+
+`@click`, `@input`, etc. still parse, but the client ignores them on this page. Forms continue to work via standard HTTP submit (PyWire's form-submit interception is bypassed).
