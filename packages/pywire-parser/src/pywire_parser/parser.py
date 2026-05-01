@@ -11,6 +11,7 @@ from pywire_parser.ast_nodes import (
     AuthAttribute,
     AwaitAttribute,
     CatchAttribute,
+    DynamicAttribute,
     ElifAttribute,
     ElseAttribute,
     ExceptAttribute,
@@ -37,6 +38,7 @@ from pywire_parser.attributes.loop import KeyAttributeParser, LoopAttributeParse
 from pywire_parser.directives.auth import AuthDirectiveParser
 from pywire_parser.directives.base import DirectiveParser
 from pywire_parser.directives.layout import LayoutDirectiveParser
+from pywire_parser.directives.no_interactive import NoInteractiveDirectiveParser
 from pywire_parser.directives.no_spa import NoSpaDirectiveParser
 from pywire_parser.directives.path import PathDirectiveParser
 from pywire_parser.exceptions import PyWireSyntaxError
@@ -113,6 +115,7 @@ class PyWireParser:
         self.directive_parsers: List[DirectiveParser] = [
             PathDirectiveParser(),
             NoSpaDirectiveParser(),
+            NoInteractiveDirectiveParser(),
             LayoutDirectiveParser(),
             AuthDirectiveParser(),
         ]
@@ -262,6 +265,7 @@ class PyWireParser:
             AuthAttribute,
             SnippetAttribute,
             HeadAttribute,
+            DynamicAttribute,
         )
 
         for node in nodes:
@@ -492,6 +496,12 @@ class PyWireParser:
         elif kw == "head":
             node.special_attributes.append(
                 HeadAttribute(name="$head", value="", line=rn.line, column=rn.column)
+            )
+        elif kw == "dynamic":
+            node.special_attributes.append(
+                DynamicAttribute(
+                    name="$dynamic", value="", line=rn.line, column=rn.column
+                )
             )
 
     def _validate_block_root(self, node: TemplateNode) -> None:
