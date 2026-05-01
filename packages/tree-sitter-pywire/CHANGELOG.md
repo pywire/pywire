@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.5.0...tree-sitter-pywire-v0.6.0) (2026-05-01)
+
+
+### Features
+
+* $dynamic memo escape, !no_interactive, component memo, class/style bind, oneliner blocks ([#175](https://github.com/pywire/pywire/issues/175)) ([8723f51](https://github.com/pywire/pywire/commit/8723f51a1414ad46421047c583ee49f7a4229138))
+
 ## [0.5.0](https://github.com/pywire/pywire/compare/tree-sitter-pywire-v0.4.0...tree-sitter-pywire-v0.5.0) (2026-04-20)
 
 
