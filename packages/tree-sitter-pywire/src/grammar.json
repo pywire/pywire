@@ -1001,6 +1001,10 @@
         {
           "type": "STRING",
           "value": "head"
+        },
+        {
+          "type": "STRING",
+          "value": "dynamic"
         }
       ]
     },

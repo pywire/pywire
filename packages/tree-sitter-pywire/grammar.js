@@ -214,7 +214,7 @@ module.exports = grammar({
 
         block_keyword: $ => choice(
             'if', 'for', 'try', 'await', 'auth', 'elif', 'else', 'finally', 'except', 'then', 'catch', 'html',
-            'snippet', 'render', 'head'
+            'snippet', 'render', 'head', 'dynamic'
         ),
 
         _python_code: $ => repeat1(choice(
