@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/pywire/pywire/compare/pywire-v0.12.1...pywire-v0.13.0) (2026-05-01)
+
+
+### Features
+
+* $dynamic memo escape, !no_interactive, component memo, class/style bind, oneliner blocks ([#175](https://github.com/pywire/pywire/issues/175)) ([8723f51](https://github.com/pywire/pywire/commit/8723f51a1414ad46421047c583ee49f7a4229138))
+
 ## [0.12.1](https://github.com/pywire/pywire/compare/pywire-v0.12.0...pywire-v0.12.1) (2026-04-22)
 
 
