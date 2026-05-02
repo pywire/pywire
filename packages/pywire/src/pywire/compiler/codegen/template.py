@@ -2460,9 +2460,7 @@ class TemplateCodegen:
                     else:
                         authorizing_body.append(child)
 
-            static_region_id = (
-                f"auth_{node.line}_{node.column}".replace("-", "_")
-            )
+            static_region_id = f"auth_{node.line}_{node.column}".replace("-", "_")
             method_name = f"_render_auth_{static_region_id}"
             self.region_renderers[static_region_id] = method_name
             if self._dynamic_codegen_depth > 0:
@@ -2561,10 +2559,7 @@ class TemplateCodegen:
                         arg="policy", value=ast.Constant(value=auth_attr.policy)
                     )
                 )
-            if (
-                auth_attr.claims is not None
-                or auth_attr.claims_expr is not None
-            ):
+            if auth_attr.claims is not None or auth_attr.claims_expr is not None:
                 resolve_kwargs.append(
                     ast.keyword(
                         arg="claims",
@@ -2662,14 +2657,10 @@ class TemplateCodegen:
                                 values=[
                                     ast.Constant(value='<div data-pw-region="'),
                                     ast.FormattedValue(
-                                        value=ast.Name(
-                                            id=region_var, ctx=ast.Load()
-                                        ),
+                                        value=ast.Name(id=region_var, ctx=ast.Load()),
                                         conversion=-1,
                                     ),
-                                    ast.Constant(
-                                        value='" style="display: contents;">'
-                                    ),
+                                    ast.Constant(value='" style="display: contents;">'),
                                 ]
                             )
                         ],
@@ -2693,9 +2684,7 @@ class TemplateCodegen:
                                         attr=method_name,
                                         ctx=ast.Load(),
                                     ),
-                                    args=[
-                                        ast.Name(id=region_var, ctx=ast.Load())
-                                    ],
+                                    args=[ast.Name(id=region_var, ctx=ast.Load())],
                                     keywords=[],
                                 )
                             )

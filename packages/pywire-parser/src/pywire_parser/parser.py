@@ -773,9 +773,7 @@ class PyWireParser:
 
 def _parse_auth_kwargs(
     expr: str,
-) -> Tuple[
-    Optional[str], Optional[List[Tuple[str, Optional[str]]]], Optional[str]
-]:
+) -> Tuple[Optional[str], Optional[List[Tuple[str, Optional[str]]]], Optional[str]]:
     """Parse ``{$auth policy=... claims=[...]}`` expression text.
 
     Accepts kwargs or a positional string (treated as ``policy``).
