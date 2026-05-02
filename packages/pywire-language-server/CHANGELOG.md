@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.6.2...pywire-language-server-v0.7.0) (2026-05-02)
+
+
+### Features
+
+* cross-package version floors with runtime checks ([#181](https://github.com/pywire/pywire/issues/181)) ([9ec02a3](https://github.com/pywire/pywire/commit/9ec02a330d500ceb83a24547e6012acd1d828137))
+
 ## [0.6.2](https://github.com/pywire/pywire/compare/pywire-language-server-v0.6.1...pywire-language-server-v0.6.2) (2026-04-22)
 
 
