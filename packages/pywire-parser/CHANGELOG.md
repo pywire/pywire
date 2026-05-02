@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.6.0...pywire-parser-v0.7.0) (2026-05-02)
+
+
+### Features
+
+* cross-package version floors with runtime checks ([#181](https://github.com/pywire/pywire/issues/181)) ([9ec02a3](https://github.com/pywire/pywire/commit/9ec02a330d500ceb83a24547e6012acd1d828137))
+
 ## [0.6.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.5.0...pywire-parser-v0.6.0) (2026-05-01)
 
 
