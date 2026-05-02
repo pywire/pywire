@@ -62,6 +62,49 @@ class TestCodegenTemplate(unittest.TestCase):
         transformed = self.codegen._transform_expr(expr, local_vars={"item"})
         self.assert_ast_equal(transformed, "item.name == 'Test'")
 
+    def test_transform_expr_list_comp_target_not_promoted(self) -> None:
+        # Regression: comprehension target was being rewritten to ``self.c``,
+        # leaking the last loop value onto the page instance and triggering
+        # session-serializer warnings ("Skipping non-serializable attr 'c'").
+        expr = "[(c.type, c.value) for c in items]"
+        transformed = self.codegen._transform_expr(expr, local_vars=set())
+        self.assert_ast_equal(
+            transformed,
+            "[(c.type, c.value) for c in self.items]",
+        )
+
+    def test_transform_expr_dict_comp_target_not_promoted(self) -> None:
+        expr = "{c.type: c.value for c in items if c.type != 'sub'}"
+        transformed = self.codegen._transform_expr(expr, local_vars=set())
+        self.assert_ast_equal(
+            transformed,
+            "{c.type: c.value for c in self.items if c.type != 'sub'}",
+        )
+
+    def test_transform_expr_nested_comp_target_not_promoted(self) -> None:
+        expr = "[(a, b) for a in xs for b in ys]"
+        transformed = self.codegen._transform_expr(expr, local_vars=set())
+        self.assert_ast_equal(
+            transformed,
+            "[(a, b) for a in self.xs for b in self.ys]",
+        )
+
+    def test_transform_expr_comp_tuple_unpack_not_promoted(self) -> None:
+        expr = "[k for (k, v) in items]"
+        transformed = self.codegen._transform_expr(expr, local_vars=set())
+        self.assert_ast_equal(
+            transformed,
+            "[k for k, v in self.items]",
+        )
+
+    def test_transform_expr_lambda_arg_not_promoted(self) -> None:
+        expr = "(lambda x: x + 1)(value)"
+        transformed = self.codegen._transform_expr(expr, local_vars=set())
+        self.assert_ast_equal(
+            transformed,
+            "(lambda x: x + 1)(self.value)",
+        )
+
     def test_transform_reactive_expr_auto_call(self) -> None:
         # Parameterless method should be auto-called
         expr = "my_method"

@@ -1,5 +1,6 @@
 """Base page class with lifecycle system."""
 
+import hashlib
 import inspect
 import re
 import asyncio
@@ -12,6 +13,7 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
+    Iterable,
     List,
     Optional,
     Set,
@@ -1330,6 +1332,18 @@ class BasePage:
         # template that may have been invalidated).
         self._region_output_cache.clear()
         self._snippet_invocations.clear()
+        # Layouts and child components hold their own snippet/output
+        # caches keyed against state on this (parent) page — auth states,
+        # regions, etc. A full re-render here is usually triggered by a
+        # state change the children's caches don't know about, so clear
+        # them too. Without this, the layout component would serve a
+        # stale cached children body and overwrite the fresh output.
+        for comp in list(getattr(self, "_components", {}).values()):
+            try:
+                comp._snippet_invocations.clear()
+                comp._region_output_cache.clear()
+            except AttributeError:
+                pass
 
     def _begin_region_render(self, region_id: str) -> None:
         deps = self._region_dependencies.get(region_id)
@@ -1424,6 +1438,20 @@ class BasePage:
         if regions:
             self._dirty_regions.update(regions)
 
+        # Bubble up to the parent page so its ``render_update`` sees the
+        # invalidation. Layouts and child components register wire reads on
+        # themselves (their ``_render_template`` runs under their own
+        # render-context), so without this propagation the page that the
+        # WS handler calls ``render_update`` on would never see the wires
+        # written by the user's handler — UI freezes despite the wire
+        # change. Marking the parent's root (None) dirty triggers a full
+        # re-render, which is the safe outcome since the parent has no
+        # finer-grained subscription for this wire.
+        parent = getattr(self, "_parent_page", None)
+        if parent is not None:
+            parent._dirty_regions.add(None)
+            parent._wire_write_seq += 1
+
     async def handle_event(
         self, event_name: str, event_data: dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1515,7 +1543,14 @@ class BasePage:
                 for region_id in sorted(self._dirty_regions):
                     method_name = region_map.get(region_id)
                     if not method_name:
-                        continue
+                        # Dynamic regions (e.g. ``{$auth claims=[("tier",
+                        # tier)]}`` inside ``{$for}``) carry an iteration
+                        # suffix, so they don't appear in the static
+                        # ``__region_renderers__`` map. Silently skipping
+                        # would leave the UI stuck on the previous state
+                        # — fall back to a full re-render instead.
+                        has_root_dirty = True
+                        break
                     renderer = getattr(self, method_name, None)
                     if not renderer:
                         continue
@@ -1687,7 +1722,7 @@ class BasePage:
         region_id: str,
         *,
         policy: Optional[str] = None,
-        claims: Optional[List[Tuple[str, Optional[str]]]] = None,
+        claims: Optional[Iterable[Tuple[str, Optional[str]]]] = None,
     ) -> None:
         """Background task backing the ``{$auth}`` directive.
 
@@ -1725,6 +1760,30 @@ class BasePage:
             await self.push_state()
         except Exception:
             pass
+
+    @staticmethod
+    def _auth_region_id(static_id: str, claims: Any) -> str:
+        """Build a per-iteration region id for ``{$auth}``.
+
+        The static id encodes the source position. When ``claims`` is
+        ``None`` or empty (no per-iteration variation) the static id is
+        returned unchanged so the existing partial-render path still
+        targets a stable element. When claims are present — including
+        loop-variable values from ``{$for}`` — they're folded into the
+        id so each iteration maintains its own auth state and its own
+        ``data-pw-region`` attribute, avoiding collisions where one
+        morphdom patch would otherwise overwrite a sibling's content.
+        """
+        if not claims:
+            return static_id
+        try:
+            normalized = tuple(
+                (str(t), None if v is None else str(v)) for t, v in claims
+            )
+        except Exception:
+            return static_id
+        suffix = hashlib.md5(repr(normalized).encode("utf-8")).hexdigest()[:8]
+        return f"{static_id}_{suffix}"
 
     async def _render_template(self) -> str:
         """Render template - implemented by codegen."""

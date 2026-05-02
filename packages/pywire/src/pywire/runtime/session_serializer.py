@@ -145,7 +145,13 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
         if _is_serializable(value):
             attrs[name] = value
         else:
-            logger.warning(
+            # Frontmatter often holds non-picklable handles (e.g. an
+            # ``idp = app.state.local_idp`` reference, an open DB engine,
+            # or a third-party SDK client). These are reconstructed by
+            # ``__top_level_init__`` on every page instantiation, so
+            # losing them from the snapshot is harmless. Log at debug
+            # rather than warning so this isn't noise on every persist.
+            logger.debug(
                 "Skipping non-serializable attr '%s' (%s) on %s",
                 name,
                 type(value).__name__,

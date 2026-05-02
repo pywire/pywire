@@ -38,7 +38,7 @@ forms = [
 # that ship pre-compiled artifacts (e.g. Cloudflare Workers via Pyodide
 # where AOT-compiled wheels aren't available) can omit this extra.
 build = [
-    "pywire-parser>=0.6.0",
+    "pywire-parser>=0.8.0",
 ]
 # jinja2 backs the dev-mode compile-error page renderer (error_renderer.py);
 # `pywire run` with debug=False never imports it. It belongs on the dev/cli

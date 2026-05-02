@@ -35,6 +35,24 @@ from pywire.compiler.ast_nodes import (
 from pywire.compiler.interpolation.brace import BraceInterpolationParser
 
 
+def _comprehension_target_names(target: ast.expr) -> List[str]:
+    """Return the bare names bound by a comprehension target.
+
+    Handles tuple/list unpacking and starred targets (e.g.
+    ``for a, *rest in items``). Attribute or subscript targets bind
+    no new local name.
+    """
+    out: List[str] = []
+    if isinstance(target, ast.Name):
+        out.append(target.id)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            out.extend(_comprehension_target_names(elt))
+    elif isinstance(target, ast.Starred):
+        out.extend(_comprehension_target_names(target.value))
+    return out
+
+
 class TemplateCodegen:
     """Generates Python AST for rendering template."""
 
@@ -380,6 +398,61 @@ class TemplateCodegen:
 
                 node.value = self.visit(node.value)
                 node.target = self.visit(node.target)
+                return node
+
+            # Comprehensions create their own scope: targets are local to
+            # the comprehension and must not be rewritten to self.<name>.
+            # Without this, ``[(c.type, c.value) for c in user.claims]``
+            # compiles to ``[(self.c.type, ...) for self.c in ...]``,
+            # leaking ``c`` (the last loop value) onto the page instance.
+            def _visit_comprehension(self, node: Any) -> Any:
+                added: list[str] = []
+                for gen in node.generators:
+                    for name in _comprehension_target_names(gen.target):
+                        if name not in local_vars:
+                            local_vars.add(name)
+                            added.append(name)
+                try:
+                    self.generic_visit(node)
+                finally:
+                    for name in added:
+                        local_vars.discard(name)
+                return node
+
+            def visit_ListComp(self, node: ast.ListComp) -> Any:
+                return self._visit_comprehension(node)
+
+            def visit_SetComp(self, node: ast.SetComp) -> Any:
+                return self._visit_comprehension(node)
+
+            def visit_DictComp(self, node: ast.DictComp) -> Any:
+                return self._visit_comprehension(node)
+
+            def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
+                return self._visit_comprehension(node)
+
+            def visit_Lambda(self, node: ast.Lambda) -> Any:
+                # Lambda parameters are local to the lambda body.
+                added: list[str] = []
+                for arg in (
+                    list(node.args.args)
+                    + list(node.args.posonlyargs)
+                    + list(node.args.kwonlyargs)
+                ):
+                    if arg.arg not in local_vars:
+                        local_vars.add(arg.arg)
+                        added.append(arg.arg)
+                if node.args.vararg and node.args.vararg.arg not in local_vars:
+                    local_vars.add(node.args.vararg.arg)
+                    added.append(node.args.vararg.arg)
+                if node.args.kwarg and node.args.kwarg.arg not in local_vars:
+                    local_vars.add(node.args.kwarg.arg)
+                    added.append(node.args.kwarg.arg)
+                try:
+                    self.generic_visit(node)
+                finally:
+                    for name in added:
+                        local_vars.discard(name)
                 return node
 
         new_tree = AddSelfTransformer().visit(tree)
@@ -1001,6 +1074,10 @@ class TemplateCodegen:
         )
 
         # state = self._auth_states.get(region_id, {"status": "pending"})
+        # ``region_id`` is the function parameter — the call site computes
+        # it dynamically when claims contain runtime values (loop vars,
+        # wires, etc.) so each iteration of an enclosing $for keeps its
+        # own auth state.
         body.append(
             ast.Assign(
                 targets=[ast.Name(id="state", ctx=ast.Store())],
@@ -1015,7 +1092,7 @@ class TemplateCodegen:
                         ctx=ast.Load(),
                     ),
                     args=[
-                        ast.Constant(value=region_id),
+                        ast.Name(id="region_id", ctx=ast.Load()),
                         ast.Dict(
                             keys=[ast.Constant(value="status")],
                             values=[ast.Constant(value="pending")],
@@ -1119,7 +1196,7 @@ class TemplateCodegen:
             name=func_name,
             args=ast.arguments(
                 posonlyargs=[],
-                args=[ast.arg(arg="self")],
+                args=[ast.arg(arg="self"), ast.arg(arg="region_id")],
                 vararg=None,
                 kwonlyargs=[],
                 kw_defaults=[],
@@ -2383,15 +2460,17 @@ class TemplateCodegen:
                     else:
                         authorizing_body.append(child)
 
-            region_id = f"auth_{node.line}_{node.column}".replace("-", "_")
-            method_name = f"_render_auth_{region_id}"
-            self.region_renderers[region_id] = method_name
+            static_region_id = (
+                f"auth_{node.line}_{node.column}".replace("-", "_")
+            )
+            method_name = f"_render_auth_{static_region_id}"
+            self.region_renderers[static_region_id] = method_name
             if self._dynamic_codegen_depth > 0:
-                self.dynamic_regions.add(region_id)
+                self.dynamic_regions.add(static_region_id)
 
             aux_func = self._generate_auth_renderer(
                 method_name,
-                region_id,
+                static_region_id,
                 authorizing_body,
                 allowed_body,
                 denied_body,
@@ -2407,9 +2486,33 @@ class TemplateCodegen:
             )
             self.auxiliary_functions.append(aux_func)
 
-            # Build _resolve_auth(region_id, policy=..., claims=...) call.
-            claims_expr: ast.expr = ast.Constant(value=None)
-            if auth_attr.claims:
+            # Unique local var names per source position so nested $auth
+            # blocks don't collide. The variables hold the per-iteration
+            # region_id and claims tuple; both feed the cache key + the
+            # background resolver call.
+            slug = f"{node.line}_{node.column}".replace("-", "_")
+            claims_var = f"_pw_auth_claims_{slug}"
+            region_var = f"_pw_auth_region_{slug}"
+
+            # Build claims expression. Static literals stay as a literal
+            # AST list; non-constants (loop vars / wires) come through
+            # the runtime path so each iteration sees its own value.
+            claims_value_ast: ast.expr
+            if auth_attr.claims_expr is not None:
+                claims_value_ast = cast(
+                    ast.expr,
+                    self._transform_expr(
+                        auth_attr.claims_expr,
+                        local_vars,
+                        known_globals,
+                        known_imports,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                        cached=False,
+                        wire_vars=wire_vars,
+                    ),
+                )
+            elif auth_attr.claims:
                 tuple_elts: List[ast.expr] = []
                 for ctype, cvalue in auth_attr.claims:
                     tuple_elts.append(
@@ -2421,7 +2524,35 @@ class TemplateCodegen:
                             ctx=ast.Load(),
                         )
                     )
-                claims_expr = ast.List(elts=tuple_elts, ctx=ast.Load())
+                claims_value_ast = ast.List(elts=tuple_elts, ctx=ast.Load())
+            else:
+                claims_value_ast = ast.Constant(value=None)
+
+            # claims_var = <evaluated claims>
+            body.append(
+                ast.Assign(
+                    targets=[ast.Name(id=claims_var, ctx=ast.Store())],
+                    value=claims_value_ast,
+                )
+            )
+            # region_var = self._auth_region_id(static_id, claims_var)
+            body.append(
+                ast.Assign(
+                    targets=[ast.Name(id=region_var, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_auth_region_id",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Constant(value=static_region_id),
+                            ast.Name(id=claims_var, ctx=ast.Load()),
+                        ],
+                        keywords=[],
+                    ),
+                )
+            )
 
             resolve_kwargs: List[ast.keyword] = []
             if auth_attr.policy is not None:
@@ -2430,12 +2561,20 @@ class TemplateCodegen:
                         arg="policy", value=ast.Constant(value=auth_attr.policy)
                     )
                 )
-            if auth_attr.claims:
-                resolve_kwargs.append(ast.keyword(arg="claims", value=claims_expr))
+            if (
+                auth_attr.claims is not None
+                or auth_attr.claims_expr is not None
+            ):
+                resolve_kwargs.append(
+                    ast.keyword(
+                        arg="claims",
+                        value=ast.Name(id=claims_var, ctx=ast.Load()),
+                    )
+                )
 
             start_task_stmt = ast.If(
                 test=ast.Compare(
-                    left=ast.Constant(value=region_id),
+                    left=ast.Name(id=region_var, ctx=ast.Load()),
                     ops=[ast.NotIn()],
                     comparators=[
                         ast.Attribute(
@@ -2461,7 +2600,7 @@ class TemplateCodegen:
                                         attr="_resolve_auth",
                                         ctx=ast.Load(),
                                     ),
-                                    args=[ast.Constant(value=region_id)],
+                                    args=[ast.Name(id=region_var, ctx=ast.Load())],
                                     keywords=resolve_kwargs,
                                 )
                             ],
@@ -2509,6 +2648,7 @@ class TemplateCodegen:
             )
             body.append(start_task_stmt)
 
+            # parts.append(f'<div data-pw-region="{region_var}" style="...">')
             body.append(
                 ast.Expr(
                     value=ast.Call(
@@ -2518,8 +2658,19 @@ class TemplateCodegen:
                             ctx=ast.Load(),
                         ),
                         args=[
-                            ast.Constant(
-                                value=f'<div data-pw-region="{region_id}" style="display: contents;">'
+                            ast.JoinedStr(
+                                values=[
+                                    ast.Constant(value='<div data-pw-region="'),
+                                    ast.FormattedValue(
+                                        value=ast.Name(
+                                            id=region_var, ctx=ast.Load()
+                                        ),
+                                        conversion=-1,
+                                    ),
+                                    ast.Constant(
+                                        value='" style="display: contents;">'
+                                    ),
+                                ]
                             )
                         ],
                         keywords=[],
@@ -2542,7 +2693,9 @@ class TemplateCodegen:
                                         attr=method_name,
                                         ctx=ast.Load(),
                                     ),
-                                    args=[],
+                                    args=[
+                                        ast.Name(id=region_var, ctx=ast.Load())
+                                    ],
                                     keywords=[],
                                 )
                             )
