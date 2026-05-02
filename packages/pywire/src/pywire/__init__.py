@@ -1,6 +1,8 @@
 from importlib.metadata import version, PackageNotFoundError
 from typing import Optional, TYPE_CHECKING
 
+from pywire import _compat as _compat  # noqa: F401  (runs version floor checks)
+
 try:
     __version__ = version("pywire")
 except PackageNotFoundError:

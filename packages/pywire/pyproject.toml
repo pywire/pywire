@@ -27,15 +27,18 @@ dependencies = [
     "starlette>=0.35.0",
     "python-multipart>=0.0.6",
     "msgpack>=1.0.0",
-    "pywire-parser>=0.5.0",
 ]
 
 [project.optional-dependencies]
 forms = [
     "pydantic>=2.0.0",
 ]
+# pywire-parser is required for compiling .wire files (dev mode hot
+# reload, `pywire build`, syntax-error pages). Production deployments
+# that ship pre-compiled artifacts (e.g. Cloudflare Workers via Pyodide
+# where AOT-compiled wheels aren't available) can omit this extra.
 build = [
-    "pywire-parser>=0.5.0",
+    "pywire-parser>=0.6.0",
 ]
 cli = [
     "pywire-cli",
