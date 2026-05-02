@@ -100,6 +100,11 @@ async def handle_js_message(event_data):
                 to_js(accept_payload, dict_converter=js.Object.fromEntries)
             )
 
+            # Cancel any orphaned tasks from a previous WS connection
+            for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
+                _t.cancel()
+            handle_js_message._ws_tasks = []
+
             # Start forwarding outgoing WS messages to JS
             async def forward_ws_messages():
                 try:
@@ -119,7 +124,23 @@ async def handle_js_message(event_data):
                 except Exception as e:
                     print(f"WS forward error: {e}")
 
-            asyncio.create_task(forward_ws_messages())
+            # Send periodic pings so the client heartbeat (deadConnectionMs=40s)
+            # doesn't close the socket during idle periods (reading tutorial text, etc.)
+            async def send_keepalive():
+                import msgpack as _msgpack
+                _ping_bytes = list(_msgpack.packb({"type": "ping"}))
+                _ping_msg = {"type": "websocket.send", "bytes": _ping_bytes}
+                while True:
+                    await asyncio.sleep(15)
+                    try:
+                        _payload = {"type": "ws_message", "id": req_id, "message": _ping_msg}
+                        js.postMessage(to_js(_payload, dict_converter=js.Object.fromEntries))
+                    except Exception:
+                        break
+
+            fwd_task = asyncio.create_task(forward_ws_messages())
+            ka_task = asyncio.create_task(send_keepalive())
+            handle_js_message._ws_tasks = [fwd_task, ka_task]
 
         elif event_type == "ws_send":
             adp = get_adapter()
@@ -129,12 +150,15 @@ async def handle_js_message(event_data):
                 data = event_data["data"]
                 if isinstance(data, list):
                     data = bytes(data)
-                    # Rewrite tutorial paths
                     try:
                         import msgpack
                         payload = msgpack.unpackb(data)
-                        if isinstance(payload, dict) and "path" in payload:
-                            if payload["path"].startswith("/docs/"):
+                        if isinstance(payload, dict):
+                            # Silently drop pong responses to our keepalive pings
+                            if payload.get("type") == "pong":
+                                return
+                            # Rewrite tutorial paths
+                            if "path" in payload and payload["path"].startswith("/docs/"):
                                 payload["path"] = "/"
                                 data = msgpack.packb(payload)
                     except Exception:
@@ -174,6 +198,10 @@ js.reload_page = reload_page
 def restart_server(pages_dir="/app"):
     global app_instance, adapter, current_pages_dir
     print(f"restart_server called with pages_dir={pages_dir}")
+    # Cancel orphaned WS tasks from the previous session
+    for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
+        _t.cancel()
+    handle_js_message._ws_tasks = []
     app_instance = None
     adapter = None
     current_pages_dir = pages_dir
