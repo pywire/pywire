@@ -39,6 +39,7 @@ Each package is versioned independently (`separate-pull-requests: true`).
 
 - **Don't import across package boundaries** unless it's a published package dependency (e.g., LSP depends on the `pywire` package, not the folder path).
 - **Root `scripts/`** delegate to per-package `scripts/` — actual build/test logic lives in each package's scripts.
+- **Bump version floors in lockstep** when an upstream PyWire package ships a feature a downstream package starts using. Edit BOTH `pyproject.toml` (resolver-level) AND `src/<package>/_compat.py` (runtime check). See CLAUDE.md "Version Floors" for the chain and rationale.
 
 ## Running Demos
 

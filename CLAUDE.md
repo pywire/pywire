@@ -134,6 +134,33 @@ Multi-version Python testing uses **nox** in the core and language server packag
 
 GitHub Actions workflows use `dorny/paths-filter` to run checks only for packages that have changed. Release management uses `release-please` with per-package versioning.
 
+### Version Floors (cross-package compatibility)
+
+PyWire packages depend on each other in a chain: `tree-sitter-pywire` → `pywire-parser` → `pywire` / `pywire-language-server`. When an upstream package ships a feature (new grammar node, new AST class, new directive) that a downstream package starts using, the downstream package's minimum-version floor for that upstream **must be bumped in lockstep** — otherwise users with stale envs hit cryptic crashes at runtime (parser missing a directive, etc.).
+
+Two enforcement layers, both must move together:
+
+1. **`pyproject.toml` floor** — caught by pip's resolver at install time.
+2. **`_compat.py` constant** — runtime check at import; catches stale venvs that bypass the resolver (cached envs, `--no-deps`, broken lockfiles, monorepo editable drift).
+
+When you ship an upstream feature that a downstream package starts depending on:
+
+1. Release the upstream package with a new version (e.g. `pywire-parser` 0.5.0 → 0.6.0).
+2. In each downstream consumer, bump BOTH:
+   - The dep line in `pyproject.toml` (e.g. `pywire-parser>=0.6.0`)
+   - The floor in `src/<package>/_compat.py` (`_FLOORS = {"pywire-parser": "0.6.0", ...}`)
+3. Commit both edits together so release-please picks up the consumer release.
+
+Dependency chains to keep in sync:
+
+- `pywire` (`[build]` extra) → `pywire-parser` → `tree-sitter-pywire`
+- `pywire-language-server` → `pywire-parser` → `tree-sitter-pywire`
+- `pywire-cli` → `pywire[build]`, `pywire-templates`
+- `pywire-auth` → `pywire`
+- `create-pywire-app` → `pywire-templates`
+
+The JS-side packages (`vscode-pywire`, `prettier-plugin-pywire`) do **not** depend on `tree-sitter-pywire` as an npm package — they don't need floor enforcement.
+
 ### Commit Conventions (release-please)
 
 release-please uses **file paths only** to attribute commits to packages. The conventional commit scope (e.g., `fix(pywire):`) does NOT control which package gets a release PR — it only affects changelog formatting.
