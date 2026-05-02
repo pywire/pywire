@@ -908,20 +908,20 @@ class WebSocketHandler:
         baseline = self._get_handshake_cookies(websocket)
 
         # 0. Infer HttpOnly for any baseline cookie the client can't see,
-        #    but ONLY on the first reconcile for this connection AND when
-        #    the client reports at least one cookie. Rationale:
+        #    but ONLY on the first reconcile for this connection. Rationale:
         #      - document.cookie omits HttpOnly by definition; first-time
-        #        absence from a non-empty client payload implies HttpOnly.
+        #        absence from the client payload implies HttpOnly.
         #      - On subsequent reconciles we trust the client: the user
         #        may have legitimately cleared a non-HttpOnly cookie via
         #        devtools or JS.
-        #      - If the first reconcile's client payload is empty we
-        #        can't distinguish HttpOnly from "no cookies at all";
-        #        be conservative and skip the inference — later tombstone
-        #        logic correctly drops baseline cookies the client no
-        #        longer reports.
+        #      - When the first reconcile's client payload is empty we
+        #        can't distinguish HttpOnly from "user cleared all cookies".
+        #        Default to HttpOnly: losing an auth session on the first
+        #        SPA-nav after login is a much worse failure mode than
+        #        carrying a deleted-via-JS non-HttpOnly cookie until the
+        #        next hard reload (which clears the WS jar entirely).
         first_reconcile = websocket not in self._connection_reconciled
-        if cookie_header is not None and first_reconcile and client_cookies:
+        if cookie_header is not None and first_reconcile:
             for key in baseline:
                 if key not in client_cookies:
                     httponly_set.add(key)

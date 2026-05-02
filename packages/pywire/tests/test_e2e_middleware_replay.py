@@ -551,3 +551,29 @@ class TestHttpOnlyCookieStaysAuthoritative:
             msg = _ws_relocate(ws, "/dashboard", cookies="")
             assert msg["type"] == "update"
             assert "Dashboard" in msg.get("html", "")
+
+    def test_handshake_httponly_survives_first_relocate_with_empty_cookies(self):
+        """Regression: HttpOnly cookie set BEFORE the WS handshake (via a prior
+        HTTP login → full reload) is in the handshake headers but not in
+        ``document.cookie``. The first relocate's empty client payload must
+        not tombstone it.
+        """
+        # Simulate: user logged in over HTTP earlier, browser stored the
+        # HttpOnly session cookie, page reloaded → new WS connection whose
+        # handshake carries the cookie in the request headers.
+        headers = {"cookie": "secret=ok"}
+        with self.client.websocket_connect(
+            "/_pywire/ws", headers=headers
+        ) as ws:
+            _ws_init(ws, "/")
+
+            # First relocate after login. document.cookie is empty because
+            # ``secret`` is HttpOnly. Server must infer HttpOnly for any
+            # baseline cookie missing from the empty client payload — not
+            # tombstone them.
+            msg = _ws_relocate(ws, "/dashboard", cookies="")
+            assert msg["type"] == "update", (
+                f"Expected logged-in render; got {msg.get('type')} "
+                f"(path={msg.get('path')}). The session cookie was tombstoned."
+            )
+            assert "Dashboard" in msg.get("html", "")
