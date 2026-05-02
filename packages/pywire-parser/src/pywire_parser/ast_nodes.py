@@ -281,13 +281,24 @@ class AuthAttribute(SpecialAttribute):
     Region-scoped auth gate. Parallel to the page-level ``!auth``
     directive but evaluates per-region and renders an "allowed" or
     "denied" branch rather than redirecting the whole page.
+
+    ``claims`` is set when every claim value parsed as a string
+    literal — fast path for codegen. ``claims_expr`` carries the
+    raw kwarg expression when at least one value is not a literal
+    (e.g. a loop variable like ``[("tier", tier)]``); codegen
+    evaluates it at runtime so the gate sees the current iteration's
+    value.
     """
 
     policy: Optional[str] = None
     claims: Optional[List[Tuple[str, Optional[str]]]] = None
+    claims_expr: Optional[str] = None
 
     def __str__(self) -> str:
-        return f"AuthAttribute(policy={self.policy}, claims={self.claims})"
+        return (
+            f"AuthAttribute(policy={self.policy}, claims={self.claims}, "
+            f"claims_expr={self.claims_expr})"
+        )
 
 
 @dataclass
