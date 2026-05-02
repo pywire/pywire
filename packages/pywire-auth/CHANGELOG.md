@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pywire/pywire/compare/pywire-auth-v0.2.0...pywire-auth-v0.3.0) (2026-05-02)
+
+
+### Features
+
+* cross-package version floors with runtime checks ([#181](https://github.com/pywire/pywire/issues/181)) ([9ec02a3](https://github.com/pywire/pywire/commit/9ec02a330d500ceb83a24547e6012acd1d828137))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/pywire-auth-v0.1.1...pywire-auth-v0.2.0) (2026-04-21)
 
 
