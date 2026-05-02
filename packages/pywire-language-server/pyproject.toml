@@ -13,8 +13,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pygls>=1.3.0",
     "ty>=0.0.15",
-    "pywire-parser>=0.5.0",
-    "pywire",
+    "pywire-parser>=0.6.0",
 ]
 
 [project.scripts]

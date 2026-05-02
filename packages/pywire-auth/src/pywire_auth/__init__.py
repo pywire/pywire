@@ -15,6 +15,7 @@ Public API:
   :class:`BaseOAuth2Provider`, :class:`BaseOIDCProvider`
 """
 
+from pywire_auth import _compat as _compat  # noqa: F401  (runs version floor checks)
 from pywire_auth._protocols import AuthStore, OIDCProvider
 from pywire_auth.actions import AuthActions
 from pywire_auth.integration import connect_auth

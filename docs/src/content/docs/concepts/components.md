@@ -239,7 +239,7 @@ To opt a single call site out of memoization — for example to force a fresh re
 {/dynamic}
 ```
 
-Memoization safety is a property of how a component is *used*, not how it's defined — wrap at the call site, not the definition.
+Memoization safety is a property of how a component is _used_, not how it's defined — wrap at the call site, not the definition.
 
 ## Component Refs
 
