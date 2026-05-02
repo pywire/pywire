@@ -5,6 +5,7 @@ include block-directive markers such as ``AuthAttribute`` that mirror
 the tree-sitter-pywire grammar.
 """
 
+from pywire_parser import _compat as _compat  # noqa: F401  (runs version floor checks)
 from pywire_parser.parser import PyWireParser
 from pywire_parser.ts_parser import parse
 from pywire_parser.ast_nodes import (
