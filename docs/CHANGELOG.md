@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.8](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.7...pywire-docs-v0.5.8) (2026-05-02)
+
+
+### Bug Fixes
+
+* **pywire-docs:** keepalive pings prevent WS heartbeat disconnect ([#190](https://github.com/pywire/pywire/issues/190)) ([602527d](https://github.com/pywire/pywire/commit/602527d22d7217efb7245008a0cbd4801ca5ad16))
+
 ## [0.5.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.0...pywire-docs-v0.5.1) (2026-04-13)
 
 
