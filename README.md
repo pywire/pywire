@@ -25,8 +25,7 @@ This is the PyWire monorepo. All packages are developed and released from here.
 | [`packages/vscode-pywire`](packages/vscode-pywire) | VS Code extension — syntax highlighting, LSP integration | [![VS Code](https://vsmarketplacebadges.dev/version-short/pywire.pywire.svg)](https://marketplace.visualstudio.com/items?itemName=pywire.pywire) |
 | [`packages/prettier-plugin-pywire`](packages/prettier-plugin-pywire) | Prettier formatter for `.wire` files | - |
 | [`packages/tree-sitter-pywire`](packages/tree-sitter-pywire) | Tree-sitter grammar for `.wire` syntax | [![PyPI](https://img.shields.io/pypi/v/pywire-auth)](https://pypi.org/project/tree-sitter-pywire/) |
-| [`docs`](docs) | Documentation site — [pywire.dev/docs](https://pywire.dev/docs) | ![Uptime Robot ratio (30 days)](https://img.shields.io/uptimerobot/ratio/m802979182-c5cc07cdcd38f785e0468f60)
- |
+| [`docs`](docs) | Documentation site — [pywire.dev/docs](https://pywire.dev/docs) | ![Uptime Robot ratio (30 days)](https://img.shields.io/uptimerobot/ratio/m802979182-c5cc07cdcd38f785e0468f60) |
 
 ---
 
