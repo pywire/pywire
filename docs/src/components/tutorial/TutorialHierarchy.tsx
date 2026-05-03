@@ -228,7 +228,7 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
                                   textAlign: 'left',
                                   border: 'none',
                                   cursor: 'pointer',
-                                  background: isActive ? 'rgba(34,211,238,0.1)' : 'transparent',
+                                  background: isActive ? 'var(--pw-accent-bg)' : 'transparent',
                                   color: isActive
                                     ? 'var(--pw-accent, #22d3ee)'
                                     : 'var(--pw-text-dim, #9ca3af)',
