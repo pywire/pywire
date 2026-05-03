@@ -418,6 +418,23 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
         `
         }
 
+        // Tear down the prior PyWireApp before rewriting the document.
+        // Without this, the old instance's heartbeat setInterval keeps
+        // ticking on the same iframe window even after doc.write loads a
+        // new <script>. After ~40s of no incoming messages on its old
+        // (now-orphaned) MockWebSocket, it logs "WebSocket heartbeat
+        // timeout, reconnecting", calls socket.close(), and reconnects
+        // with its stored sessionId. Server has no record of that
+        // session → init_ack.session_restored=false → "session expired"
+        // toast. Calling disconnect() clears the heartbeat and sets
+        // shouldReconnect=false on the orphan, killing the loop cleanly.
+        try {
+          const w = iframeRef.current.contentWindow as any
+          w?.PyWireCore?.app?.disconnect?.()
+        } catch (_) {
+          // ignore — fresh iframe with no app yet
+        }
+
         doc.open()
         ;(doc as any).write(finalHtml)
         doc.close()
