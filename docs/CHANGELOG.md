@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.24](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.23...pywire-docs-v0.5.24) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** round-2 tutorial followups ([#225](https://github.com/pywire/pywire/issues/225)) ([67f8b44](https://github.com/pywire/pywire/commit/67f8b44093235f84835d7799abf7e7ec23141bf6))
+
 ## [0.5.23](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.22...pywire-docs-v0.5.23) (2026-05-03)
 
 
