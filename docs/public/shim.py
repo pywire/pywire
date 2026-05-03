@@ -177,12 +177,28 @@ js.handle_message = handle_js_message
 
 
 def reload_page(path_str):
+    """Invalidate a single page's cached compile output.
+
+    The worker calls this after every UPDATE_FILE. After restart_server,
+    files arrive sequentially (pages first, then components). We must NOT
+    eagerly construct the adapter here — PyWire(__init__) calls
+    _load_pages() which compiles every .wire it finds, executing top-level
+    imports like `from components.badge import Badge`. If components/
+    hasn't been written yet, that import raises ModuleNotFoundError and
+    the page is registered as a permanent error page.
+
+    Skip when the adapter doesn't exist; the next http_request will
+    construct it fresh, by which time the worker has finished writing
+    every UPDATE_FILE for this step.
+    """
+    if adapter is None:
+        return True
+
     import pathlib
 
     try:
-        app = get_adapter().app
         path = pathlib.Path(path_str)
-        app.reload_page(path)
+        adapter.app.reload_page(path)
         return True
     except Exception as e:
         print(f"Reload failed for {path_str}: {e}")
