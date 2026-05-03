@@ -188,6 +188,9 @@ cache_valid
         )
         await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
         await micropip.install('starlette', { target: sitePackages })
+        // jinja2 backs PyWire's compile-error page renderer; the tutorial
+        // shim sets _is_dev_mode=True so error rendering is reachable.
+        await micropip.install('jinja2>=3.1.0', { target: sitePackages })
         await micropip.install('tree-sitter-pywire', { target: sitePackages })
         await micropip.install('pywire-parser', { target: sitePackages })
         await micropip.install('pywire', { target: sitePackages, deps: false })
@@ -209,6 +212,8 @@ for pkg in ['pywire', 'pywire-parser', 'tree-sitter-pywire']:
         // Install from /dist/ wheels built at build time
         await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
         await micropip.install('starlette', { target: sitePackages })
+        // jinja2 backs PyWire's compile-error page renderer (dev-mode only).
+        await micropip.install('jinja2>=3.1.0', { target: sitePackages })
         console.log('[Worker] Base dependencies installed')
 
         async function installLocalWheel(wheelName: string, label: string) {
