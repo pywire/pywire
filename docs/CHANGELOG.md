@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.11](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.10...pywire-docs-v0.5.11) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** install jinja2 in tutorial worker ([19e114c](https://github.com/pywire/pywire/commit/19e114c1d2e0c87b33c9a3143dbdf8f07a62d5d6))
+
 ## [0.5.10](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.9...pywire-docs-v0.5.10) (2026-05-03)
 
 
