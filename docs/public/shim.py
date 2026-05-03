@@ -35,7 +35,18 @@ def get_adapter():
                 sys.path.insert(0, project_root)
 
             print(f"Initializing PyWire app with pages_dir={current_pages_dir}...")
-            app_instance = PyWire(pages_dir=current_pages_dir, debug=True)
+            # ws_ping_interval=0 disables the framework's per-connection
+            # _ping_loop. Both ends of this WebSocket live in the same
+            # browser tab (iframe ↔ Pyodide worker via postMessage); there
+            # is no network to monitor. Under load (e.g. validate() firing
+            # many fetchRouteContent → http_request through the worker
+            # serially), the pong from the iframe queues up behind the
+            # http_requests and misses the 10s pong-deadline → the
+            # framework forcibly closes a perfectly healthy connection
+            # and triggers a reconnect storm.
+            app_instance = PyWire(
+                pages_dir=current_pages_dir, debug=True, ws_ping_interval=0
+            )
             app_instance._is_dev_mode = True
             adapter = PyodideASGIAdapter(app_instance)
             print("PyWire app initialized successfully")
