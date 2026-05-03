@@ -192,7 +192,10 @@ class CodeGenerator:
             ),
             ast.ImportFrom(
                 module="pywire.core.props",
-                names=[ast.alias(name="props", asname=None)],
+                names=[
+                    ast.alias(name="props", asname=None),
+                    ast.alias(name="PropsNamespace", asname="_PywirePropsNamespace"),
+                ],
                 level=0,
             ),
             ast.ImportFrom(
@@ -1415,6 +1418,24 @@ class CodeGenerator:
 
         return transformed
 
+    def _build_props_namespace_assign(self, prop_names: Set[str]) -> ast.Assign:
+        """Emit ``props = _PywirePropsNamespace(name=name, ...)``.
+
+        Tutorial and docs teach ``{props.x}``; bare-name unpacking exists
+        for ``{x}`` ergonomics. Bind both forms so either works.
+        """
+        return ast.Assign(
+            targets=[ast.Name(id="props", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Name(id="_PywirePropsNamespace", ctx=ast.Load()),
+                args=[],
+                keywords=[
+                    ast.keyword(arg=name, value=ast.Name(id=name, ctx=ast.Load()))
+                    for name in sorted(prop_names)
+                ],
+            ),
+        )
+
     def _extract_props_from_class(self, node: ast.ClassDef) -> PropsDirective:
         """Extract props from a @props decorated class."""
         args: List[Tuple[str, str, Optional[str]]] = []
@@ -1656,6 +1677,10 @@ class CodeGenerator:
                             ),
                         )
                     )
+                props_unpack_stmts.append(
+                    self._build_props_namespace_assign(prop_names)
+                )
+                prop_names.add("props")
 
             body_func, aux_funcs = self.template_codegen.generate_render_method(
                 parsed.template,
@@ -1857,6 +1882,10 @@ class CodeGenerator:
                             ),
                         )
                     )
+                props_unpack_stmts.append(
+                    self._build_props_namespace_assign(prop_names)
+                )
+                prop_names.add("props")
 
             render_func, aux_funcs = self.template_codegen.generate_render_method(
                 parsed.template,

@@ -156,6 +156,29 @@ class TestCodeGenerator(unittest.TestCase):
         assert "self.count = count" in code
         assert "self.variant = variant" in code
 
+    def test_props_namespace_binding(self) -> None:
+        """``props.x`` form should resolve to a namespace, not the decorator."""
+        source = dedent("""
+            ---
+            from pywire import props
+
+            @props
+            class Props:
+                text: str
+                color: str = "gray"
+            ---
+            <span>{props.text} {props.color}</span>
+        """)
+        parser = PyWireParser()
+        parsed = parser.parse(source, "test.wire")
+        module_ast = self.generator.generate(parsed)
+        code = ast.unparse(module_ast)
+        assert "_PywirePropsNamespace" in code
+        # Both bare-name and namespace bindings emitted
+        assert "text = self.text" in code
+        assert "color = self.color" in code
+        assert "props = _PywirePropsNamespace(" in code
+
 
 if __name__ == "__main__":
     unittest.main()
