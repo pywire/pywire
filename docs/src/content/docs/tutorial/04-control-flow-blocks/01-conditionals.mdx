@@ -10,7 +10,7 @@ files:
       is_visible = wire(False)
 
       def toggle():
-        is_visible.value = not is_visible
+        is_visible.value = not is_visible.value
       ---
       <div class="container">
         <button @click={toggle}>
@@ -27,7 +27,7 @@ files:
       is_visible = wire(False)
 
       def toggle():
-        is_visible.value = not is_visible
+        is_visible.value = not is_visible.value
       ---
       <div class="container">
         <button @click={toggle}>
@@ -44,7 +44,7 @@ successCriteria:
   - type: file_contains
     description: 'Wrap the alert in {$if is_visible}'
     target: pages/index.wire
-    pattern: '{\$if is_visible}'
+    pattern: '{$if is_visible}'
   - type: browser_route_text
     route: '/'
     description: 'Click toggle and see the message'

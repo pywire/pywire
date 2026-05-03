@@ -52,4 +52,4 @@ In PyWire, event listeners are added using the `@` prefix, followed by the event
 1.  Add `@click={increment}` to the `<button>` tag.
 2.  Test it by clicking the button 3 times in the preview.
 
-Events in PyWire automatically prevent default behavior if they are on a form submission, but otherwise behave like standard DOM events.
+Events behave like standard DOM events. To suppress the browser's default behavior — e.g. on `<form>` submits — use the `.prevent` modifier (`@submit.prevent={save}`), covered in the modifiers step.
