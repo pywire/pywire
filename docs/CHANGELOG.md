@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.21](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.20...pywire-docs-v0.5.21) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** hard-disconnect WS in shim to cancel framework ping_loop ([#219](https://github.com/pywire/pywire/issues/219)) ([326dc47](https://github.com/pywire/pywire/commit/326dc474e5a48e78413597ab4bbee2a32b737914))
+
 ## [0.5.20](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.19...pywire-docs-v0.5.20) (2026-05-03)
 
 
