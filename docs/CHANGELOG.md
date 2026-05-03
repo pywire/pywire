@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.14](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.13...pywire-docs-v0.5.14) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** defer adapter creation until all step files written ([adf8ede](https://github.com/pywire/pywire/commit/adf8ede79b5261db8d9aa8ca0e86800a36113a82))
+
 ## [0.5.13](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.12...pywire-docs-v0.5.13) (2026-05-03)
 
 
