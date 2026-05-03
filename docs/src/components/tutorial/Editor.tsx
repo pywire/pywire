@@ -292,6 +292,13 @@ export const Editor: React.FC<EditorProps> = ({
           roundedSelection: false,
           padding: { top: 10 },
           readOnly: readOnly,
+          // Monaco's aggressive auto-indent corrupts mixed-language .wire
+          // files (Python frontmatter + HTML template + scoped CSS). It
+          // tries to apply Python rules to HTML and vice versa, which
+          // mangles the ``---`` frontmatter delimiters and snippet blocks.
+          autoIndent: 'keep',
+          formatOnPaste: false,
+          formatOnType: false,
         })
 
         // Update global state

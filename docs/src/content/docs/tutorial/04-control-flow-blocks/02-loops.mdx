@@ -39,7 +39,7 @@ successCriteria:
   - type: file_contains
     description: 'Use {$for} with a key argument'
     target: pages/index.wire
-    pattern: '{\$for .* key=.*}'
+    pattern: 'key=item'
   - type: browser_route_text
     route: '/'
     description: "Verify 'Learn PyWire' is rendered"
@@ -50,6 +50,8 @@ pagesDir: pages
 To render lists, use the `{$for}` block. It works just like a Python `for` loop.
 
 Crucially, you should provide a `key` argument (separated by a comma). This helps PyWire track items efficiently when the list order changes.
+
+The full syntax is **`{$for item in collection, key=expr}`** — note the **comma** before `key=`, and use **bracket** access (`item['id']`) rather than `item.id` when iterating dicts.
 
 ### Your Task
 

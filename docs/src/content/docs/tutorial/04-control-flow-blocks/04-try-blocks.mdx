@@ -56,11 +56,11 @@ successCriteria:
   - type: file_contains
     description: 'Use {$try} to protect the function call'
     target: pages/index.wire
-    pattern: '{\$try}'
+    pattern: '{$try}'
   - type: file_contains
     description: 'Add an {$except} block'
     target: pages/index.wire
-    pattern: '{\$except'
+    pattern: '{$except'
 pagesDir: pages
 ---
 

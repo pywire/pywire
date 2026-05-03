@@ -297,7 +297,6 @@ These properties are available on every page and component instance, accessible 
 | `url`      | `URLHelper`       | URL helper for the current request                                                                                  |
 | `user`     | `Any`             | User object populated by the `get_user` hook                                                                        |
 | `attrs`    | `dict`            | Fallthrough attributes not captured by `@props`                                                                     |
-| `context`  | `dict`            | Inherited context from parent components via `!provide`                                                             |
 | `errors`   | `ErrorNamespace`  | Form validation errors                                                                                              |
 | `loading`  | `dict`            | Loading state for async operations                                                                                  |
 | `children` | `Snippet \| None` | Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`. |

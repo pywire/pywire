@@ -32,33 +32,35 @@ export class SuccessValidator {
 
           case 'file_contains': {
             const content = files[criterion.target || '']
-            passed = content !== undefined && new RegExp(criterion.pattern || '').test(content)
+            // Patterns are literal substrings: tutorial copy uses ``$if=``,
+            // ``{props.text}``, etc. ``$`` and ``{`` are regex metacharacters
+            // and a regex engine silently turns "$if={show}" into an anchor
+            // that never matches. Substring matching is what the docs imply.
+            passed =
+              content !== undefined && !!criterion.pattern && content.includes(criterion.pattern)
             break
           }
 
           case 'browser_route_text': {
-            // Check live iframe text content first (captures reactive state from WS updates).
-            // Fall back to re-fetching the route via HTTP (only sees initial server-rendered state).
+            // Live iframe text first (reactive state); fall back to last
+            // server HTML, then a re-fetch of the criterion's route.
             if (criterion.pattern) {
-              const regex = new RegExp(criterion.pattern)
+              const needle = criterion.pattern
 
-              // First try: live iframe DOM text (includes reactive/interactive state)
-              if (liveIframeText && regex.test(liveIframeText)) {
+              if (liveIframeText && liveIframeText.includes(needle)) {
                 passed = true
                 break
               }
 
-              // Second try: last rendered HTML from HTTP response
-              if (browserHtml && regex.test(browserHtml)) {
+              if (browserHtml && browserHtml.includes(needle)) {
                 passed = true
                 break
               }
 
-              // Third try: re-fetch the specific route
               if (criterion.route && fetchRoute) {
                 try {
                   const fetched = await fetchRoute(criterion.route)
-                  passed = regex.test(fetched || '')
+                  passed = !!fetched && fetched.includes(needle)
                 } catch (e) {
                   console.warn(`Failed to fetch route ${criterion.route}:`, e)
                   passed = false

@@ -43,7 +43,7 @@ successCriteria:
   - type: file_contains
     description: 'Use {$await} to call fetch_user_data()'
     target: pages/index.wire
-    pattern: '{\$await fetch_user_data\(\)}'
+    pattern: '{$await fetch_user_data()}'
   - type: browser_route_text
     route: '/'
     description: "Wait for 'Welcome, Alice Smith!' to appear"
@@ -54,6 +54,8 @@ pagesDir: pages
 PyWire makes working with asynchronous data easy. Instead of managing `is_loading` variables manually, you can use the `{$await}` block to handle Python coroutines directly in the template.
 
 The block immediately renders the first section (Pending state), and automatically updates to the `{$then}` section when the data resolves.
+
+`{$then name}` **binds the resolved value** to the local `name` so the body can reference it. The order is fixed: pending body comes first, then `{$then variable_name}`, then the resolved body.
 
 ### Your Task
 

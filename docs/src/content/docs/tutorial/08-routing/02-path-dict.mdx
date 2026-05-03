@@ -44,11 +44,11 @@ successCriteria:
   - type: file_contains
     description: 'Define a !path dictionary'
     target: pages/main.wire
-    pattern: '!path \{'
+    pattern: '!path {'
   - type: file_contains
     description: 'Wrap settings in {$if path.settings}'
     target: pages/main.wire
-    pattern: '{\$if path.settings}'
+    pattern: '{$if path.settings}'
   - type: browser_route_text
     route: '/menu/settings'
     description: 'Navigate to /menu/settings and see the settings list'
