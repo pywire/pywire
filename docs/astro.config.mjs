@@ -34,6 +34,9 @@ export default defineConfig({
       },
       components: {
         Head: resolve(__dirname, './src/components/Head.astro'),
+        SiteTitle: resolve(__dirname, './src/components/SiteTitle.astro'),
+        SocialIcons: resolve(__dirname, './src/components/SocialIcons.astro'),
+        ThemeSelect: resolve(__dirname, './src/components/ThemeSelect.astro'),
       },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/pywire/pywire' },
@@ -41,6 +44,14 @@ export default defineConfig({
       ],
       expressiveCode: {
         themes: ['catppuccin-latte', 'catppuccin-mocha'],
+        styleOverrides: {
+          borderRadius: '12px',
+          codeFontFamily: 'JetBrains Mono, Fira Code, ui-monospace, SFMono-Regular, Menlo, monospace',
+          codeFontSize: '0.85rem',
+          frames: {
+            frameBoxShadowCssValue: '0 1px 2px rgba(14,21,37,0.06), 0 8px 20px -8px rgba(14,21,37,0.14)',
+          },
+        },
         shiki: {
           langs: [
             {

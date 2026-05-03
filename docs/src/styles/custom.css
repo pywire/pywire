@@ -1,67 +1,468 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Apply to Starlight's Dark Mode */
-:root[data-theme='dark'] {
-  --sl-color-accent-low: #003336; /* Deep cyan background for active items */
-  --sl-color-accent: #00f0ff; /* The Electric Cyan text --color-wire-glow */
-  --sl-color-accent-high: #b3fcff; /* Hover states */
+/* =================================================================
+   PyWire Design System — applied to Starlight docs.
+   Source of truth: pywire-design-system/project/colors_and_type.css
+   Two worlds, one wire. Lab (light) ↔ Void (dark) — perceptual mirrors
+   along the L axis. One OKLCH cyan ladder (hue 195°, chroma 0.13) at
+   three lightnesses drives the accent in both modes; neutrals share a
+   single hue (250°) at very low chroma.
+   ================================================================= */
 
-  --sl-color-bg: #090a11; /* Match pywire.dev Void --theme-dark-bg */
-  --sl-color-bg-nav: rgba(19, 21, 32, 0.8); /* Match pywire.dev Surface + Transparency */
-  --sl-color-bg-sidebar: #090a11;
-  --sl-color-border: #2a2d3d; /* --theme-dark-border */
-  --sl-color-text-accent: var(--sl-color-accent);
+/* ---------- Atkinson Hyperlegible Next ---------------------------- */
 
-  /* New: Invert text for dark mode primary buttons */
-  --sl-color-text-invert: #000000;
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Bold.woff2') format('woff2');
 }
 
-/* Apply to Starlight's Light Mode */
-:root[data-theme='light'] {
-  --sl-color-accent-low: #e0faff;
-  --sl-color-accent: #008c94; /* Darker cyan for readability on white */
-  --sl-color-accent-high: #005c61;
-  --sl-color-bg: #ffffff;
-  --sl-color-bg-nav: rgba(243, 244, 246, 0.8);
-  --sl-color-bg-sidebar: #ffffff;
-  --sl-color-text-accent: var(--sl-color-accent);
+/* ---------- Brand tokens ----------------------------------------- */
 
-  /* New: Invert text for light mode primary buttons */
+:root {
+  color-scheme: light dark;
+
+  /* The Wire — primary signal. */
+  --color-wire-90: oklch(89% 0.13 195);
+  --color-wire-65: oklch(65% 0.13 195);
+  --color-wire-55: oklch(55% 0.13 195);
+  --color-wire-25: oklch(25% 0.13 195);
+  --color-wire-95: oklch(95% 0.05 195);
+
+  /* Type families. */
+  --pywire-font-sans: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --pywire-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Motion. */
+  --pywire-motion-fast: 120ms;
+  --pywire-motion-base: 200ms;
+  --pywire-ease-spring: cubic-bezier(0.1, 0.1, 0, 1);
+  --pywire-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Glow. */
+  --pywire-glow-soft: 0 0 10px rgba(0, 200, 220, 0.18);
+  --pywire-glow: 0 0 14px rgba(0, 200, 220, 0.32);
+  --pywire-shadow-soft: 0 1px 2px rgba(14, 21, 37, 0.05), 0 4px 14px rgba(14, 21, 37, 0.06);
+
+  /* Sidebar rail (overridden per theme below). */
+  --pywire-sidebar-rail: oklch(89% 0.01 250);
+
+  /* Fonts wired into Starlight. */
+  --sl-font: var(--pywire-font-sans);
+  --sl-font-mono: var(--pywire-font-mono);
+
+  /* Slim header — design spec ~52px. */
+  --sl-nav-height: 56px;
+  --sl-nav-height-mobile: 56px;
+}
+
+/* The Void — dark mode */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: var(--color-wire-25);
+  --sl-color-accent: var(--color-wire-90);
+  --sl-color-accent-high: oklch(94% 0.1 195);
+
+  --sl-color-bg: oklch(11% 0.01 250);
+  --sl-color-bg-nav: oklch(14% 0.012 250 / 0.85);
+  --sl-color-bg-sidebar: oklch(11% 0.01 250);
+  --sl-color-bg-inline-code: oklch(20% 0.015 250);
+  --sl-color-border: oklch(28% 0.018 250);
+  --sl-color-text: oklch(92% 0.012 250);
+  --sl-color-text-accent: var(--sl-color-accent);
+  --sl-color-text-invert: oklch(15% 0.04 195);
+
+  --sl-color-gray-1: oklch(92% 0.012 250);
+  --sl-color-gray-2: oklch(85% 0.014 250);
+  --sl-color-gray-3: oklch(66% 0.02 250);
+  --sl-color-gray-4: oklch(55% 0.022 250);
+  --sl-color-gray-5: oklch(28% 0.018 250);
+  --sl-color-gray-6: oklch(15% 0.012 250);
+  --sl-color-gray-7: oklch(20% 0.015 250);
+
+  --pywire-sidebar-rail: oklch(28% 0.018 250);
+  --pywire-active-pill-bg: color-mix(in oklch, var(--sl-color-accent) 22%, transparent);
+
+  /* Aliases consumed by component overrides. */
+  --pywire-accent: var(--sl-color-accent);
+  --pywire-accent-hover: var(--sl-color-accent-high);
+  --pywire-border: var(--sl-color-border);
+  --pywire-fg: var(--sl-color-text);
+  --pywire-fg-muted: oklch(66% 0.02 250);
+  --pywire-bg: var(--sl-color-bg);
+  --pywire-surface: oklch(15% 0.012 250);
+}
+
+/* The Lab — light mode */
+:root[data-theme='light'] {
+  --sl-color-accent-low: var(--color-wire-95);
+  --sl-color-accent: var(--color-wire-65);
+  --sl-color-accent-high: var(--color-wire-55);
+
+  --sl-color-bg: oklch(99% 0.005 250);
+  --sl-color-bg-nav: oklch(97.5% 0.006 250 / 0.85);
+  --sl-color-bg-sidebar: oklch(99% 0.005 250);
+  --sl-color-bg-inline-code: oklch(95% 0.008 250);
+  --sl-color-border: oklch(89% 0.01 250);
+  --sl-color-text: oklch(20% 0.04 250);
+  --sl-color-text-accent: var(--sl-color-accent);
   --sl-color-text-invert: #ffffff;
+
+  --sl-color-gray-1: oklch(20% 0.04 250);
+  --sl-color-gray-2: oklch(20% 0.04 250);
+  --sl-color-gray-3: oklch(48% 0.025 250);
+  --sl-color-gray-4: oklch(48% 0.025 250);
+  --sl-color-gray-5: oklch(89% 0.01 250);
+  --sl-color-gray-6: oklch(95% 0.008 250);
+  --sl-color-gray-7: oklch(97.5% 0.006 250);
+
+  --pywire-sidebar-rail: oklch(89% 0.01 250);
+  --pywire-active-pill-bg: color-mix(in oklch, var(--sl-color-accent) 18%, transparent);
+
+  --pywire-accent: var(--sl-color-accent);
+  --pywire-accent-hover: var(--sl-color-accent-high);
+  --pywire-border: var(--sl-color-border);
+  --pywire-fg: var(--sl-color-text);
+  --pywire-fg-muted: oklch(48% 0.025 250);
+  --pywire-bg: var(--sl-color-bg);
+  --pywire-surface: oklch(97.5% 0.006 250);
 }
 
 body {
   background-color: var(--sl-color-bg);
-  /* Grid removed as requested */
+  font-family: var(--pywire-font-sans);
 }
 
-/* Specifically style primary buttons in the hero/sidebar to ensure readability */
-.sl-link-button.primary {
-  color: var(--sl-color-text-invert) !important;
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--pywire-font-mono);
 }
 
-/* Fix link color collision - use a slightly more muted color for inline links
-   to distinguish them from primary actions while keeping brand feel */
-a:not(.sl-link-button) {
+/* ---------- HEADER / NAV ----------------------------------------- */
+
+.header {
+  border-bottom: 1px solid var(--sl-color-border);
+  background-color: var(--sl-color-bg-nav);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ---------- SIDEBAR ---------------------------------------------- */
+
+.sidebar-pane {
+  background-color: var(--sl-color-bg-sidebar);
+  border-inline-end: 1px solid var(--sl-color-border);
+}
+
+.sidebar-content ul ul {
+  border-inline-start: 1px solid var(--pywire-sidebar-rail);
+  padding-inline-start: 0;
+}
+
+/* Group headings — bold, larger. */
+.sidebar-content > ul > li > details > summary,
+.sidebar-content > ul > li > .group-label,
+.sidebar-content .top-level > li > details > summary,
+.sidebar-content .large {
+  font-family: var(--pywire-font-sans);
+  font-weight: 700 !important;
+  font-size: 0.95rem !important;
+  color: var(--sl-color-text) !important;
+  letter-spacing: -0.005em;
+  padding-block: 0.4rem;
+  text-transform: none;
+}
+
+/* Sub-item links — underlined, neutral text. */
+.sidebar-content ul ul a {
+  font-family: var(--pywire-font-sans);
+  color: var(--sl-color-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 35%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+  font-weight: 400;
+  border-inline-start: 2px solid transparent;
+  margin-inline-start: -1px;
+  padding-inline-start: 0.85rem;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    background var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+.sidebar-content ul ul a:hover {
+  color: var(--sl-color-accent-high);
+  text-decoration-color: var(--sl-color-accent);
+  background: transparent;
+}
+
+/* Active item — accent pill with 2px left rail. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content [aria-current='page'] > a,
+.sidebar-content a[aria-current='page']:hover {
+  color: var(--sl-color-accent-high) !important;
+  background: var(--pywire-active-pill-bg) !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  border-inline-start: 2px solid var(--sl-color-accent) !important;
+  border-radius: 0 6px 6px 0;
+}
+
+/* ---------- TOC (right rail) ------------------------------------- */
+
+starlight-toc a {
+  font-family: var(--pywire-font-sans);
+  color: var(--sl-color-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 30%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  font-size: 0.85rem;
+  padding-block: 0.3rem;
+  border-inline-start: 2px solid transparent;
+}
+
+starlight-toc a:hover {
+  color: var(--sl-color-accent-high);
+  text-decoration-color: var(--sl-color-accent);
+  background: transparent;
+}
+
+starlight-toc a[aria-current='true'],
+starlight-toc a[aria-current='true']:hover {
+  color: var(--sl-color-accent-high) !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+  text-decoration: underline !important;
+  text-decoration-color: var(--sl-color-accent) !important;
+  border-inline-start: 2px solid var(--sl-color-accent) !important;
+}
+
+#starlight__on-this-page,
+.right-sidebar h2 {
+  font-family: var(--pywire-font-sans);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--sl-color-text);
+  letter-spacing: -0.005em;
+  text-transform: none;
+}
+
+/* ---------- PROSE / MARKDOWN ------------------------------------- */
+
+.sl-markdown-content a:not(.sl-link-button) {
   color: var(--sl-color-text-accent);
   text-decoration: underline;
   text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
 }
 
-a:not(.sl-link-button):hover {
+.sl-markdown-content a:not(.sl-link-button):hover {
   color: var(--sl-color-accent-high);
 }
 
-/* Improve sidebar active item contrast */
-[aria-current='page'],
-[aria-current='page']:hover {
-  color: var(--sl-color-accent) !important;
-  background-color: var(--sl-color-accent-low) !important;
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+  font-family: var(--pywire-font-sans);
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+
+.sl-markdown-content h1 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-size: clamp(2rem, 1.6rem + 1.6vw, 2.75rem);
+}
+
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
   font-weight: 600;
 }
 
-/* Monospace for code */
-code {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+.sl-markdown-content p {
+  text-wrap: pretty;
+}
+
+/* Inline code — accent on tinted surface. */
+.sl-markdown-content :not(pre) > code {
+  color: var(--sl-color-accent);
+  background: var(--sl-color-bg-inline-code);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  border: 0;
+  font-size: 0.92em;
+  font-family: var(--pywire-font-mono);
+  letter-spacing: -0.01em;
+}
+
+.sl-markdown-content h1 code,
+.sl-markdown-content h2 code {
+  font-size: 0.92em;
+  font-weight: 700;
+}
+
+/* ---------- ASIDES / CALLOUTS ------------------------------------ */
+
+.starlight-aside {
+  border-radius: 0 8px 8px 0;
+  border-inline-start-width: 3px;
+  padding: 0.85rem 1.1rem;
+}
+
+.starlight-aside--note {
+  background: color-mix(in oklch, var(--sl-color-accent) 18%, transparent);
+  border-inline-start-color: var(--sl-color-accent);
+  color: var(--sl-color-text);
+}
+
+.starlight-aside--tip {
+  background: color-mix(in oklch, #00ff9d 12%, transparent);
+  border-inline-start-color: #00ff9d;
+}
+
+.starlight-aside--caution {
+  background: color-mix(in oklch, #ffd343 14%, transparent);
+  border-inline-start-color: #ffd343;
+}
+
+.starlight-aside__title {
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-color-accent);
+}
+
+.starlight-aside--tip .starlight-aside__title {
+  color: #00b574;
+}
+
+.starlight-aside--caution .starlight-aside__title {
+  color: #b88a00;
+}
+
+/* ---------- CODE BLOCKS ------------------------------------------ */
+
+.expressive-code {
+  margin-block: 1.25rem;
+}
+
+:root[data-theme='dark'] .expressive-code {
+  box-shadow: var(--pywire-glow-soft);
+}
+
+:root[data-theme='light'] .expressive-code {
+  box-shadow:
+    0 1px 2px rgba(14, 21, 37, 0.06),
+    0 8px 20px -8px rgba(14, 21, 37, 0.14);
+}
+
+.expressive-code .frame .title {
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
+  font-style: italic;
+  color: color-mix(in oklch, var(--sl-color-text) 60%, transparent);
+}
+
+.expressive-code .copy button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+}
+
+/* ---------- HOMEPAGE / HERO -------------------------------------- */
+
+.sl-container .hero {
+  position: relative;
+}
+
+.sl-container .hero::before {
+  content: '';
+  position: absolute;
+  inset: -2rem -1rem;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(60% 50% at 50% 50%, black, transparent);
+}
+
+.hero .actions a.sl-link-button.primary {
+  border-radius: 8px;
+  box-shadow: var(--pywire-glow-soft);
+  transition: box-shadow var(--pywire-motion-base) var(--pywire-ease-out);
+  color: var(--sl-color-text-invert) !important;
+}
+
+.hero .actions a.sl-link-button.primary:hover {
+  box-shadow: var(--pywire-glow);
+}
+
+.hero .actions a.sl-link-button.minimal,
+.hero .actions a.sl-link-button.secondary {
+  border-radius: 8px;
+  border: 1.5px solid var(--sl-color-text);
+  color: var(--sl-color-text);
+}
+
+/* ---------- SEARCH BUTTON ---------------------------------------- */
+
+site-search button[data-open-modal] {
+  background: var(--sl-color-bg);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 8px;
+  color: var(--pywire-fg-muted);
+  font-family: var(--pywire-font-sans);
+  font-size: 14px;
+  transition:
+    border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+site-search button[data-open-modal]:hover,
+site-search button[data-open-modal]:focus-visible {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-text);
+}
+
+site-search button[data-open-modal] kbd {
+  font-family: var(--pywire-font-mono) !important;
+  background: var(--sl-color-bg-inline-code);
+  border: 1px solid var(--sl-color-border);
+  color: var(--pywire-fg-muted);
 }
