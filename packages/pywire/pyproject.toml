@@ -40,8 +40,13 @@ forms = [
 build = [
     "pywire-parser>=0.6.0",
 ]
+# jinja2 backs the dev-mode compile-error page renderer (error_renderer.py);
+# `pywire run` with debug=False never imports it. It belongs on the dev/cli
+# path. Cloudflare Workers ship plain `pywire` for the generated entry file
+# and add `pywire[cli]` only as a dev-time extra.
 cli = [
     "pywire-cli",
+    "jinja2>=3.1.0",
 ]
 dev = [
     "pywire[cli,forms]",
