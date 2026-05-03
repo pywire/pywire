@@ -114,13 +114,44 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     return `${baseUrl}/tutorial/${slug}/`
   }, [])
 
+  // Parent-side history stack for the in-iframe browser. The iframe is
+  // same-origin and shares the joint session history with the host
+  // window, so calling `iframe.contentWindow.history.back()` can leak
+  // past the iframe and navigate the docs page itself. We track URLs
+  // here instead and never touch iframe.history.
+  const [urlStack, setUrlStack] = useState<string[]>([currentStep.initialRoute || '/'])
+  const [urlCursor, setUrlCursor] = useState(0)
+
   const handleNavigate = useCallback(
     (path: string) => {
       setCurrentUrl(path)
+      setUrlStack((prev) => {
+        const truncated = prev.slice(0, urlCursor + 1)
+        if (truncated[truncated.length - 1] === path) return truncated
+        const next = [...truncated, path]
+        setUrlCursor(next.length - 1)
+        return next
+      })
       engineRef.current?.httpRequest('GET', path)
     },
-    [engineRef.current],
+    [engineRef.current, urlCursor],
   )
+
+  const handleBack = useCallback(() => {
+    if (urlCursor <= 0) return
+    const next = urlCursor - 1
+    setUrlCursor(next)
+    setCurrentUrl(urlStack[next])
+    engineRef.current?.httpRequest('GET', urlStack[next])
+  }, [urlCursor, urlStack])
+
+  const handleForward = useCallback(() => {
+    if (urlCursor >= urlStack.length - 1) return
+    const next = urlCursor + 1
+    setUrlCursor(next)
+    setCurrentUrl(urlStack[next])
+    engineRef.current?.httpRequest('GET', urlStack[next])
+  }, [urlCursor, urlStack])
 
   const handlePreviewMessage = useCallback(
     (msg: any) => {
@@ -271,9 +302,13 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
 
   // ... (rest of derived state)
 
-  // Update currentUrl when step changes
+  // Update currentUrl when step changes; also reset the in-iframe browser's
+  // history stack so back/forward don't carry across tutorials.
   useEffect(() => {
-    setCurrentUrl(currentStep.initialRoute || '/')
+    const initial = currentStep.initialRoute || '/'
+    setCurrentUrl(initial)
+    setUrlStack([initial])
+    setUrlCursor(0)
   }, [currentStep.slug, currentStep.initialRoute])
 
   // Unified Engine Sync Effect
@@ -281,6 +316,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   const lastSyncedSlug = useRef<string | null>(null)
   const lastSyncedUrl = useRef<string | null>(null)
   const lastSyncedFiles = useRef<string | null>(null)
+  const lastSyncedPagesDir = useRef<string | null>(null)
 
   useEffect(() => {
     if (!isReady || !engineRef.current) return
@@ -289,18 +325,29 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     const urlChanged = currentUrl !== lastSyncedUrl.current
     const filesJson = JSON.stringify(debouncedFiles)
     const filesChanged = filesJson !== lastSyncedFiles.current
+    const pagesDir = currentStep.pagesDir || 'pages'
+    const pagesDirChanged = pagesDir !== lastSyncedPagesDir.current
 
     if (slugChanged) {
-      console.log('[TutorialWorkspace] Step Change Reset (RESTART)')
-      engineRef.current.restart(currentStep.pagesDir)
+      // Only do a full RESTART when pagesDir changed (rare). Otherwise
+      // syncPages atomically writes the new file set, deletes leftovers,
+      // and invalidates the loader cache — preserving the WS session so
+      // we don't trigger the "session expired" toast on every step nav.
+      if (pagesDirChanged && lastSyncedPagesDir.current !== null) {
+        console.log('[TutorialWorkspace] Step Change Reset (RESTART, pagesDir changed)')
+        engineRef.current.restart(currentStep.pagesDir)
+        Object.entries(files).forEach(([path, content]) => {
+          engineRef.current?.updateFile(path, content)
+        })
+      } else {
+        console.log('[TutorialWorkspace] Step Change Sync (incremental)')
+        engineRef.current.syncPages(pagesDir, files)
+      }
+
       setActiveFile(currentStep.files[0]?.path || 'index.wire')
       lastSyncedSlug.current = currentStep.slug
-
-      // Push files immediately on step change
-      Object.entries(files).forEach(([path, content]) => {
-        engineRef.current?.updateFile(path, content)
-      })
       lastSyncedFiles.current = JSON.stringify(files)
+      lastSyncedPagesDir.current = pagesDir
 
       // Mark URL as synced as well to prevent double-fire
       lastSyncedUrl.current = currentUrl
@@ -310,10 +357,11 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
 
     if (filesChanged) {
       console.log('[TutorialWorkspace] Syncing Files (Debounced)')
-      Object.entries(debouncedFiles).forEach(([path, content]) => {
-        engineRef.current?.updateFile(path, content)
-      })
+      // Use syncPages so newly-added or removed files are picked up the
+      // same way local `pywire dev` does, without restarting the server.
+      engineRef.current.syncPages(pagesDir, debouncedFiles)
       lastSyncedFiles.current = filesJson
+      lastSyncedPagesDir.current = pagesDir
 
       // Reload current URL to reflect changes
       engineRef.current.httpRequest('GET', currentUrl)
@@ -525,6 +573,10 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
                   <BrowserPreview
                     url={currentUrl}
                     onNavigate={handleNavigate}
+                    onBack={handleBack}
+                    onForward={handleForward}
+                    canBack={urlCursor > 0}
+                    canForward={urlCursor < urlStack.length - 1}
                     onMessage={handlePreviewMessage}
                     theme={theme}
                   />

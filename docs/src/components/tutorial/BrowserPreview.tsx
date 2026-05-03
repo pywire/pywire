@@ -6,6 +6,10 @@ interface BrowserPreviewProps {
   url: string
   onMessage: (msg: any) => void
   onNavigate?: (path: string) => void
+  onBack?: () => void
+  onForward?: () => void
+  canBack?: boolean
+  canForward?: boolean
   theme?: 'light' | 'dark'
 }
 
@@ -13,6 +17,10 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
   url,
   onMessage,
   onNavigate,
+  onBack,
+  onForward,
+  canBack = false,
+  canForward = false,
   theme = 'dark',
 }) => {
   const [inputValue, setInputValue] = React.useState(url)
@@ -67,10 +75,12 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
               e.preventDefault()
               e.stopPropagation()
               e.nativeEvent.stopImmediatePropagation()
-              ;(window as any).__PYWIRE_PREVIEW_BACK__?.()
+              onBack?.()
             }}
+            disabled={!canBack}
             title="Back"
             className="pw-btn-icon"
+            style={!canBack ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
           >
             <ChevronLeft size={16} />
           </button>
@@ -80,10 +90,12 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
               e.preventDefault()
               e.stopPropagation()
               e.nativeEvent.stopImmediatePropagation()
-              ;(window as any).__PYWIRE_PREVIEW_FORWARD__?.()
+              onForward?.()
             }}
+            disabled={!canForward}
             title="Forward"
             className="pw-btn-icon"
+            style={!canForward ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
           >
             <ChevronRight size={16} />
           </button>
