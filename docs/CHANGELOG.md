@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.17](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.16...pywire-docs-v0.5.17) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** disconnect prior PyWireApp before doc.write ([#210](https://github.com/pywire/pywire/issues/210)) ([d8737e2](https://github.com/pywire/pywire/commit/d8737e2b7801e6451e8f0c8305c20837f49290c9))
+
 ## [0.5.16](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.15...pywire-docs-v0.5.16) (2026-05-03)
 
 
