@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.13](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.12...pywire-docs-v0.5.13) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** make WS cleanup synchronous and avoid ws_connect race ([59911d7](https://github.com/pywire/pywire/commit/59911d792a3a929c425533f96964803c0097704b))
+
 ## [0.5.12](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.11...pywire-docs-v0.5.12) (2026-05-03)
 
 
