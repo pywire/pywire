@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.19](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.18...pywire-docs-v0.5.19) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** track WS forwarders by req_id, cancel deterministically ([#214](https://github.com/pywire/pywire/issues/214)) ([81ec991](https://github.com/pywire/pywire/commit/81ec991cd2b83e12a5e1c3e816d886bd35557c94))
+
 ## [0.5.18](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.17...pywire-docs-v0.5.18) (2026-05-03)
 
 
