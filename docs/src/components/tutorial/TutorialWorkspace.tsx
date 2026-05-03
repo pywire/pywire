@@ -85,6 +85,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   }>({ isOpen: false, message: '' })
 
   const [resetConfirmModal, setResetConfirmModal] = useState(false)
+  const [resetStepConfirmModal, setResetStepConfirmModal] = useState(false)
 
   const [inputModal, setInputModal] = useState<{
     isOpen: boolean
@@ -95,16 +96,13 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
 
   const [hierarchyOpen, setHierarchyOpen] = useState(false)
 
-  const handleResetClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        setResetConfirmModal(true)
-      } else {
-        resetFiles()
-      }
-    },
-    [resetFiles],
-  )
+  const handleResetClick = useCallback((e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) {
+      setResetConfirmModal(true)
+    } else {
+      setResetStepConfirmModal(true)
+    }
+  }, [])
 
   // Handle History (Browser Back/Forward)
   // ... (lines 50-70 unchanged)
@@ -121,10 +119,21 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   // here instead and never touch iframe.history.
   const [urlStack, setUrlStack] = useState<string[]>([currentStep.initialRoute || '/'])
   const [urlCursor, setUrlCursor] = useState(0)
+  // Track routes the user has actively visited inside the preview (link
+  // clicks, URL bar entries, back/forward). Excludes the step's
+  // initialRoute so "navigate to /X" criteria don't pass on load. Used
+  // by the route_visited success-criterion type.
+  const [visitedRoutes, setVisitedRoutes] = useState<Set<string>>(() => new Set())
 
   const handleNavigate = useCallback(
     (path: string) => {
       setCurrentUrl(path)
+      setVisitedRoutes((prev) => {
+        if (prev.has(path)) return prev
+        const next = new Set(prev)
+        next.add(path)
+        return next
+      })
       setUrlStack((prev) => {
         const truncated = prev.slice(0, urlCursor + 1)
         if (truncated[truncated.length - 1] === path) return truncated
@@ -142,6 +151,12 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     const next = urlCursor - 1
     setUrlCursor(next)
     setCurrentUrl(urlStack[next])
+    setVisitedRoutes((prev) => {
+      if (prev.has(urlStack[next])) return prev
+      const out = new Set(prev)
+      out.add(urlStack[next])
+      return out
+    })
     engineRef.current?.httpRequest('GET', urlStack[next])
   }, [urlCursor, urlStack])
 
@@ -150,6 +165,12 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     const next = urlCursor + 1
     setUrlCursor(next)
     setCurrentUrl(urlStack[next])
+    setVisitedRoutes((prev) => {
+      if (prev.has(urlStack[next])) return prev
+      const out = new Set(prev)
+      out.add(urlStack[next])
+      return out
+    })
     engineRef.current?.httpRequest('GET', urlStack[next])
   }, [urlCursor, urlStack])
 
@@ -321,6 +342,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     setCurrentUrl(initial)
     setUrlStack([initial])
     setUrlCursor(0)
+    setVisitedRoutes(new Set())
   }, [currentStep.slug, currentStep.initialRoute])
 
   // Unified Engine Sync Effect
@@ -415,6 +437,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
         lastRenderedHtml,
         (path) => engineRef.current?.fetchRouteContent(path) || Promise.resolve(''),
         liveIframeText,
+        visitedRoutes,
       )
 
       if (!isMounted) return
@@ -437,7 +460,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     return () => {
       isMounted = false
     }
-  }, [files, lastRenderedHtml, liveIframeText, currentStep.successCriteria, isCompleted])
+  }, [files, lastRenderedHtml, liveIframeText, visitedRoutes, currentStep.successCriteria, isCompleted])
 
   // Reset completion on step change
   useEffect(() => {
@@ -503,6 +526,10 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
             <span className="pw-breadcrumb-prefix">{currentStep.section}</span>
             {currentStep.section && <span className="pw-breadcrumb-separator">/</span>}
             <span className="pw-breadcrumb-title">{currentStep.title}</span>
+            <span className="pw-breadcrumb-separator ml-2">·</span>
+            <span className="pw-breadcrumb-prefix" title="Step progress">
+              {currentIndex + 1}/{allSteps.length}
+            </span>
           </div>
         </div>
 
@@ -618,6 +645,33 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
         <div className="pw-modal-footer">
           <button className="pw-btn-primary" onClick={() => setModal({ ...modal, isOpen: false })}>
             OK
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={resetStepConfirmModal}
+        onClose={() => setResetStepConfirmModal(false)}
+        title="Reset This Step?"
+      >
+        <div className="pw-modal-body">
+          <p>
+            This will discard your edits and restore the starting code for this step. This action
+            cannot be undone.
+          </p>
+        </div>
+        <div className="pw-modal-footer">
+          <button className="pw-btn-secondary" onClick={() => setResetStepConfirmModal(false)}>
+            Cancel
+          </button>
+          <button
+            className="pw-btn-danger"
+            onClick={() => {
+              resetFiles()
+              setResetStepConfirmModal(false)
+            }}
+          >
+            Reset Step
           </button>
         </div>
       </Modal>

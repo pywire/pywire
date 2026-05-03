@@ -22,14 +22,12 @@ files:
         <a href="/">Go Home</a>
       </div>
 successCriteria:
-  - type: browser_route_text
-    description: "Click 'Go to About' and verify you are on the About page"
+  - type: route_visited
+    description: "Click 'Go to About' to navigate to /about"
     route: '/about'
-    pattern: 'About Page'
-  - type: browser_route_text
-    description: "Click 'Go Home' and verify you are back on the Home page"
+  - type: route_visited
+    description: "Click 'Go Home' to return to /"
     route: '/'
-    pattern: 'Home Page'
 pagesDir: pages
 ---
 

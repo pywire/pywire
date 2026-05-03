@@ -19,7 +19,13 @@ export interface AllowedBehavior {
 }
 
 export interface SuccessCriteria {
-  type: 'file_exists' | 'file_contains' | 'browser_route_text' | 'browser_element' | 'custom'
+  type:
+    | 'file_exists'
+    | 'file_contains'
+    | 'browser_route_text'
+    | 'browser_element'
+    | 'route_visited'
+    | 'custom'
   target?: string // File path or CSS selector
   pattern?: string // Content to match
   route?: string // For browser_route_text

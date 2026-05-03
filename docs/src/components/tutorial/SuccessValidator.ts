@@ -16,6 +16,7 @@ export class SuccessValidator {
     browserHtml?: string,
     fetchRoute?: (path: string) => Promise<string>,
     liveIframeText?: string,
+    visitedRoutes?: Set<string>,
   ): Promise<ValidationResult[]> {
     if (!criteria || criteria.length === 0) return []
 
@@ -67,6 +68,16 @@ export class SuccessValidator {
                 }
               }
             }
+            break
+          }
+
+          case 'route_visited': {
+            // User must have actually navigated to this route inside the
+            // preview iframe. Used for "Click X to go to /Y" steps where
+            // a content-based check (browser_route_text) would always
+            // pass on load because fetchRoute returns the page content
+            // for any route — even routes the user never visited.
+            passed = !!criterion.route && !!visitedRoutes?.has(criterion.route)
             break
           }
 
