@@ -82,11 +82,21 @@ async def handle_js_message(event_data):
                 if slash_idx != -1:
                     path = path[slash_idx:]
 
-            connection_id = await adp.ws_connect(path=path)
+            # Tear down any prior connection on the same adapter so its
+            # WebSocketRouter handler exits cleanly (cancels the framework's
+            # _ping_loop). Without this, the orphan ping loop fires after the
+            # client has moved on and logs "WebSocket ping timeout".
+            for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
+                _t.cancel()
+            handle_js_message._ws_tasks = []
+            for _cid in list(getattr(handle_js_message, "_id_map", {}).values()):
+                try:
+                    await adp.ws_close(_cid)
+                except Exception:
+                    pass
+            handle_js_message._id_map = {}
 
-            # Store mapping for this request ID
-            if not hasattr(handle_js_message, "_id_map"):
-                handle_js_message._id_map = {}
+            connection_id = await adp.ws_connect(path=path)
             handle_js_message._id_map[req_id] = connection_id
 
             # Send the websocket.accept message to JS so MockWebSocket transitions to OPEN
@@ -99,11 +109,6 @@ async def handle_js_message(event_data):
             js.postMessage(
                 to_js(accept_payload, dict_converter=js.Object.fromEntries)
             )
-
-            # Cancel any orphaned tasks from a previous WS connection
-            for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
-                _t.cancel()
-            handle_js_message._ws_tasks = []
 
             # Start forwarding outgoing WS messages to JS
             async def forward_ws_messages():
@@ -180,10 +185,26 @@ js.reload_page = reload_page
 def restart_server(pages_dir="/app"):
     global app_instance, adapter, current_pages_dir
     print(f"restart_server called with pages_dir={pages_dir}")
-    # Cancel orphaned WS tasks from the previous session
+
+    # Cancel forwarder tasks and disconnect open WS connections on the old
+    # adapter. The disconnect runs the framework's WebSocketRouter cleanup
+    # (cancels its _ping_loop), preventing "WebSocket ping timeout" warnings
+    # from the dead connection after restart.
     for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
         _t.cancel()
     handle_js_message._ws_tasks = []
+    old_adapter = adapter
+    old_ids = list(getattr(handle_js_message, "_id_map", {}).values())
+    handle_js_message._id_map = {}
+    if old_adapter is not None and old_ids:
+        async def _drain_old_ws():
+            for _cid in old_ids:
+                try:
+                    await old_adapter.ws_close(_cid)
+                except Exception:
+                    pass
+        asyncio.create_task(_drain_old_ws())
+
     app_instance = None
     adapter = None
     current_pages_dir = pages_dir
