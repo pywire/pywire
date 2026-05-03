@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.22](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.21...pywire-docs-v0.5.22) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** disable ws ping_loop in shim — both ends are in-browser ([#221](https://github.com/pywire/pywire/issues/221)) ([43e0e59](https://github.com/pywire/pywire/commit/43e0e59a7013bc621f8740d8879a1b90c2e9ffdc))
+
 ## [0.5.21](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.20...pywire-docs-v0.5.21) (2026-05-03)
 
 
