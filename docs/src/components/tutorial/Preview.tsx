@@ -35,6 +35,21 @@ const INJECTED_SCRIPT = `
       this._onmessage = null;
       this._onclose = null;
       this._onerror = null;
+      this._keepaliveTimer = null;
+
+      // PyWire client-side heartbeat (websocket.ts) closes the socket if
+      // 40s pass with no inbound message. Server-side _ping_loop is
+      // disabled in shim.py (ws_ping_interval=0) because under Pyodide's
+      // single-thread, pong from the iframe gets starved behind
+      // http_request bursts and trips the 10s pong-deadline → forced
+      // close → reconnect storm. With server pings off, nothing else
+      // refreshes lastMessageTime on the client, so an idle session
+      // disconnects after 40s. Synthesize a self-ping inside the iframe:
+      // the client transport handles type:'ping' by responding pong
+      // (server pong handler is a noop with ping_loop off) and, more
+      // importantly, refreshes lastMessageTime on the inbound path.
+      // Bytes are msgpack({type:'ping'}) precomputed.
+      const PING_BYTES = new Uint8Array([0x81, 0xa4, 0x74, 0x79, 0x70, 0x65, 0xa4, 0x70, 0x69, 0x6e, 0x67]);
 
       // Notify parent we want to connect
       window.parent.postMessage({
@@ -54,6 +69,14 @@ const INJECTED_SCRIPT = `
              if (this.onopen) {
                if (DEBUG_PREVIEW) console.log('[MockWS] Calling onopen handler');
                this.onopen(new Event('open'));
+             }
+             if (this._keepaliveTimer === null) {
+               this._keepaliveTimer = setInterval(() => {
+                 if (this.readyState !== 1) return;
+                 const ev = new MessageEvent('message', { data: PING_BYTES.buffer.slice(0) });
+                 this.dispatchEvent(ev);
+                 if (this.onmessage) this.onmessage(ev);
+               }, 15000);
              }
           }
           if (e.data.message.type === 'websocket.send') {
@@ -75,6 +98,10 @@ const INJECTED_SCRIPT = `
           if (e.data.message.type === 'websocket.close') {
              if (DEBUG_PREVIEW) console.log('[MockWS] WebSocket closed by server');
              this.readyState = 3; // CLOSED
+             if (this._keepaliveTimer !== null) {
+               clearInterval(this._keepaliveTimer);
+               this._keepaliveTimer = null;
+             }
              this.dispatchEvent(new Event('close'));
              if (this.onclose) this.onclose(new Event('close'));
           }
@@ -109,6 +136,10 @@ const INJECTED_SCRIPT = `
     close() {
       if (DEBUG_PREVIEW) console.log('[MockWS] WebSocket closed');
       this.readyState = 3; // CLOSED
+      if (this._keepaliveTimer !== null) {
+        clearInterval(this._keepaliveTimer);
+        this._keepaliveTimer = null;
+      }
       // Notify parent so it can tear down the server-side connection in
       // the Pyodide adapter. Without this, each iframe doc.write leaves
       // a zombie ASGI WebSocket alive in the in-Pyodide PyWire app

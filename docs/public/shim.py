@@ -368,6 +368,16 @@ def sync_pages(pages_dir, files):
                     adapter.app.reload_page(pathlib.Path(p))
                 except Exception:
                     pass
+            # Mirror native `pywire dev` HMR: broadcast a state-preserving
+            # reload to active WS clients so the iframe re-renders against
+            # the updated code without losing component/page state. Without
+            # this, edits only show up after a full navigation/refresh.
+            try:
+                ws_handler = getattr(adapter.app, "ws_handler", None)
+                if ws_handler is not None:
+                    asyncio.ensure_future(ws_handler.broadcast_reload())
+            except Exception as e:
+                print(f"broadcast_reload failed: {e}")
         return True
     except Exception as e:
         print(f"sync_pages failed: {e}")
