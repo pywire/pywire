@@ -173,7 +173,7 @@ samp {
 /* ---------- HEADER / NAV ----------------------------------------- */
 
 .header {
-  border-bottom: 1px solid var(--sl-color-border);
+  border-bottom: 0; /* design has no visible hairline; bg shift suffices */
   background-color: var(--sl-color-bg-nav);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -210,23 +210,31 @@ samp {
 }
 
 /* No vertical rail anywhere in sidebar — design uses pure indent.
-   Starlight uses :is(ul, ol) :is(ul, ol) with a hairline; bulldoze it. */
+   Starlight 0.38 puts the rail on nested <li>, not <ul>. Bulldoze
+   border-inline-start on every list element AND every list item. */
 .sidebar-content,
 .sidebar-content :is(ul, ol),
 .sidebar-content :is(ul, ol) :is(ul, ol),
+.sidebar-content li,
+.sidebar-content :is(ul, ol) li,
 .sidebar-content nav,
 .sidebar-content nav > * {
   border-inline-start: 0 !important;
 }
 
-/* Tight indent — sub-items only ~8px past their section heading. */
+/* Tight indent — sub-items align ~16px past the section heading. */
 .sidebar-content :is(ul, ol) {
   padding-inline-start: 0 !important;
-  margin-inline-start: 0;
+  margin-inline-start: 0 !important;
 }
 
-.sidebar-content :is(ul, ol) :is(ul, ol) {
-  margin-inline-start: 0.5rem;
+.sidebar-content :is(ul, ol) li {
+  margin-inline-start: 0 !important;
+  padding-inline-start: 0 !important;
+}
+
+.sidebar-content :is(ul, ol) :is(ul, ol) li {
+  padding-inline-start: 0.5rem !important;
 }
 
 /* Group headings — bold sans, paddings tighter. */
