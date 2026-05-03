@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.12](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.11...pywire-docs-v0.5.12) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** add project root to sys.path in shim ([2c85ddf](https://github.com/pywire/pywire/commit/2c85ddf43cd3603795d29551b6b8b37b6bc711d9))
+
 ## [0.5.10](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.9...pywire-docs-v0.5.10) (2026-05-03)
 
 
