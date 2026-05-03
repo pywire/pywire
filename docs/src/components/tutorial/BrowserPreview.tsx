@@ -25,6 +25,12 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
 }) => {
   const [inputValue, setInputValue] = React.useState(url)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
+  // Refresh rebuilds the iframe doc (full doc.write), which kills the
+  // MockWebSocket and forces a reconnect. Spam-clicking would race
+  // multiple reconnects, occasionally tripping the heartbeat timeout
+  // path inside the iframe and the "session expired" toast. Rate-limit
+  // the button so each click rebuilds at most once per cooldown.
+  const lastReloadAt = React.useRef(0)
 
   // Sync input value with external url prop changes
   React.useEffect(() => {
@@ -41,6 +47,10 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
     e.preventDefault()
     e.stopPropagation()
     e.nativeEvent.stopImmediatePropagation()
+
+    const now = performance.now()
+    if (now - lastReloadAt.current < 500) return
+    lastReloadAt.current = now
 
     setIsRefreshing(true)
     ;(window as any).__PYWIRE_PREVIEW_RELOAD__?.()
