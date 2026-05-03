@@ -330,6 +330,39 @@ self.onmessage = async (event) => {
     } catch (e) {
       console.error('[Worker] reload_page FAILED:', e)
     }
+  } else if (type === 'DELETE_FILE') {
+    const path = `/app/${payload.filename}`
+    console.log('[Worker] DELETE_FILE:', path)
+    try {
+      pyodide!.globals.get('delete_file')(path)
+    } catch (e) {
+      console.error('[Worker] delete_file FAILED:', e)
+    }
+  } else if (type === 'SYNC_PAGES') {
+    const { pagesDir, files } = payload || {}
+    console.log('[Worker] SYNC_PAGES:', pagesDir, Object.keys(files || {}))
+
+    // Ensure parent directories for all incoming files exist (sync_pages
+    // calls os.makedirs but Pyodide FS can be flakey — pre-create the way
+    // UPDATE_FILE does).
+    for (const rel of Object.keys(files || {})) {
+      const full = `/app/${rel}`
+      const dir = full.substring(0, full.lastIndexOf('/'))
+      const parts = dir.split('/').filter(Boolean)
+      let current = ''
+      for (const part of parts) {
+        current += `/${part}`
+        if (!pyodide!.FS.analyzePath(current).exists) {
+          pyodide!.FS.mkdir(current)
+        }
+      }
+    }
+
+    try {
+      pyodide!.globals.get('sync_pages')(pagesDir || 'pages', pyodide!.toPy(files || {}))
+    } catch (e) {
+      console.error('[Worker] sync_pages FAILED:', e)
+    }
   } else if (type === 'RESTART') {
     console.log('[Worker] Restarting pywire server...')
     const { pagesDir } = payload || {}

@@ -185,6 +185,26 @@ export class TutorialEngine {
     })
   }
 
+  public deleteFile(filename: string) {
+    this.postToWorker({
+      type: 'DELETE_FILE',
+      payload: { filename },
+    })
+  }
+
+  /**
+   * Atomic file-set sync: write all `files` and delete anything else under
+   * `pagesDir`. Used on tutorial step navigation to avoid a full server
+   * restart (which would reset the WS session and trigger the "session
+   * expired" toast).
+   */
+  public syncPages(pagesDir: string, files: Record<string, string>) {
+    this.postToWorker({
+      type: 'SYNC_PAGES',
+      payload: { pagesDir, files },
+    })
+  }
+
   public reset() {
     this.postToWorker({ type: 'RESET' })
   }

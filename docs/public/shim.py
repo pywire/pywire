@@ -209,6 +209,98 @@ def reload_page(path_str):
 js.reload_page = reload_page
 
 
+def delete_file(path_str):
+    """Delete a file from the virtual FS and drop it from the loader cache.
+
+    Mirrors reload_page's lazy semantics: if the adapter doesn't exist yet,
+    we still remove the file from disk but skip the loader call.
+    """
+    import os
+    import pathlib
+
+    try:
+        if os.path.exists(path_str):
+            os.remove(path_str)
+        if adapter is not None:
+            try:
+                adapter.app.reload_page(pathlib.Path(path_str))
+            except Exception:
+                # File no longer exists — loader will drop it on next access
+                pass
+        return True
+    except Exception as e:
+        print(f"delete_file failed for {path_str}: {e}")
+        traceback.print_exc()
+        return False
+
+
+js.delete_file = delete_file
+
+
+def sync_pages(pages_dir, files):
+    """Atomic file-set sync: write `files`, delete anything else under pages_dir.
+
+    `files` is a JS object {relpath: content}. Paths are written under /app/.
+    Files under pages_dir but not in `files` are deleted. After all FS edits,
+    we invalidate the loader cache for each touched path so next request
+    sees fresh source.
+    """
+    global current_pages_dir
+    import os
+    import pathlib
+
+    try:
+        # Convert JS object → dict if needed
+        if hasattr(files, "to_py"):
+            files_dict = files.to_py()
+        else:
+            files_dict = dict(files)
+
+        # Resolve pages_dir to absolute /app/...
+        if pages_dir and not pages_dir.startswith("/"):
+            abs_pages_dir = f"/app/{pages_dir}"
+        else:
+            abs_pages_dir = pages_dir or "/app"
+        current_pages_dir = abs_pages_dir
+
+        # Compute target absolute paths for all incoming files
+        target_paths = set()
+        for rel, content in files_dict.items():
+            abs_path = f"/app/{rel}"
+            target_paths.add(os.path.normpath(abs_path))
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            with open(abs_path, "w") as f:
+                f.write(content)
+
+        # Delete anything under pages_dir not in target_paths
+        if os.path.exists(abs_pages_dir):
+            for root, _dirs, fnames in os.walk(abs_pages_dir):
+                for fname in fnames:
+                    full = os.path.normpath(os.path.join(root, fname))
+                    if full not in target_paths:
+                        try:
+                            os.remove(full)
+                        except Exception:
+                            pass
+
+        # Invalidate loader cache for each touched file (and anything we deleted).
+        # If adapter not built yet, skip — next request builds fresh.
+        if adapter is not None:
+            for p in target_paths:
+                try:
+                    adapter.app.reload_page(pathlib.Path(p))
+                except Exception:
+                    pass
+        return True
+    except Exception as e:
+        print(f"sync_pages failed: {e}")
+        traceback.print_exc()
+        return False
+
+
+js.sync_pages = sync_pages
+
+
 def restart_server(pages_dir="/app"):
     global app_instance, adapter, current_pages_dir
     print(f"restart_server called with pages_dir={pages_dir}")

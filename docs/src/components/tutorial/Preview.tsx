@@ -371,15 +371,13 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
         const doc = iframeRef.current.contentDocument
         const { processedHtml, isFullDocument, styles } = getProcessedContent(html)
 
-        const pushStateScript = `
-        <script>
-          try {
-            if (window.location.pathname !== "${url}") {
-              window.history.pushState({ pwPath: "${url}" }, "", "${url}");
-            }
-          } catch (e) {}
-        </script>
-      `
+        // Intentionally NOT calling history.pushState here. Same-origin
+        // iframes share the joint session history with the host page,
+        // so pushState entries from this iframe accumulate alongside
+        // parent entries. Calling iframe.history.back() then walks the
+        // joint history and can leak past the iframe into the docs page.
+        // The parent owns the URL stack; we just render content.
+        const pushStateScript = ''
 
         let finalHtml = ''
 
@@ -477,30 +475,9 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
     ;(targetWindow as any).__PYWIRE_PATCH_PREVIEW__ = patchContent
     // Keep this for generic use, map to initContent
     ;(targetWindow as any).__PYWIRE_UPDATE_PREVIEW__ = initContent
-    ;(targetWindow as any).__PYWIRE_PREVIEW_BACK__ = () => {
-      const iframe = iframeRef.current
-      if (iframe && iframe.contentWindow) {
-        const isParentHistory = iframe.contentWindow.history === window.history
-        if (DEBUG_PREVIEW) {
-          console.log('[Preview] Executing iframe history.back()')
-          console.log('[Preview] Is iframe history same as parent?', isParentHistory)
-          console.log('[Preview] Iframe history length:', iframe.contentWindow.history.length)
-        }
-
-        if (!isParentHistory) {
-          iframe.contentWindow.history.back()
-        } else {
-          console.error('[Preview] CRITICAL: Iframe history is identical to parent history!')
-        }
-      }
-    }
-    ;(targetWindow as any).__PYWIRE_PREVIEW_FORWARD__ = () => {
-      const iframe = iframeRef.current
-      if (iframe && iframe.contentWindow) {
-        if (DEBUG_PREVIEW) console.log('[Preview] Executing iframe history.forward()')
-        iframe.contentWindow.history.forward()
-      }
-    }
+    // BACK/FORWARD are owned by BrowserPreview/TutorialWorkspace via a
+    // parent-side url stack. Do NOT expose iframe.history.back() — see
+    // comment in initContent re: joint session history.
     ;(targetWindow as any).__PYWIRE_PREVIEW_RELOAD__ = () => {
       if (DEBUG_PREVIEW) console.log('[Preview] Executing iframe reload (manual HTTP request)')
       window.parent.postMessage(
@@ -528,8 +505,6 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
       delete (targetWindow as any).__PYWIRE_INIT_PREVIEW__
       delete (targetWindow as any).__PYWIRE_PATCH_PREVIEW__
       delete (targetWindow as any).__PYWIRE_UPDATE_PREVIEW__
-      delete (targetWindow as any).__PYWIRE_PREVIEW_BACK__
-      delete (targetWindow as any).__PYWIRE_PREVIEW_FORWARD__
       delete (targetWindow as any).__PYWIRE_PREVIEW_RELOAD__
       delete (targetWindow as any).__PYWIRE_SEND_TO_PREVIEW__
     }
