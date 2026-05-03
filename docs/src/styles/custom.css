@@ -164,6 +164,18 @@ body {
   font-family: var(--pywire-font-sans);
 }
 
+html {
+  scroll-behavior: smooth;
+  /* Anchor jumps land below the sticky header. */
+  scroll-padding-top: calc(var(--sl-nav-height) + 1rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 code,
 kbd,
 pre,
@@ -173,8 +185,11 @@ samp {
 
 /* ---------- HEADER / NAV ----------------------------------------- */
 
+/* !important on border-bottom so view-transitions / SPA navs that
+   reload Starlight CSS later in the cascade don't reintroduce the
+   hairline. */
 .header {
-  border-bottom: 0; /* design has no visible hairline; bg shift suffices */
+  border-bottom: 0 !important;
   background-color: var(--sl-color-bg-nav);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -434,6 +449,61 @@ starlight-toc nav ul ul a {
   font-weight: 700;
 }
 
+/* ---------- TABS — multi-file code blocks & section variants ----- */
+
+starlight-tabs {
+  margin-block: 1.25rem;
+}
+
+starlight-tabs .tablist-wrapper {
+  border-bottom: 1px solid var(--pywire-border);
+  margin-bottom: 0;
+}
+
+starlight-tabs [role='tablist'] {
+  display: flex;
+  gap: 0.25rem;
+  padding-inline: 0;
+  scrollbar-width: thin;
+}
+
+starlight-tabs [role='tab'] {
+  font-family: var(--pywire-font-mono);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--pywire-fg-muted);
+  cursor: pointer;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    border-color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+starlight-tabs [role='tab']:hover {
+  color: var(--sl-color-text);
+}
+
+starlight-tabs [role='tab'][aria-selected='true'] {
+  color: var(--sl-color-accent);
+  border-bottom-color: var(--sl-color-accent);
+  font-weight: 600;
+}
+
+/* Tab panels — flush against the tablist; let inner code-block keep its
+   own shadow/border. */
+starlight-tabs [role='tabpanel'] {
+  padding-block-start: 1rem;
+}
+
+/* When a code block sits directly inside a tab panel, drop its top
+   margin so it hugs the tablist. */
+starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
+  margin-block-start: 0;
+}
+
 /* ---------- ASIDES / CALLOUTS ------------------------------------ */
 
 .starlight-aside {
@@ -540,11 +610,33 @@ starlight-toc nav ul ul a {
     radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
 }
 
-/* "Tab" frames (file titles) — keep simple, no dots. */
+/* "Tab" frames (file titles) — keep simple, no dots. light-dark() can't
+   be used here because EC forces color-scheme: dark on its theme block,
+   which would yield the dark variant even in Lab mode. Use the same
+   :root[data-theme='*'] forks as everywhere else. */
 .expressive-code .frame:not(.is-terminal) figcaption.header {
-  background: light-dark(oklch(97% 0.006 250), oklch(18% 0.013 250));
   border-bottom: 1px solid var(--pywire-border);
   border-radius: 12px 12px 0 0;
+}
+
+:root[data-theme='light'] .expressive-code .frame:not(.is-terminal) figcaption.header {
+  background: oklch(97% 0.006 250) !important;
+}
+
+:root[data-theme='dark'] .expressive-code .frame:not(.is-terminal) figcaption.header {
+  background: #252839 !important;
+}
+
+/* Tab title (filename) chip styling — readable text, mono. */
+.expressive-code .frame:not(.is-terminal) figcaption.header .title {
+  background: transparent !important;
+  color: var(--pywire-fg-muted) !important;
+}
+
+:root[data-theme='light'] .expressive-code .frame:not(.is-terminal) figcaption.header .title::before,
+:root[data-theme='light'] .expressive-code .frame:not(.is-terminal) figcaption.header .title::after {
+  background: transparent !important;
+  border-color: transparent !important;
 }
 
 .expressive-code .frame .title {
@@ -561,11 +653,12 @@ starlight-toc nav ul ul a {
 }
 
 /* Terminal lines — accent `$` prefix marks shell input. Lives in a
-   pseudo-element so it does NOT round-trip into the copy buffer. */
-.expressive-code .frame.is-terminal pre code .ec-line .code::before {
-  content: '$';
-  color: var(--sl-color-accent);
-  margin-inline-end: 0.6em;
+   pseudo-element so it does NOT round-trip into the copy buffer.
+   !important defeats EC's @layer-shipped reset which would otherwise
+   leave content as the cascade default (none). */
+.expressive-code .frame.is-terminal pre code .ec-line > .code::before {
+  content: '$ ' !important;
+  color: var(--sl-color-accent) !important;
   user-select: none;
   font-weight: 600;
 }
