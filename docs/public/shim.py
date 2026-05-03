@@ -95,15 +95,25 @@ async def handle_js_message(event_data):
                 if slash_idx != -1:
                     path = path[slash_idx:]
 
-            # Cancel any orphaned forward task from a previous WS connection
-            # before starting a new one. Also close the prior server-side
-            # WebSocket bound to this req_id so its ping_loop is cancelled
-            # and we don't accumulate zombie connections on each preview
-            # rebuild (doc.write inside the iframe makes new MockWS without
-            # the old one ever sending its disconnect).
-            for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
-                _t.cancel()
-            handle_js_message._ws_tasks = []
+            # Tear down ANY prior server-side WS state for this req_id
+            # before standing up a new one. Each iframe doc.write spawns
+            # a new MockWebSocket → new ws_connect with the same
+            # req_id="ws-main", but the previous forwarder task is still
+            # awaiting `send_queue.get()` (ws_close only puts a sentinel
+            # in receive_queue, not send_queue, so the forwarder stays
+            # blocked indefinitely). Forwarder tasks accumulate and each
+            # one re-broadcasts every server message back to the same
+            # req_id, which is why the iframe was seeing N copies of
+            # `websocket.accept` and `Application ready` after N cycles.
+            #
+            # We track forwarders by req_id so we can cancel the prior
+            # task explicitly. Cancellation interrupts the get() and the
+            # task's `except` swallows the CancelledError cleanly.
+            fwd_tasks = getattr(handle_js_message, "_fwd_tasks", None) or {}
+            prior_fwd = fwd_tasks.pop(req_id, None)
+            if prior_fwd is not None and not prior_fwd.done():
+                prior_fwd.cancel()
+
             id_map = getattr(handle_js_message, "_id_map", {}) or {}
             prior_cid = id_map.pop(req_id, None)
             if prior_cid is not None:
@@ -111,12 +121,10 @@ async def handle_js_message(event_data):
                     await adp.ws_close(prior_cid)
                 except Exception as e:
                     print(f"ws_close (prior) failed for {prior_cid}: {e}")
-            handle_js_message._id_map = id_map
 
             connection_id = await adp.ws_connect(path=path)
-            if not hasattr(handle_js_message, "_id_map"):
-                handle_js_message._id_map = {}
-            handle_js_message._id_map[req_id] = connection_id
+            id_map[req_id] = connection_id
+            handle_js_message._id_map = id_map
 
             # Send the websocket.accept message to JS so MockWebSocket transitions to OPEN
             # (ws_connect() consumes the accept internally — we must forward it explicitly)
@@ -145,32 +153,39 @@ async def handle_js_message(event_data):
                         )
                         if msg.get("type") == "websocket.close":
                             break
+                except asyncio.CancelledError:
+                    # Expected on doc.write/refresh — the next ws_connect
+                    # cancelled us. Don't log; it's the steady state.
+                    return
                 except Exception as e:
                     print(f"WS forward error: {e}")
 
             fwd_task = asyncio.create_task(forward_ws_messages())
-            handle_js_message._ws_tasks = [fwd_task]
+            fwd_tasks[req_id] = fwd_task
+            handle_js_message._fwd_tasks = fwd_tasks
+            # Keep _ws_tasks for back-compat with restart_server.
+            handle_js_message._ws_tasks = list(fwd_tasks.values())
 
         elif event_type == "ws_disconnect":
             # Iframe's MockWebSocket told us its close() ran (typically
             # because the parent is about to doc.write a fresh document).
             # Tear down the server-side ASGI WebSocket so its ping_loop
-            # is cancelled and we don't accumulate zombie connections
-            # whose periodic ping timeouts spam the console.
+            # is cancelled and we don't accumulate zombie connections.
             adp = get_adapter()
-            id_map = getattr(handle_js_message, "_id_map", {})
+            id_map = getattr(handle_js_message, "_id_map", {}) or {}
             connection_id = id_map.pop(req_id, None)
+            handle_js_message._id_map = id_map
             if connection_id:
                 try:
                     await adp.ws_close(connection_id)
                 except Exception as e:
                     print(f"ws_close failed for {connection_id}: {e}")
-            # Also cancel any stale forwarders we still hold for this
-            # connection so we don't leak the asyncio task.
-            for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
-                if not _t.done():
-                    _t.cancel()
-            handle_js_message._ws_tasks = []
+            fwd_tasks = getattr(handle_js_message, "_fwd_tasks", None) or {}
+            fwd_task = fwd_tasks.pop(req_id, None)
+            if fwd_task is not None and not fwd_task.done():
+                fwd_task.cancel()
+            handle_js_message._fwd_tasks = fwd_tasks
+            handle_js_message._ws_tasks = list(fwd_tasks.values())
 
         elif event_type == "ws_send":
             adp = get_adapter()
@@ -347,6 +362,7 @@ def restart_server(pages_dir="/app"):
     for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
         _t.cancel()
     handle_js_message._ws_tasks = []
+    handle_js_message._fwd_tasks = {}
     old_adapter = adapter
     old_ids = list(getattr(handle_js_message, "_id_map", {}).values())
     handle_js_message._id_map = {}
