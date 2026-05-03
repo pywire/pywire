@@ -21,6 +21,19 @@ def get_adapter():
     global app_instance, adapter, current_pages_dir
     if adapter is None:
         try:
+            # PyWire derives project_root from caller_dir + marker files
+            # (pyproject.toml, .git, .venv). None of those exist in the
+            # Pyodide virtual FS, so the project root never lands on
+            # sys.path and `from components.badge import Badge` fails.
+            # Add the pages_dir's parent (the project root by convention)
+            # explicitly so PyWireFinder can resolve sibling component
+            # packages like /app/components/badge.wire.
+            import os
+            import sys
+            project_root = os.path.dirname(current_pages_dir.rstrip("/")) or "/app"
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+
             print(f"Initializing PyWire app with pages_dir={current_pages_dir}...")
             app_instance = PyWire(pages_dir=current_pages_dir, debug=True)
             app_instance._is_dev_mode = True
