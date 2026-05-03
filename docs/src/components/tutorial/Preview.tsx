@@ -297,7 +297,8 @@ const getStylesInner = (theme: 'light' | 'dark') => `
 `
 
 export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark' }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -327,6 +328,30 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
   useEffect(() => {
     isInitialized.current = false
   }, [url])
+
+  // Replace the iframe element with a fresh one. Critical: doc.open()/write()
+  // does NOT reset the iframe's window object — globals, including setInterval
+  // timers from prior PyWireApp instances created by re-running the bundled
+  // IIFE script tag, persist forever. Each edit cycle leaks another live
+  // heartbeat timer; eventually one of them times out, triggering reconnects
+  // and the "session expired" UX. Replacing the <iframe> element gives a
+  // brand-new window and kills all stale timers in one shot.
+  const replaceIframe = useCallback((): HTMLIFrameElement | null => {
+    const container = containerRef.current
+    if (!container) return null
+    const old = iframeRef.current
+    const next = document.createElement('iframe')
+    next.style.width = '100%'
+    next.style.height = '100%'
+    next.style.border = 'none'
+    next.title = 'Preview'
+    container.appendChild(next)
+    if (old && old.parentNode === container) {
+      container.removeChild(old)
+    }
+    iframeRef.current = next
+    return next
+  }, [])
 
   // Helper to get processed HTML and styles
   const getProcessedContent = useCallback(
@@ -375,9 +400,10 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
   // This creates a fresh document with new MockWebSocket connection
   const initContent = useCallback(
     (html: string) => {
-      if (DEBUG_PREVIEW) console.log('[Preview] initContent called (full doc.write)')
-      if (iframeRef.current && iframeRef.current.contentDocument) {
-        const doc = iframeRef.current.contentDocument
+      if (DEBUG_PREVIEW) console.log('[Preview] initContent called (replace iframe)')
+      const iframe = replaceIframe()
+      if (iframe && iframe.contentDocument) {
+        const doc = iframe.contentDocument
         const { processedHtml, isFullDocument, styles } = getProcessedContent(html)
 
         // Intentionally NOT calling history.pushState here. Same-origin
@@ -427,30 +453,13 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
         `
         }
 
-        // Tear down the prior PyWireApp before rewriting the document.
-        // Without this, the old instance's heartbeat setInterval keeps
-        // ticking on the same iframe window even after doc.write loads a
-        // new <script>. After ~40s of no incoming messages on its old
-        // (now-orphaned) MockWebSocket, it logs "WebSocket heartbeat
-        // timeout, reconnecting", calls socket.close(), and reconnects
-        // with its stored sessionId. Server has no record of that
-        // session → init_ack.session_restored=false → "session expired"
-        // toast. Calling disconnect() clears the heartbeat and sets
-        // shouldReconnect=false on the orphan, killing the loop cleanly.
-        try {
-          const w = iframeRef.current.contentWindow as any
-          w?.PyWireCore?.app?.disconnect?.()
-        } catch (_) {
-          // ignore — fresh iframe with no app yet
-        }
-
         doc.open()
         ;(doc as any).write(finalHtml)
         doc.close()
         isInitialized.current = true
       }
     },
-    [url, theme, getProcessedContent],
+    [url, theme, getProcessedContent, replaceIframe],
   )
 
   // patchContent: Incremental update via innerHTML (used for WebSocket updates)
@@ -536,13 +545,5 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
     }
   }, [url, initContent, patchContent])
 
-  return (
-    <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
-      <iframe
-        ref={iframeRef}
-        style={{ width: '100%', height: '100%', border: 'none' }}
-        title="Preview"
-      />
-    </div>
-  )
+  return <div ref={containerRef} style={{ height: '100%', width: '100%', overflow: 'hidden' }} />
 }
