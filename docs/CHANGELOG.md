@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.16](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.15...pywire-docs-v0.5.16) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** own iframe history + sync files without restart ([#208](https://github.com/pywire/pywire/issues/208)) ([7066383](https://github.com/pywire/pywire/commit/7066383a0997bb62a166989e84b707e2d5dba550))
+
 ## [0.5.15](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.14...pywire-docs-v0.5.15) (2026-05-03)
 
 
