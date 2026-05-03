@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.18](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.17...pywire-docs-v0.5.18) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** tear down server-side WS on iframe doc.write ([#212](https://github.com/pywire/pywire/issues/212)) ([5a6b828](https://github.com/pywire/pywire/commit/5a6b828b3957837641e9b32371b5f25ed80a7a07))
+
 ## [0.5.17](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.16...pywire-docs-v0.5.17) (2026-05-03)
 
 
