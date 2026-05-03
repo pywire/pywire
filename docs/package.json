@@ -3,8 +3,8 @@
   "type": "module",
   "version": "0.5.26",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
+    "dev": "PYWIRE_PYPI_INSTALL=1 pnpm build:assets && astro dev",
+    "start": "PYWIRE_PYPI_INSTALL=1 pnpm build:assets && astro dev",
     "build:assets": "node scripts/build-assets.mjs",
     "build": "pnpm build:assets && astro build",
     "preview": "astro preview",
