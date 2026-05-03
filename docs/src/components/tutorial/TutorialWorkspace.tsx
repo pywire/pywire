@@ -163,6 +163,9 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
         case 'WS_SEND':
           engineRef.current.wsSend(msg.payload.data)
           break
+        case 'WS_DISCONNECT':
+          engineRef.current.wsDisconnect()
+          break
         case 'HTTP_REQUEST':
           engineRef.current.httpRequest(msg.payload.method, msg.payload.path, msg.payload.headers)
           break
