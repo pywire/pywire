@@ -37,6 +37,7 @@ export const collections = {
                 'file_contains',
                 'browser_route_text',
                 'browser_element',
+                'route_visited',
                 'custom',
               ]),
               target: z.string().optional(),

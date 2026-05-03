@@ -49,10 +49,9 @@ successCriteria:
     description: 'Wrap settings in {$if path.settings}'
     target: pages/main.wire
     pattern: '{$if path.settings}'
-  - type: browser_route_text
+  - type: route_visited
     route: '/menu/settings'
-    description: 'Navigate to /menu/settings and see the settings list'
-    pattern: 'Preferences'
+    description: "Click 'Go to Settings' to navigate to /menu/settings"
 pagesDir: pages
 initialRoute: '/menu'
 ---
