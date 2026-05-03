@@ -233,6 +233,65 @@ from pkg.list_comp import List
 
 
 @pytest.mark.asyncio
+async def test_named_snippet_without_props_declaration(tmp_path, monkeypatch):
+    """Child component without ``@props`` still receives named snippets.
+
+    Repro for tutorial step 33 bug: ``{$snippet header}`` in the parent
+    must populate ``self.header`` on the child on first render so the
+    paired ``{$render header}fallback{/render}`` form picks the override
+    instead of the fallback. Previously only ``_update_props`` (called on
+    re-render) bound snippets to ``self``; first paint always fell back.
+    """
+    import sys
+    import types as _types
+
+    card_src = """<div class="card">
+<header>
+{$render header}Untitled{/render}
+</header>
+<section>{$render children}</section>
+</div>
+"""
+    page_src = """---
+from pkg.card_comp import Card
+---
+<div>
+<Card>
+{$snippet header}Product Details{/snippet}
+<p>body</p>
+</Card>
+</div>
+"""
+
+    parsed_card = PyWireParser().parse(card_src, "/virtual/pkg/card.wire")
+    card_mod_ast = CodeGenerator().generate(parsed_card)
+    py_ast.fix_missing_locations(card_mod_ast)
+    card_code = compile(card_mod_ast, filename="<card>", mode="exec")
+    card_ns: dict[str, Any] = {"__name__": "pkg.card_comp"}
+    exec(card_code, card_ns)
+    card_ns["Card"] = card_ns["CardPage"]
+
+    card_module = _types.ModuleType("pkg.card_comp")
+    card_module.__dict__.update(card_ns)
+    monkeypatch.setitem(sys.modules, "pkg.card_comp", card_module)
+    pkg_mod = _types.ModuleType("pkg")
+    monkeypatch.setitem(sys.modules, "pkg", pkg_mod)
+
+    parsed_page = PyWireParser().parse(page_src, "/virtual/page.wire")
+    page_mod_ast = CodeGenerator().generate(parsed_page)
+    py_ast.fix_missing_locations(page_mod_ast)
+    page_code = compile(page_mod_ast, filename="<page>", mode="exec")
+    page_ns: dict[str, Any] = {"__name__": "page"}
+    exec(page_code, page_ns)
+    PageCls = page_ns["PagePage"]
+
+    page = PageCls(_make_request(), {}, {})
+    html = await page._render_template()
+    assert "Product Details" in html
+    assert "Untitled" not in html
+
+
+@pytest.mark.asyncio
 async def test_optional_snippet_none_raises_without_fallback():
     """Unpaired ``{$render name(args)}`` on a None snippet raises,
     signaling that a fallback should have been provided."""

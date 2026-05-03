@@ -236,6 +236,17 @@ class BasePage:
         # through into ``self.attrs`` where it would leak into HTML rendering.
         children_arg = kwargs.pop("children", None)
 
+        # Named snippet props (e.g. ``header={...}``) must land on ``self``
+        # so ``{$render header}`` can resolve them via attribute lookup on
+        # first render. Without this, only re-renders (which go through
+        # ``_update_props``) would see the snippet — first paint always
+        # falls back to the placeholder body.
+        snippet_kwargs: Dict[str, Snippet] = {}
+        for key in [k for k, v in kwargs.items() if isinstance(v, Snippet)]:
+            snippet_kwargs[key] = kwargs.pop(key)
+        for key, value in snippet_kwargs.items():
+            setattr(self, key, value)
+
         # Store remaining kwargs as fallthrough attributes
         self.attrs = dict(kwargs)
 
