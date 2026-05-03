@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.20](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.19...pywire-docs-v0.5.20) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** replace iframe element to kill stale heartbeat timers ([#216](https://github.com/pywire/pywire/issues/216)) ([5a61d38](https://github.com/pywire/pywire/commit/5a61d38a3913578b56cb8fce5359656fce959b3c))
+
 ## [0.5.19](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.18...pywire-docs-v0.5.19) (2026-05-03)
 
 
