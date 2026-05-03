@@ -261,6 +261,15 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
           const body = data.message.body
           const html = Array.isArray(body) ? new TextDecoder().decode(new Uint8Array(body)) : body
           setLastRenderedHtml(html)
+          // We're about to rewrite the iframe document — explicitly tear
+          // down the prior server-side WS so its forwarder + ping_loop
+          // don't outlive the iframe doc that owned them. Belt and
+          // suspenders: the iframe's MockWebSocket.close() also fires
+          // WS_DISCONNECT during PyWireApp.disconnect(), but that path
+          // depends on the prior PyWireCore actually being live on the
+          // iframe window at this moment, which it isn't always (e.g.
+          // first paint, or if the prior init hadn't finished loading).
+          engineRef.current?.wsDisconnect?.()
           // HTTP response means a fresh version of the app (e.g. code change)
           // We must use INIT to create a fresh document and WebSocket connection
           ;(window as any).__PYWIRE_INIT_PREVIEW__?.(html)
