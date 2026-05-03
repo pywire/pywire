@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.10](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.9...pywire-docs-v0.5.10) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** disconnect old WS on restart to silence ping timeout ([4e92cbf](https://github.com/pywire/pywire/commit/4e92cbfd012a10d15d5fcebb6537aeff0bd6050e))
+
 ## [0.5.9](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.8...pywire-docs-v0.5.9) (2026-05-03)
 
 
