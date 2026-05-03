@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/pywire/pywire/compare/pywire-v0.14.0...pywire-v0.14.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire:** add jinja2 to [cli] extra for dev-mode error pages ([c704c5a](https://github.com/pywire/pywire/commit/c704c5a919aa91d63bba8be2c77cc54e50380fff))
+
 ## [0.14.0](https://github.com/pywire/pywire/compare/pywire-v0.13.0...pywire-v0.14.0) (2026-05-02)
 
 
