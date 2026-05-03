@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/pywire/pywire/compare/pywire-v0.14.1...pywire-v0.14.2) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire:** bind props namespace + seat snippet kwargs on first paint ([#204](https://github.com/pywire/pywire/issues/204)) ([e7f6e8b](https://github.com/pywire/pywire/commit/e7f6e8b3b1d522da4c8f840da14d02c32408b437))
+
 ## [0.14.1](https://github.com/pywire/pywire/compare/pywire-v0.14.0...pywire-v0.14.1) (2026-05-03)
 
 
