@@ -255,4 +255,19 @@ export class TutorialEngine {
       },
     })
   }
+
+  /**
+   * Tear down the server-side WebSocket bound to the current iframe doc.
+   * Sent by the iframe's MockWebSocket.close() so the in-Pyodide PyWire
+   * router can cancel its ping_loop and free resources.
+   */
+  public wsDisconnect() {
+    this.postToWorker({
+      type: 'REQUEST',
+      payload: {
+        type: 'ws_disconnect',
+        id: 'ws-main',
+      },
+    })
+  }
 }

@@ -109,6 +109,15 @@ const INJECTED_SCRIPT = `
     close() {
       if (DEBUG_PREVIEW) console.log('[MockWS] WebSocket closed');
       this.readyState = 3; // CLOSED
+      // Notify parent so it can tear down the server-side connection in
+      // the Pyodide adapter. Without this, each iframe doc.write leaves
+      // a zombie ASGI WebSocket alive in the in-Pyodide PyWire app
+      // whose ping_loop keeps running and eventually logs
+      // 'WebSocket ping timeout, closing connection'. They accumulate
+      // and starve real connections.
+      try {
+        window.parent.postMessage({ type: 'WS_DISCONNECT', payload: {} }, '*');
+      } catch (_) {}
       this.dispatchEvent(new Event('close'));
       if (this.onclose) this.onclose(new Event('close'));
     }
