@@ -460,7 +460,14 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
     return () => {
       isMounted = false
     }
-  }, [files, lastRenderedHtml, liveIframeText, visitedRoutes, currentStep.successCriteria, isCompleted])
+  }, [
+    files,
+    lastRenderedHtml,
+    liveIframeText,
+    visitedRoutes,
+    currentStep.successCriteria,
+    isCompleted,
+  ])
 
   // Reset completion on step change
   useEffect(() => {
