@@ -46,6 +46,34 @@ def get_adapter():
     return adapter
 
 
+def _hard_disconnect(adp, connection_id):
+    """Force the framework's WebSocketRouter cleanup to actually run.
+
+    `adp.ws_close()` only signals the receive_queue; it does NOT cancel
+    the per-connection `_ping_loop` task that PyWire spawns inside
+    WebSocketRouter. That task lives on the framework side, sleeps for
+    25s, sends a ping, sleeps 10s waiting for a pong — and if the iframe
+    document was already replaced, no pong arrives, so the ping_loop
+    logs "WebSocket ping timeout, closing connection" and forcibly
+    closes the (already-orphaned) ASGI socket. Each iframe replace
+    leaves another ping_loop running in the background; eventually one
+    fires its timeout and triggers the visible reconnect storm.
+
+    Putting `websocket.disconnect` directly into the receive queue lets
+    the framework's own receive() inside _ping_loop wake up, see the
+    disconnect, and exit cleanly. We also pop both queues so the
+    connection's state is fully gone before the next ws_connect.
+    """
+    try:
+        q = adp._ws_connections.get(connection_id)
+        if q is not None:
+            q.put_nowait({"type": "websocket.disconnect", "code": 1000})
+        adp._ws_connections.pop(connection_id, None)
+        adp._ws_connections.pop(f"{connection_id}_send", None)
+    except Exception as e:
+        print(f"_hard_disconnect failed for {connection_id}: {e}")
+
+
 async def handle_js_message(event_data):
     """Route incoming JS messages to the adapter."""
     try:
@@ -117,10 +145,7 @@ async def handle_js_message(event_data):
             id_map = getattr(handle_js_message, "_id_map", {}) or {}
             prior_cid = id_map.pop(req_id, None)
             if prior_cid is not None:
-                try:
-                    await adp.ws_close(prior_cid)
-                except Exception as e:
-                    print(f"ws_close (prior) failed for {prior_cid}: {e}")
+                _hard_disconnect(adp, prior_cid)
 
             connection_id = await adp.ws_connect(path=path)
             id_map[req_id] = connection_id
@@ -176,10 +201,7 @@ async def handle_js_message(event_data):
             connection_id = id_map.pop(req_id, None)
             handle_js_message._id_map = id_map
             if connection_id:
-                try:
-                    await adp.ws_close(connection_id)
-                except Exception as e:
-                    print(f"ws_close failed for {connection_id}: {e}")
+                _hard_disconnect(adp, connection_id)
             fwd_tasks = getattr(handle_js_message, "_fwd_tasks", None) or {}
             fwd_task = fwd_tasks.pop(req_id, None)
             if fwd_task is not None and not fwd_task.done():
