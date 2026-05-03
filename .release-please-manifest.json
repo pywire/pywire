@@ -9,5 +9,5 @@
   "packages/vscode-pywire": "0.5.2",
   "packages/prettier-plugin-pywire": "0.3.0",
   "packages/create-pywire-app": "0.11.0",
-  "docs": "0.5.22"
+  "docs": "0.5.23"
 }

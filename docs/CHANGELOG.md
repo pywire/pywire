@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.23](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.22...pywire-docs-v0.5.23) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** keep client WS alive + state-preserving HMR ([#223](https://github.com/pywire/pywire/issues/223)) ([3638237](https://github.com/pywire/pywire/commit/36382376c692613770ee877d670043117cc36e02))
+
 ## [0.5.22](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.21...pywire-docs-v0.5.22) (2026-05-03)
 
 
