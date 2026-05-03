@@ -91,15 +91,33 @@ importlib.invalidate_caches()
       cacheKey = ''
     }
 
+    // For PyPI mode, query PyPI for the latest pywire version so we can detect
+    // when the cache is stale and a newer release is available.
+    let latestPywireVersion = ''
+    if (__PYWIRE_INSTALL_SOURCE__ === 'pypi') {
+      try {
+        const resp = await fetch('https://pypi.org/pypi/pywire/json')
+        if (resp.ok) {
+          const data = await resp.json()
+          latestPywireVersion = (data as any).info?.version ?? ''
+          console.log('[Worker] Latest pywire on PyPI:', latestPywireVersion)
+        }
+      } catch (e) {
+        console.warn('[Worker] PyPI version check failed (will use cache if available):', e)
+      }
+    }
+
     // Escape for safe interpolation into Python string literals
     const safeCacheKey = cacheKey.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     const safeMarkerFile = markerFile.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const safeLatestPywire = latestPywireVersion.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 
     const checkResult = await pyodide.runPythonAsync(`
 import os, sys, importlib
 cache_valid = False
 marker_path = "${safeMarkerFile}"
 expected_key = "${safeCacheKey}"
+latest_pywire = "${safeLatestPywire}"
 if expected_key and os.path.exists(marker_path):
     stored_key = open(marker_path).read().strip()
     if stored_key == expected_key:
@@ -112,8 +130,27 @@ if expected_key and os.path.exists(marker_path):
             print(f"[Python] Cache invalid, import failed: {e}")
     else:
         print(f"[Python] Cache key mismatch, will reinstall")
+elif os.path.exists(marker_path):
+    stored_key = open(marker_path).read().strip()
+    if stored_key.startswith("pypi|"):
+        installed_pywire = next(
+            (p.split("==")[1] for p in stored_key.split("|") if p.startswith("pywire==")),
+            "",
+        )
+        if installed_pywire and (not latest_pywire or installed_pywire == latest_pywire):
+            try:
+                import pywire
+                from pywire_parser.ts_parser import PYWIRE_LANGUAGE
+                cache_valid = True
+                print(f"[Python] PyPI cache valid: pywire=={installed_pywire}")
+            except Exception as e:
+                print(f"[Python] PyPI cache import failed: {e}")
+        else:
+            print(f"[Python] pywire update: {installed_pywire} → {latest_pywire or 'latest'}")
+    else:
+        print("[Python] Unknown cache format, will reinstall")
 else:
-    print("[Python] No cache marker found or PyPI mode (will check versions)")
+    print("[Python] No cache marker found (first install)")
 cache_valid
 `)
 
