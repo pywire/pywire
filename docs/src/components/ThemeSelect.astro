@@ -100,7 +100,9 @@ import type { Props } from '@astrojs/starlight/props'
   customElements.define('starlight-theme-select', StarlightThemeSelect)
 </script>
 
-<style>
+<style is:global>
+  /* is:global so :root[data-theme='dark'] selectors are not scoped away
+     — Astro cid-rewriting can drop the rule otherwise. */
   .theme-toggle {
     width: 28px;
     height: 28px;
@@ -113,7 +115,8 @@ import type { Props } from '@astrojs/starlight/props'
     background: transparent;
     color: var(--pywire-fg-muted);
     cursor: pointer;
-    transition: border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    transition:
+      border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
       color var(--pywire-motion-fast) var(--pywire-ease-spring);
     line-height: 0;
   }
@@ -128,17 +131,18 @@ import type { Props } from '@astrojs/starlight/props'
     width: 14px;
     height: 14px;
     display: block;
+    grid-area: 1 / 1; /* stack into same cell so swap doesn't reflow */
   }
 
-  .icon-moon {
+  .theme-toggle .icon-moon {
     display: none;
   }
 
-  :root[data-theme='dark'] .icon-sun {
+  :root[data-theme='dark'] .theme-toggle .icon-sun {
     display: none;
   }
 
-  :root[data-theme='dark'] .icon-moon {
+  :root[data-theme='dark'] .theme-toggle .icon-moon {
     display: block;
   }
 </style>
