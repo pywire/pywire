@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.9](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.8...pywire-docs-v0.5.9) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** revert pong-drop; add PyPI version-check cache ([#193](https://github.com/pywire/pywire/issues/193)) ([6bce104](https://github.com/pywire/pywire/commit/6bce104e72903ebc4fa6a280744bbab660114ccb))
+
 ## [0.5.8](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.7...pywire-docs-v0.5.8) (2026-05-02)
 
 
