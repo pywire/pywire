@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.15](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.14...pywire-docs-v0.5.15) (2026-05-03)
+
+
+### Bug Fixes
+
+* **pywire-docs:** tutorial sweep — validator, monaco, content fixes ([#205](https://github.com/pywire/pywire/issues/205)) ([c56ea4a](https://github.com/pywire/pywire/commit/c56ea4a14e19809df9b669f021e25724395510b5))
+
 ## [0.5.14](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.13...pywire-docs-v0.5.14) (2026-05-03)
 
 
