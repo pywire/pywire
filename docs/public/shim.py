@@ -95,21 +95,19 @@ async def handle_js_message(event_data):
                 if slash_idx != -1:
                     path = path[slash_idx:]
 
-            # Tear down any prior connection on the same adapter so its
-            # WebSocketRouter handler exits cleanly (cancels the framework's
-            # _ping_loop). Without this, the orphan ping loop fires after the
-            # client has moved on and logs "WebSocket ping timeout".
+            # Cancel any orphaned forward task from a previous WS connection
+            # before starting a new one. The previous connection's WebSocketRouter
+            # ping loop is cleaned up either by restart_server (step nav) or by
+            # the framework's own disconnect handler when the underlying socket
+            # ultimately closes — we don't tear it down here to avoid racing
+            # the new connection's setup.
             for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
                 _t.cancel()
             handle_js_message._ws_tasks = []
-            for _cid in list(getattr(handle_js_message, "_id_map", {}).values()):
-                try:
-                    await adp.ws_close(_cid)
-                except Exception:
-                    pass
-            handle_js_message._id_map = {}
 
             connection_id = await adp.ws_connect(path=path)
+            if not hasattr(handle_js_message, "_id_map"):
+                handle_js_message._id_map = {}
             handle_js_message._id_map[req_id] = connection_id
 
             # Send the websocket.accept message to JS so MockWebSocket transitions to OPEN
@@ -202,21 +200,29 @@ def restart_server(pages_dir="/app"):
     # Cancel forwarder tasks and disconnect open WS connections on the old
     # adapter. The disconnect runs the framework's WebSocketRouter cleanup
     # (cancels its _ping_loop), preventing "WebSocket ping timeout" warnings
-    # from the dead connection after restart.
+    # and orphaned ping loops from accumulating after each step nav.
+    #
+    # ws_close is async-typed but contains no awaits — its body is just sync
+    # queue.put_nowait + dict.pop. Inline those operations directly so the
+    # disconnect lands deterministically before this function returns.
+    # (Wrapping in asyncio.create_task without saving the reference risks
+    # the task being GC'd before it runs.)
     for _t in list(getattr(handle_js_message, "_ws_tasks", [])):
         _t.cancel()
     handle_js_message._ws_tasks = []
     old_adapter = adapter
     old_ids = list(getattr(handle_js_message, "_id_map", {}).values())
     handle_js_message._id_map = {}
-    if old_adapter is not None and old_ids:
-        async def _drain_old_ws():
-            for _cid in old_ids:
-                try:
-                    await old_adapter.ws_close(_cid)
-                except Exception:
-                    pass
-        asyncio.create_task(_drain_old_ws())
+    if old_adapter is not None:
+        for _cid in old_ids:
+            try:
+                _q = old_adapter._ws_connections.get(_cid)
+                if _q is not None:
+                    _q.put_nowait({"type": "websocket.disconnect", "code": 1000})
+                old_adapter._ws_connections.pop(_cid, None)
+                old_adapter._ws_connections.pop(f"{_cid}_send", None)
+            except Exception:
+                pass
 
     app_instance = None
     adapter = None
