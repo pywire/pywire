@@ -184,14 +184,44 @@ samp {
 .sidebar-pane {
   background-color: var(--sl-color-bg-sidebar);
   border-inline-end: 1px solid var(--sl-color-border);
+  /* Themed scrollbar — light/dark aware. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--pywire-border) transparent;
 }
 
+.sidebar-pane::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb {
+  background: var(--pywire-border);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--sl-color-gray-4);
+  background-clip: padding-box;
+}
+
+/* No vertical rail on nested groups — design uses pure indent. */
+.sidebar-content ul,
 .sidebar-content ul ul {
-  border-inline-start: 1px solid var(--pywire-sidebar-rail);
+  border-inline-start: 0 !important;
   padding-inline-start: 0;
 }
 
-/* Group headings — bold, larger. */
+/* Reduce sub-list indent — design has tight 12px indent off section heading. */
+.sidebar-content ul ul {
+  margin-inline-start: 0.25rem;
+}
+
+/* Group headings — bold sans, paddings tighter. */
 .sidebar-content > ul > li > details > summary,
 .sidebar-content > ul > li > .group-label,
 .sidebar-content .top-level > li > details > summary,
@@ -205,21 +235,34 @@ samp {
   text-transform: none;
 }
 
-/* Sub-item links — underlined, neutral text. */
+/* Chevron — much subtler, smaller, muted. */
+.sidebar-content details summary svg,
+.sidebar-content .caret {
+  color: var(--pywire-fg-muted);
+  opacity: 0.55;
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.sidebar-content details summary:hover svg {
+  opacity: 0.9;
+}
+
+/* Sub-item links — underlined, very subtle decoration. */
 .sidebar-content ul ul a {
   font-family: var(--pywire-font-sans);
   color: var(--sl-color-text);
   text-decoration: underline;
-  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 35%, transparent);
+  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 15%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.25em;
   font-weight: 400;
   border-inline-start: 2px solid transparent;
-  margin-inline-start: -1px;
   padding-inline-start: 0.85rem;
   transition:
     color var(--pywire-motion-fast) var(--pywire-ease-spring),
-    background var(--pywire-motion-fast) var(--pywire-ease-spring);
+    background var(--pywire-motion-fast) var(--pywire-ease-spring),
+    text-decoration-color var(--pywire-motion-fast) var(--pywire-ease-spring);
 }
 
 .sidebar-content ul ul a:hover {
@@ -242,42 +285,61 @@ samp {
 
 /* ---------- TOC (right rail) ------------------------------------- */
 
+/* No left rail at all — TOC items are simple underlined links per
+   design pic 36. Indent depth from heading level alone. */
+starlight-toc nav,
+starlight-toc nav ul,
+starlight-toc nav ul ul {
+  border-inline-start: 0 !important;
+  padding-inline-start: 0;
+}
+
 starlight-toc a {
   font-family: var(--pywire-font-sans);
   color: var(--sl-color-text);
   text-decoration: underline;
-  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 30%, transparent);
+  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 15%, transparent);
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.2em;
+  text-underline-offset: 0.25em;
   font-size: 0.85rem;
   padding-block: 0.3rem;
-  border-inline-start: 2px solid transparent;
+  border: 0 !important;
+  background: transparent !important;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    text-decoration-color var(--pywire-motion-fast) var(--pywire-ease-spring);
 }
 
 starlight-toc a:hover {
-  color: var(--sl-color-accent-high);
+  color: var(--sl-color-accent);
   text-decoration-color: var(--sl-color-accent);
-  background: transparent;
 }
 
+/* Active heading — accent text + accent underline only, no rail. */
 starlight-toc a[aria-current='true'],
 starlight-toc a[aria-current='true']:hover {
-  color: var(--sl-color-accent-high) !important;
+  color: var(--sl-color-accent) !important;
   background: transparent !important;
   font-weight: 600 !important;
   text-decoration: underline !important;
   text-decoration-color: var(--sl-color-accent) !important;
-  border-inline-start: 2px solid var(--sl-color-accent) !important;
+  border: 0 !important;
+}
+
+/* Nested headings (h3+) — indent. */
+starlight-toc nav ul ul a {
+  padding-inline-start: 1rem;
 }
 
 #starlight__on-this-page,
 .right-sidebar h2 {
   font-family: var(--pywire-font-sans);
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--sl-color-text);
   letter-spacing: -0.005em;
   text-transform: none;
+  margin-block-end: 0.5rem;
 }
 
 /* ---------- PROSE / MARKDOWN ------------------------------------- */
@@ -380,27 +442,109 @@ starlight-toc a[aria-current='true']:hover {
   margin-block: 1.25rem;
 }
 
-:root[data-theme='dark'] .expressive-code {
-  box-shadow: var(--pywire-glow-soft);
+.expressive-code .frame {
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-:root[data-theme='light'] .expressive-code {
+/* Mode-specific elevation — quiet cyan glow on Void, soft cool-ink
+   shadow on Lab. Matches the marketing site code-window recipe. */
+:root[data-theme='dark'] .expressive-code .frame {
+  background: #1c1f2e;
+  border: 1px solid var(--pywire-border);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--sl-color-accent) 22%, transparent),
+    0 8px 24px color-mix(in oklch, var(--sl-color-accent) 10%, transparent);
+}
+
+:root[data-theme='light'] .expressive-code .frame {
+  background: #ffffff;
+  border: 1px solid var(--pywire-border);
   box-shadow:
     0 1px 2px rgba(14, 21, 37, 0.06),
     0 8px 20px -8px rgba(14, 21, 37, 0.14);
 }
 
+/* Terminal title bar — macOS chrome look: 3 colored dots + filename. */
+.expressive-code .frame.is-terminal {
+  --ec-frm-trmTtbDtsFg: transparent; /* hide EC default dots */
+}
+
+.expressive-code .frame.is-terminal figcaption.header {
+  position: relative;
+  padding-block: 0.6rem;
+  padding-inline-start: 5rem;
+  background: light-dark(oklch(97% 0.006 250), #252839);
+  border-bottom: 1px solid var(--pywire-border);
+  border-radius: 12px 12px 0 0;
+}
+
+:root[data-theme='light'] .expressive-code .frame.is-terminal figcaption.header {
+  background: oklch(97% 0.006 250);
+}
+
+:root[data-theme='dark'] .expressive-code .frame.is-terminal figcaption.header {
+  background: #252839;
+}
+
+/* 3 colored dots — overlay on top of EC's hidden default dots. */
+.expressive-code .frame.is-terminal figcaption.header::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 11px;
+  background:
+    radial-gradient(circle at 5.5px 50%, #ff5f57 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 22px 50%, #febc2e 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
+}
+
+/* "Tab" frames (file titles) — keep simple, no dots. */
+.expressive-code .frame:not(.is-terminal) figcaption.header {
+  background: light-dark(oklch(97% 0.006 250), oklch(18% 0.013 250));
+  border-bottom: 1px solid var(--pywire-border);
+  border-radius: 12px 12px 0 0;
+}
+
 .expressive-code .frame .title {
   font-family: var(--pywire-font-mono);
   font-size: 0.78rem;
-  font-style: italic;
-  color: color-mix(in oklch, var(--sl-color-text) 60%, transparent);
+  color: var(--pywire-fg-muted);
 }
 
+/* Body */
+.expressive-code .frame pre {
+  background: transparent !important;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.85rem;
+}
+
+/* Copy button — outlined chip, accent on hover. */
 .expressive-code .copy button {
   width: 2rem;
   height: 2rem;
   border-radius: 6px;
+  border: 1px solid var(--pywire-border) !important;
+  background: light-dark(rgba(255, 255, 255, 0.6), rgba(0, 0, 0, 0.25)) !important;
+  transition:
+    border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+.expressive-code .copy button:hover {
+  border-color: var(--pywire-accent) !important;
+}
+
+.expressive-code .copy button .ready,
+.expressive-code .copy button .success {
+  background-color: var(--pywire-fg-muted) !important;
+}
+
+.expressive-code .copy button:hover .ready {
+  background-color: var(--pywire-accent) !important;
 }
 
 /* ---------- HOMEPAGE / HERO -------------------------------------- */
@@ -460,9 +604,45 @@ site-search button[data-open-modal]:focus-visible {
   color: var(--sl-color-text);
 }
 
-site-search button[data-open-modal] kbd {
+/* Outer kbd chip = single ⌘K pill. Inner kbds (the individual ⌘ and K)
+   render as plain text inside that chip — no nested borders. */
+site-search button[data-open-modal] > kbd {
   font-family: var(--pywire-font-mono) !important;
   background: var(--sl-color-bg-inline-code);
   border: 1px solid var(--sl-color-border);
   color: var(--pywire-fg-muted);
+  border-radius: 4px;
+  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.05em;
+}
+
+site-search button[data-open-modal] kbd kbd {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  color: inherit;
+  font-family: inherit !important;
+}
+
+/* ---------- CONTENT PANEL — kill segmentation lines -------------- */
+
+/* Starlight draws hairlines between content-panel sections (under page
+   title, between MD content panels) and along the right of the main
+   content area before the on-this-page rail. Design wants none. */
+.content-panel + .content-panel {
+  border-top: 0 !important;
+}
+
+.right-sidebar {
+  border-inline-start: 0 !important;
+}
+
+.right-sidebar-panel {
+  border-inline-start: 0 !important;
+}
+
+main {
+  border-inline-end: 0 !important;
 }

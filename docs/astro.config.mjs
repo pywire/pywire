@@ -49,7 +49,8 @@ export default defineConfig({
           codeFontFamily: 'JetBrains Mono, Fira Code, ui-monospace, SFMono-Regular, Menlo, monospace',
           codeFontSize: '0.85rem',
           frames: {
-            frameBoxShadowCssValue: '0 1px 2px rgba(14,21,37,0.06), 0 8px 20px -8px rgba(14,21,37,0.14)',
+            // Box-shadow handled per-mode in custom.css; cancel EC default.
+            frameBoxShadowCssValue: 'none',
           },
         },
         shiki: {
