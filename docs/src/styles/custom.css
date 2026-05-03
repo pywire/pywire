@@ -82,9 +82,10 @@
   --sl-font: var(--pywire-font-sans);
   --sl-font-mono: var(--pywire-font-mono);
 
-  /* Slim header — design spec ~52px. */
-  --sl-nav-height: 56px;
-  --sl-nav-height-mobile: 56px;
+  /* Slim header — design spec. !important defeats Starlight's @media
+     override on tutorial / StarlightPage layouts which loads later. */
+  --sl-nav-height: 56px !important;
+  --sl-nav-height-mobile: 56px !important;
 }
 
 /* The Void — dark mode */
@@ -177,6 +178,27 @@ samp {
   background-color: var(--sl-color-bg-nav);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+/* Consistent grid on every page (default Starlight pages widen col 1
+   to sidebar-width, StarlightPage layouts use logo-width). Force a
+   single recipe so the search bar lands in the same place everywhere. */
+header.header > div.header {
+  grid-template-columns: auto 1fr auto !important;
+  align-items: center;
+}
+
+/* Constrain search to design-spec width and center within its column.
+   site-search is display:contents (invisible to layout), so we have to
+   target the wrapper div and the button itself, not <site-search>. */
+header.header > div.header > div:has(site-search) {
+  justify-content: center;
+}
+
+site-search button[data-open-modal] {
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
 }
 
 /* ---------- SIDEBAR ---------------------------------------------- */
