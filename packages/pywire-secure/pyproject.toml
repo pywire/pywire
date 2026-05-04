@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pywire-secure"
+version = "0.1.0"
+description = "Security middleware for PyWire: CSRF, security headers, rate limiting, HTTPS redirect"
+authors = [
+    { name = "Reece Holmdahl", email = "reece@pywire.dev" },
+]
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "pywire>=0.14.2",
+    "starlette>=0.31",
+]
+
+[project.optional-dependencies]
+# Token-bucket / sliding-window rate limiting via slowapi. Pulled only
+# when apps opt into rate_limit=True; keeps the base wheel small.
+ratelimit = [
+    "slowapi>=0.1.9",
+]
+
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "httpx>=0.25",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pywire_secure"]
