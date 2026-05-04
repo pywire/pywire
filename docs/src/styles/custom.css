@@ -637,6 +637,12 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame f
   display: none !important;
 }
 
+/* Tighten code body top spacing — pre's default padding-block was creating
+   a noticeable gap between chrome and first line in tabbed frames. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame pre {
+  padding-block-start: 0.6rem !important;
+}
+
 /* Copy button: chrome bar is the tablist (height pywire-chrome-h), code
    body starts directly under it — first-line center is at chrome + ~13px. */
 starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
@@ -721,19 +727,24 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
    - Frames without figcaption (e.g. plain ```python ...```): the
      ::before pseudo provides a dots-only chrome strip. */
 
-.expressive-code .frame {
-  position: relative;
-  --ec-frm-trmTtbDtsFg: transparent; /* hide EC's built-in dot row */
+/* Hoisted to :root so non-EC consumers (starlight-tabs etc.) inherit
+   the same chrome tokens. */
+:root {
   --pywire-chrome-h: 44px;
   --pywire-chrome-pl: 5.5rem; /* room for traffic-light dots */
 }
 
-:root[data-theme='light'] .expressive-code .frame {
+:root[data-theme='light'] {
   --pywire-chrome-bg: oklch(97% 0.006 250);
 }
 
-:root[data-theme='dark'] .expressive-code .frame {
+:root[data-theme='dark'] {
   --pywire-chrome-bg: #252839;
+}
+
+.expressive-code .frame {
+  position: relative;
+  --ec-frm-trmTtbDtsFg: transparent; /* hide EC's built-in dot row */
 }
 
 /* Kill EC's built-in terminal dots (mask-image of 3 SVG circles) — we
@@ -746,15 +757,19 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
   -webkit-mask-image: none !important;
 }
 
-/* Bar background + border — applies to titled frames (figcaption). */
+/* Bar background + border — applies to titled frames (figcaption).
+   Fixed height (not min-height) so the bar matches starlight-tabs's
+   tablist-wrapper height exactly across both styles. */
 .expressive-code .frame figcaption.header {
   position: relative;
-  min-height: var(--pywire-chrome-h);
-  padding-block: 0.55rem;
+  height: var(--pywire-chrome-h);
+  padding-block: 0;
   padding-inline-start: var(--pywire-chrome-pl);
   background: var(--pywire-chrome-bg) !important;
   border-bottom: 1px solid var(--pywire-border);
   border-radius: 12px 12px 0 0;
+  display: flex;
+  align-items: center;
 }
 
 /* Dots overlay on titled frames. */
