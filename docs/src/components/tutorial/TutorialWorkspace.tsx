@@ -485,7 +485,7 @@ export const TutorialWorkspace: React.FC<TutorialWorkspaceProps> = ({ initialSlu
   }
 
   return (
-    <div className="pw-workspace-container bg-[#03060a]">
+    <div className="pw-workspace-container bg-[var(--pw-bg-main)]">
       {/* Refined Header inspired by Svelte Tutorial */}
       <header className="pw-header relative">
         {/* TutorialHierarchy moved outside so it can escape overflow:hidden */}

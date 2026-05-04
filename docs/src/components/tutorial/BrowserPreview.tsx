@@ -73,9 +73,9 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
       {/* URL Bar Area */}
       <div className="pw-browser-url-bar">
         <div className="pw-browser-controls">
-          <div className="pw-browser-dot" style={{ backgroundColor: '#ff5f56' }}></div>
-          <div className="pw-browser-dot" style={{ backgroundColor: '#ffbd2e' }}></div>
-          <div className="pw-browser-dot" style={{ backgroundColor: '#27c93f' }}></div>
+          <div className="pw-browser-dot" style={{ backgroundColor: '#ff5f57' }}></div>
+          <div className="pw-browser-dot" style={{ backgroundColor: '#febc2e' }}></div>
+          <div className="pw-browser-dot" style={{ backgroundColor: '#28c840' }}></div>
         </div>
 
         <div className="pw-browser-nav">
@@ -115,7 +115,7 @@ export const BrowserPreview: React.FC<BrowserPreviewProps> = ({
         </div>
 
         <div className="pw-browser-url-display">
-          <Globe size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
+          <Globe size={12} style={{ color: 'var(--pw-text-dim)', flexShrink: 0 }} />
           <input
             type="text"
             value={inputValue}

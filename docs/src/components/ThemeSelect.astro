@@ -1,0 +1,143 @@
+---
+import type { Props } from '@astrojs/starlight/props'
+---
+
+<starlight-theme-select>
+  <button type="button" class="theme-toggle" aria-label="Toggle dark mode" aria-live="polite">
+    <svg
+      class="icon-sun"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="4"></circle>
+      <path d="M12 2v2"></path>
+      <path d="M12 20v2"></path>
+      <path d="m4.93 4.93 1.41 1.41"></path>
+      <path d="m17.66 17.66 1.41 1.41"></path>
+      <path d="M2 12h2"></path>
+      <path d="M20 12h2"></path>
+      <path d="m6.34 17.66-1.41 1.41"></path>
+      <path d="m19.07 4.93-1.41 1.41"></path>
+    </svg>
+    <svg
+      class="icon-moon"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+    </svg>
+  </button>
+</starlight-theme-select>
+
+<script is:inline>
+  StarlightThemeProvider.updatePickers()
+</script>
+
+<script>
+  type Theme = 'auto' | 'dark' | 'light'
+
+  const storageKey = 'starlight-theme'
+
+  const parseTheme = (theme: unknown): Theme =>
+    theme === 'auto' || theme === 'dark' || theme === 'light' ? theme : 'auto'
+
+  const loadTheme = (): Theme =>
+    parseTheme(typeof localStorage !== 'undefined' && localStorage.getItem(storageKey))
+
+  function storeTheme(theme: Theme): void {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(storageKey, theme === 'light' || theme === 'dark' ? theme : '')
+    }
+  }
+
+  const getPreferredColorScheme = (): 'light' | 'dark' =>
+    matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+
+  function getResolved(theme: Theme): 'light' | 'dark' {
+    return theme === 'auto' ? getPreferredColorScheme() : theme
+  }
+
+  function onThemeChange(theme: Theme): void {
+    // @ts-expect-error — global from ThemeProvider
+    StarlightThemeProvider.updatePickers(theme)
+    document.documentElement.dataset.theme = getResolved(theme)
+    storeTheme(theme)
+  }
+
+  matchMedia(`(prefers-color-scheme: light)`).addEventListener('change', () => {
+    if (loadTheme() === 'auto') onThemeChange('auto')
+  })
+
+  class StarlightThemeSelect extends HTMLElement {
+    constructor() {
+      super()
+      onThemeChange(loadTheme())
+      this.querySelector('button')?.addEventListener('click', () => {
+        const next: Theme = getResolved(loadTheme()) === 'dark' ? 'light' : 'dark'
+        onThemeChange(next)
+      })
+    }
+  }
+  customElements.define('starlight-theme-select', StarlightThemeSelect)
+</script>
+
+<style is:global>
+  /* is:global so :root[data-theme='dark'] selectors are not scoped away
+     — Astro cid-rewriting can drop the rule otherwise. */
+  .theme-toggle {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    border: 1px solid var(--pywire-border);
+    background: transparent;
+    color: var(--pywire-fg-muted);
+    cursor: pointer;
+    transition:
+      border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
+      color var(--pywire-motion-fast) var(--pywire-ease-spring);
+    line-height: 0;
+  }
+
+  .theme-toggle:hover,
+  .theme-toggle:focus-visible {
+    border-color: var(--pywire-accent);
+    color: var(--pywire-accent);
+  }
+
+  .theme-toggle svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    grid-area: 1 / 1; /* stack into same cell so swap doesn't reflow */
+  }
+
+  .theme-toggle .icon-moon {
+    display: none;
+  }
+
+  :root[data-theme='dark'] .theme-toggle .icon-sun {
+    display: none;
+  }
+
+  :root[data-theme='dark'] .theme-toggle .icon-moon {
+    display: block;
+  }
+</style>

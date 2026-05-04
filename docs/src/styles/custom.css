@@ -1,67 +1,1052 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Apply to Starlight's Dark Mode */
-:root[data-theme='dark'] {
-  --sl-color-accent-low: #003336; /* Deep cyan background for active items */
-  --sl-color-accent: #00f0ff; /* The Electric Cyan text --color-wire-glow */
-  --sl-color-accent-high: #b3fcff; /* Hover states */
+/* =================================================================
+   PyWire Design System — applied to Starlight docs.
+   Source of truth: pywire-design-system/project/colors_and_type.css
+   Two worlds, one wire. Lab (light) ↔ Void (dark) — perceptual mirrors
+   along the L axis. One OKLCH cyan ladder (hue 195°, chroma 0.13) at
+   three lightnesses drives the accent in both modes; neutrals share a
+   single hue (250°) at very low chroma.
+   ================================================================= */
 
-  --sl-color-bg: #090a11; /* Match pywire.dev Void --theme-dark-bg */
-  --sl-color-bg-nav: rgba(19, 21, 32, 0.8); /* Match pywire.dev Surface + Transparency */
-  --sl-color-bg-sidebar: #090a11;
-  --sl-color-border: #2a2d3d; /* --theme-dark-border */
-  --sl-color-text-accent: var(--sl-color-accent);
+/* ---------- Atkinson Hyperlegible Next ---------------------------- */
 
-  /* New: Invert text for dark mode primary buttons */
-  --sl-color-text-invert: #000000;
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/docs/fonts/AtkinsonHyperlegibleNext-Bold.woff2') format('woff2');
 }
 
-/* Apply to Starlight's Light Mode */
-:root[data-theme='light'] {
-  --sl-color-accent-low: #e0faff;
-  --sl-color-accent: #008c94; /* Darker cyan for readability on white */
-  --sl-color-accent-high: #005c61;
-  --sl-color-bg: #ffffff;
-  --sl-color-bg-nav: rgba(243, 244, 246, 0.8);
-  --sl-color-bg-sidebar: #ffffff;
-  --sl-color-text-accent: var(--sl-color-accent);
+/* ---------- Brand tokens ----------------------------------------- */
 
-  /* New: Invert text for light mode primary buttons */
+:root {
+  color-scheme: light dark;
+
+  /* The Wire — primary signal. */
+  --color-wire-90: oklch(89% 0.13 195);
+  --color-wire-65: oklch(65% 0.13 195);
+  --color-wire-55: oklch(55% 0.13 195);
+  --color-wire-25: oklch(25% 0.13 195);
+  --color-wire-95: oklch(95% 0.05 195);
+
+  /* Type families. */
+  --pywire-font-sans: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --pywire-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Motion. */
+  --pywire-motion-fast: 120ms;
+  --pywire-motion-base: 200ms;
+  --pywire-ease-spring: cubic-bezier(0.1, 0.1, 0, 1);
+  --pywire-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Glow. */
+  --pywire-glow-soft: 0 0 10px rgba(0, 200, 220, 0.18);
+  --pywire-glow: 0 0 14px rgba(0, 200, 220, 0.32);
+  --pywire-shadow-soft: 0 1px 2px rgba(14, 21, 37, 0.05), 0 4px 14px rgba(14, 21, 37, 0.06);
+
+  /* Sidebar rail (overridden per theme below). */
+  --pywire-sidebar-rail: oklch(89% 0.01 250);
+
+  /* Fonts wired into Starlight. */
+  --sl-font: var(--pywire-font-sans);
+  --sl-font-mono: var(--pywire-font-mono);
+
+  /* Slim header — design spec. !important defeats Starlight's @media
+     override on tutorial / StarlightPage layouts which loads later. */
+  --sl-nav-height: 56px !important;
+  --sl-nav-height-mobile: 56px !important;
+}
+
+/* The Void — dark mode */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: var(--color-wire-25);
+  --sl-color-accent: var(--color-wire-90);
+  --sl-color-accent-high: oklch(94% 0.1 195);
+
+  --sl-color-bg: oklch(11% 0.01 250);
+  --sl-color-bg-nav: oklch(14% 0.012 250 / 0.85);
+  --sl-color-bg-sidebar: oklch(11% 0.01 250);
+  --sl-color-bg-inline-code: oklch(20% 0.015 250);
+  --sl-color-border: oklch(28% 0.018 250);
+  --sl-color-text: oklch(92% 0.012 250);
+  --sl-color-text-accent: var(--sl-color-accent);
+  --sl-color-text-invert: oklch(15% 0.04 195);
+
+  --sl-color-gray-1: oklch(92% 0.012 250);
+  --sl-color-gray-2: oklch(85% 0.014 250);
+  --sl-color-gray-3: oklch(66% 0.02 250);
+  --sl-color-gray-4: oklch(55% 0.022 250);
+  --sl-color-gray-5: oklch(28% 0.018 250);
+  --sl-color-gray-6: oklch(15% 0.012 250);
+  --sl-color-gray-7: oklch(20% 0.015 250);
+
+  --pywire-sidebar-rail: oklch(28% 0.018 250);
+  --pywire-active-pill-bg: color-mix(in oklch, var(--sl-color-accent) 22%, transparent);
+
+  /* Aliases consumed by component overrides. */
+  --pywire-accent: var(--sl-color-accent);
+  --pywire-accent-hover: var(--sl-color-accent-high);
+  --pywire-border: var(--sl-color-border);
+  --pywire-fg: var(--sl-color-text);
+  --pywire-fg-muted: oklch(66% 0.02 250);
+  --pywire-bg: var(--sl-color-bg);
+  --pywire-surface: oklch(15% 0.012 250);
+}
+
+/* The Lab — light mode */
+:root[data-theme='light'] {
+  --sl-color-accent-low: var(--color-wire-95);
+  --sl-color-accent: var(--color-wire-65);
+  --sl-color-accent-high: var(--color-wire-55);
+
+  --sl-color-bg: oklch(99% 0.005 250);
+  --sl-color-bg-nav: oklch(97.5% 0.006 250 / 0.85);
+  --sl-color-bg-sidebar: oklch(99% 0.005 250);
+  --sl-color-bg-inline-code: oklch(95% 0.008 250);
+  --sl-color-border: oklch(89% 0.01 250);
+  --sl-color-text: oklch(20% 0.04 250);
+  --sl-color-text-accent: var(--sl-color-accent);
   --sl-color-text-invert: #ffffff;
+
+  --sl-color-gray-1: oklch(20% 0.04 250);
+  --sl-color-gray-2: oklch(20% 0.04 250);
+  --sl-color-gray-3: oklch(48% 0.025 250);
+  --sl-color-gray-4: oklch(48% 0.025 250);
+  --sl-color-gray-5: oklch(89% 0.01 250);
+  --sl-color-gray-6: oklch(95% 0.008 250);
+  --sl-color-gray-7: oklch(97.5% 0.006 250);
+
+  --pywire-sidebar-rail: oklch(89% 0.01 250);
+  --pywire-active-pill-bg: color-mix(in oklch, var(--sl-color-accent) 18%, transparent);
+
+  --pywire-accent: var(--sl-color-accent);
+  --pywire-accent-hover: var(--sl-color-accent-high);
+  --pywire-border: var(--sl-color-border);
+  --pywire-fg: var(--sl-color-text);
+  --pywire-fg-muted: oklch(48% 0.025 250);
+  --pywire-bg: var(--sl-color-bg);
+  --pywire-surface: oklch(97.5% 0.006 250);
 }
 
 body {
   background-color: var(--sl-color-bg);
-  /* Grid removed as requested */
+  font-family: var(--pywire-font-sans);
 }
 
-/* Specifically style primary buttons in the hero/sidebar to ensure readability */
-.sl-link-button.primary {
-  color: var(--sl-color-text-invert) !important;
+html {
+  scroll-behavior: smooth;
+  /* Anchor jumps land below the sticky header. */
+  scroll-padding-top: calc(var(--sl-nav-height) + 1rem);
 }
 
-/* Fix link color collision - use a slightly more muted color for inline links
-   to distinguish them from primary actions while keeping brand feel */
-a:not(.sl-link-button) {
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--pywire-font-mono);
+}
+
+/* ---------- HEADER / NAV ----------------------------------------- */
+
+/* !important on border-bottom so view-transitions / SPA navs that
+   reload Starlight CSS later in the cascade don't reintroduce the
+   hairline. */
+.header {
+  border-bottom: 0 !important;
+  background-color: var(--sl-color-bg-nav);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Consistent grid on every page (default Starlight pages widen col 1
+   to sidebar-width, StarlightPage layouts use logo-width). Force a
+   single recipe so the search bar lands in the same place everywhere. */
+header.header > div.header {
+  grid-template-columns: auto 1fr auto !important;
+  align-items: center;
+}
+
+/* Constrain search to design-spec width and center within its column.
+   site-search is display:contents (invisible to layout), so we have to
+   target the wrapper div and the button itself, not <site-search>. */
+header.header > div.header > div:has(site-search) {
+  justify-content: center;
+}
+
+site-search button[data-open-modal] {
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
+}
+
+/* ---------- SIDEBAR ---------------------------------------------- */
+
+.sidebar-pane {
+  background-color: var(--sl-color-bg-sidebar);
+  border-inline-end: 1px solid var(--sl-color-border);
+  /* Themed scrollbar — light/dark aware. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--pywire-border) transparent;
+}
+
+.sidebar-pane::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb {
+  background: var(--pywire-border);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--sl-color-gray-4);
+  background-clip: padding-box;
+}
+
+/* No vertical rail anywhere in sidebar — design uses pure indent.
+   Starlight 0.38 puts the rail on nested <li>, not <ul>. Bulldoze
+   border-inline-start on every list element AND every list item. */
+.sidebar-content,
+.sidebar-content :is(ul, ol),
+.sidebar-content :is(ul, ol) :is(ul, ol),
+.sidebar-content li,
+.sidebar-content :is(ul, ol) li,
+.sidebar-content nav,
+.sidebar-content nav > * {
+  border-inline-start: 0 !important;
+}
+
+/* Tight indent — sub-items align ~16px past the section heading. */
+.sidebar-content :is(ul, ol) {
+  padding-inline-start: 0 !important;
+  margin-inline-start: 0 !important;
+}
+
+.sidebar-content :is(ul, ol) li {
+  margin-inline-start: 0 !important;
+  padding-inline-start: 0 !important;
+}
+
+.sidebar-content :is(ul, ol) :is(ul, ol) li {
+  padding-inline-start: 0.5rem !important;
+}
+
+/* Group headings — bold sans, paddings tighter. */
+.sidebar-content > ul > li > details > summary,
+.sidebar-content > ul > li > .group-label,
+.sidebar-content .top-level > li > details > summary,
+.sidebar-content .large {
+  font-family: var(--pywire-font-sans);
+  font-weight: 700 !important;
+  font-size: 0.95rem !important;
+  color: var(--sl-color-text) !important;
+  letter-spacing: -0.005em;
+  padding-block: 0.4rem;
+  text-transform: none;
+}
+
+/* Chevron — much subtler, smaller, muted. */
+.sidebar-content details summary svg,
+.sidebar-content .caret {
+  color: var(--pywire-fg-muted);
+  opacity: 0.55;
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.sidebar-content details summary:hover svg {
+  opacity: 0.9;
+}
+
+/* Sub-item links — underlined, very subtle decoration. */
+.sidebar-content ul ul a {
+  font-family: var(--pywire-font-sans);
+  color: var(--sl-color-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 15%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+  font-weight: 400;
+  border-inline-start: 2px solid transparent;
+  padding-inline-start: 0.85rem;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    background var(--pywire-motion-fast) var(--pywire-ease-spring),
+    text-decoration-color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+.sidebar-content ul ul a:hover {
+  color: var(--sl-color-accent-high);
+  text-decoration-color: var(--sl-color-accent);
+  background: transparent;
+}
+
+/* Active item — accent pill, accent bold text. No left rail. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content [aria-current='page'] > a,
+.sidebar-content a[aria-current='page']:hover {
+  color: var(--sl-color-accent-high) !important;
+  background: var(--pywire-active-pill-bg) !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  border: 0 !important;
+  border-radius: 6px;
+}
+
+/* ---------- TOC (right rail) ------------------------------------- */
+
+/* No left rail at all — TOC items are simple underlined links per
+   design pic 36. Indent depth from heading level alone. */
+starlight-toc nav,
+starlight-toc nav ul,
+starlight-toc nav ul ul {
+  border-inline-start: 0 !important;
+  padding-inline-start: 0;
+}
+
+starlight-toc a {
+  font-family: var(--pywire-font-sans);
+  color: var(--sl-color-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--sl-color-text) 15%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+  font-size: 0.85rem;
+  padding-block: 0.3rem;
+  border: 0 !important;
+  background: transparent !important;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    text-decoration-color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+starlight-toc a:hover {
+  color: var(--sl-color-accent);
+  text-decoration-color: var(--sl-color-accent);
+}
+
+/* Active heading — accent text + accent underline only, no rail. */
+starlight-toc a[aria-current='true'],
+starlight-toc a[aria-current='true']:hover {
+  color: var(--sl-color-accent) !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+  text-decoration: underline !important;
+  text-decoration-color: var(--sl-color-accent) !important;
+  border: 0 !important;
+}
+
+/* Nested headings (h3+) — indent. */
+starlight-toc nav ul ul a {
+  padding-inline-start: 1rem;
+}
+
+#starlight__on-this-page,
+.right-sidebar h2 {
+  font-family: var(--pywire-font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--sl-color-text);
+  letter-spacing: -0.005em;
+  text-transform: none;
+  margin-block-end: 0.5rem;
+}
+
+/* ---------- PROSE / MARKDOWN ------------------------------------- */
+
+.sl-markdown-content a:not(.sl-link-button) {
   color: var(--sl-color-text-accent);
   text-decoration: underline;
   text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
 }
 
-a:not(.sl-link-button):hover {
+.sl-markdown-content a:not(.sl-link-button):hover {
   color: var(--sl-color-accent-high);
 }
 
-/* Improve sidebar active item contrast */
-[aria-current='page'],
-[aria-current='page']:hover {
-  color: var(--sl-color-accent) !important;
-  background-color: var(--sl-color-accent-low) !important;
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+  font-family: var(--pywire-font-sans);
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+
+.sl-markdown-content h1 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-size: clamp(2rem, 1.6rem + 1.6vw, 2.75rem);
+}
+
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
   font-weight: 600;
 }
 
-/* Monospace for code */
-code {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+.sl-markdown-content p {
+  text-wrap: pretty;
+}
+
+/* Inline code — accent on tinted surface. */
+.sl-markdown-content :not(pre) > code {
+  color: var(--sl-color-accent);
+  background: var(--sl-color-bg-inline-code);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  border: 0;
+  font-size: 0.92em;
+  font-family: var(--pywire-font-mono);
+  letter-spacing: -0.01em;
+}
+
+.sl-markdown-content h1 code,
+.sl-markdown-content h2 code {
+  font-size: 0.92em;
+  font-weight: 700;
+}
+
+/* ---------- TABS — multi-file code blocks & section variants ----- */
+
+starlight-tabs {
+  margin-block: 1.25rem;
+}
+
+starlight-tabs .tablist-wrapper {
+  border-bottom: 1px solid var(--pywire-border);
+  margin-bottom: 0;
+}
+
+starlight-tabs [role='tablist'] {
+  display: flex;
+  gap: 0.25rem;
+  padding-inline: 0;
+  scrollbar-width: thin;
+}
+
+starlight-tabs [role='tab'] {
+  font-family: var(--pywire-font-mono);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--pywire-fg-muted);
+  cursor: pointer;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    border-color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+starlight-tabs [role='tab']:hover {
+  color: var(--sl-color-text);
+}
+
+starlight-tabs [role='tab'][aria-selected='true'] {
+  color: var(--sl-color-accent);
+  border-bottom-color: var(--sl-color-accent);
+  font-weight: 600;
+}
+
+/* Tab panels — flush against the tablist; let inner code-block keep its
+   own shadow/border. */
+starlight-tabs [role='tabpanel'] {
+  padding-block-start: 1rem;
+}
+
+/* When a code block sits directly inside a tab panel, drop its top
+   margin so it hugs the tablist. */
+starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
+  margin-block-start: 0;
+}
+
+/* ---------- CODE-BLOCK TABS — editor-frame recipe ---------------- */
+/* When <Tabs> wraps code blocks, fold the tablist into the macOS chrome
+   bar and hide the per-block EC chrome on tab panels. The tablist gets
+   the dots on the left and editor-style tab buttons. */
+
+/* Outer frame mimics the EC frame: rounded, bordered, code-bg color so
+   the active tab can visually merge into the code body. */
+starlight-tabs:has(.expressive-code) {
+  border: 1px solid var(--pywire-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--sl-color-bg);
+  box-shadow: 0 1px 0 0 color-mix(in oklch, var(--pywire-accent) 8%, transparent);
+}
+
+starlight-tabs:has(.expressive-code) .tablist-wrapper {
+  position: relative;
+  background: var(--pywire-chrome-bg);
+  border: none;
+  border-bottom: 1px solid var(--pywire-border);
+  margin: 0;
+  padding-inline-start: 5.5rem; /* room for dots, ~88px > dots' 58px right edge */
+  height: var(--pywire-chrome-h);
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+/* Hide Starlight's scroll buttons inside code-tab tablists (the dark
+   rectangle that appears in the corner) — content fits in our frame
+   width and the buttons don't make sense in this editor visual. */
+starlight-tabs:has(.expressive-code) .tablist-wrapper > button {
+  display: none !important;
+}
+
+/* macOS dots overlay on the tablist — vertically centered against the
+   wrapper's actual height (not chrome-h, in case content forces taller). */
+starlight-tabs:has(.expressive-code) .tablist-wrapper::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 11px;
+  background:
+    radial-gradient(circle at 5.5px 50%, #ff5f57 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 22px 50%, #febc2e 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
+  pointer-events: none;
+  z-index: 1;
+}
+
+starlight-tabs:has(.expressive-code) [role='tablist'] {
+  align-items: stretch;
+  gap: 0;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+starlight-tabs:has(.expressive-code) [role='tab'] {
+  margin: 0;
+  padding: 0 1.1rem;
+  display: flex;
+  align-items: center;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--pywire-fg-muted);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--pywire-border);
+  text-decoration: none !important;
+  transition:
+    color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    background-color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+starlight-tabs:has(.expressive-code) [role='tab']:hover {
+  color: var(--sl-color-text);
+  background: color-mix(in oklch, var(--pywire-accent) 6%, transparent);
+}
+
+/* Active tab: matches code body bg so it visually 'attaches' to the
+   code panel below (no border-bottom — the bar's border-bottom is
+   covered by the matching bg). Top accent strip marks active. */
+starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true'] {
+  position: relative;
+  color: var(--sl-color-text);
+  background: var(--pywire-code-bg);
+  font-weight: 600;
+  margin-bottom: -1px; /* punch through tablist-wrapper border-bottom */
+  border-bottom: 1px solid var(--pywire-code-bg);
+}
+
+starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  height: 2px;
+  background: var(--pywire-accent);
+}
+
+/* Hide EC's chrome on code blocks inside code-tab panels — the outer
+   Tabs container is now the chrome. Also kill Starlight's
+   `.tablist-wrapper ~ [role='tabpanel'] { margin-top: 1rem }` rule
+   from Tabs.astro — that was the mystery 16px gap above the first
+   code line. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] {
+  padding: 0 !important;
+  margin-block-start: 0 !important;
+  background: var(--pywire-code-bg);
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code:first-child {
+  margin: 0;
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame {
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame::before,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame::after {
+  content: none !important;
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame figcaption.header {
+  display: none !important;
+}
+
+/* Tighten code body top spacing. Starlight + EC layer in margins/paddings
+   on multiple wrappers; reset everything inside the panel and let pre
+   own the single 0.6rem top breathing. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] > *,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame > pre,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame > pre > code {
+  margin-block-start: 0 !important;
+  padding-block-start: 0 !important;
+}
+
+/* Single source of top breathing inside the panel — applied to the
+   first .ec-line so only one rule contributes. */
+starlight-tabs:has(.expressive-code)
+  [role='tabpanel']
+  .expressive-code
+  .frame
+  .ec-line:first-child {
+  padding-block-start: 0.6rem;
+}
+
+/* Copy button: chrome bar is the tablist (height pywire-chrome-h), code
+   body starts directly under it — first-line center is at chrome + ~13px. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
+  inset-block-start: 13px !important;
+}
+
+/* ---------- ASIDES / CALLOUTS ------------------------------------ */
+
+.starlight-aside {
+  border-radius: 0 8px 8px 0;
+  border-inline-start-width: 3px;
+  padding: 0.85rem 1.1rem;
+}
+
+.starlight-aside--note {
+  background: color-mix(in oklch, var(--sl-color-accent) 18%, transparent);
+  border-inline-start-color: var(--sl-color-accent);
+  color: var(--sl-color-text);
+}
+
+.starlight-aside--tip {
+  background: color-mix(in oklch, #00ff9d 12%, transparent);
+  border-inline-start-color: #00ff9d;
+}
+
+.starlight-aside--caution {
+  background: color-mix(in oklch, #ffd343 14%, transparent);
+  border-inline-start-color: #ffd343;
+}
+
+.starlight-aside__title {
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-color-accent);
+}
+
+.starlight-aside--tip .starlight-aside__title {
+  color: #00b574;
+}
+
+.starlight-aside--caution .starlight-aside__title {
+  color: #b88a00;
+}
+
+/* ---------- CODE BLOCKS ------------------------------------------ */
+
+.expressive-code {
+  margin-block: 1.25rem;
+}
+
+.expressive-code .frame {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Mode-specific elevation — quiet cyan glow on Void, soft cool-ink
+   shadow on Lab. Matches the marketing site code-window recipe. */
+:root[data-theme='dark'] .expressive-code .frame {
+  background: #1e1e2e; /* catppuccin-mocha editor.background */
+  border: 1px solid var(--pywire-border);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--sl-color-accent) 22%, transparent),
+    0 8px 24px color-mix(in oklch, var(--sl-color-accent) 10%, transparent);
+}
+
+:root[data-theme='light'] .expressive-code .frame {
+  background: #eff1f5; /* catppuccin-latte editor.background */
+  border: 1px solid var(--pywire-border);
+  box-shadow:
+    0 1px 2px rgba(14, 21, 37, 0.06),
+    0 8px 20px -8px rgba(14, 21, 37, 0.14);
+}
+
+/* macOS chrome bar — applied to EVERY frame. Keeps single-line and
+   multi-line, terminal and non-terminal in one visual recipe (matches
+   the marketing-site / design-system code-window component).
+   - Frames with figcaption.header (titled, terminal, or tab): the
+     figcaption itself becomes the bar. Title text is shifted right of
+     the dot trio.
+   - Frames without figcaption (e.g. plain ```python ...```): the
+     ::before pseudo provides a dots-only chrome strip. */
+
+/* Hoisted to :root so non-EC consumers (starlight-tabs etc.) inherit
+   the same chrome tokens. */
+:root {
+  --pywire-chrome-h: 44px;
+  --pywire-chrome-pl: 5.5rem; /* room for traffic-light dots */
+}
+
+:root[data-theme='light'] {
+  --pywire-chrome-bg: oklch(97% 0.006 250);
+  --pywire-code-bg: #eff1f5; /* catppuccin-latte editor.background */
+}
+
+:root[data-theme='dark'] {
+  --pywire-chrome-bg: #252839;
+  --pywire-code-bg: #1e1e2e; /* catppuccin-mocha editor.background */
+}
+
+.expressive-code .frame {
+  position: relative;
+  --ec-frm-trmTtbDtsFg: transparent; /* hide EC's built-in dot row */
+}
+
+/* Kill EC's built-in terminal dots (mask-image of 3 SVG circles) — we
+   draw our own colored dots via ::after. EC's gray-tinted dots were
+   bleeding through behind ours. */
+.expressive-code .frame.is-terminal figcaption.header::before {
+  content: none !important;
+  background: none !important;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+}
+
+/* Bar background + border — applies to titled/terminal frames only.
+   Fixed height (not min-height) so the bar matches starlight-tabs's
+   tablist-wrapper height exactly across both styles. EC defaults
+   figcaption.header to display:none for plain frames; do NOT promote
+   those to display:flex or untitled frames render two stacked bars. */
+.expressive-code .frame.has-title figcaption.header,
+.expressive-code .frame.is-terminal figcaption.header {
+  position: relative;
+  height: var(--pywire-chrome-h);
+  padding-block: 0;
+  padding-inline-start: var(--pywire-chrome-pl);
+  background: var(--pywire-chrome-bg) !important;
+  border-bottom: 1px solid var(--pywire-border);
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Dots overlay on titled frames. */
+.expressive-code .frame figcaption.header::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 11px;
+  background:
+    radial-gradient(circle at 5.5px 50%, #ff5f57 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 22px 50%, #febc2e 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
+}
+
+/* Untitled frames — synthetic chrome bar via ::before on the frame.
+   EC renders figcaption.header on every frame (just display:none when
+   empty), so :has(figcaption) always matches. Use .has-title / .is-terminal
+   instead — those classes are only set when the header actually renders. */
+.expressive-code .frame:not(.has-title):not(.is-terminal)::before {
+  content: '';
+  display: block;
+  height: var(--pywire-chrome-h);
+  background: var(--pywire-chrome-bg);
+  border-bottom: 1px solid var(--pywire-border);
+}
+
+/* Dots overlay on untitled frames. */
+.expressive-code .frame:not(.has-title):not(.is-terminal)::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: calc(var(--pywire-chrome-h) / 2);
+  transform: translateY(-50%);
+  width: 44px;
+  height: 11px;
+  background:
+    radial-gradient(circle at 5.5px 50%, #ff5f57 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 22px 50%, #febc2e 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Title chip — readable text in mono, no EC default tab borders. */
+.expressive-code .frame figcaption.header .title {
+  background: transparent !important;
+  color: var(--pywire-fg-muted) !important;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
+}
+
+.expressive-code .frame figcaption.header .title::before,
+.expressive-code .frame figcaption.header .title::after {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+/* Body */
+.expressive-code .frame pre {
+  background: transparent !important;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.85rem;
+}
+
+/* Terminal lines — accent `$` prefix marks shell input. Lives in a
+   pseudo-element so it does NOT round-trip into the copy buffer.
+   !important defeats EC's @layer-shipped reset which would otherwise
+   leave content as the cascade default (none). */
+.expressive-code .frame.is-terminal pre code .ec-line > .code::before {
+  content: '$ ' !important;
+  color: var(--sl-color-accent) !important;
+  user-select: none;
+  font-weight: 600;
+}
+
+/* Copy button — design-system icon-chip recipe.
+   EC structure: button > div (bg fill) + ::before (border) + ::after
+   (masked icon). Style each layer; do NOT remove ::after — that IS
+   the icon. Always visible (not hover-gated). */
+/* Position: top-right of code body, vertically centered on first line.
+   With chrome-h 44px and pre's 1rem top padding + ~22px line-height,
+   first-line center sits ~71px from frame top. Button is 28px so
+   top = 71 - 14 = ~57px. Slight nudge up (8 not 13) since EC's icon
+   inside the button reads as slightly bottom-heavy. */
+.expressive-code .copy {
+  inset-block-start: calc(var(--pywire-chrome-h) + 8px) !important;
+  inset-inline-end: 0.6rem !important;
+}
+
+.expressive-code .copy button {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 6px !important;
+  background: var(--sl-color-bg) !important;
+  opacity: 1 !important;
+  transition:
+    background-color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    box-shadow var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+/* Inner fill layer — keep transparent so our button bg shows through. */
+.expressive-code .copy button div {
+  background: transparent !important;
+  opacity: 0 !important;
+}
+
+/* Border ring — use design border color. */
+.expressive-code .copy button::before {
+  border: 1px solid var(--pywire-border) !important;
+  opacity: 1 !important;
+  border-radius: inherit;
+}
+
+/* Icon — keep EC's mask-image, paint with muted fg, smaller margin. */
+.expressive-code .copy button::after {
+  background-color: var(--pywire-fg-muted) !important;
+  margin: 0.4rem !important;
+}
+
+.expressive-code .copy button:hover {
+  background: var(--sl-color-accent-low) !important;
+  box-shadow: 0 0 12px color-mix(in oklch, var(--pywire-accent) 32%, transparent);
+}
+
+.expressive-code .copy button:hover::before {
+  border-color: var(--pywire-accent) !important;
+}
+
+.expressive-code .copy button:hover::after {
+  background-color: var(--pywire-accent) !important;
+}
+
+.expressive-code .copy button:focus-visible {
+  outline: 2px solid var(--pywire-accent);
+  outline-offset: 2px;
+}
+
+/* Defeat EC's @media (hover: hover) opacity:0 / hover gate — keep button
+   always visible per design recipe. */
+@media (hover: hover) {
+  .expressive-code .copy button,
+  .expressive-code .frame:hover .copy button:not(:hover),
+  .expressive-code .frame:focus-within :focus-visible ~ .copy button:not(:hover) {
+    opacity: 1 !important;
+    width: 28px !important;
+    height: 28px !important;
+  }
+}
+
+/* ---------- HOMEPAGE / HERO -------------------------------------- */
+
+.sl-container .hero {
+  position: relative;
+}
+
+.sl-container .hero::before {
+  content: '';
+  position: absolute;
+  inset: -2rem -1rem;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 32px 32px;
+  mask-image: radial-gradient(60% 50% at 50% 50%, black, transparent);
+}
+
+.hero .actions a.sl-link-button.primary {
+  border-radius: 8px;
+  box-shadow: var(--pywire-glow-soft);
+  transition: box-shadow var(--pywire-motion-base) var(--pywire-ease-out);
+  color: var(--sl-color-text-invert) !important;
+}
+
+.hero .actions a.sl-link-button.primary:hover {
+  box-shadow: var(--pywire-glow);
+}
+
+.hero .actions a.sl-link-button.minimal,
+.hero .actions a.sl-link-button.secondary {
+  border-radius: 8px;
+  border: 1.5px solid var(--sl-color-text);
+  color: var(--sl-color-text);
+}
+
+/* ---------- SEARCH BUTTON ---------------------------------------- */
+
+site-search button[data-open-modal] {
+  background: var(--sl-color-bg);
+  border: 1px solid var(--sl-color-border);
+  border-radius: 8px;
+  color: var(--pywire-fg-muted);
+  font-family: var(--pywire-font-sans);
+  font-size: 14px;
+  transition:
+    border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
+    color var(--pywire-motion-fast) var(--pywire-ease-spring);
+}
+
+site-search button[data-open-modal]:hover,
+site-search button[data-open-modal]:focus-visible {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-text);
+}
+
+/* Outer kbd chip = single ⌘K pill. Inner kbds (the individual ⌘ and K)
+   render as plain text inside that chip — no nested borders. */
+site-search button[data-open-modal] > kbd {
+  font-family: var(--pywire-font-mono) !important;
+  background: var(--sl-color-bg-inline-code);
+  border: 1px solid var(--sl-color-border);
+  color: var(--pywire-fg-muted);
+  border-radius: 4px;
+  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.05em;
+}
+
+site-search button[data-open-modal] kbd kbd {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  color: inherit;
+  font-family: inherit !important;
+}
+
+/* ---------- CONTENT PANEL — kill segmentation lines -------------- */
+
+/* Starlight draws hairlines between content-panel sections (under page
+   title, between MD content panels) and along the right of the main
+   content area before the on-this-page rail. Design wants none. */
+.content-panel + .content-panel {
+  border-top: 0 !important;
+}
+
+.right-sidebar {
+  border-inline-start: 0 !important;
+}
+
+.right-sidebar-panel {
+  border-inline-start: 0 !important;
+}
+
+main {
+  border-inline-end: 0 !important;
 }

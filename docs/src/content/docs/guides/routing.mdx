@@ -3,6 +3,8 @@ title: Routing
 description: Defining routes in PyWire.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 PyWire supports both file-system based routing and explicit routing.
 
 ## File-System Routing
@@ -12,6 +14,24 @@ By default, PyWire looks in the `pages/` directory and automatically creates rou
 - `pages/index.wire` -> `/`
 - `pages/about.wire` -> `/about`
 - `pages/contact/index.wire` -> `/contact`
+
+A minimal two-page app:
+
+<Tabs syncKey="route-example">
+  <TabItem label="pages/index.wire">
+    ```pywire
+    <h1>Home</h1>
+    <a href="/about">About us</a>
+    ```
+  </TabItem>
+  <TabItem label="pages/about.wire">
+    ```pywire
+    <h1>About</h1>
+    <p>We build reactive UIs in pure Python.</p>
+    <a href="/">Back home</a>
+    ```
+  </TabItem>
+</Tabs>
 
 ### Dynamic Routes
 

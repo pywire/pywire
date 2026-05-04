@@ -286,7 +286,10 @@ export const Editor: React.FC<EditorProps> = ({
           theme: theme,
           automaticLayout: true,
           minimap: { enabled: false },
-          fontSize: 14,
+          fontFamily:
+            "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 13.6,
+          fontLigatures: true,
           lineNumbers: 'on',
           scrollBeyondLastLine: false,
           roundedSelection: false,

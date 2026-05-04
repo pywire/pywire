@@ -1,16 +1,49 @@
 ---
 title: pywire Docs
-description: The Live Conduit for Python.
-hero:
-  tagline: HTML-over-the-wire without the JavaScript hangover.
-  image:
-    file: ../../assets/pywire.jpg
-  actions:
-    - text: Getting Started
-      link: /docs/guides/quickstart/
-      icon: right-arrow
-    - text: GitHub
-      link: https://github.com/pywire/pywire
-      icon: external
-      variant: minimal
+description: HTML-over-the-wire without the JavaScript hangover.
+template: doc
 ---
+
+import { Aside, Code } from '@astrojs/starlight/components'
+
+HTML-over-the-wire without the JavaScript hangover.
+
+## Overview
+
+pywire is a Python web framework for building interactive UIs without writing client JavaScript. You author single-file `.wire` components — Python on top, HTML below — and the server streams DOM patches over a WebSocket as your state changes.
+
+If you've used Svelte or SolidJS, you'll feel at home: signals are the primitive, the compiler is the runtime, and templates are HTML.
+
+<Aside type="note">pywire is FOSS (MIT) and pre-1.0. The API will tighten before `v1`.</Aside>
+
+## Why pywire
+
+The frontend ergonomics of Svelte. The simplicity of Python.
+
+- **Fine-grained reactivity.** Wrap a value in `wire()` and any template that reads it updates automatically — no hooks, no virtual DOM, no client routing.
+- **One file, two languages.** `.wire` single-file components: a Python fence on top, HTML below.
+- **Live by default.** DOM diffs stream from the server. No JSON APIs to invent, no client state to sync.
+
+## How it works
+
+Install with pip:
+
+<Code code="pip install pywire" lang="shell" frame="terminal" title="shell" />
+
+Define a component in `counter.wire`:
+
+<Code
+  code={`---
+count = wire(0)
+---
+<p>Count: {count}</p>
+<button @click={count.value += 1}>
+    Add One
+</button>`}
+  lang="pywire"
+  title="counter.wire"
+/>
+
+Run the app — the server compiles `.wire` files to Python + HTML and opens a WebSocket. When `count` changes, only the changed nodes patch over the wire.
+
+Ready to build something? Start with the [Quickstart](/docs/guides/quickstart/) or work through the [Interactive Tutorial](/docs/tutorial/).

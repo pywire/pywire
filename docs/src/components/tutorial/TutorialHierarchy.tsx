@@ -85,13 +85,16 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          backgroundColor: 'oklch(11% 0.01 250 / 0.6)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
           zIndex: 9998,
         }}
         onClick={onClose}
       />
       {/* Dropdown Panel */}
       <div
+        className="pw-scroll-themed"
         style={{
           position: 'fixed',
           top: '64px', // Below Starlight nav
@@ -99,10 +102,11 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
           width: '320px',
           maxHeight: 'calc(100vh - 80px)',
           overflowY: 'auto',
-          backgroundColor: 'var(--pw-bg-panel, #1a1d2e)',
-          border: '1px solid var(--pw-border, #2a2d3d)',
-          borderRadius: '8px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+          backgroundColor: 'var(--pw-bg-panel)',
+          border: '1px solid var(--pw-border)',
+          borderRadius: '12px',
+          boxShadow:
+            '0 0 0 1px color-mix(in oklch, var(--pw-accent) 18%, transparent), 0 12px 32px rgba(0, 0, 0, 0.35)',
           zIndex: 9999,
         }}
       >
@@ -228,7 +232,7 @@ export const TutorialHierarchy: React.FC<TutorialHierarchyProps> = ({
                                   textAlign: 'left',
                                   border: 'none',
                                   cursor: 'pointer',
-                                  background: isActive ? 'rgba(34,211,238,0.1)' : 'transparent',
+                                  background: isActive ? 'var(--pw-accent-bg)' : 'transparent',
                                   color: isActive
                                     ? 'var(--pw-accent, #22d3ee)'
                                     : 'var(--pw-text-dim, #9ca3af)',

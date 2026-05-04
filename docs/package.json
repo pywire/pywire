@@ -3,8 +3,8 @@
   "type": "module",
   "version": "0.5.26",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
+    "dev": "PYWIRE_PYPI_INSTALL=1 pnpm build:assets && astro dev",
+    "start": "PYWIRE_PYPI_INSTALL=1 pnpm build:assets && astro dev",
     "build:assets": "node scripts/build-assets.mjs",
     "build": "pnpm build:assets && astro build",
     "preview": "astro preview",
@@ -58,6 +58,7 @@
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
     "astro-eslint-parser": "^1.2.2",
+    "astro-favicons": "^3.1.6",
     "astro-vtbot": "^2.1.10",
     "autoprefixer": "^10.4.24",
     "esbuild": "^0.27.2",

@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import react from '@astrojs/react'
 import tailwind from '@astrojs/tailwind'
+import favicons from 'astro-favicons'
 import starlightLlmsTxt from 'starlight-llms-txt'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -25,6 +26,12 @@ export default defineConfig({
   integrations: [
     tailwind({ applyBaseStyles: false }), // Don't override Starlight's base styles
     react(),
+    favicons({
+      name: 'PyWire Docs',
+      short_name: 'PyWire',
+      themes: ['#1e1e2e', '#eff1f5'],
+      output: { assetsPrefix: '/docs/' }, // match site base
+    }),
     starlight({
       title: 'pywire',
       customCss: ['./src/styles/custom.css'],
@@ -34,6 +41,9 @@ export default defineConfig({
       },
       components: {
         Head: resolve(__dirname, './src/components/Head.astro'),
+        SiteTitle: resolve(__dirname, './src/components/SiteTitle.astro'),
+        SocialIcons: resolve(__dirname, './src/components/SocialIcons.astro'),
+        ThemeSelect: resolve(__dirname, './src/components/ThemeSelect.astro'),
       },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/pywire/pywire' },
@@ -41,6 +51,20 @@ export default defineConfig({
       ],
       expressiveCode: {
         themes: ['catppuccin-latte', 'catppuccin-mocha'],
+        // Keep official Catppuccin token colors verbatim (matches Monaco
+        // editor in the interactive tutorial). EC's default 5.5 auto-bumps
+        // low-contrast tokens which mutates the theme.
+        minSyntaxHighlightingColorContrast: 0,
+        styleOverrides: {
+          borderRadius: '12px',
+          codeFontFamily:
+            'JetBrains Mono, Fira Code, ui-monospace, SFMono-Regular, Menlo, monospace',
+          codeFontSize: '0.85rem',
+          frames: {
+            // Box-shadow handled per-mode in custom.css; cancel EC default.
+            frameBoxShadowCssValue: 'none',
+          },
+        },
         shiki: {
           langs: [
             {

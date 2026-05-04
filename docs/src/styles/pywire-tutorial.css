@@ -1,11 +1,18 @@
-/* pywire-tutorial.css */
+/* pywire-tutorial.css
+   ----------------------------------------------------------------
+   Interactive tutorial — aligned to the PyWire design system.
+   Source of truth: pywire-design-system/project/colors_and_type.css
+   - One OKLCH wire ladder (hue 195°) drives accent in both modes.
+   - Atkinson Hyperlegible Next sans, JetBrains Mono code.
+   - Mono eyebrow labels (FILES, TASKS).
+   - Active file-tree row: accent pill, no right rail.
+   ---------------------------------------------------------------- */
 
 /* Reset for tutorial elements to prevent Starlight pollution */
 .pw-tutorial * {
   box-sizing: border-box;
 }
 
-/* Reset margins for header/layout elements to prevent Starlight's * + * padding */
 .pw-header *,
 .pw-header-group *,
 .pw-browser-url-bar *,
@@ -20,15 +27,14 @@
   margin-right: 0 !important;
 }
 
-/* Directly counteract Starlight's * + * { margin-top: 1rem } rule
-   but EXEMPT markdown content which needs those margins! */
+/* Counteract Starlight's `* + * { margin-top: 1rem }` outside markdown. */
 .pw-tutorial *:not(.sl-markdown-content, .sl-markdown-content *) + * {
   margin-top: 0 !important;
 }
 
 .pw-tutorial svg {
   display: block;
-  margin: 0 !important; /* Force reset Starlight's potential svg margins */
+  margin: 0 !important;
 }
 
 .pw-tutorial button {
@@ -37,34 +43,96 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all var(--pywire-motion-base, 200ms)
+    var(--pywire-ease-spring, cubic-bezier(0.1, 0.1, 0, 1));
+  font-family: var(--pywire-font-sans);
 }
 
-/* Container */
+/* ---------- Tokens (mapped onto design-system tokens) -------------
+   Defaults follow Void (dark). Light mode overrides below.
+   These re-name `--pywire-*` / `--sl-color-*` (defined in custom.css)
+   so the existing `--pw-*` consumer rules can stay untouched. */
 :root {
-  --pw-bg-main: #0f1117;
-  --pw-bg-panel: #16161e;
-  --pw-bg-header: #1a1b26;
-  --pw-border: #2a2d3d;
-  --pw-text-main: #ffffff;
-  --pw-text-dim: #9ca3af;
-  --pw-text-bright: #d1d5db;
-  --pw-accent: #22d3ee;
-  --pw-separator: #1f2937;
+  --pw-bg-main: var(--sl-color-bg, oklch(11% 0.01 250));
+  --pw-bg-panel: var(--pywire-surface, oklch(15% 0.012 250));
+  --pw-bg-header: oklch(14% 0.012 250 / 0.85);
+  --pw-border: var(--sl-color-border, oklch(28% 0.018 250));
+  --pw-text-main: var(--sl-color-text, oklch(92% 0.012 250));
+  --pw-text-dim: var(--pywire-fg-muted, oklch(66% 0.02 250));
+  --pw-text-bright: oklch(85% 0.014 250);
+  --pw-accent: var(--sl-color-accent, oklch(89% 0.13 195));
+  --pw-accent-bg: var(--sl-color-accent-low, oklch(25% 0.13 195));
+  --pw-separator: var(--sl-color-border, oklch(28% 0.018 250));
 }
 
 [data-theme='light'] {
-  --pw-bg-main: #f8fafc;
-  --pw-bg-panel: #ffffff;
-  --pw-bg-header: #f1f5f9;
-  --pw-border: #e2e8f0;
-  --pw-text-main: #0f172a;
-  --pw-text-dim: #64748b;
-  --pw-text-bright: #334155;
-  --pw-accent: #0891b2;
-  --pw-separator: #e2e8f0;
+  --pw-bg-main: var(--sl-color-bg, oklch(99% 0.005 250));
+  --pw-bg-panel: var(--pywire-surface, oklch(97.5% 0.006 250));
+  --pw-bg-header: oklch(97.5% 0.006 250 / 0.85);
+  --pw-border: var(--sl-color-border, oklch(89% 0.01 250));
+  --pw-text-main: var(--sl-color-text, oklch(20% 0.04 250));
+  --pw-text-dim: oklch(48% 0.025 250);
+  --pw-text-bright: oklch(28% 0.04 250);
+  --pw-accent: var(--sl-color-accent, oklch(65% 0.13 195));
+  --pw-accent-bg: var(--sl-color-accent-low, oklch(95% 0.05 195));
+  --pw-separator: var(--sl-color-border, oklch(89% 0.01 250));
 }
 
+/* ---------- Themed scrollbars (parity with docs sidebar) -------
+   Same recipe as `.sidebar-pane` in custom.css: thin width, rounded
+   thumb in --pw-border, transparent track, hover lifts to gray-4. */
+.pw-instructions-container,
+.pw-filetree-list,
+.pw-scroll-themed,
+.pw-tutorial [data-overflow='auto'],
+.pw-tutorial .overflow-y-auto,
+.pw-tutorial .overflow-auto {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pw-border) transparent;
+}
+
+.pw-instructions-container::-webkit-scrollbar,
+.pw-filetree-list::-webkit-scrollbar,
+.pw-scroll-themed::-webkit-scrollbar,
+.pw-tutorial [data-overflow='auto']::-webkit-scrollbar,
+.pw-tutorial .overflow-y-auto::-webkit-scrollbar,
+.pw-tutorial .overflow-auto::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pw-instructions-container::-webkit-scrollbar-track,
+.pw-filetree-list::-webkit-scrollbar-track,
+.pw-scroll-themed::-webkit-scrollbar-track,
+.pw-tutorial [data-overflow='auto']::-webkit-scrollbar-track,
+.pw-tutorial .overflow-y-auto::-webkit-scrollbar-track,
+.pw-tutorial .overflow-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pw-instructions-container::-webkit-scrollbar-thumb,
+.pw-filetree-list::-webkit-scrollbar-thumb,
+.pw-scroll-themed::-webkit-scrollbar-thumb,
+.pw-tutorial [data-overflow='auto']::-webkit-scrollbar-thumb,
+.pw-tutorial .overflow-y-auto::-webkit-scrollbar-thumb,
+.pw-tutorial .overflow-auto::-webkit-scrollbar-thumb {
+  background: var(--pw-border);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.pw-instructions-container::-webkit-scrollbar-thumb:hover,
+.pw-filetree-list::-webkit-scrollbar-thumb:hover,
+.pw-scroll-themed::-webkit-scrollbar-thumb:hover,
+.pw-tutorial [data-overflow='auto']::-webkit-scrollbar-thumb:hover,
+.pw-tutorial .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.pw-tutorial .overflow-auto::-webkit-scrollbar-thumb:hover {
+  background: var(--pw-text-dim);
+  background-clip: padding-box;
+}
+
+/* ---------- Container ------------------------------------------- */
 .pw-container {
   height: 100%;
   width: 100%;
@@ -73,21 +141,20 @@
   background-color: var(--pw-bg-main);
   color: var(--pw-text-main);
   overflow: hidden;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--pywire-font-sans);
 }
 
-/* Headers */
+/* ---------- Headers --------------------------------------------- */
 .pw-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
   background-color: var(--pw-bg-header);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--pw-border);
-  height: 48px;
+  height: 56px;
   flex-shrink: 0;
 }
 
@@ -106,19 +173,24 @@
 }
 
 .pw-header-label {
-  font-size: 0.8125rem;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.7rem;
   line-height: 1;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
+  letter-spacing: 0.12em;
   color: var(--pw-accent);
 }
 
+/* Breadcrumb — mono lowercase to match marketing/docs nav. */
 .pw-breadcrumb {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.8125rem;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
   font-weight: 500;
+  text-transform: lowercase;
 }
 
 .pw-breadcrumb-prefix {
@@ -131,6 +203,7 @@
 
 .pw-breadcrumb-title {
   color: var(--pw-text-bright);
+  text-transform: none;
 }
 
 .pw-divider-v {
@@ -139,26 +212,29 @@
   background-color: var(--pw-border);
 }
 
+/* ---------- Buttons --------------------------------------------- */
+/* Solve = outline button (design system btn-outline). */
 .pw-btn-solve {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background-color: var(--pw-border) !important;
+  background-color: transparent !important;
   color: var(--pw-text-bright) !important;
-  font-size: 0.75rem !important;
-  font-weight: 600 !important;
-  border-radius: 4px !important;
+  font-family: var(--pywire-font-sans);
+  font-size: 0.78rem !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
   text-transform: lowercase;
-  height: 26px;
-  padding: 0 10px !important;
-  border: 1px solid transparent !important;
-  transition: all 0.2s ease;
+  height: 28px;
+  padding: 0 12px !important;
+  border: 1px solid var(--pw-border) !important;
   line-height: 1;
 }
 
 .pw-btn-solve:hover {
-  background-color: var(--pw-accent) !important;
-  color: white !important;
+  background-color: var(--pw-accent-bg) !important;
+  color: var(--pw-accent) !important;
+  border-color: var(--pw-accent) !important;
 }
 
 .pw-btn-icon-sm {
@@ -166,17 +242,17 @@
   align-items: center !important;
   justify-content: center !important;
   color: var(--pw-text-dim);
-  height: 32px;
-  width: 32px;
-  border-radius: 4px;
+  height: 28px;
+  width: 28px;
+  border-radius: 6px;
   background: transparent !important;
-  border: none !important;
-  transition: all 0.2s ease;
+  border: 1px solid transparent !important;
 }
 
 .pw-btn-icon-sm:hover:not(.disabled) {
-  background-color: var(--pw-border) !important;
-  color: var(--pw-text-main);
+  background-color: var(--pw-accent-bg) !important;
+  color: var(--pw-accent);
+  border-color: var(--pw-accent) !important;
 }
 
 .pw-btn-icon-sm.disabled {
@@ -184,109 +260,24 @@
   cursor: default;
 }
 
-.pw-instructions-container {
-  padding: 2.5rem !important;
-  height: 100%;
-  overflow-y: auto !important;
-  box-sizing: border-box;
-  min-height: 0; /* Critical for flex scrolling */
-}
-
-/* Ensure the wrapper doesn't expand */
-.pw-workspace-container {
-  display: flex !important;
-  flex-direction: column !important;
-  height: 100% !important;
-  max-height: 100vh !important;
-  overflow: hidden !important;
-}
-
-.pw-workspace-main {
-  flex: 1 !important;
-  min-height: 0 !important; /* Forces shrinkage and enables child scrolling */
-  height: 0 !important; /* Works with flex-1 to occupy remaining space */
-}
-
-.pw-instructions-container > .prose {
-  height: auto !important;
-  min-height: min-content !important;
-}
-
-@media (max-width: 1024px) {
-  .pw-instructions-container {
-    padding: 1.5rem !important;
-  }
-}
-
-/* Starlight-like heading anchors - ULTRA SPECIFIC */
-.pw-instructions-container .pw-markdown-content :is(h1, h2, h3, h4, h5, h6) {
-  display: flex !important;
-  align-items: center !important;
-  gap: 0.5rem !important;
-}
-
-.pw-instructions-container .pw-markdown-content :is(h1, h2, h3, h4, h5, h6) .anchor {
-  opacity: 0 !important;
-  text-decoration: none !important;
-  color: var(--sl-color-accent) !important;
-  transition: opacity 0.2s !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  margin-left: 0.25rem !important;
-}
-
-.pw-instructions-container .pw-markdown-content :is(h1, h2, h3, h4, h5, h6):hover .anchor {
-  opacity: 1 !important;
-}
-
-.pw-instructions-container .pw-markdown-content h1 {
-  font-size: 1.875rem !important;
-  line-height: 1.2 !important;
-  font-weight: 600 !important;
-  margin-bottom: 1.5rem !important;
-  color: var(--sl-color-white) !important;
-}
-
-.pw-instructions-container .pw-markdown-content h2 {
-  font-size: 1.5rem !important;
-  line-height: 1.2 !important;
-  margin-top: 2rem !important;
-  margin-bottom: 1rem !important;
-  font-weight: 600 !important;
-  color: var(--sl-color-white) !important;
-  border-bottom: 1px solid var(--sl-color-hairline, var(--sl-color-border)) !important;
-  padding-bottom: 0.3em !important;
-  width: 100% !important;
-}
-
-.pw-instructions-container .pw-markdown-content h3 {
-  font-size: 1.25rem !important;
-  line-height: 1.2 !important;
-  margin-top: 1.5rem !important;
-  margin-bottom: 0.75rem !important;
-  font-weight: 600 !important;
-  color: var(--sl-color-white) !important;
-}
-
-.pw-instructions-container .pw-markdown-content p {
-  margin-bottom: 1rem !important;
-  line-height: 1.7 !important;
-  font-size: 1rem !important;
-  color: var(--sl-color-text) !important;
-}
-
-/* Buttons */
+/* Next = primary, with the wire glow halo. */
 .pw-btn-next {
   background-color: var(--pw-accent) !important;
-  color: white !important;
-  font-size: 0.75rem !important;
-  font-weight: 700 !important;
-  border-radius: 4px !important;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  height: 28px;
-  padding: 0 12px !important;
+  color: var(--sl-color-text-invert, #fff) !important;
+  font-family: var(--pywire-font-sans);
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  text-transform: lowercase;
+  letter-spacing: 0;
+  height: 32px;
+  padding: 0 14px !important;
   gap: 6px;
+  box-shadow: 0 0 10px color-mix(in oklch, var(--pw-accent) 22%, transparent);
+}
+
+.pw-btn-next:hover {
+  box-shadow: 0 0 16px color-mix(in oklch, var(--pw-accent) 38%, transparent);
 }
 
 .pw-btn-nav-step {
@@ -295,18 +286,20 @@
   gap: 6px;
   padding: 0 12px;
   height: 32px;
-  background-color: var(--pw-border);
+  background-color: transparent;
   color: var(--pw-text-bright);
-  border-radius: 4px;
+  border: 1px solid var(--pw-border);
+  border-radius: 6px;
+  font-family: var(--pywire-font-sans);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
-  transition: all 0.2s;
 }
 
 .pw-btn-nav-step:hover {
-  background-color: var(--pw-accent);
-  color: white;
+  background-color: var(--pw-accent-bg);
+  color: var(--pw-accent);
+  border-color: var(--pw-accent);
 }
 
 .pw-btn-icon {
@@ -316,16 +309,15 @@
   color: var(--pw-text-dim);
   height: 28px;
   width: 28px;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 0 !important;
   border: none !important;
   background: transparent !important;
-  transition: all 0.2s ease;
 }
 
 .pw-btn-icon:hover {
-  background-color: var(--pw-border) !important;
-  color: var(--pw-text-main) !important;
+  background-color: var(--pw-accent-bg) !important;
+  color: var(--pw-accent) !important;
 }
 
 .pw-btn-icon svg {
@@ -336,14 +328,14 @@
   animation: pw-spin 0.5s ease-in-out infinite;
 }
 
-/* Panels & Dividers */
+/* ---------- Panels & Dividers ----------------------------------- */
 .pw-panel-bg {
   background-color: var(--pw-bg-panel);
 }
 
 .pw-separator-h {
-  width: 2px !important;
-  background-color: var(--pw-separator) !important;
+  width: 1px !important;
+  background-color: var(--pw-border) !important;
   cursor: col-resize !important;
   transition: background-color 0.2s !important;
 }
@@ -354,8 +346,8 @@
 }
 
 .pw-separator-v {
-  height: 2px !important;
-  background-color: var(--pw-separator) !important;
+  height: 1px !important;
+  background-color: var(--pw-border) !important;
   cursor: row-resize !important;
   transition: background-color 0.2s !important;
 }
@@ -364,15 +356,15 @@
   background-color: var(--pw-accent) !important;
 }
 
-/* Browser Preview */
+/* ---------- Browser preview (code-window recipe) ---------------- */
 .pw-browser-url-bar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
-  background-color: var(--pw-bg-header);
+  padding: 0 14px;
+  background-color: var(--pw-bg-panel);
   border-bottom: 1px solid var(--pw-border);
-  height: 44px;
+  height: 40px;
   flex-shrink: 0;
 }
 
@@ -382,9 +374,10 @@
   gap: 6px;
 }
 
+/* macOS traffic-light dots — exact colors from design code-window. */
 .pw-browser-dot {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
 }
 
@@ -404,47 +397,72 @@
   background-color: var(--pw-bg-main);
   border-radius: 6px;
   border: 1px solid var(--pw-border);
+  font-family: var(--pywire-font-mono);
   font-size: 0.75rem;
   color: var(--pw-text-bright);
-  height: 24px;
+  height: 26px;
 }
 
-/* File Tree */
+.pw-browser-input {
+  background: transparent;
+  border: none;
+  color: var(--pw-text-bright);
+  font-family: var(--pywire-font-mono);
+  font-size: 0.75rem;
+  flex: 1;
+  outline: none;
+}
+
+/* ---------- File tree ------------------------------------------- */
 .pw-filetree-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 0 14px;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
   color: var(--pw-text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.12em;
   border-bottom: 1px solid var(--pw-border);
-  height: 32px;
+  height: 36px;
   flex-shrink: 0;
+  background: var(--pw-bg-panel);
 }
 
 .pw-filetree-folder {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px;
-  font-size: 0.875rem;
+  padding: 0 12px;
+  font-family: var(--pywire-font-sans);
+  font-size: 0.85rem;
   color: var(--pw-text-dim);
-  height: 28px;
+  height: 30px;
 }
 
 .pw-filetree-file {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-left: 40px;
-  padding-right: 16px;
-  font-size: 0.875rem;
+  padding-left: 28px;
+  padding-right: 12px;
+  margin: 1px 6px;
+  font-family: var(--pywire-font-sans);
+  font-size: 0.85rem;
+  color: var(--pw-text-main);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition:
+    background-color var(--pywire-motion-fast, 120ms) var(--pywire-ease-spring),
+    color var(--pywire-motion-fast, 120ms) var(--pywire-ease-spring);
   height: 28px;
+  border-radius: 6px;
+}
+
+.pw-filetree-file:hover {
+  background-color: var(--pw-accent-bg);
+  color: var(--pw-accent);
 }
 
 .pw-filetree-text {
@@ -453,112 +471,85 @@
   text-overflow: ellipsis;
 }
 
+/* Active row: accent pill, no right rail (matches sidebar component). */
 .pw-filetree-file.active {
-  background-color: rgba(34, 211, 238, 0.1);
+  background-color: var(--pw-accent-bg);
   color: var(--pw-accent);
-  border-right: 2px solid var(--pw-accent);
+  font-weight: 500;
 }
 
-[data-theme='light'] .pw-filetree-file.active {
-  background-color: rgba(8, 145, 178, 0.1);
-}
-
-/* Spinner */
+/* ---------- Spinner — wire-themed ------------------------------- */
 .pw-spinner-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1.25rem;
   height: 100%;
   width: 100%;
   background-color: var(--pw-bg-main);
   color: var(--pw-text-main);
 }
 
-.pw-spinner-svg {
-  animation: pw-spin 2s linear infinite;
+/* Wire chip — matches the design system's accent-chip frame
+   (accent-bg fill + accent border + soft halo) housing a single
+   accent arc. One color, one motion: the wire spinning up. */
+.pw-spinner-wire {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--pw-accent-bg);
+  border: 1px solid color-mix(in oklch, var(--pw-accent) 35%, transparent);
+  color: var(--pw-accent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--pw-accent) 22%, transparent);
 }
 
-.pw-spinner-inner {
-  animation: pw-spin-reverse 1.5s linear infinite;
-  transform-origin: center;
+.pw-spinner-svg {
+  animation: pw-spin 1.1s linear infinite;
+  color: var(--pw-accent);
 }
 
 .pw-spinner-message {
-  margin-top: 24px;
-  font-size: 0.875rem;
+  margin: 0;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
   font-weight: 500;
-  color: #9ca3af;
-  animation: pw-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--pw-accent);
   max-width: 80%;
   text-align: center;
+  animation: pw-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Modals */
+/* ---------- Modals ---------------------------------------------- */
 .pw-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: oklch(11% 0.01 250 / 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-/* Heading Anchors Fix */
-.pw-instructions-container h1,
-.pw-instructions-container h2,
-.pw-instructions-container h3,
-.pw-instructions-container h4 {
-  display: flex !important;
-  align-items: center !important;
-  gap: 0.5rem !important;
-  flex-wrap: wrap;
-  position: relative;
-}
-
-.pw-instructions-container .heading-anchor {
-  display: inline-flex !important;
-  order: -1; /* Place anchor before text */
-  text-decoration: none !important;
-  color: var(--pw-accent) !important;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
-
-.pw-instructions-container h1:hover .heading-anchor,
-.pw-instructions-container h2:hover .heading-anchor,
-.pw-instructions-container h3:hover .heading-anchor {
-  opacity: 1;
-}
-
-.pw-instructions-container h1::after,
-.pw-instructions-container h2::after {
-  display: none !important; /* Remove Starlight's default underlines if they interfere with flex */
-}
-
-/* Re-add the horizontal line after H1/H2 if needed, but in a flex-safe way */
-.pw-instructions-container h1,
-.pw-instructions-container h2 {
-  border-bottom: 1px solid var(--sl-color-border);
-  padding-bottom: 0.5rem;
-  margin-bottom: 1rem;
-  width: 100%;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .pw-modal-content {
   background-color: var(--pw-bg-panel);
   border: 1px solid var(--pw-border);
-  border-radius: 8px;
+  border-radius: 12px;
   width: 90%;
   max-width: 500px;
   box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.5),
-    0 10px 10px -5px rgba(0, 0, 0, 0.4);
+    0 0 0 1px color-mix(in oklch, var(--pw-accent) 18%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.35);
   animation: pw-modal-in 0.3s ease-out;
 }
 
@@ -583,16 +574,19 @@
 
 .pw-modal-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-family: var(--pywire-font-sans);
+  font-size: 1.05rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--pw-text-main);
 }
 
 .pw-modal-body {
   padding: 20px;
   color: var(--pw-text-bright);
+  font-family: var(--pywire-font-sans);
   font-size: 0.9375rem;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .pw-modal-list {
@@ -611,49 +605,63 @@
   justify-content: flex-end;
   padding: 16px 20px;
   border-top: 1px solid var(--pw-border);
+  gap: 8px;
 }
 
 .pw-btn-primary {
   background-color: var(--pw-accent);
-  color: white;
+  color: var(--sl-color-text-invert, #fff);
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: 8px;
+  font-family: var(--pywire-font-sans);
   font-weight: 600;
   font-size: 0.875rem;
+  box-shadow: 0 0 10px color-mix(in oklch, var(--pw-accent) 22%, transparent);
 }
 
 .pw-btn-primary:hover {
-  filter: brightness(1.1);
+  box-shadow: 0 0 16px color-mix(in oklch, var(--pw-accent) 38%, transparent);
 }
 
 .pw-btn-secondary {
-  background-color: var(--pw-border);
+  background-color: transparent;
   color: var(--pw-text-main);
   padding: 8px 16px;
-  border-radius: 4px;
-  font-weight: 600;
+  border-radius: 8px;
+  font-family: var(--pywire-font-sans);
+  font-weight: 500;
   font-size: 0.875rem;
-  margin-right: 8px;
+  border: 1px solid var(--pw-border);
 }
 
 .pw-btn-secondary:hover {
-  background-color: var(--pw-separator);
+  background-color: var(--pw-accent-bg);
+  border-color: var(--pw-accent);
+  color: var(--pw-accent);
 }
 
+/* Danger — OKLCH variant of design's #ff0055 (--color-error).
+   Same accent-style recipe as primary: tinted halo, no harsh shadow. */
 .pw-btn-danger {
-  background-color: #ef4444;
-  color: white;
+  --pw-danger: oklch(60% 0.25 10);
+  background-color: var(--pw-danger);
+  color: #fff;
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: 8px;
+  font-family: var(--pywire-font-sans);
   font-weight: 600;
   font-size: 0.875rem;
+  border: 1px solid var(--pw-danger);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--pw-danger) 22%, transparent);
 }
 
 .pw-btn-danger:hover {
-  background-color: #dc2626;
+  background-color: oklch(54% 0.25 10);
+  border-color: oklch(54% 0.25 10);
+  box-shadow: 0 0 16px color-mix(in oklch, var(--pw-danger) 38%, transparent);
 }
 
-/* Tree Actions */
+/* ---------- File-tree action icons ------------------------------ */
 .pw-filetree-actions {
   display: flex;
   align-items: center;
@@ -675,7 +683,6 @@
   border-radius: 4px;
   background: transparent !important;
   border: none !important;
-  transition: all 0.2s ease;
 }
 
 .pw-btn-tree-action:hover {
@@ -684,25 +691,31 @@
 }
 
 .pw-btn-tree-action.delete:hover {
-  color: #ef4444;
+  color: oklch(60% 0.25 10);
 }
 
+/* ---------- Step-complete success state ------------------------- */
+/* "The wire is energized" — success uses the accent, not generic green.
+   Same recipe as the design accent-chip: accent-bg fill + accent border
+   + accent ring/halo + pulsing wire-glow. Keeps the tutorial in one
+   palette instead of dropping in a contrasting green. */
 .pw-btn-icon-sm.success-glow {
-  background-color: #22c55e !important;
-  color: white !important;
-  box-shadow: 0 0 15px rgba(34, 197, 94, 0.5);
+  background-color: var(--pw-accent-bg) !important;
+  color: var(--pw-accent) !important;
+  border-color: color-mix(in oklch, var(--pw-accent) 45%, transparent) !important;
+  box-shadow: 0 0 14px color-mix(in oklch, var(--pw-accent) 35%, transparent);
   animation: pw-pulse-success 2s infinite;
 }
 
 @keyframes pw-pulse-success {
   0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--pw-accent) 50%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 10px color-mix(in oklch, var(--pw-accent) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--pw-accent) 0%, transparent);
   }
 }
 
@@ -710,16 +723,20 @@
   position: absolute;
   bottom: 20px;
   right: 20px;
-  background-color: #22c55e;
-  color: white;
-  padding: 12px 20px;
-  border-radius: 8px;
+  background-color: var(--pw-accent-bg);
+  color: var(--pw-accent);
+  padding: 10px 16px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  gap: 10px;
+  border: 1px solid color-mix(in oklch, var(--pw-accent) 35%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--pw-accent) 18%, transparent),
+    0 8px 24px color-mix(in oklch, var(--pw-accent) 12%, transparent);
   z-index: 100;
   animation: pw-slide-up 0.3s ease-out;
+  font-family: var(--pywire-font-sans);
 }
 
 @keyframes pw-slide-up {
@@ -766,7 +783,7 @@
   font-size: 0.875rem;
 }
 
-/* Tasks Checklist */
+/* ---------- Tasks checklist ------------------------------------- */
 .pw-tasks-checklist {
   padding: 16px 20px;
   background-color: var(--pw-bg-panel);
@@ -774,12 +791,13 @@
 }
 
 .pw-tasks-title {
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
   text-transform: uppercase;
-  color: var(--pw-text-dim);
+  color: var(--pw-accent);
   margin-bottom: 12px !important;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.12em;
 }
 
 .pw-tasks-list {
@@ -795,6 +813,7 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  font-family: var(--pywire-font-sans);
   font-size: 0.875rem;
   color: var(--pw-text-dim);
   transition: all 0.2s;
@@ -809,7 +828,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 2px; /* align with text line-height */
+  margin-top: 2px;
 }
 
 .pw-task-desc {
@@ -817,31 +836,79 @@
   flex: 1;
 }
 
+/* Task-complete checkmarks share accent — keeps tutorial in the wire palette. */
 .text-green-500 {
-  color: #22c55e;
+  color: var(--pw-accent);
 }
 
 .text-gray-500 {
-  color: #6b7280;
+  color: var(--pw-text-dim);
 }
-/* Heading Anchors Fix - Robust Phase 3.5 */
+
+/* ---------- Workspace shell ------------------------------------- */
+.pw-workspace-container {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+}
+
+.pw-workspace-main {
+  flex: 1 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+}
+
+/* ---------- Instructions pane (markdown) ------------------------ */
+.pw-instructions-container {
+  padding: 2.5rem !important;
+  height: 100%;
+  overflow-y: auto !important;
+  box-sizing: border-box;
+  min-height: 0;
+  font-family: var(--pywire-font-sans);
+  scroll-behavior: smooth;
+  scroll-padding-top: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-instructions-container {
+    scroll-behavior: auto;
+  }
+}
+
+.pw-instructions-container > .prose {
+  height: auto !important;
+  min-height: min-content !important;
+}
+
+@media (max-width: 1024px) {
+  .pw-instructions-container {
+    padding: 1.5rem !important;
+  }
+}
+
+/* Heading anchors — keep flex layout, recolor to design accent. */
 .pw-instructions-container :is(h1, h2, h3, h4) {
   display: flex !important;
   align-items: center !important;
   gap: 0.5rem !important;
-  flex-wrap: nowrap !important; /* Force single line unless text wraps */
+  flex-wrap: nowrap !important;
   position: relative;
   width: 100%;
+  font-family: var(--pywire-font-sans);
+  letter-spacing: -0.015em;
 }
 
 .pw-instructions-container .heading-anchor {
   display: inline-flex !important;
-  order: -1; /* Place anchor before text */
+  order: -1;
   text-decoration: none !important;
   color: var(--pw-accent) !important;
-  opacity: 0.5;
+  opacity: 0;
   transition: opacity 0.2s;
-  flex-shrink: 0; /* Prevent anchor from squishing */
+  flex-shrink: 0;
 }
 
 .pw-instructions-container :is(h1, h2, h3, h4):hover .heading-anchor {
@@ -849,12 +916,76 @@
 }
 
 .pw-instructions-container :is(h1, h2)::after {
-  display: none !important; /* Remove Starlight's default underlines */
+  display: none !important;
 }
 
-/* Re-add the horizontal line after H1/H2 */
 .pw-instructions-container :is(h1, h2) {
-  border-bottom: 1px solid var(--sl-color-border);
+  border-bottom: 1px solid var(--pw-border);
   padding-bottom: 0.5rem;
   margin-bottom: 1rem;
+}
+
+.pw-instructions-container .pw-markdown-content h1 {
+  font-size: 1.875rem !important;
+  line-height: 1.15 !important;
+  font-weight: 600 !important;
+  margin-bottom: 1.5rem !important;
+  color: var(--pw-text-main) !important;
+}
+
+.pw-instructions-container .pw-markdown-content h2 {
+  font-size: 1.4rem !important;
+  line-height: 1.2 !important;
+  margin-top: 2rem !important;
+  margin-bottom: 1rem !important;
+  font-weight: 600 !important;
+  color: var(--pw-text-main) !important;
+  border-bottom: 1px solid var(--pw-border) !important;
+  padding-bottom: 0.3em !important;
+  width: 100% !important;
+}
+
+.pw-instructions-container .pw-markdown-content h3 {
+  font-size: 1.15rem !important;
+  line-height: 1.25 !important;
+  margin-top: 1.5rem !important;
+  margin-bottom: 0.75rem !important;
+  font-weight: 600 !important;
+  color: var(--pw-text-main) !important;
+}
+
+.pw-instructions-container .pw-markdown-content p {
+  margin-bottom: 1rem !important;
+  line-height: 1.6 !important;
+  font-size: 1rem !important;
+  color: var(--pw-text-main) !important;
+}
+
+/* Inline `code` in markdown — design ds-code recipe. */
+.pw-instructions-container .pw-markdown-content :not(pre) > code {
+  font-family: var(--pywire-font-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--pw-accent-bg);
+  border: 1px solid color-mix(in oklch, var(--pw-accent) 25%, transparent);
+  color: var(--pw-accent);
+}
+
+/* ---------- Add-file input modal -------------------------------- */
+.pw-input {
+  background: var(--pw-bg-main);
+  border: 1px solid var(--pw-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--pw-text-main);
+  font-family: var(--pywire-font-mono);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color var(--pywire-motion-fast, 120ms) var(--pywire-ease-spring);
+}
+
+.pw-input:focus {
+  border-color: var(--pw-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--pw-accent) 20%, transparent);
 }
