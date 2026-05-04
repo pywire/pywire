@@ -3,6 +3,8 @@ title: Quickstart
 description: Get up and running with PyWire in seconds.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 Welcome to PyWire! This guide will help you set up your first project instantly using our scaffolding tools.
 
 ## The Fastest Way: `create-pywire-app`
@@ -30,17 +32,18 @@ cd my-pywire-app
 
 If you don't have `uv` installed yet, you can use our automated installation scripts to set up everything for you.
 
-### macOS / Linux
-
-```sh
-curl -fsSL pywire.dev/install | sh
-```
-
-### Windows (PowerShell)
-
-```powershell
-irm pywire.dev/install.ps1 | iex
-```
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux" icon="apple">
+    ```sh
+    curl -fsSL pywire.dev/install | sh
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="seti:powershell">
+    ```powershell
+    irm pywire.dev/install.ps1 | iex
+    ```
+  </TabItem>
+</Tabs>
 
 ## Running the Development Server
 
