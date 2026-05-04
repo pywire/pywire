@@ -1,4 +1,15 @@
-<section>
-    <h1>Dashboard</h1>
-    <p>Welcome to your SaaS dashboard.</p>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Dashboard</span>
+    <h1>Welcome back.</h1>
+    <p class="brand-lede">Hook this up to your real metrics — billing status, usage, team activity.</p>
 </section>
+<ul class="brand-list brand-list--two">
+    <li class="brand-card">
+        <h3>Active subscription</h3>
+        <p>—</p>
+    </li>
+    <li class="brand-card">
+        <h3>Usage this month</h3>
+        <p>—</p>
+    </li>
+</ul>

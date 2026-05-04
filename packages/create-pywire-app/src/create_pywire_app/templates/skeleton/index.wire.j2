@@ -1,5 +1,10 @@
 {% if routing == 'explicit' -%}
 !path "/"
+!layout "layout.wire"
 
 {% endif -%}
-<h1>{{ project_name }}</h1>
+<section class="brand-hero">
+    <span class="brand-eyebrow">PyWire</span>
+    <h1>{{ project_name }}</h1>
+    <p class="brand-lede">A blank canvas. Open <code>pages/index.wire</code> and start building.</p>
+</section>

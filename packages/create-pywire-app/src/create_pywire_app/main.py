@@ -226,6 +226,7 @@ class ProjectGenerator:
         self._generate_main()
         self._generate_error_page()
         self._generate_vscode_settings()
+        self._generate_brand_css()
 
         # Generate template-specific files
         if self.template == "skeleton":
@@ -248,6 +249,15 @@ class ProjectGenerator:
         }
         content = self.renderer.render("skeleton/index.wire.j2", context)
         (self.pages_dir / "index.wire").write_text(content)
+
+        if self.routing_strategy == "path":
+            layout_content = self.renderer.render(
+                "skeleton/__layout__.wire.j2", context
+            )
+            (self.pages_dir / "__layout__.wire").write_text(layout_content)
+        else:
+            layout_content = self.renderer.render("skeleton/layout.wire.j2", context)
+            (self.pages_dir / "layout.wire").write_text(layout_content)
 
     def _generate_pyproject(self) -> None:
         """Generate pyproject.toml."""
@@ -304,6 +314,20 @@ class ProjectGenerator:
         """Generate __error__.wire."""
         self.renderer.copy_static(
             "common/__error__.wire", self.pages_dir / "__error__.wire"
+        )
+
+    def _generate_brand_css(self) -> None:
+        """Copy shared PyWire static assets (brand stylesheet + favicon)
+        into the project's static dir. PyWire serves project-root /static
+        automatically, so layouts can link them via /static/<file>.
+        """
+        static_dir = self.project_path / "static"
+        static_dir.mkdir(exist_ok=True)
+        self.renderer.copy_static(
+            "common/static/pywire-brand.css", static_dir / "pywire-brand.css"
+        )
+        self.renderer.copy_static(
+            "common/static/favicon.svg", static_dir / "favicon.svg"
         )
 
     def _generate_counter(self) -> None:

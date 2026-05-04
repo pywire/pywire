@@ -14,11 +14,15 @@ posts = cursor.execute(
 ).fetchall()
 
 ---
-<section>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Archive</span>
     <h1>All posts</h1>
-    <ul>
-        <li $for={post in posts} $key={post["slug"]}>
-            <a href="/posts/{row["slug"]}">{row["title"]}</a>
-        </li>
-    </ul>
 </section>
+<ul class="brand-list">
+    <li $for={post in posts} $key={post["slug"]}>
+        <a class="brand-card" href="/posts/{post['slug']}">
+            <h3>{post["title"]}</h3>
+            <p>Read the post →</p>
+        </a>
+    </li>
+</ul>

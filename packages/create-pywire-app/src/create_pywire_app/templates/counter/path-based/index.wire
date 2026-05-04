@@ -2,9 +2,15 @@
 count = wire(0)
 
 ---
-<div class="container">
-    <h1>Counter</h1>
-    <p>Edit <code>pages/index.wire</code> to watch hot reload in action.</p>
-    <p>Count is: {count.value}</p>
-    <button @click={count.value += 1}>Increment</button>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Welcome</span>
+    <h1>Reactive counter, served from Python.</h1>
+    <p class="brand-lede">Edit <code>pages/index.wire</code> and watch the DOM patch over the wire.</p>
+</section>
+<div class="brand-counter">
+    <span class="brand-counter-value">{count}</span>
+    <div class="brand-counter-buttons">
+        <button class="brand-btn" @click={count += 1}>Increment</button>
+        <button class="brand-btn brand-btn--ghost" @click={count = 0}>Reset</button>
+    </div>
 </div>

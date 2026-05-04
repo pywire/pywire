@@ -1,4 +1,19 @@
-<section>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Settings</span>
     <h1>Settings</h1>
-    <p>Manage billing, team, and usage.</p>
+    <p class="brand-lede">Manage billing, team, and usage.</p>
 </section>
+<ul class="brand-list">
+    <li class="brand-card">
+        <h3>Account</h3>
+        <p>Configure your account preferences.</p>
+    </li>
+    <li class="brand-card">
+        <h3>Billing</h3>
+        <p>Manage your subscription and payment methods.</p>
+    </li>
+    <li class="brand-card">
+        <h3>Team</h3>
+        <p>Invite and manage team members.</p>
+    </li>
+</ul>

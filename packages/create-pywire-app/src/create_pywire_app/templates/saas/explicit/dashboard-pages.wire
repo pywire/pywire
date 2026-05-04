@@ -5,33 +5,42 @@
 !layout "auth-layout.wire"
 
 ---
-# Demo data - in a real app, fetched from database
+# Demo data — in a real app, fetched from a database.
 settings_sections = [
-    {"id": "account", "title": "Account Settings", "description": "Configure your account preferences."},
+    {"id": "account", "title": "Account", "description": "Configure your account preferences."},
     {"id": "billing", "title": "Billing", "description": "Manage your subscription and payment methods."},
     {"id": "team", "title": "Team", "description": "Invite and manage team members."},
 ]
 
 ---
-<main>
-    <!-- Dashboard home: /dashboard -->
-    <section $if={path.home}>
-        <h1>Dashboard</h1>
-        <p>Welcome to your SaaS dashboard.</p>
-        <p>This page uses path-dicts to group /dashboard routes with SPA navigation.</p>
-        <a role="button" href="/dashboard/settings">Go to Settings →</a>
-    </section>
-    
-    <!-- Settings page: /dashboard/settings -->
-    <section $if={path.settings}>
-        <h1>Settings</h1>
-        <p>Manage billing, team, and usage.</p>
-        
-        <article $for={section in settings_sections} $key={section["id"]}>
-            <h2>{section["title"]}</h2>
-            <p>{section["description"]}</p>
-        </article>
-        
-        <p><a href="/dashboard">← Back to Dashboard</a></p>
-    </section>
-</main>
+<!-- Dashboard home: /dashboard -->
+<section $if={path.home} class="brand-hero">
+    <span class="brand-eyebrow">Dashboard</span>
+    <h1>Welcome back.</h1>
+    <p class="brand-lede">Hook this up to your real metrics — billing status, usage, team activity.</p>
+    <p><a class="brand-btn" href="/dashboard/settings">Go to settings →</a></p>
+</section>
+<ul $if={path.home} class="brand-list brand-list--two">
+    <li class="brand-card">
+        <h3>Active subscription</h3>
+        <p>—</p>
+    </li>
+    <li class="brand-card">
+        <h3>Usage this month</h3>
+        <p>—</p>
+    </li>
+</ul>
+
+<!-- Settings: /dashboard/settings -->
+<section $if={path.settings} class="brand-hero">
+    <span class="brand-eyebrow">Settings</span>
+    <h1>Settings</h1>
+    <p class="brand-lede">Manage billing, team, and usage.</p>
+</section>
+<ul $if={path.settings} class="brand-list">
+    <li $for={section in settings_sections} $key={section["id"]} class="brand-card">
+        <h3>{section["title"]}</h3>
+        <p>{section["description"]}</p>
+    </li>
+</ul>
+<p $if={path.settings}><a href="/dashboard">← Back to Dashboard</a></p>

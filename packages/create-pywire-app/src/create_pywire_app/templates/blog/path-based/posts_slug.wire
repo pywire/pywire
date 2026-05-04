@@ -16,7 +16,8 @@ post = cursor.execute(
 ).fetchone()
 
 ---
-<article>
+<article class="brand-prose">
     <h1>{post["title"] if post else "Post not found"}</h1>
     <div>{!html markdown.markdown(post["body"]) if post else "<p>We couldn't find that post.</p>"}</div>
+    <p><a href="/posts">← Back to all posts</a></p>
 </article>
