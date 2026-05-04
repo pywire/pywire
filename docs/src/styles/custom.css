@@ -637,19 +637,22 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame f
   display: none !important;
 }
 
-/* Tighten code body top spacing — Starlight + EC layer in extra
-   margins/paddings via several wrappers (.expressive-code wrapper, frame,
-   pre). Reset all of them to remove the visible gap above the first
-   line, then add a single 0.6rem breathing pad on pre. */
+/* Tighten code body top spacing. Starlight + EC layer in margins/paddings
+   on multiple wrappers; reset everything inside the panel and let pre
+   own the single 0.6rem top breathing. */
 starlight-tabs:has(.expressive-code) [role='tabpanel'] > *,
 starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code,
-starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame {
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame > pre,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame > pre > code {
   margin-block-start: 0 !important;
   padding-block-start: 0 !important;
 }
 
-starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame pre {
-  padding-block-start: 0.6rem !important;
+/* Single source of top breathing inside the panel — applied to the
+   first .ec-line so only one rule contributes. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame .ec-line:first-child {
+  padding-block-start: 0.6rem;
 }
 
 /* Copy button: chrome bar is the tablist (height pywire-chrome-h), code
@@ -766,10 +769,13 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
   -webkit-mask-image: none !important;
 }
 
-/* Bar background + border — applies to titled frames (figcaption).
+/* Bar background + border — applies to titled/terminal frames only.
    Fixed height (not min-height) so the bar matches starlight-tabs's
-   tablist-wrapper height exactly across both styles. */
-.expressive-code .frame figcaption.header {
+   tablist-wrapper height exactly across both styles. EC defaults
+   figcaption.header to display:none for plain frames; do NOT promote
+   those to display:flex or untitled frames render two stacked bars. */
+.expressive-code .frame.has-title figcaption.header,
+.expressive-code .frame.is-terminal figcaption.header {
   position: relative;
   height: var(--pywire-chrome-h);
   padding-block: 0;
