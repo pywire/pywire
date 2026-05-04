@@ -597,6 +597,16 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
   --pywire-chrome-bg: #252839;
 }
 
+/* Kill EC's built-in terminal dots (mask-image of 3 SVG circles) — we
+   draw our own colored dots via ::after. EC's gray-tinted dots were
+   bleeding through behind ours. */
+.expressive-code .frame.is-terminal figcaption.header::before {
+  content: none !important;
+  background: none !important;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+}
+
 /* Bar background + border — applies to titled frames (figcaption). */
 .expressive-code .frame figcaption.header {
   position: relative;
@@ -685,9 +695,12 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
    EC structure: button > div (bg fill) + ::before (border) + ::after
    (masked icon). Style each layer; do NOT remove ::after — that IS
    the icon. Always visible (not hover-gated). */
+/* Position: top-right of code body, vertically centered on first line.
+   pre has ~1rem top padding + line-height ~22px → first-line center
+   sits ~27px below pre top. Button is 28px tall, so top = ~13px. */
 .expressive-code .copy {
-  inset-block-start: calc(var(--pywire-chrome-h) + 0.4rem) !important;
-  inset-inline-end: 0.5rem !important;
+  inset-block-start: calc(var(--pywire-chrome-h) + 13px) !important;
+  inset-inline-end: 0.6rem !important;
 }
 
 .expressive-code .copy button {
