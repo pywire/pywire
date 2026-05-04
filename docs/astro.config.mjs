@@ -110,6 +110,7 @@ export default defineConfig({
             { label: 'App Initialization', slug: 'guides/app-initialization' },
             { label: 'Routing', slug: 'guides/routing' },
             { label: 'Layouts', slug: 'guides/layouts' },
+            { label: 'Error & Reconnect Pages', slug: 'guides/error-and-reconnect' },
             { label: 'Forms & Validation', slug: 'guides/forms' },
             { label: 'Middleware', slug: 'guides/middleware' },
             { label: 'Framework Integration', slug: 'guides/framework-integration' },
