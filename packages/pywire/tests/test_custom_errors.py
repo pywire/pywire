@@ -13,7 +13,9 @@ def test_default_404_no_pages_dir(tmp_path: Path) -> None:
 
     response = client.get("/not-found")
     assert response.status_code == 404
-    assert "Not Found" in response.text
+    # Default branded error page renders the 404 code prominently.
+    assert "404" in response.text
+    assert "wire" in response.text.lower()
 
 
 def test_custom_error_page(tmp_path: Path) -> None:

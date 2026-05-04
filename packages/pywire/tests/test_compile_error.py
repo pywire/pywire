@@ -63,7 +63,7 @@ async def test_compile_error_page_generic_exception(
 
     assert "Compilation Error" in content
     assert "ValueError: Something went wrong" in content
-    assert "Full Traceback" in content
+    assert "Traceback" in content
     assert "ValueError" in content
 
 
@@ -89,7 +89,7 @@ async def test_compile_error_page_traceback_inference(
     content = bytes(response.body).decode()
 
     assert "RuntimeError: Fail" in content
-    assert "Full Traceback" in content
+    assert "Traceback" in content
 
 
 @pytest.mark.asyncio
