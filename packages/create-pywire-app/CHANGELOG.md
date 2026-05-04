@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.11.0...create-pywire-app-v0.12.0) (2026-05-04)
+
+
+### Features
+
+* **create-pywire-app:** on-brand scaffold templates ([#238](https://github.com/pywire/pywire/issues/238)) ([6b9eaaa](https://github.com/pywire/pywire/commit/6b9eaaac646f18260d11f190acd5c5ae4f53603e))
+
 ## [0.11.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.10.0...create-pywire-app-v0.11.0) (2026-05-02)
 
 
