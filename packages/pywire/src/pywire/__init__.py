@@ -20,7 +20,7 @@ from pywire.core.signals import (
     CircularDependencyError,
     ReactivityError,
 )
-from pywire.core.stores import writable, readable, store_derived
+from pywire.core.producer import producer, Producer
 from pywire.core.props import props
 from pywire.core.expose import expose
 from pywire.core.event_handler import EventHandler
@@ -65,9 +65,8 @@ __all__ = [
     "MediaElement",
     "DialogElement",
     "CanvasElement",
-    "writable",
-    "readable",
-    "store_derived",
+    "producer",
+    "Producer",
     "Snippet",
     "Child",
     "Children",

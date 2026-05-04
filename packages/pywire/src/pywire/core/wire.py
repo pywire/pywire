@@ -4,6 +4,7 @@ from typing import (
     TypeVar,
     Generic,
     Any,
+    Callable,
     Optional,
     Tuple,
     Dict as PyDict,
@@ -59,6 +60,10 @@ class WireBase:
     ):
         self._pages = WeakSet()
         self._subscribers = WeakSet()  # Derived/Effect subscribers
+        # Strong refs to Effects created via .subscribe() — without these,
+        # the Effect is only tracked in the WeakSet of subscribers and
+        # gets garbage-collected before the next write.
+        self._subscription_effects: list = []
         self._parent = parent
         self._field = field
         self._frozen = False
@@ -142,6 +147,28 @@ class WireBase:
     def peek(self) -> Any:
         """Read value without tracking dependencies."""
         raise NotImplementedError()
+
+    def subscribe(self, callback: "Callable[[Any], Any]") -> "Callable[[], None]":
+        """Run callback immediately with current value, then on every change.
+
+        Returns an unsubscribe function. Equivalent to wrapping the callback
+        in an Effect that reads this wire's value, with explicit lifecycle.
+        """
+        from pywire.core.signals import Effect
+
+        # `value` is defined on every concrete subclass; the base class
+        # leaves it abstract so getattr keeps both pyright and ty quiet.
+        eff = Effect(lambda: callback(getattr(self, "value")))
+        self._subscription_effects.append(eff)
+
+        def unsubscribe() -> None:
+            eff.dispose()
+            try:
+                self._subscription_effects.remove(eff)
+            except ValueError:
+                pass
+
+        return unsubscribe
 
     def freeze(self) -> None:
         """Make the wire read-only."""
