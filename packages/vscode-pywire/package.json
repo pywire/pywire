@@ -2,7 +2,7 @@
   "name": "pywire",
   "displayName": "PyWire",
   "description": "Language support for PyWire files",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "type": "module",
   "publisher": "pywire",
   "icon": "images/icon.jpg",
@@ -34,7 +34,11 @@
         "extensions": [
           ".wire"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/wire-file-light.svg",
+          "dark": "./images/wire-file-dark.svg"
+        }
       }
     ],
     "grammars": [
