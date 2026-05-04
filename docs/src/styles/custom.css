@@ -526,7 +526,7 @@ starlight-tabs:has(.expressive-code) .tablist-wrapper {
   border-bottom: 1px solid var(--pywire-border);
   margin: 0;
   padding-inline-start: 5.5rem; /* room for dots, ~88px > dots' 58px right edge */
-  min-height: var(--pywire-chrome-h);
+  height: var(--pywire-chrome-h);
   display: flex;
   align-items: stretch;
   overflow: hidden;
@@ -539,12 +539,13 @@ starlight-tabs:has(.expressive-code) .tablist-wrapper > button {
   display: none !important;
 }
 
-/* macOS dots overlay on the tablist. */
+/* macOS dots overlay on the tablist — vertically centered against the
+   wrapper's actual height (not chrome-h, in case content forces taller). */
 starlight-tabs:has(.expressive-code) .tablist-wrapper::before {
   content: '';
   position: absolute;
   left: 14px;
-  top: calc(var(--pywire-chrome-h) / 2);
+  top: 50%;
   transform: translateY(-50%);
   width: 44px;
   height: 11px;
@@ -723,8 +724,8 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
 .expressive-code .frame {
   position: relative;
   --ec-frm-trmTtbDtsFg: transparent; /* hide EC's built-in dot row */
-  --pywire-chrome-h: 36px;
-  --pywire-chrome-pl: 5rem; /* room for traffic-light dots */
+  --pywire-chrome-h: 44px;
+  --pywire-chrome-pl: 5.5rem; /* room for traffic-light dots */
 }
 
 :root[data-theme='light'] .expressive-code .frame {
