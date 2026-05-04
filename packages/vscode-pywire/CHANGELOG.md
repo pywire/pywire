@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.5.2...vscode-pywire-v0.6.0) (2026-05-04)
+
+
+### Features
+
+* **vscode-pywire:** branded file icon for .wire files ([#233](https://github.com/pywire/pywire/issues/233)) ([ffe6c54](https://github.com/pywire/pywire/commit/ffe6c544dd328239e1b51fecbba171e08eab2654))
+
 ## [0.5.2](https://github.com/pywire/pywire/compare/vscode-pywire-v0.5.1...vscode-pywire-v0.5.2) (2026-04-22)
 
 
