@@ -633,8 +633,11 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
     radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
 }
 
-/* Untitled frames — synthetic chrome bar via ::before on the frame. */
-.expressive-code .frame:not(:has(figcaption.header))::before {
+/* Untitled frames — synthetic chrome bar via ::before on the frame.
+   EC renders figcaption.header on every frame (just display:none when
+   empty), so :has(figcaption) always matches. Use .has-title / .is-terminal
+   instead — those classes are only set when the header actually renders. */
+.expressive-code .frame:not(.has-title):not(.is-terminal)::before {
   content: '';
   display: block;
   height: var(--pywire-chrome-h);
@@ -643,7 +646,7 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
 }
 
 /* Dots overlay on untitled frames. */
-.expressive-code .frame:not(:has(figcaption.header))::after {
+.expressive-code .frame:not(.has-title):not(.is-terminal)::after {
   content: '';
   position: absolute;
   left: 14px;
