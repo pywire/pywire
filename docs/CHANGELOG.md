@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.25](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.24...pywire-docs-v0.5.25) (2026-05-04)
+
+
+### Bug Fixes
+
+* **pywire-docs:** step 25 + head step success criteria ([#229](https://github.com/pywire/pywire/issues/229)) ([f16a5c0](https://github.com/pywire/pywire/commit/f16a5c0740194416aa729ec53de943a7c902f781))
+
 ## [0.5.24](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.23...pywire-docs-v0.5.24) (2026-05-03)
 
 
