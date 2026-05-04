@@ -34,7 +34,11 @@
         "extensions": [
           ".wire"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/wire-file-light.svg",
+          "dark": "./images/wire-file-dark.svg"
+        }
       }
     ],
     "grammars": [
