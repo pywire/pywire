@@ -594,10 +594,10 @@ starlight-tabs:has(.expressive-code) [role='tab']:hover {
 starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true'] {
   position: relative;
   color: var(--sl-color-text);
-  background: var(--sl-color-bg);
+  background: var(--pywire-code-bg);
   font-weight: 600;
   margin-bottom: -1px; /* punch through tablist-wrapper border-bottom */
-  border-bottom: 1px solid var(--sl-color-bg);
+  border-bottom: 1px solid var(--pywire-code-bg);
 }
 
 starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true']::before {
@@ -617,7 +617,7 @@ starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true']::before 
 starlight-tabs:has(.expressive-code) [role='tabpanel'] {
   padding: 0 !important;
   margin-block-start: 0 !important;
-  background: var(--sl-color-bg);
+  background: var(--pywire-code-bg);
 }
 
 starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code,
@@ -756,10 +756,12 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
 
 :root[data-theme='light'] {
   --pywire-chrome-bg: oklch(97% 0.006 250);
+  --pywire-code-bg: #eff1f5; /* catppuccin-latte editor.background */
 }
 
 :root[data-theme='dark'] {
   --pywire-chrome-bg: #252839;
+  --pywire-code-bg: #1e1e2e; /* catppuccin-mocha editor.background */
 }
 
 .expressive-code .frame {
