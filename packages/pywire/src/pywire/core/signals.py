@@ -34,6 +34,7 @@ class Derived:
         self.dependencies: Set[Any] = set()
         self._subscribers: WeakSet[Subscriber] = WeakSet()  # downstream Derived/Effect
         self._pages: WeakSet = WeakSet()  # pages tracking this Derived for re-render
+        self._subscription_effects: list = []  # strong refs for .subscribe()
         self._cache: Any = None
         self._dirty: bool = True
         self._computing: bool = False
@@ -75,6 +76,23 @@ class Derived:
     def peek(self) -> Any:
         """Read value without tracking dependencies."""
         return self._cache
+
+    def subscribe(self, callback: Callable[[Any], Any]) -> Callable[[], None]:
+        """Run callback immediately with current value, then on every change.
+
+        Returns an unsubscribe function.
+        """
+        eff = Effect(lambda: callback(self.value))
+        self._subscription_effects.append(eff)
+
+        def unsubscribe() -> None:
+            eff.dispose()
+            try:
+                self._subscription_effects.remove(eff)
+            except ValueError:
+                pass
+
+        return unsubscribe
 
     def execute(self) -> None:
         """Called when an upstream dependency changes."""

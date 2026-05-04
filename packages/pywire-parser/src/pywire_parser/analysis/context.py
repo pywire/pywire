@@ -20,12 +20,7 @@ class WireKind:
     DERIVED = "derived"  # derived(fn) / @derived
     EFFECT = "effect"  # effect(fn) / @effect
     REF = "ref"  # ref() / ref[Type]()
-    STORE_WRITABLE = "writable"
-    STORE_READABLE = "readable"
-    STORE_DERIVED = "store_derived"
-
-
-_STORE_FACTORIES = {"writable", "readable", "store_derived"}
+    PRODUCER = "producer"  # producer(initial, start_fn)
 
 
 @dataclass
@@ -51,17 +46,8 @@ class AnalysisContext:
         return {n for n, k in self.bindings.items() if k == WireKind.DERIVED}
 
     @property
-    def store_names(self) -> Set[str]:
-        return {
-            n
-            for n, k in self.bindings.items()
-            if k
-            in (
-                WireKind.STORE_WRITABLE,
-                WireKind.STORE_READABLE,
-                WireKind.STORE_DERIVED,
-            )
-        }
+    def producer_names(self) -> Set[str]:
+        return {n for n, k in self.bindings.items() if k == WireKind.PRODUCER}
 
 
 def build_context(parsed: ParsedPyWire, file_path: str) -> AnalysisContext:
@@ -141,10 +127,6 @@ def _classify_value(value: ast.expr) -> Optional[str]:
         return WireKind.EFFECT
     if name == "ref":
         return WireKind.REF
-    if name in _STORE_FACTORIES:
-        if name == "writable":
-            return WireKind.STORE_WRITABLE
-        if name == "readable":
-            return WireKind.STORE_READABLE
-        return WireKind.STORE_DERIVED
+    if name == "producer":
+        return WireKind.PRODUCER
     return None

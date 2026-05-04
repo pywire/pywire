@@ -171,6 +171,36 @@ def warn_if_empty():
 
 Don't use effects to compute derived values — use `derived` instead. Effects are for **side effects** (actions that do something beyond returning a value), not for transforming data.
 
+## Subscribing to Changes
+
+Both `wire()` and `@derived` support `subscribe(callback)`, which runs the callback immediately with the current value and again on every change. It returns an unsubscribe function.
+
+```python
+count = wire(0)
+
+unsub = count.subscribe(lambda v: print(f"count is {v}"))
+# Prints: count is 0  (called immediately)
+
+count.value = 1
+# Prints: count is 1
+
+count.value = 2
+# Prints: count is 2
+
+unsub()
+count.value = 3
+# (no output — callback no longer subscribed)
+```
+
+`subscribe()` is sugar over `@effect` with explicit lifecycle. Use it when you have a single source and want a tidy unsubscribe handle (for example, hooking up an external listener that needs to be torn down later). Use `@effect` when you want auto-tracked dependencies across multiple wires.
+
+```python
+# Equivalent to count.subscribe(callback), but with auto-tracking:
+@effect
+def watch():
+    callback(count.value)
+```
+
 ## Scope & Persistence
 
 ### Component Scope
