@@ -217,3 +217,73 @@ class TestWireTrackingWithLayout:
             assert len(update["regions"]) > 0, (
                 "render_update returned empty regions — wire tracking broken"
             )
+
+
+# ---------------------------------------------------------------------------
+# Wire reads outside any region (at the layout-body root) must still
+# trigger updates on the parent page when written.
+# ---------------------------------------------------------------------------
+
+
+# A page with a layout where a wire is read at the BODY ROOT — outside any
+# inner region. The `$if` gate means ``token_state`` is read by the body
+# closure under the layout component's render context, not by an inner
+# region renderer. Without the parent-bubble in ``_invalidate_wire``, the
+# wire write only dirties the layout component — the page that the WS
+# handler calls ``render_update`` on stays clean and the UI freezes.
+ROOT_READ_LAYOUT = """\
+<!DOCTYPE html>
+<html><body><main>{$render children}</main></body></html>
+"""
+
+ROOT_READ_PAGE = """\
+!layout "__layout__.wire"
+
+---
+token = wire("")
+
+def issue():
+    token.value = "ok"
+---
+<button @click={issue}>Issue</button>
+<article $if={token}>
+    <pre>{token}</pre>
+</article>
+"""
+
+
+class TestParentInvalidatesOnChildWireWrite:
+    """Wire writes inside a layout-component-rendered body must propagate
+    to the parent page so its ``render_update`` re-renders the UI."""
+
+    @pytest.mark.asyncio
+    async def test_handler_wire_write_under_layout_dirties_parent(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "__layout__.wire").write_text(ROOT_READ_LAYOUT)
+        (tmp_path / "page.wire").write_text(ROOT_READ_PAGE)
+        loader = PageLoader()
+        PageClass = loader.load(
+            tmp_path / "page.wire",
+            implicit_layout=str((tmp_path / "__layout__.wire").resolve()),
+        )
+
+        page = _create_page(PageClass)
+        await page.render(init=True)
+
+        # Click the button: handler writes to the wire. The wire was read
+        # at the body root (under the layout component's context), so
+        # without the bubble fix only the layout component sees the
+        # invalidation and the page returns no regions / empty html.
+        update = await page.handle_event("issue", {})
+        assert isinstance(update, dict)
+        if update.get("type") == "regions":
+            assert update.get("regions"), (
+                "wire write under layout body root did not dirty the parent "
+                "page — UI would not update"
+            )
+        elif update.get("type") == "full":
+            assert update.get("html"), (
+                "full re-render returned empty html after wire write under "
+                "layout body root"
+            )

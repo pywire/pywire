@@ -457,13 +457,14 @@ class PyWireParser:
                 )
             )
         elif kw == "auth":
-            policy, claims = _parse_auth_kwargs(expr or "")
+            policy, claims, claims_expr = _parse_auth_kwargs(expr or "")
             node.special_attributes.append(
                 AuthAttribute(
                     name="$auth",
                     value="",
                     policy=policy,
                     claims=claims,
+                    claims_expr=claims_expr,
                     line=rn.line,
                     column=rn.column,
                 )
@@ -772,32 +773,41 @@ class PyWireParser:
 
 def _parse_auth_kwargs(
     expr: str,
-) -> Tuple[Optional[str], Optional[List[Tuple[str, Optional[str]]]]]:
+) -> Tuple[Optional[str], Optional[List[Tuple[str, Optional[str]]]], Optional[str]]:
     """Parse ``{$auth policy=... claims=[...]}`` expression text.
 
-    Accepts kwargs or a positional string (treated as ``policy``). Returns
-    ``(policy, claims)`` — either may be ``None`` when omitted.
+    Accepts kwargs or a positional string (treated as ``policy``).
+    Returns ``(policy, claims, claims_expr)``:
 
-    Claims entries may be strings (claim type, any value) or
-    tuples/lists of ``(type, value)``. Parse failures silently degrade to
-    ``(None, None)`` — runtime evaluation fails closed.
+    - ``claims`` is populated when every claim value is a string literal
+      — fast path so the compiler can emit a constant list without a
+      runtime evaluation step.
+    - ``claims_expr`` is the raw source text of the ``claims=`` kwarg
+      when at least one claim value is a non-literal expression (e.g.
+      a loop variable in ``{$for tier in ...}{$auth claims=[("tier",
+      tier)]}...``). Codegen evaluates it at runtime so each iteration
+      sees its own value.
+
+    Parse failures silently degrade to ``(None, None, None)`` — runtime
+    evaluation fails closed.
     """
     raw = expr.strip()
     if not raw:
-        return None, None
+        return None, None, None
 
     # Wrap as call so we can read keywords uniformly.
     try:
         wrapped = ast.parse(f"_auth_call({raw})", mode="eval")
     except (SyntaxError, ValueError):
-        return None, None
+        return None, None, None
 
     call = wrapped.body
     if not isinstance(call, ast.Call):
-        return None, None
+        return None, None, None
 
     policy: Optional[str] = None
     claims: Optional[List[Tuple[str, Optional[str]]]] = None
+    claims_expr: Optional[str] = None
 
     # Positional string → policy (matches page-level !auth "Name" shorthand).
     if call.args:
@@ -813,6 +823,9 @@ def _parse_auth_kwargs(
         elif kw.arg == "claims":
             v = kw.value
             if not isinstance(v, ast.List):
+                # Non-list expressions still get the runtime path so a
+                # user can pass a variable holding a list: claims=user_claims.
+                claims_expr = ast.unparse(v)
                 continue
             parsed: List[Tuple[str, Optional[str]]] = []
             ok = True
@@ -834,5 +847,9 @@ def _parse_auth_kwargs(
                 break
             if ok:
                 claims = parsed
+            else:
+                # At least one entry is dynamic — defer the whole list to
+                # runtime so loop / wire variables resolve per render.
+                claims_expr = ast.unparse(v)
 
-    return policy, claims
+    return policy, claims, claims_expr

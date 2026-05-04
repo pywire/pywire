@@ -276,3 +276,127 @@ async def test_nested_inside_for_loop():
         assert resolved.count("[admin]") == 2
     finally:
         reset_auth_context(tok)
+
+
+# ---------------------------------------------------------------------------
+# Per-iteration claim values (loop variable in claims=[...]) — regression
+# coverage for the bug where every iteration shared one ``region_id`` and
+# the parser silently dropped non-constant claim values.
+# ---------------------------------------------------------------------------
+
+
+def test_parser_captures_dynamic_claims_expression():
+    """A non-constant claim value (loop var, wire, etc.) is preserved as
+    raw expression text so codegen can evaluate it at runtime."""
+    from pywire_parser import PyWireParser
+    from pywire_parser.ast_nodes import AuthAttribute
+
+    result = PyWireParser().parse(
+        "---\n---\n"
+        '{$for tier in ["free", "beta"]}'
+        '{$auth claims=[("tier", tier)]}<p>x</p>{/auth}'
+        "{/for}\n"
+    )
+    auth_attrs = [
+        a
+        for n in result.template
+        for a in n.special_attributes
+        if isinstance(a, AuthAttribute)
+    ] + [
+        a
+        for top in result.template
+        for n in top.children
+        for a in n.special_attributes
+        if isinstance(a, AuthAttribute)
+    ]
+    assert len(auth_attrs) == 1
+    assert auth_attrs[0].claims is None
+    assert auth_attrs[0].claims_expr is not None
+    assert "tier" in auth_attrs[0].claims_expr
+
+
+@pytest.mark.asyncio
+async def test_per_iteration_claims_evaluate_independently():
+    """``{$auth claims=[("tier", tier)]}`` inside a $for must check each
+    iteration's claim value, not collapse to one shared region.
+
+    Regression: pre-fix the parser dropped the dynamic value (``tier``)
+    silently and every iteration fell back to "is_authenticated", so a
+    user without ``tier=free`` still rendered the allowed branch on the
+    free row. After the fix the iterations split into separate region
+    ids each carrying their own claim tuple.
+    """
+    cls = _compile(
+        "<ul>"
+        '{$for tier in ["free", "beta"]}'
+        '<li>{tier}: {$auth claims=[("tier", tier)]}[on]{$else}[off]{/auth}</li>'
+        "{/for}"
+        "</ul>"
+    )
+    user = ClaimsPrincipal(
+        is_authenticated=True,
+        name="test",
+        user_id="x:1",
+        claims=[Claim(type="tier", value="beta")],
+    )
+    ctx = AuthContext(
+        principal=user, engine=PolicyEngine(), channel=MemoryAuthChannel()
+    )
+    tok = set_auth_context(ctx)
+    try:
+        page = cls(request=None, params={}, query={}, path={}, url=None)
+        page.user = user
+        await page._render_template()
+        for _ in range(10):
+            await asyncio.sleep(0)
+        # Caches on the page reflect prior renders; force-clear so the
+        # next render reads the now-resolved auth states (mirrors the
+        # production full-rerender fallback in render_update).
+        page._snippet_invocations.clear()
+        page._region_output_cache.clear()
+        resolved = await page._render_template()
+
+        free_li = resolved[
+            resolved.index("<li>free:") : resolved.index("</li>", resolved.index("<li>free:"))
+        ]
+        beta_li = resolved[
+            resolved.index("<li>beta:") : resolved.index("</li>", resolved.index("<li>beta:"))
+        ]
+        assert "[off]" in free_li, (
+            f"free iteration should be denied (user lacks tier=free); got: {free_li}"
+        )
+        assert "[on]" in beta_li, (
+            f"beta iteration should be allowed (user has tier=beta); got: {beta_li}"
+        )
+
+        # Each iteration must emit its own ``data-pw-region`` so morphdom
+        # patches don't overwrite a sibling's content.
+        import re as _re
+
+        ids = _re.findall(r'data-pw-region="(auth_[^"]+)"', resolved)
+        assert len(ids) == 2 and ids[0] != ids[1], (
+            f"expected two distinct auth region ids per iteration, got {ids}"
+        )
+    finally:
+        reset_auth_context(tok)
+
+
+def test_codegen_emits_dynamic_region_id_for_loop_var_claim():
+    """Sanity check: compiled output uses ``self._auth_region_id(...)``
+    with the per-iteration claims tuple so the region id varies."""
+    import ast as _ast
+    from pywire.compiler.parser import PyWireParser
+    from pywire.compiler.codegen.generator import CodeGenerator
+
+    src = (
+        "---\n---\n"
+        '{$for tier in ["free", "beta"]}'
+        '<li>{$auth claims=[("tier", tier)]}[on]{$else}[off]{/auth}</li>'
+        "{/for}\n"
+    )
+    parsed = PyWireParser().parse(src)
+    out = _ast.unparse(CodeGenerator().generate(parsed))
+    assert "_auth_region_id" in out
+    # The runtime claims list must reference the loop var ``tier`` (not
+    # be flattened to a static literal).
+    assert "[('tier', tier)]" in out
