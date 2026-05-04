@@ -639,18 +639,25 @@
   color: var(--pw-accent);
 }
 
+/* Danger — OKLCH variant of design's #ff0055 (--color-error).
+   Same accent-style recipe as primary: tinted halo, no harsh shadow. */
 .pw-btn-danger {
-  background-color: oklch(58% 0.22 25);
+  --pw-danger: oklch(60% 0.25 10);
+  background-color: var(--pw-danger);
   color: #fff;
   padding: 8px 16px;
   border-radius: 8px;
   font-family: var(--pywire-font-sans);
   font-weight: 600;
   font-size: 0.875rem;
+  border: 1px solid var(--pw-danger);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--pw-danger) 22%, transparent);
 }
 
 .pw-btn-danger:hover {
-  background-color: oklch(50% 0.22 25);
+  background-color: oklch(54% 0.25 10);
+  border-color: oklch(54% 0.25 10);
+  box-shadow: 0 0 16px color-mix(in oklch, var(--pw-danger) 38%, transparent);
 }
 
 /* ---------- File-tree action icons ------------------------------ */
@@ -683,27 +690,31 @@
 }
 
 .pw-btn-tree-action.delete:hover {
-  color: oklch(58% 0.22 25);
+  color: oklch(60% 0.25 10);
 }
 
 /* ---------- Step-complete success state ------------------------- */
+/* "The wire is energized" — success uses the accent, not generic green.
+   Same recipe as the design accent-chip: accent-bg fill + accent border
+   + accent ring/halo + pulsing wire-glow. Keeps the tutorial in one
+   palette instead of dropping in a contrasting green. */
 .pw-btn-icon-sm.success-glow {
-  background-color: oklch(70% 0.18 155) !important;
-  color: oklch(15% 0.04 155) !important;
-  border-color: oklch(70% 0.18 155) !important;
-  box-shadow: 0 0 14px color-mix(in oklch, oklch(70% 0.18 155) 45%, transparent);
+  background-color: var(--pw-accent-bg) !important;
+  color: var(--pw-accent) !important;
+  border-color: color-mix(in oklch, var(--pw-accent) 45%, transparent) !important;
+  box-shadow: 0 0 14px color-mix(in oklch, var(--pw-accent) 35%, transparent);
   animation: pw-pulse-success 2s infinite;
 }
 
 @keyframes pw-pulse-success {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, oklch(70% 0.18 155) 60%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--pw-accent) 50%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 10px color-mix(in oklch, oklch(70% 0.18 155) 0%, transparent);
+    box-shadow: 0 0 0 10px color-mix(in oklch, var(--pw-accent) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, oklch(70% 0.18 155) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--pw-accent) 0%, transparent);
   }
 }
 
@@ -711,14 +722,17 @@
   position: absolute;
   bottom: 20px;
   right: 20px;
-  background-color: oklch(70% 0.18 155);
-  color: oklch(15% 0.04 155);
+  background-color: var(--pw-accent-bg);
+  color: var(--pw-accent);
   padding: 10px 16px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  border: 1px solid color-mix(in oklch, var(--pw-accent) 35%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--pw-accent) 18%, transparent),
+    0 8px 24px color-mix(in oklch, var(--pw-accent) 12%, transparent);
   z-index: 100;
   animation: pw-slide-up 0.3s ease-out;
   font-family: var(--pywire-font-sans);
@@ -821,8 +835,9 @@
   flex: 1;
 }
 
+/* Task-complete checkmarks share accent — keeps tutorial in the wire palette. */
 .text-green-500 {
-  color: oklch(70% 0.18 155);
+  color: var(--pw-accent);
 }
 
 .text-gray-500 {
