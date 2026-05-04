@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/pywire/pywire/compare/pywire-parser-v0.7.0...pywire-parser-v0.7.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* auth-demo SPA cookie + codegen scope + -in-for regressions ([#191](https://github.com/pywire/pywire/issues/191)) ([3527ac3](https://github.com/pywire/pywire/commit/3527ac34abb1e57b88fe7dfdbc917ed17b22e256))
+* error-system overhaul (line numbers, design system, SPA leak) ([#241](https://github.com/pywire/pywire/issues/241)) ([911d5b1](https://github.com/pywire/pywire/commit/911d5b1cae6ae895b5bf59fb09a15ba44a710cd8))
+* re-record breaking change for release-please after squash-merge ([#247](https://github.com/pywire/pywire/issues/247)) ([f5b5aee](https://github.com/pywire/pywire/commit/f5b5aee9605f227e16a6ee3ecbf6f0790d5fd41c))
+
 ## [0.7.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.6.0...pywire-parser-v0.7.0) (2026-05-02)
 
 
