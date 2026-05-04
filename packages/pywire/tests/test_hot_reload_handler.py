@@ -122,6 +122,7 @@ class TestBroadcastReloadOrdering(unittest.TestCase):
         handler.active_connections = set()
         handler.connection_pages = {}
         handler.session_ids = {}
+        handler._connection_in_error = set()
 
         # Mock connection
         mock_ws = AsyncMock()
@@ -171,6 +172,7 @@ class TestBroadcastReloadOrdering(unittest.TestCase):
         handler.active_connections = set()
         handler.connection_pages = {}
         handler.session_ids = {}
+        handler._connection_in_error = set()
 
         mock_ws = AsyncMock()
         handler.active_connections.add(mock_ws)

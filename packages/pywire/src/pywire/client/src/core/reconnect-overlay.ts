@@ -12,42 +12,46 @@ import { logger } from './logger'
  * so templates can style both states with CSS alone.
  *
  * Reconnection is driven by the transport layer (e.g. WebSocket auto-reconnect).
- * This overlay tracks elapsed attempts on an exponential-backoff schedule and
- * transitions to "failed" after `maxAttempts` intervals have elapsed without
- * the connection being restored.
+ * The transport calls `markFailed()` when it has exhausted its reconnect budget
+ * — this overlay does NOT independently track attempts, so the visual state
+ * stays in lockstep with whether the transport is still trying.
  */
 export class ReconnectOverlay {
   private element: HTMLElement | null = null
-  private maxAttempts: number
   private enabled: boolean
-  private attemptCount = 0
-  private failTimer: ReturnType<typeof setTimeout> | null = null
 
-  constructor(opts: { maxAttempts?: number; enabled?: boolean } = {}) {
-    this.maxAttempts = opts.maxAttempts ?? 10
+  constructor(opts: { enabled?: boolean } = {}) {
     this.enabled = opts.enabled ?? true
   }
 
   /**
-   * Show the overlay and begin tracking reconnection attempts.
-   * The transport layer handles actual reconnection; this overlay
-   * provides visual feedback and gives up after maxAttempts.
+   * Show the overlay in its "reconnecting" state. Idempotent.
    */
   show(): void {
     if (!this.enabled) return
-    this.attemptCount = 0
     this.ensureElement()
     if (!this.element) return
     this.element.style.display = ''
     this.setState('reconnecting')
-    this.scheduleFailCheck()
   }
 
   /**
-   * Hide the overlay and cancel any pending fail timer.
+   * Switch the overlay into its "failed" state. Templates style this with
+   * `[data-pw-reconnect-state="failed"]` (e.g. swap the spinner for a
+   * Reload button). Called by the transport once it gives up.
+   */
+  markFailed(): void {
+    if (!this.enabled) return
+    this.ensureElement()
+    if (!this.element) return
+    this.element.style.display = ''
+    this.setState('failed')
+  }
+
+  /**
+   * Hide the overlay.
    */
   hide(): void {
-    this.cancelTimer()
     if (this.element) {
       this.element.style.display = 'none'
     }
@@ -57,7 +61,6 @@ export class ReconnectOverlay {
    * Clean up the overlay element completely.
    */
   destroy(): void {
-    this.cancelTimer()
     if (this.element) {
       this.element.remove()
       this.element = null
@@ -71,37 +74,6 @@ export class ReconnectOverlay {
   private setState(state: 'reconnecting' | 'failed'): void {
     if (!this.element) return
     this.element.setAttribute('data-pw-reconnect-state', state)
-  }
-
-  private cancelTimer(): void {
-    if (this.failTimer !== null) {
-      clearTimeout(this.failTimer)
-      this.failTimer = null
-    }
-  }
-
-  /**
-   * Schedule the next "attempt" tick. Each tick increments the counter and,
-   * if we've hit maxAttempts without the connection being restored, sets
-   * the overlay state to "failed".
-   */
-  private scheduleFailCheck(): void {
-    if (this.attemptCount >= this.maxAttempts) {
-      this.setState('failed')
-      logger.warn(`PyWire: Reconnection failed after ${this.maxAttempts} attempts`)
-      return
-    }
-
-    // Exponential backoff: 1s, 2s, 4s, 8s, ..., capped at 30s
-    const delay = Math.min(1000 * Math.pow(2, this.attemptCount), 30000)
-    logger.log(
-      `PyWire: Waiting for reconnection (attempt ${this.attemptCount + 1}/${this.maxAttempts}, next check in ${delay}ms)`
-    )
-
-    this.failTimer = setTimeout(() => {
-      this.attemptCount++
-      this.scheduleFailCheck()
-    }, delay)
   }
 
   /**

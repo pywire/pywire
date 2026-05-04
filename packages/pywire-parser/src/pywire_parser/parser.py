@@ -165,6 +165,11 @@ class PyWireParser:
         self._validate_snippet_scopes(template_nodes, file_path)
 
         python_section = doc.python_code
+        python_start_line = doc.python_start_line
+        # Offset from python-section line numbers to .wire-file line numbers.
+        # python_start_line is the .wire line of the FIRST python line, so a
+        # python lineno of 1 maps to that line; offset = python_start_line - 1.
+        line_offset = max(python_start_line - 1, 0)
         python_ast = None
 
         if python_section.strip():
@@ -177,8 +182,14 @@ class PyWireParser:
                 raise PyWireSyntaxError(
                     f"Python syntax error: {e.msg}",
                     file_path=file_path,
-                    line=e.lineno or 1,
+                    line=(e.lineno or 1) + line_offset,
                 )
+
+            # Shift python AST line numbers into .wire-file coordinates so
+            # compile()'d bytecode and runtime tracebacks point at the right
+            # line in the .wire source.
+            if line_offset:
+                ast.increment_lineno(python_ast, line_offset)
 
         return ParsedPyWire(
             directives=directives,
@@ -186,6 +197,7 @@ class PyWireParser:
             python_code=python_section,
             python_ast=python_ast,
             file_path=file_path,
+            python_start_line=python_start_line,
         )
 
     def _map_rust_directive(self, d: Any, file_path: str) -> Any:

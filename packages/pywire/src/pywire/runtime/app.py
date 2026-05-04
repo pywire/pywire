@@ -1196,6 +1196,15 @@ class PyWire:
                     class ModeAwareErrorPage(BasePage):
                         """Error page that decides whether to show details or trigger 500."""
 
+                        # Marker checked by `WebSocketHandler.broadcast_reload`
+                        # so that hot-reload after a fix forces a hard browser
+                        # reload instead of morphing the recovered page HTML
+                        # into the still-displayed error DOM (which would
+                        # leak the error template's <head>/<style> into the
+                        # host app — Pico stylesheets gone, engineering grid
+                        # stuck on body, etc.).
+                        __is_compile_error_page__ = True
+
                         def __init__(
                             self, request: Request, *args: Any, **kwargs: Any
                         ) -> None:

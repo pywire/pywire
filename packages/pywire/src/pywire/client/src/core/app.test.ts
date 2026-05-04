@@ -8,6 +8,8 @@ vi.mock('./transport-manager', () => {
       return {
         onMessage: vi.fn(),
         onStatusChange: vi.fn(),
+        onGiveUp: vi.fn(),
+        setMaxReconnectAttempts: vi.fn(),
         connect: vi.fn(),
         send: vi.fn(),
         getActiveTransport: vi.fn().mockReturnValue('mock'),

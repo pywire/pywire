@@ -26,6 +26,19 @@ export interface Transport {
   /** Force an immediate reconnect attempt (e.g. triggered by window.online). No-op if already connected. */
   forceReconnect?(): void
 
+  /**
+   * Register a handler invoked when the transport has exhausted its
+   * reconnect budget and is giving up. Receives no arguments. Implementations
+   * that don't reconnect (e.g. HTTP polling) may never invoke this.
+   */
+  onGiveUp?(handler: () => void): void
+
+  /**
+   * Set the maximum number of reconnect attempts before the transport
+   * gives up. Implementations that don't reconnect may ignore this.
+   */
+  setMaxReconnectAttempts?(n: number): void
+
   /** Transport name for debugging */
   readonly name: string
 }

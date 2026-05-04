@@ -1,5 +1,6 @@
 import linecache
 import os
+import random
 import traceback
 from typing import Any, Optional, Union
 
@@ -9,6 +10,29 @@ from starlette.responses import HTMLResponse
 from pywire import __version__
 from pywire.compiler.exceptions import PyWireSyntaxError
 from pywire.runtime.page import BasePage
+
+# Tagline pools — random electricity/wire puns per error category.
+# Keep short, technical, never cute. Sentence case, period.
+_TAGLINES_SYNTAX = [
+    "Solder cracked.",
+    "Bad joint in the wire.",
+    "Polarity reversed.",
+    "Pin out of place.",
+    "Wires crossed.",
+    "Compiler smelled smoke.",
+    "Lead came loose.",
+    "Open trace on the board.",
+]
+_TAGLINES_RUNTIME = [
+    "The wire shorted.",
+    "Sparks flew.",
+    "Magic smoke escaped.",
+    "Fuse blew.",
+    "Circuit overloaded.",
+    "Ground fault detected.",
+    "Insulation failed.",
+    "Capacitor sang its last.",
+]
 
 
 class CompileErrorPage(BasePage):
@@ -97,11 +121,9 @@ class CompileErrorPage(BasePage):
         return self.error_file
 
     async def render(self, init: bool = True) -> HTMLResponse:
-        title = (
-            "PyWire Syntax Error"
-            if isinstance(self.error, PyWireSyntaxError)
-            else "Compilation Error"
-        )
+        is_syntax = isinstance(self.error, PyWireSyntaxError)
+        title = "PyWire Syntax Error" if is_syntax else "Compilation Error"
+        tagline = random.choice(_TAGLINES_SYNTAX if is_syntax else _TAGLINES_RUNTIME)
         root_path = ""
         try:
             root_path = str(self.request.scope.get("root_path", "") or "")
@@ -115,6 +137,7 @@ class CompileErrorPage(BasePage):
             "error/compile_error.html.j2",
             {
                 "title": title,
+                "tagline": tagline,
                 "file_display": self._display_path(),
                 "error_line": self.error_line,
                 "error_message": self.error_message,

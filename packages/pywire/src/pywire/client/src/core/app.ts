@@ -89,7 +89,6 @@ export class PyWireApp {
     this.updater = new DOMUpdater(this.config.debug)
     this.eventHandler = new UnifiedEventHandler(this)
     this.reconnectOverlay = new ReconnectOverlay({
-      maxAttempts: this.config.reconnectMaxAttempts,
       enabled: this.config.reconnectOverlay,
     })
     this.refManager = new RefManager(
@@ -153,6 +152,16 @@ export class PyWireApp {
       // Interactive mode: connect transport for real-time updates
       this.transport.onMessage((msg) => this.handleMessage(msg))
       this.transport.onStatusChange((connected) => this.handleStatusChange(connected))
+      this.transport.onGiveUp(() => {
+        // Transport has exhausted its reconnect budget — flip the overlay
+        // into its "failed" state so the user is offered a Reload action
+        // (built-in template) or whatever the custom __reconnect__.wire
+        // template renders for `[data-pw-reconnect-state="failed"]`.
+        this.reconnectOverlay.markFailed()
+      })
+      if (this.config.reconnectMaxAttempts !== undefined) {
+        this.transport.setMaxReconnectAttempts(this.config.reconnectMaxAttempts)
+      }
 
       this.connectStartTime = performance.now()
       try {
@@ -256,13 +265,9 @@ export class PyWireApp {
         // Apply reconnect config from server metadata
         if (meta.reconnect_max_attempts !== undefined) {
           this.config.reconnectMaxAttempts = meta.reconnect_max_attempts
+        }
+        if (meta.reconnect_overlay !== undefined) {
           this.reconnectOverlay = new ReconnectOverlay({
-            maxAttempts: meta.reconnect_max_attempts,
-            enabled: meta.reconnect_overlay ?? this.config.reconnectOverlay,
-          })
-        } else if (meta.reconnect_overlay !== undefined) {
-          this.reconnectOverlay = new ReconnectOverlay({
-            maxAttempts: this.config.reconnectMaxAttempts,
             enabled: meta.reconnect_overlay,
           })
         }
@@ -474,6 +479,16 @@ export class PyWireApp {
         credentials: 'same-origin',
       })
 
+      // Error responses (4xx/5xx) carry the server's error page HTML — a
+      // *different* document than the source page. Morphing it into the
+      // current DOM would leak the error template's <style> and tokens
+      // into the host app. Fall back to a full browser navigation so the
+      // error page renders cleanly with its own <head>.
+      if (!response.ok) {
+        window.location.href = path
+        return
+      }
+
       if (response.redirected) {
         // Follow redirect — update URL and re-navigate
         const redirectPath = new URL(response.url).pathname
@@ -528,6 +543,14 @@ export class PyWireApp {
         credentials: 'same-origin',
         redirect: 'follow',
       })
+
+      // 4xx/5xx responses carry the error page — a different document.
+      // Morphing it into the current DOM would leak its styles into the
+      // host app. Fall back to a full navigation.
+      if (!response.ok) {
+        window.location.href = path
+        return
+      }
 
       if (response.redirected) {
         const redirectPath = new URL(response.url).pathname

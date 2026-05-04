@@ -1,92 +1,218 @@
 !no_spa
 
+---
+import random
+
+# Tagline pools — random electricity/wire puns per error category.
+# Keep them short, technical, never cute. Sentence case, period.
+_TAGLINES_404 = [
+    "The wire ends here.",
+    "Dead conductor.",
+    "Open circuit.",
+    "End of the line.",
+    "Trace severed.",
+    "Signal lost in transit.",
+    "Off the grid.",
+    "No voltage past this point.",
+]
+_TAGLINES_500 = [
+    "The wire shorted.",
+    "Sparks flew.",
+    "Magic smoke escaped.",
+    "Fuse blew.",
+    "Circuit overloaded.",
+    "Ground fault detected.",
+    "Insulation failed.",
+    "Capacitor sang its last.",
+]
+_TAGLINES_OTHER = [
+    "Brownout.",
+    "Voltage drop.",
+    "Signal interrupted.",
+    "Conductor fatigued.",
+    "Phase out of sync.",
+    "Wire crossed.",
+]
+
+def pick_tagline():
+    if error_code == 404:
+        return random.choice(_TAGLINES_404)
+    if error_code == 500:
+        return random.choice(_TAGLINES_500)
+    return random.choice(_TAGLINES_OTHER)
+---
+
 <style>
-    :root {
-        --bg: #1a1a1a;
-        --text: #e0e0e0;
-        --accent: #ff6b6b;
-        --secondary: #aaa;
-        --border: #333;
-        --code-bg: #222;
-    }
+    /* Tokens mirror packages/pywire-design-system/colors_and_type.css.
+       Self-contained: no external fonts, no external CSS.
+       All rules are scoped to .pw-error-page so the styles cannot leak
+       into the host app's body or other tokens after SPA navigation. */
+    .pw-error-page {
+        color-scheme: light dark;
 
-    body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        margin: 0;
-        padding: 40px 20px;
+        --pw-wire-90: oklch(89% 0.13 195);
+        --pw-wire-65: oklch(65% 0.13 195);
+        --pw-wire-55: oklch(55% 0.13 195);
+        --pw-wire-25: oklch(25% 0.13 195);
+        --pw-wire-95: oklch(95% 0.05 195);
+
+        --pw-bg:         oklch(99%  0.005 250);
+        --pw-bg-surface: oklch(97.5% 0.006 250);
+        --pw-fg:         oklch(20%  0.040 250);
+        --pw-fg-muted:   oklch(48%  0.025 250);
+        --pw-border:     oklch(89%  0.010 250);
+        --pw-accent:     var(--pw-wire-65);
+        --pw-accent-bg:  var(--pw-wire-95);
+        --pw-link:       var(--pw-wire-55);
+        --pw-link-hover: var(--pw-wire-65);
+        --pw-grid-line:  rgba(14, 21, 37, 0.06);
+
+        --pw-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --pw-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+        font-family: var(--pw-font-sans);
+        background: var(--pw-bg);
+        background-image:
+            linear-gradient(var(--pw-grid-line) 1px, transparent 1px),
+            linear-gradient(90deg, var(--pw-grid-line) 1px, transparent 1px);
+        background-size: 32px 32px;
+        color: var(--pw-fg);
+        min-height: 100vh;
         line-height: 1.5;
+        display: grid;
+        place-items: center;
+        padding: 3rem 1rem;
+        margin: 0;
     }
 
-    .container {
-        max-width: 800px;
-        margin: 0 auto;
+    @media (prefers-color-scheme: dark) {
+        .pw-error-page {
+            --pw-bg:         oklch(11%  0.010 250);
+            --pw-bg-surface: oklch(15%  0.012 250);
+            --pw-fg:         oklch(92%  0.012 250);
+            --pw-fg-muted:   oklch(66%  0.020 250);
+            --pw-border:     oklch(28%  0.018 250);
+            --pw-accent:     var(--pw-wire-90);
+            --pw-accent-bg:  var(--pw-wire-25);
+            --pw-link:       var(--pw-wire-90);
+            --pw-link-hover: oklch(94% 0.10 195);
+            --pw-grid-line:  rgba(227, 230, 238, 0.05);
+        }
     }
 
-    .error-code {
-        font-size: 5rem;
-        font-weight: 700;
-        color: var(--accent);
+    .pw-error-page, .pw-error-page *, .pw-error-page *::before, .pw-error-page *::after {
+        box-sizing: border-box;
+    }
+
+    .pw-error-page .container {
+        max-width: 720px;
+        width: 100%;
+    }
+
+    .pw-error-page .eyebrow {
+        font-family: var(--pw-font-mono);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--pw-accent);
+        font-weight: 500;
+        margin: 0 0 0.5rem;
+    }
+
+    .pw-error-page .error-code {
+        font-family: var(--pw-font-mono);
+        font-size: clamp(3.58rem, 2.97rem + 3.07vw, 5.35rem);
+        font-weight: 600;
+        color: var(--pw-fg);
         margin: 0;
         line-height: 1;
+        letter-spacing: -0.04em;
     }
 
-    .error-title {
-        font-size: 1.5rem;
-        color: var(--text);
-        margin: 0.5rem 0 1.5rem;
+    .pw-error-page .error-title {
+        font-size: clamp(1.44rem, 1.33rem + 0.55vw, 1.76rem);
+        font-weight: 600;
+        color: var(--pw-fg);
+        margin: 0.75rem 0 1.25rem;
+        text-wrap: balance;
+        line-height: 1.15;
     }
 
-    .error-message {
-        color: var(--secondary);
+    .pw-error-page .error-message {
+        color: var(--pw-fg-muted);
         font-size: 1rem;
-        margin-bottom: 2rem;
+        margin: 0 0 2rem;
+        text-wrap: pretty;
     }
 
-    .trace-section {
-        margin-top: 2rem;
+    .pw-error-page .home-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--pw-link);
+        text-decoration: underline;
+        text-underline-offset: 0.25em;
+        font-size: 0.95rem;
+        transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
     }
+    .pw-error-page .home-link:hover { color: var(--pw-link-hover); }
 
-    .trace-section h3 {
-        color: var(--secondary);
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 0.75rem;
-    }
+    .pw-error-page .trace-section { margin-top: 3rem; }
 
-    .trace {
-        background: var(--code-bg);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 1rem;
-        font-family: "Fira Code", "Cascadia Code", monospace;
+    .pw-error-page .trace-section-label {
+        font-family: var(--pw-font-mono);
         font-size: 0.75rem;
-        color: #ccc;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--pw-fg-muted);
+        font-weight: 500;
+        margin: 0 0 0.75rem;
+    }
+
+    .pw-error-page .trace {
+        background: var(--pw-bg-surface);
+        border: 1px solid var(--pw-border);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+        font-family: var(--pw-font-mono);
+        font-size: 0.75rem;
+        line-height: 1.6;
+        color: var(--pw-fg-muted);
         white-space: pre-wrap;
         word-break: break-word;
         overflow-x: auto;
+        margin: 0;
     }
+
+    .pw-error-page .brand {
+        margin-top: 3rem;
+        font-family: var(--pw-font-mono);
+        font-size: 0.75rem;
+        color: var(--pw-fg-muted);
+        text-transform: lowercase;
+        letter-spacing: 0.04em;
+    }
+    .pw-error-page .brand-mark { color: var(--pw-accent); }
 </style>
 
-<div class="container">
-    <p class="error-code">{error_code}</p>
+<div class="pw-error-page">
+    <div class="container">
+        <p class="eyebrow">Error {error_code}</p>
+        <p class="error-code">{error_code}</p>
 
-    {$if error_code == 404}
-    <h1 class="error-title">Page Not Found</h1>
-    {$elif error_code == 500}
-    <h1 class="error-title">Server Error</h1>
-    {$else}
-    <h1 class="error-title">Error {error_code}</h1>
-    {/if}
+        <h1 class="error-title">{pick_tagline()}</h1>
 
-    <p class="error-message">{error_message}</p>
+        <p class="error-message">{error_message}</p>
 
-    {$if error_trace}
-    <div class="trace-section">
-        <h3>Traceback</h3>
-        <pre class="trace">{error_trace}</pre>
+        <a class="home-link" href="/">← Back to safety</a>
+
+        {$if error_trace}
+        <div class="trace-section">
+            <p class="trace-section-label">Traceback</p>
+            <pre class="trace">{error_trace}</pre>
+        </div>
+        {/if}
+
+        <p class="brand"><span class="brand-mark">●</span> pywire</p>
     </div>
-    {/if}
 </div>

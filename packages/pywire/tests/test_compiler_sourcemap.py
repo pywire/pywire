@@ -12,9 +12,11 @@ class TestCompilerSourceMap:
         """Verify runtime errors in python blocks point to correct lines."""
         loader = PageLoader()
 
-        # Line 1: raise ValueError("Boom")
-        # Line 2: ---
-        # Line 3: <h1>Test</h1>
+        # Line 1: ---
+        # Line 2: raise ValueError("Boom")
+        # Line 3: ---
+        # Line 4: (blank)
+        # Line 5: <h1>Test</h1>
         source = """---
 raise ValueError("Boom")
 ---
@@ -38,9 +40,9 @@ raise ValueError("Boom")
 
             error_frame = frames[-1]
 
-            # raise on line 1
-            assert error_frame.lineno == 1, (
-                f"Raise should be on line 1, got {error_frame.lineno}"
+            # raise is on .wire line 2 (after opening --- fence on line 1)
+            assert error_frame.lineno == 2, (
+                f"Raise should be on line 2, got {error_frame.lineno}"
             )
 
     @pytest.mark.asyncio

@@ -34,6 +34,8 @@ export class TransportManager {
   private config: TransportConfig
   private messageHandlers: ((msg: ServerMessage) => void)[] = []
   private statusHandlers: ((connected: boolean) => void)[] = []
+  private giveUpHandlers: (() => void)[] = []
+  private maxReconnectAttempts: number | null = null
 
   constructor(config: Partial<TransportConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -59,6 +61,15 @@ export class TransportManager {
         this.transport.onStatusChange((connected) => {
           this.notifyStatusHandlers(connected)
         })
+
+        // Forward give-up notifications + max-attempts config to the
+        // active transport (only if it supports reconnection).
+        if (this.maxReconnectAttempts !== null && this.transport.setMaxReconnectAttempts) {
+          this.transport.setMaxReconnectAttempts(this.maxReconnectAttempts)
+        }
+        if (this.transport.onGiveUp) {
+          this.transport.onGiveUp(() => this.notifyGiveUpHandlers())
+        }
 
         await this.transport.connect()
         logger.log(`PyWire: Connected via ${this.transport.name}`)
@@ -127,9 +138,37 @@ export class TransportManager {
     this.statusHandlers.push(handler)
   }
 
+  /**
+   * Register a handler invoked when the active transport has exhausted
+   * its reconnect budget. Surfaces a single notification per session.
+   */
+  onGiveUp(handler: () => void): void {
+    this.giveUpHandlers.push(handler)
+  }
+
+  /**
+   * Set the reconnect-attempts cap forwarded to any reconnecting transport.
+   */
+  setMaxReconnectAttempts(n: number): void {
+    this.maxReconnectAttempts = n
+    if (this.transport?.setMaxReconnectAttempts) {
+      this.transport.setMaxReconnectAttempts(n)
+    }
+  }
+
   private notifyStatusHandlers(connected: boolean): void {
     for (const handler of this.statusHandlers) {
       handler(connected)
+    }
+  }
+
+  private notifyGiveUpHandlers(): void {
+    for (const handler of this.giveUpHandlers) {
+      try {
+        handler()
+      } catch (e) {
+        logger.error('PyWire: Error in giveUp handler', e)
+      }
     }
   }
 
