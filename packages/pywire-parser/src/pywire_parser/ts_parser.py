@@ -80,6 +80,9 @@ class ParsedDocument:
     directives: List[ParsedDirective]
     python_code: str
     template: List[ParsedNode]
+    # 1-based line number in the .wire file where the python_code section begins.
+    # 0 if no python frontmatter is present.
+    python_start_line: int = 0
 
 
 def _get_text(source: bytes, node: Node) -> str:
@@ -278,6 +281,7 @@ def parse(source: str) -> ParsedDocument:
 
     directives: List[ParsedDirective] = []
     python_code = ""
+    python_start_line = 0
     template: List[ParsedNode] = []
 
     cursor = root.walk()
@@ -298,6 +302,8 @@ def parse(source: str) -> ParsedDocument:
                 content_node = child.child_by_field_name("python_content")
                 if content_node:
                     python_code += _get_text(source_bytes, content_node)
+                    if python_start_line == 0:
+                        python_start_line = content_node.start_point[0] + 1
                 else:
                     # Fallback: check children for python_content node
                     fm_cursor = child.walk()
@@ -305,6 +311,10 @@ def parse(source: str) -> ParsedDocument:
                         while True:
                             if fm_cursor.node.type == "python_content":
                                 python_code += _get_text(source_bytes, fm_cursor.node)
+                                if python_start_line == 0:
+                                    python_start_line = (
+                                        fm_cursor.node.start_point[0] + 1
+                                    )
                             if not fm_cursor.goto_next_sibling():
                                 break
 
@@ -325,6 +335,7 @@ def parse(source: str) -> ParsedDocument:
         directives=directives,
         python_code=python_code,
         template=template,
+        python_start_line=python_start_line,
     )
 
 

@@ -2078,7 +2078,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },

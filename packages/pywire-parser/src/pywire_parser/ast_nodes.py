@@ -386,6 +386,10 @@ class ParsedPyWire:
     python_code: str = ""  # Raw Python section (between --- fences)
     python_ast: Optional[ast.Module] = None  # Parsed Python AST
     file_path: str = ""
+    # 1-based .wire-file line where python_code begins (0 if no python section).
+    # Set on the python_ast via ast.increment_lineno so traceback lines align
+    # with the .wire source.
+    python_start_line: int = 0
 
     def get_directive_by_type(self, directive_type: type) -> Optional[Directive]:
         """Get first directive of specified type."""
