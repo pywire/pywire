@@ -78,7 +78,7 @@ class WriteInsideDerived(Rule):
         if module is None:
             return
 
-        wire_names = ctx.wire_names | ctx.store_names
+        wire_names = ctx.wire_names | ctx.producer_names
         if not wire_names:
             return
 
