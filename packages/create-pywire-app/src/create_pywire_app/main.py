@@ -686,6 +686,12 @@ def main():
             resolved_version = resolve_pywire_version(pywire_dep)
             if resolved_version:
                 pywire_version_display = resolved_version
+                # Pin a floor so cached/stale resolvers can't downgrade past
+                # the version we just advertised. Without this, an unconstrained
+                # 'pywire' dep can resolve to an old release on machines with
+                # a cached uv index, which silently breaks features that ship
+                # later (e.g. /static auto-mount added post-0.2.x).
+                pywire_dep = f"pywire>={resolved_version}"
 
     tool_version = get_version()
 
@@ -970,30 +976,17 @@ def main():
         if should_show_instructions:
             console.print()
 
-            is_windows = os.name == "nt"
-            commands = [f"cd {project_location}"]
-            if not sync_success:
-                commands.append("uv sync")
-            if is_windows:
-                activate_cmd = r".venv\Scripts\activate"
-            else:
-                activate_cmd = "source .venv/bin/activate"
-            commands.extend(
-                [
-                    activate_cmd,
-                    "pywire dev",
-                ]
-            )
+            commands = [f"cd {project_location}", "uv run pywire dev"]
 
             if "Cloudflare Workers (wrangler.toml)" in adapters:
                 commands.extend(
                     [
                         "",
                         "# Cloudflare Workers — fast local dev (standard hot-reload):",
-                        "pywire dev",
+                        "uv run pywire dev",
                         "# Cloudflare Workers — workerd local dev (matches CF production):",
-                        "pywire build --platform cloudflare",
-                        "pywrangler dev",
+                        "uv run pywire build --platform cloudflare",
+                        "uv run pywrangler dev",
                     ]
                 )
 
@@ -1001,7 +994,7 @@ def main():
 
             cf_tip = ""
             if "Cloudflare Workers (wrangler.toml)" in adapters:
-                cf_tip = "\n> **Deploy:** `pywire build --platform cloudflare && pywrangler deploy`"
+                cf_tip = "\n> **Deploy:** `uv run pywire build --platform cloudflare && uv run pywrangler deploy`"
 
             console.print(
                 Panel(
