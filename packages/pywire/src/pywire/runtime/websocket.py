@@ -44,6 +44,14 @@ class WebSocketHandler:
         # observe or mutate them from ``document.cookie``. All other keys
         # are reconciled against ``document.cookie`` on each SPA relocate.
         self._connection_httponly: Dict[WebSocket, Set[str]] = {}
+        # Per-connection flag set when the last response sent to the
+        # browser was an error page (4xx/5xx) or the connection failed
+        # to resolve a route. While this is set, hot-reload (broadcast
+        # _reload) skips the state-preserving morph path and forces a
+        # hard browser reload — morphing the fixed page into the error
+        # DOM leaks the error template's <style> + tokens into the
+        # host app. Cleared on a successful page render.
+        self._connection_in_error: Set[WebSocket] = set()
         # Per-connection live-auth subscription task — fan-out from the
         # app's AuthChannel pushes update/revoke events into the WS so the
         # page re-renders when the current user's claims change or the
@@ -227,6 +235,7 @@ class WebSocketHandler:
 
         self.active_connections.discard(websocket)
         self.connection_pages.pop(websocket, None)
+        self._connection_in_error.discard(websocket)
         # Keep session in store (TTL handles cleanup) — enables reconnect
         self.session_ids.pop(websocket, None)
         self._connection_cookies.pop(websocket, None)
@@ -410,10 +419,17 @@ class WebSocketHandler:
             )
             if not result:
                 print(f"Init: No route found for path: {path}")
+                # Browser likely arrived from a full nav and is currently
+                # showing the built-in error page. Mark the connection so
+                # the next hot-reload forces a hard browser reload rather
+                # than morphing fixed-page HTML into the error DOM.
+                self._connection_in_error.add(websocket)
                 await websocket.send_bytes(
                     msgpack.packb({"type": "error", "error": "Not Found"})
                 )
                 return
+            # Resolved a real page — clear any prior error flag.
+            self._connection_in_error.discard(websocket)
 
             page, _params, _variant_name = result
 
@@ -658,13 +674,28 @@ class WebSocketHandler:
                 return
 
             if response.status >= 400:
-                # Error response — send the error page HTML
-                html = response.body.decode("utf-8")
-                payload: Dict[str, Any] = {"type": "update", "html": html}
+                # Error response — the body is the server's error page, a
+                # *different* document than the current SPA page. Morphing
+                # it into the live DOM would leak the error template's
+                # <style> and tokens into the host app (and dangle the
+                # auth-demo's stylesheets after recovery). Instead, sync
+                # any cookies and tell the client to do a full reload —
+                # the URL bar already points at the requested path (set
+                # by `history.pushState` before the relocate fired), so
+                # the browser will fetch and render the error page fresh
+                # with its own <head>.
+                self._connection_in_error.add(websocket)
+                payload: Dict[str, Any] = {"type": "reload"}
                 if cookie_commands:
-                    payload["commands"] = cookie_commands
+                    # Apply any Set-Cookie commands before reload so the
+                    # subsequent full-page request sees the updated jar.
+                    await self._send_update_payload(
+                        websocket, {"regions": [], "commands": cookie_commands}
+                    )
                 await websocket.send_bytes(msgpack.packb(payload))
                 return
+            # Successful relocate — clear any prior error flag.
+            self._connection_in_error.discard(websocket)
 
             # 5. Success (200) — send body HTML and set up local page instance.
             # Resolve the new page first so we can both attach meta to the
@@ -746,6 +777,7 @@ class WebSocketHandler:
             # If relocation fails, force a full reload so the browser
             # hits the server and gets the proper error page
             print(f"Error handling relocate: {e}", file=sys.stderr)
+            self._connection_in_error.add(websocket)
             await websocket.send_bytes(msgpack.packb({"type": "reload"}))
         finally:
             log_callback_ctx.reset(token)
@@ -1004,8 +1036,34 @@ class WebSocketHandler:
         disconnected = set()
         for connection in list(self.active_connections):
             try:
+                # If the browser is currently showing the built-in error
+                # page (a 4xx/5xx came back during init or relocate, or
+                # the connection's last response was an ErrorBasePage),
+                # the live DOM is the error template. Morphing fixed-
+                # page HTML into it leaks the error template's <style>
+                # + tokens into the host app. Force a hard reload so
+                # the browser fetches a clean document for the URL it's
+                # already showing.
+                if connection in self._connection_in_error:
+                    await connection.send_bytes(
+                        msgpack.packb({"type": "reload"})
+                    )
+                    self._connection_in_error.discard(connection)
+                    continue
+
                 old_page = self.connection_pages.get(connection)
                 if old_page:
+                    from pywire.runtime.page import ErrorBasePage
+
+                    is_error_page = isinstance(old_page, ErrorBasePage) or getattr(
+                        type(old_page), "__is_compile_error_page__", False
+                    )
+                    if is_error_page:
+                        await connection.send_bytes(
+                            msgpack.packb({"type": "reload"})
+                        )
+                        continue
+
                     try:
                         # Get the current URL path from the old page's request
                         path = old_page.request.url.path
@@ -1129,6 +1187,17 @@ class WebSocketHandler:
                             e,
                             exc_info=True,
                         )
+                        # Mark the connection so the *next* hot-reload also
+                        # forces a hard reload — the browser is currently
+                        # displaying the HTTP-served compile/runtime error
+                        # page (a different document with its own <head>),
+                        # and the WS reconnect's init resolves the path
+                        # successfully against the router's pre-break page
+                        # class, so the flag would otherwise stay clear.
+                        # Morphing the recovered page HTML into the error
+                        # DOM would leak the error template's <head>+styles
+                        # into the host app.
+                        self._connection_in_error.add(connection)
                         message_bytes = msgpack.packb({"type": "reload"})
                         await connection.send_bytes(message_bytes)
                 else:

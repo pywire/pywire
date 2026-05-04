@@ -474,6 +474,16 @@ export class PyWireApp {
         credentials: 'same-origin',
       })
 
+      // Error responses (4xx/5xx) carry the server's error page HTML — a
+      // *different* document than the source page. Morphing it into the
+      // current DOM would leak the error template's <style> and tokens
+      // into the host app. Fall back to a full browser navigation so the
+      // error page renders cleanly with its own <head>.
+      if (!response.ok) {
+        window.location.href = path
+        return
+      }
+
       if (response.redirected) {
         // Follow redirect — update URL and re-navigate
         const redirectPath = new URL(response.url).pathname
@@ -528,6 +538,14 @@ export class PyWireApp {
         credentials: 'same-origin',
         redirect: 'follow',
       })
+
+      // 4xx/5xx responses carry the error page — a different document.
+      // Morphing it into the current DOM would leak its styles into the
+      // host app. Fall back to a full navigation.
+      if (!response.ok) {
+        window.location.href = path
+        return
+      }
 
       if (response.redirected) {
         const redirectPath = new URL(response.url).pathname
