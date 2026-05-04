@@ -910,7 +910,6 @@ def main():
             console.print("[green]✓[/green] Project structure created")
 
         # UV SYNC
-        sync_success = False
         if args.no_install:
             console.print("[dim]Skipping uv sync (--no-install)[/dim]")
         else:
@@ -936,7 +935,6 @@ def main():
                         env=env,
                     )
                     console.print("[green]✓[/green] Environment optimized")
-                    sync_success = True
                 except subprocess.CalledProcessError as e:
                     console.print("[red]✗[/red] Failed to sync environment")
                     console.print(e.stderr)
