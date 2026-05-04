@@ -1,6 +1,6 @@
 {
   "packages/pywire-language-server": "0.7.1",
-  "packages/pywire": "0.14.2",
+  "packages/pywire": "0.14.3",
   "packages/pywire-parser": "0.7.1",
   "packages/pywire-auth": "0.3.0",
   "packages/pywire-cli": "0.3.0",
