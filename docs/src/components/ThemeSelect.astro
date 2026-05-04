@@ -3,12 +3,7 @@ import type { Props } from '@astrojs/starlight/props'
 ---
 
 <starlight-theme-select>
-  <button
-    type="button"
-    class="theme-toggle"
-    aria-label="Toggle dark mode"
-    aria-live="polite"
-  >
+  <button type="button" class="theme-toggle" aria-label="Toggle dark mode" aria-live="polite">
     <svg
       class="icon-sun"
       width="14"
@@ -69,7 +64,7 @@ import type { Props } from '@astrojs/starlight/props'
     }
   }
 
-  const getPreferredColorScheme = (): Theme =>
+  const getPreferredColorScheme = (): 'light' | 'dark' =>
     matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 
   function getResolved(theme: Theme): 'light' | 'dark' {

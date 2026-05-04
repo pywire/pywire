@@ -655,7 +655,11 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame >
 
 /* Single source of top breathing inside the panel — applied to the
    first .ec-line so only one rule contributes. */
-starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame .ec-line:first-child {
+starlight-tabs:has(.expressive-code)
+  [role='tabpanel']
+  .expressive-code
+  .frame
+  .ec-line:first-child {
   padding-block-start: 0.6rem;
 }
 
@@ -719,7 +723,7 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
 /* Mode-specific elevation — quiet cyan glow on Void, soft cool-ink
    shadow on Lab. Matches the marketing site code-window recipe. */
 :root[data-theme='dark'] .expressive-code .frame {
-  background: #1c1f2e;
+  background: #1e1e2e; /* catppuccin-mocha editor.background */
   border: 1px solid var(--pywire-border);
   box-shadow:
     0 0 0 1px color-mix(in oklch, var(--sl-color-accent) 22%, transparent),
@@ -727,7 +731,7 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
 }
 
 :root[data-theme='light'] .expressive-code .frame {
-  background: #ffffff;
+  background: #eff1f5; /* catppuccin-latte editor.background */
   border: 1px solid var(--pywire-border);
   box-shadow:
     0 1px 2px rgba(14, 21, 37, 0.06),
@@ -955,7 +959,11 @@ starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
   z-index: -1;
   background-image:
     linear-gradient(color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--sl-color-text) 6%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 32px 32px;
   mask-image: radial-gradient(60% 50% at 50% 50%, black, transparent);
 }

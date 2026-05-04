@@ -43,7 +43,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--pywire-motion-base, 200ms) var(--pywire-ease-spring, cubic-bezier(0.1, 0.1, 0, 1));
+  transition: all var(--pywire-motion-base, 200ms)
+    var(--pywire-ease-spring, cubic-bezier(0.1, 0.1, 0, 1));
   font-family: var(--pywire-font-sans);
 }
 
