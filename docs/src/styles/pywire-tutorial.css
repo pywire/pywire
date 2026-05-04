@@ -867,6 +867,14 @@
   box-sizing: border-box;
   min-height: 0;
   font-family: var(--pywire-font-sans);
+  scroll-behavior: smooth;
+  scroll-padding-top: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-instructions-container {
+    scroll-behavior: auto;
+  }
 }
 
 .pw-instructions-container > .prose {
