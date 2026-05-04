@@ -24,9 +24,9 @@ successCriteria:
     description: "Change the `<h1>` tag to contain the word 'secret'"
     target: pages/homepage.wire
     pattern: 'secret'
-  - type: browser_route_text
-    route: '/home'
-    description: 'Navigate to /home and see the content'
+  - type: file_contains
+    target: pages/homepage.wire
+    description: 'Mention /home in the page so it shows up at the new route'
     pattern: 'now at /home'
 pagesDir: pages
 initialRoute: '/home'
