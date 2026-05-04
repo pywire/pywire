@@ -5,6 +5,8 @@ description: Reusing UI structures with layouts.
 
 Layouts allow you to wrap multiple pages in a consistent UI structure (like headers, footers, and sidebars). A layout is a regular `.wire` file that uses `{$render children}` to indicate where page content should be injected.
 
+`__layout__.wire` is one of three convention files PyWire picks up automatically from your `pages/` directory; see [Error & Reconnect Pages](/docs/guides/error-and-reconnect) for the others.
+
 ## Creating a Layout
 
 ```pywire
