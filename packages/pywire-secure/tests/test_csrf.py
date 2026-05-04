@@ -65,6 +65,14 @@ def test_token_within_ttl_accepted() -> None:
     assert verify_token(token, SESSION, SECRET, ttl=60, now=1_000_059) is True
 
 
+def test_future_dated_token_rejected() -> None:
+    """A token whose ts is in the future (clock skew or forged) must
+    fail verification — without this check, ``current - issued`` is
+    negative and slips through ``<= ttl``."""
+    token = generate_token(SESSION, SECRET, ttl=60, now=2_000_000)
+    assert verify_token(token, SESSION, SECRET, ttl=60, now=1_000_000) is False
+
+
 def test_zero_ttl_disables_expiry() -> None:
     token = generate_token(SESSION, SECRET, ttl=0)
     ts, _ = token.split(":", 1)

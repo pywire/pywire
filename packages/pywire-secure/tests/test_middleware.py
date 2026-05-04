@@ -241,6 +241,87 @@ async def test_page_opt_out_via_csrf_required_attribute() -> None:
 
 
 @pytest.mark.asyncio
+async def test_oversize_body_rejected_without_buffering() -> None:
+    """A 2 MiB form body must be rejected without exhausting memory.
+    Token-via-header would still let the request through; this exercises
+    the form-field path."""
+    from pywire_secure.middleware import _MAX_BODY_BUFFER
+
+    inner = _RecordingApp()
+    mw = CSRFMiddleware(inner, secret_key=SECRET)
+    sink = _Sink()
+    body = b"a" * (_MAX_BODY_BUFFER + 1024)
+    scope = _scope(
+        "POST",
+        headers=[(b"content-type", b"application/x-www-form-urlencoded")],
+    )
+    await mw(scope, _make_receive(body), sink)
+    assert not inner.was_called
+    assert sink.start and sink.start["status"] == 403
+
+
+@pytest.mark.asyncio
+async def test_disconnect_during_body_propagates_to_downstream() -> None:
+    """If the client disconnects mid-body, the middleware must replay
+    the disconnect so downstream's is_disconnected() doesn't lie."""
+    inner_disconnect_seen = False
+
+    class _DisconnectAwareApp:
+        was_called = False
+        body = b""
+
+        async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+            nonlocal inner_disconnect_seen
+            self.was_called = True
+            for _ in range(5):
+                msg = await receive()
+                if msg["type"] == "http.disconnect":
+                    inner_disconnect_seen = True
+                    break
+                if msg["type"] == "http.request":
+                    self.body += msg.get("body", b"")
+                    if not msg.get("more_body", False):
+                        # Try one more receive to collect disconnect
+                        continue
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"text/plain")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"OK"})
+
+    sent_count = 0
+
+    async def disconnecting_receive() -> dict:
+        nonlocal sent_count
+        sent_count += 1
+        if sent_count == 1:
+            return {"type": "http.request", "body": b"first", "more_body": True}
+        if sent_count == 2:
+            return {"type": "http.disconnect"}
+        return {"type": "http.disconnect"}
+
+    inner = _DisconnectAwareApp()
+    token = generate_token(SESSION, SECRET)
+    mw = CSRFMiddleware(inner, secret_key=SECRET)
+    sink = _Sink()
+    scope = _scope(
+        "POST",
+        headers=[
+            (b"content-type", b"application/x-www-form-urlencoded"),
+            (b"x-csrf-token", token.encode()),
+        ],
+    )
+    await mw(scope, disconnecting_receive, sink)
+    # Header token bypassed body buffering — middleware accepts and
+    # downstream handler runs and sees the disconnect propagated.
+    assert inner.was_called
+    assert inner_disconnect_seen
+
+
+@pytest.mark.asyncio
 async def test_post_with_multipart_field_token_passes() -> None:
     inner = _RecordingApp()
     mw = CSRFMiddleware(inner, secret_key=SECRET)

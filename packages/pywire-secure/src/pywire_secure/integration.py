@@ -18,7 +18,6 @@ in *innermost-first* order produces the stack above.
 
 from __future__ import annotations
 
-import types
 from typing import Any, Optional, Sequence
 
 from pywire_secure.config import resolve_config
@@ -156,14 +155,10 @@ def _patch_csrf_injection(app: Any, secret: str, ttl: int) -> None:
         if not session_id:
             return response
 
+        # session_id is non-empty here (guarded above), so generate_token
+        # always returns a populated token.
         token = generate_token(session_id, secret, ttl=ttl)
-        if not token:
-            return response
-
-        try:
-            request.state.csrf_token = token
-        except Exception:
-            pass
+        request.state.csrf_token = token
 
         try:
             html = bytes(body_attr).decode("utf-8")
@@ -187,11 +182,8 @@ def _patch_csrf_injection(app: Any, secret: str, ttl: int) -> None:
                 if key.lower() in ("content-length", "content-type"):
                     continue
                 new_response.headers[key] = value
-        except Exception:
+        except AttributeError:
             pass
         return new_response
 
-    if hasattr(original, "__self__"):
-        app._handle_request = types.MethodType(patched, app)
-    else:
-        app._handle_request = patched
+    app._handle_request = patched

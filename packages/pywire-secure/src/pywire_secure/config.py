@@ -2,7 +2,7 @@
 
 Keyword arguments to :func:`connect_secure` always win; missing values
 fall back to ``PYWIRE_SECURE_*`` environment variables read through
-:func:`pywire.config.env`.
+:func:`pywire.config.env`, then to :class:`SecureConfig` defaults.
 """
 
 from __future__ import annotations
@@ -41,12 +41,17 @@ class SecureConfig:
     rate_limit_default: str = "100/minute"
 
 
-def _env_bool(name: str, default: bool) -> bool:
+def _env_bool(name: str) -> Optional[bool]:
+    """Read a tri-state flag from the environment.
+
+    Returns ``True`` / ``False`` for recognised values, ``None`` when
+    the env var is unset — letting :class:`SecureConfig` defaults apply.
+    """
     from pywire.config import env
 
     raw = env(name)
     if raw is None:
-        return default
+        return None
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -69,66 +74,49 @@ def resolve_config(
     csp: Any = None,
     rate_limit_default: Optional[str] = None,
 ) -> SecureConfig:
-    """Merge kwargs with ``PYWIRE_SECURE_*`` env vars and PyWire's session
-    secret, returning a fully populated :class:`SecureConfig`.
+    """Merge kwargs with ``PYWIRE_SECURE_*`` env vars, returning a fully
+    populated :class:`SecureConfig`.
+
+    Resolution order: explicit kwarg → env var → dataclass default.
 
     ``csp`` accepts a raw string or any object with a ``build() -> str``
     method (notably :class:`pywire_secure.headers.CSPBuilder`).
     """
-    defaults = SecureConfig()
-
-    csp_value: Optional[str]
     if csp is None:
-        csp_value = None
+        csp_value: Optional[str] = None
     elif isinstance(csp, str):
         csp_value = csp
     else:
         builder = getattr(csp, "build", None)
         csp_value = str(builder()) if callable(builder) else str(csp)
 
-    return SecureConfig(
-        csrf=csrf
-        if csrf is not None
-        else _env_bool("PYWIRE_SECURE_CSRF", defaults.csrf),
-        headers=headers
-        if headers is not None
-        else _env_bool("PYWIRE_SECURE_HEADERS", defaults.headers),
-        rate_limit=rate_limit
-        if rate_limit is not None
-        else _env_bool("PYWIRE_SECURE_RATE_LIMIT", defaults.rate_limit),
-        https_redirect=https_redirect
-        if https_redirect is not None
-        else _env_bool("PYWIRE_SECURE_HTTPS_REDIRECT", defaults.https_redirect),
-        secret_key=secret_key,
-        csrf_token_ttl=csrf_token_ttl
-        if csrf_token_ttl is not None
-        else defaults.csrf_token_ttl,
-        csrf_skip_paths=csrf_skip_paths
-        if csrf_skip_paths is not None
-        else defaults.csrf_skip_paths,
-        x_frame_options=x_frame_options
-        if x_frame_options is not None
-        else defaults.x_frame_options,
-        referrer_policy=referrer_policy
-        if referrer_policy is not None
-        else defaults.referrer_policy,
-        permissions_policy=permissions_policy
-        if permissions_policy is not None
-        else defaults.permissions_policy,
-        hsts=hsts
-        if hsts is not None
-        else _env_bool("PYWIRE_SECURE_HSTS", defaults.hsts),
-        hsts_max_age=hsts_max_age
-        if hsts_max_age is not None
-        else defaults.hsts_max_age,
-        hsts_include_subdomains=hsts_include_subdomains
-        if hsts_include_subdomains is not None
-        else defaults.hsts_include_subdomains,
-        hsts_preload=hsts_preload
-        if hsts_preload is not None
-        else defaults.hsts_preload,
-        csp=csp_value,
-        rate_limit_default=rate_limit_default
-        if rate_limit_default is not None
-        else defaults.rate_limit_default,
-    )
+    candidates: dict[str, Any] = {
+        "csrf": _coalesce(csrf, _env_bool("PYWIRE_SECURE_CSRF")),
+        "headers": _coalesce(headers, _env_bool("PYWIRE_SECURE_HEADERS")),
+        "rate_limit": _coalesce(rate_limit, _env_bool("PYWIRE_SECURE_RATE_LIMIT")),
+        "https_redirect": _coalesce(
+            https_redirect, _env_bool("PYWIRE_SECURE_HTTPS_REDIRECT")
+        ),
+        "secret_key": secret_key,
+        "csrf_token_ttl": csrf_token_ttl,
+        "csrf_skip_paths": csrf_skip_paths,
+        "x_frame_options": x_frame_options,
+        "referrer_policy": referrer_policy,
+        "permissions_policy": permissions_policy,
+        "hsts": _coalesce(hsts, _env_bool("PYWIRE_SECURE_HSTS")),
+        "hsts_max_age": hsts_max_age,
+        "hsts_include_subdomains": hsts_include_subdomains,
+        "hsts_preload": hsts_preload,
+        "csp": csp_value,
+        "rate_limit_default": rate_limit_default,
+    }
+    overrides = {k: v for k, v in candidates.items() if v is not None}
+    return SecureConfig(**overrides)
+
+
+def _coalesce(*values: Any) -> Any:
+    """Return the first non-``None`` value, else ``None``."""
+    for v in values:
+        if v is not None:
+            return v
+    return None

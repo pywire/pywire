@@ -42,6 +42,12 @@ _MULTIPART_CT = "multipart/form-data"
 _HEADER_NAME = b"x-csrf-token"
 _FORM_FIELD = "_csrf_token"
 
+# Cap on bytes the middleware will buffer to look for a form-field
+# token. A reasonable HTML form fits in well under this; larger requests
+# (file uploads, etc.) should send the token via the X-CSRF-Token header
+# so the middleware never needs to read the body.
+_MAX_BODY_BUFFER = 1 * 1024 * 1024  # 1 MiB
+
 _BUILTIN_403 = (
     b"<!doctype html><html><head><title>403 Forbidden</title></head>"
     b"<body><h1>403 Forbidden</h1>"
@@ -148,24 +154,46 @@ class CSRFMiddleware:
 
         body = b""
         more = True
+        pending: Optional[dict] = None
+        oversize = False
         while more:
             msg = await receive()
             if msg["type"] != "http.request":
-                # Disconnect or unexpected — stop reading; downstream will
-                # see whatever we buffered.
+                # Stash non-request messages (notably http.disconnect)
+                # so the downstream app still observes them via replay.
+                pending = msg
                 break
             body += msg.get("body", b"")
             more = msg.get("more_body", False)
+            if len(body) > _MAX_BODY_BUFFER:
+                # Refuse to buffer more; force header-token usage for
+                # large bodies. Drop the body and let the downstream
+                # handler see an empty replay so it errors cleanly
+                # (the request will already be 403'd by the caller).
+                oversize = True
+                # Drain the rest so the connection state stays sane.
+                while more:
+                    msg = await receive()
+                    if msg["type"] != "http.request":
+                        pending = msg
+                        break
+                    more = msg.get("more_body", False)
+                break
 
-        token = self._parse_body_token(body, content_type)
+        token = None if oversize else self._parse_body_token(body, content_type)
 
         replayed = False
+        replay_body = b"" if oversize else body
 
         async def replay() -> dict:
-            nonlocal replayed
+            nonlocal replayed, pending
             if not replayed:
                 replayed = True
-                return {"type": "http.request", "body": body, "more_body": False}
+                return {"type": "http.request", "body": replay_body, "more_body": False}
+            if pending is not None:
+                msg = pending
+                pending = None
+                return msg
             return await receive()
 
         return token, replay

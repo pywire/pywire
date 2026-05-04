@@ -71,7 +71,13 @@ def verify_token(
     except ValueError:
         return False
     current = int(now if now is not None else time.time())
-    return current - issued <= ttl
+    age = current - issued
+    # A future-dated token (age < 0) is structurally invalid — either
+    # clock skew or a forged ts trying to bypass expiry. Reject regardless
+    # of ttl. Generous skew tolerance lives in ``ttl`` itself.
+    if age < 0:
+        return False
+    return age <= ttl
 
 
 def _sign(session_id: str, ts: str, secret: str) -> str:

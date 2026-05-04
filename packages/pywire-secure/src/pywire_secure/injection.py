@@ -14,18 +14,15 @@ opt-out signal until a proper ``!no_csrf`` page directive lands.
 
 Raw-text spans (``<script>``, ``<style>``, ``<textarea>``, ``<title>``)
 are excluded so user JS containing string literals like ``"<form>"`` or
-``"</head>"`` does not trigger spurious injections. Mirrors the helper
-in :mod:`pywire.runtime.page`.
+``"</head>"`` does not trigger spurious injections. The exclusion helper
+is reused from :mod:`pywire.runtime.page` to avoid drift.
 """
 
 from __future__ import annotations
 
 import re
 
-_RAW_TEXT_SPAN_RE = re.compile(
-    r"<(script|style|textarea|title)\b[^>]*>.*?</\1\s*>",
-    re.IGNORECASE | re.DOTALL,
-)
+from pywire.runtime.page import _raw_text_spans
 
 _FORM_OPEN_RE = re.compile(r"<form\b[^>]*>", re.IGNORECASE | re.DOTALL)
 _NO_CSRF_RE = re.compile(r"\bdata-pywire-no-csrf\b", re.IGNORECASE)
@@ -77,10 +74,6 @@ def inject_csrf_tokens(html: str, token: str) -> str:
         html = html[:insert_at] + hidden_input + html[insert_at:]
 
     return html
-
-
-def _raw_text_spans(html: str) -> list[tuple[int, int]]:
-    return [(m.start(), m.end()) for m in _RAW_TEXT_SPAN_RE.finditer(html)]
 
 
 def _is_in_spans(idx: int, spans: list[tuple[int, int]]) -> bool:

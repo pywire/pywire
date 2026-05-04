@@ -75,7 +75,13 @@ class SecurityHeadersMiddleware:
         async def patched_send(message: dict) -> None:
             if message["type"] == "http.response.start":
                 hdrs = list(message.get("headers", []))
-                existing = {n.lower() for n, _ in hdrs}
+                # Some upstream middleware ships str-typed header names
+                # despite the ASGI bytes contract; coerce defensively
+                # so the existence check matches our bytes-keyed defaults.
+                existing = {
+                    (n.encode("latin-1") if isinstance(n, str) else n).lower()
+                    for n, _ in hdrs
+                }
                 for name, value in self._headers:
                     if name not in existing:
                         hdrs.append((name, value))
