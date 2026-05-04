@@ -610,9 +610,13 @@ starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true']::before 
 }
 
 /* Hide EC's chrome on code blocks inside code-tab panels — the outer
-   Tabs container is now the chrome. */
+   Tabs container is now the chrome. Also kill Starlight's
+   `.tablist-wrapper ~ [role='tabpanel'] { margin-top: 1rem }` rule
+   from Tabs.astro — that was the mystery 16px gap above the first
+   code line. */
 starlight-tabs:has(.expressive-code) [role='tabpanel'] {
-  padding: 0;
+  padding: 0 !important;
+  margin-block-start: 0 !important;
   background: var(--sl-color-bg);
 }
 
