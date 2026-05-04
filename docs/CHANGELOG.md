@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.29](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.28...pywire-docs-v0.5.29) (2026-05-04)
+
+
+### Bug Fixes
+
+* **pywire-docs:** solve button adds missing import to Importing Components step ([c2a2f22](https://github.com/pywire/pywire/commit/c2a2f2218a2893fc610c6f50bb57382e12f856de))
+
 ## [0.5.28](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.27...pywire-docs-v0.5.28) (2026-05-04)
 
 
