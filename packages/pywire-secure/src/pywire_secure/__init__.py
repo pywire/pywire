@@ -15,9 +15,16 @@ Public API:
 from pywire_secure import _compat as _compat  # noqa: F401  (runs floor check on import)
 from pywire_secure._version import __version__
 from pywire_secure.csrf import generate_token, verify_token
+from pywire_secure.headers import CSPBuilder, SecurityHeadersMiddleware
+from pywire_secure.integration import connect_secure
+from pywire_secure.middleware import CSRFMiddleware
 
 __all__ = [
+    "CSPBuilder",
+    "CSRFMiddleware",
+    "SecurityHeadersMiddleware",
     "__version__",
+    "connect_secure",
     "generate_token",
     "verify_token",
 ]
