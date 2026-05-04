@@ -6,9 +6,9 @@ description: Customising the built-in error page and disconnect overlay.
 PyWire ships with two built-in screens you can override by dropping convention
 files into your `pages/` directory:
 
-| File | Purpose |
-| --- | --- |
-| `pages/__error__.wire` | Renders 404s, uncaught exceptions, and SPA navigation errors. |
+| File                       | Purpose                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------------------- |
+| `pages/__error__.wire`     | Renders 404s, uncaught exceptions, and SPA navigation errors.                           |
 | `pages/__reconnect__.wire` | Overlay shown when the WebSocket drops, with a "failed" state once the client gives up. |
 
 Both files start with `__` and are picked up automatically — they are not
@@ -23,9 +23,9 @@ errors (4xx/5xx) and uncaught exceptions raised inside a page.
 
 The page receives two attributes from the framework:
 
-| Attribute | Type | Description |
-| --- | --- | --- |
-| `error_code` | `int` | HTTP status code (e.g. `404`, `500`). |
+| Attribute       | Type  | Description                                                              |
+| --------------- | ----- | ------------------------------------------------------------------------ |
+| `error_code`    | `int` | HTTP status code (e.g. `404`, `500`).                                    |
 | `error_message` | `str` | Human-readable summary. For 500s in production builds this is sanitised. |
 
 ```pywire
@@ -79,10 +79,10 @@ every page. When the transport disconnects, the client clones it into a
 wrapper `<div id="_pywire_reconnect_overlay">` and toggles a single
 attribute as state changes:
 
-| `data-pw-reconnect-state` | When |
-| --- | --- |
-| `"reconnecting"` | Initial state. The transport is still attempting reconnects on its backoff schedule. |
-| `"failed"` | The transport has exhausted `reconnect_max_attempts` (default `10`) and given up. |
+| `data-pw-reconnect-state` | When                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------ |
+| `"reconnecting"`          | Initial state. The transport is still attempting reconnects on its backoff schedule. |
+| `"failed"`                | The transport has exhausted `reconnect_max_attempts` (default `10`) and given up.    |
 
 Author both states inside the same template, then use CSS attribute
 selectors on `#_pywire_reconnect_overlay` to swap between them.
