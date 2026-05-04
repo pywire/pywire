@@ -525,10 +525,18 @@ starlight-tabs:has(.expressive-code) .tablist-wrapper {
   border: none;
   border-bottom: 1px solid var(--pywire-border);
   margin: 0;
-  padding-inline-start: 5rem; /* room for dots */
+  padding-inline-start: 5.5rem; /* room for dots, ~88px > dots' 58px right edge */
   min-height: var(--pywire-chrome-h);
   display: flex;
   align-items: stretch;
+  overflow: hidden;
+}
+
+/* Hide Starlight's scroll buttons inside code-tab tablists (the dark
+   rectangle that appears in the corner) — content fits in our frame
+   width and the buttons don't make sense in this editor visual. */
+starlight-tabs:has(.expressive-code) .tablist-wrapper > button {
+  display: none !important;
 }
 
 /* macOS dots overlay on the tablist. */
