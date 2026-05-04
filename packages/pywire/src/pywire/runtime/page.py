@@ -204,6 +204,11 @@ class BasePage:
             self._style_collector = StyleCollector()
 
         self.user: Any = None  # Set by middleware
+        # Set by pywire-secure's CSRFMiddleware (via scope) when installed.
+        # Defaults to "" so templates using {csrf_token} render harmlessly
+        # in apps that don't enable CSRF protection.
+        scope = getattr(request, "scope", None) if request is not None else None
+        self.csrf_token: str = (scope.get("pywire_csrf_token", "") or "") if scope else ""
 
         # Expose params as attributes for easy access in templates
         for k, v in self.params.items():
