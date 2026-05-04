@@ -682,9 +682,9 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
 }
 
 /* Copy button — design-system icon-chip recipe.
-   Default: 28×28 ghost button, panel surface, muted icon. Always
-   visible (not hover-gated) so users see the affordance. Hover: accent
-   tint bg + accent border + accent icon + soft halo. */
+   EC structure: button > div (bg fill) + ::before (border) + ::after
+   (masked icon). Style each layer; do NOT remove ::after — that IS
+   the icon. Always visible (not hover-gated). */
 .expressive-code .copy {
   inset-block-start: calc(var(--pywire-chrome-h) + 0.4rem) !important;
   inset-inline-end: 0.5rem !important;
@@ -694,41 +694,60 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
   width: 28px !important;
   height: 28px !important;
   border-radius: 6px !important;
-  border: 1px solid var(--pywire-border) !important;
   background: var(--sl-color-bg) !important;
   opacity: 1 !important;
   transition:
     background-color var(--pywire-motion-fast) var(--pywire-ease-spring),
-    border-color var(--pywire-motion-fast) var(--pywire-ease-spring),
     box-shadow var(--pywire-motion-fast) var(--pywire-ease-spring);
 }
 
-.expressive-code .copy button::before,
-.expressive-code .copy button::after {
+/* Inner fill layer — keep transparent so our button bg shows through. */
+.expressive-code .copy button div {
   background: transparent !important;
-  border: 0 !important;
+  opacity: 0 !important;
+}
+
+/* Border ring — use design border color. */
+.expressive-code .copy button::before {
+  border: 1px solid var(--pywire-border) !important;
+  opacity: 1 !important;
+  border-radius: inherit;
+}
+
+/* Icon — keep EC's mask-image, paint with muted fg, smaller margin. */
+.expressive-code .copy button::after {
+  background-color: var(--pywire-fg-muted) !important;
+  margin: 0.4rem !important;
 }
 
 .expressive-code .copy button:hover {
   background: var(--sl-color-accent-low) !important;
-  border-color: var(--pywire-accent) !important;
   box-shadow: 0 0 12px color-mix(in oklch, var(--pywire-accent) 32%, transparent);
 }
 
-.expressive-code .copy button .ready,
-.expressive-code .copy button .success {
-  background-color: var(--pywire-fg-muted) !important;
-  width: 14px !important;
-  height: 14px !important;
+.expressive-code .copy button:hover::before {
+  border-color: var(--pywire-accent) !important;
 }
 
-.expressive-code .copy button:hover .ready {
+.expressive-code .copy button:hover::after {
   background-color: var(--pywire-accent) !important;
 }
 
 .expressive-code .copy button:focus-visible {
   outline: 2px solid var(--pywire-accent);
   outline-offset: 2px;
+}
+
+/* Defeat EC's @media (hover: hover) opacity:0 / hover gate — keep button
+   always visible per design recipe. */
+@media (hover: hover) {
+  .expressive-code .copy button,
+  .expressive-code .frame:hover .copy button:not(:hover),
+  .expressive-code .frame:focus-within :focus-visible ~ .copy button:not(:hover) {
+    opacity: 1 !important;
+    width: 28px !important;
+    height: 28px !important;
+  }
 }
 
 /* ---------- HOMEPAGE / HERO -------------------------------------- */
