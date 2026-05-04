@@ -1,7 +1,8 @@
 !path "/login"
 !layout "public-layout.wire"
 
-<section>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Sign in</span>
     <h1>Login</h1>
-    <p>TODO: Replace with pywire auth once available.</p>
+    <p class="brand-lede">Replace this placeholder with <code>pywire-auth</code> when wiring up your provider.</p>
 </section>

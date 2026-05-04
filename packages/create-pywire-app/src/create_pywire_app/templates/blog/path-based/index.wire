@@ -47,12 +47,16 @@ posts = cursor.execute(
 ).fetchall()
 
 ---
-<section>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Blog</span>
     <h1>Blog + Portfolio</h1>
-    <p>Markdown posts backed by SQLite.</p>
-    <ul>
-        <li $for={post in posts} $key={post["slug"]}>
-            <a href="/posts/{row["slug"]}">{row["title"]}</a>
-        </li>
-    </ul>
+    <p class="brand-lede">Markdown posts backed by SQLite.</p>
 </section>
+<ul class="brand-list">
+    <li $for={post in posts} $key={post["slug"]}>
+        <a class="brand-card" href="/posts/{post['slug']}">
+            <h3>{post["title"]}</h3>
+            <p>Read the post →</p>
+        </a>
+    </li>
+</ul>

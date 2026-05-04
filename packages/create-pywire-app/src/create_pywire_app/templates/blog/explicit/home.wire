@@ -50,12 +50,16 @@ posts = cursor.execute(
 ).fetchall()
 
 ---
-<section>
-    <h1>Blog + Portfolio (Explicit)</h1>
-    <p>Routes are declared with <code>!path</code> and files are named semantically.</p>
-    <ul>
-        <li $for={post in posts} $key={post["slug"]}>
-            <a href="/posts/{row["slug"]}">{row["title"]}</a>
-        </li>
-    </ul>
+<section class="brand-hero">
+    <span class="brand-eyebrow">Blog</span>
+    <h1>Blog + Portfolio</h1>
+    <p class="brand-lede">Routes declared with <code>!path</code>; files named semantically.</p>
 </section>
+<ul class="brand-list">
+    <li $for={post in posts} $key={post["slug"]}>
+        <a class="brand-card" href="/posts/{post['slug']}">
+            <h3>{post["title"]}</h3>
+            <p>Read the post →</p>
+        </a>
+    </li>
+</ul>

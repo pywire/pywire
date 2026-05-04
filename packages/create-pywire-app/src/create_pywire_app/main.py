@@ -226,6 +226,7 @@ class ProjectGenerator:
         self._generate_main()
         self._generate_error_page()
         self._generate_vscode_settings()
+        self._generate_brand_css()
 
         # Generate template-specific files
         if self.template == "skeleton":
@@ -248,6 +249,15 @@ class ProjectGenerator:
         }
         content = self.renderer.render("skeleton/index.wire.j2", context)
         (self.pages_dir / "index.wire").write_text(content)
+
+        if self.routing_strategy == "path":
+            layout_content = self.renderer.render(
+                "skeleton/__layout__.wire.j2", context
+            )
+            (self.pages_dir / "__layout__.wire").write_text(layout_content)
+        else:
+            layout_content = self.renderer.render("skeleton/layout.wire.j2", context)
+            (self.pages_dir / "layout.wire").write_text(layout_content)
 
     def _generate_pyproject(self) -> None:
         """Generate pyproject.toml."""
@@ -304,6 +314,20 @@ class ProjectGenerator:
         """Generate __error__.wire."""
         self.renderer.copy_static(
             "common/__error__.wire", self.pages_dir / "__error__.wire"
+        )
+
+    def _generate_brand_css(self) -> None:
+        """Copy shared PyWire static assets (brand stylesheet + favicon)
+        into the project's static dir. PyWire serves project-root /static
+        automatically, so layouts can link them via /static/<file>.
+        """
+        static_dir = self.project_path / "static"
+        static_dir.mkdir(exist_ok=True)
+        self.renderer.copy_static(
+            "common/static/pywire-brand.css", static_dir / "pywire-brand.css"
+        )
+        self.renderer.copy_static(
+            "common/static/favicon.svg", static_dir / "favicon.svg"
         )
 
     def _generate_counter(self) -> None:
@@ -662,6 +686,12 @@ def main():
             resolved_version = resolve_pywire_version(pywire_dep)
             if resolved_version:
                 pywire_version_display = resolved_version
+                # Pin a floor so cached/stale resolvers can't downgrade past
+                # the version we just advertised. Without this, an unconstrained
+                # 'pywire' dep can resolve to an old release on machines with
+                # a cached uv index, which silently breaks features that ship
+                # later (e.g. /static auto-mount added post-0.2.x).
+                pywire_dep = f"pywire>={resolved_version}"
 
     tool_version = get_version()
 
@@ -880,7 +910,6 @@ def main():
             console.print("[green]✓[/green] Project structure created")
 
         # UV SYNC
-        sync_success = False
         if args.no_install:
             console.print("[dim]Skipping uv sync (--no-install)[/dim]")
         else:
@@ -906,7 +935,6 @@ def main():
                         env=env,
                     )
                     console.print("[green]✓[/green] Environment optimized")
-                    sync_success = True
                 except subprocess.CalledProcessError as e:
                     console.print("[red]✗[/red] Failed to sync environment")
                     console.print(e.stderr)
@@ -946,30 +974,17 @@ def main():
         if should_show_instructions:
             console.print()
 
-            is_windows = os.name == "nt"
-            commands = [f"cd {project_location}"]
-            if not sync_success:
-                commands.append("uv sync")
-            if is_windows:
-                activate_cmd = r".venv\Scripts\activate"
-            else:
-                activate_cmd = "source .venv/bin/activate"
-            commands.extend(
-                [
-                    activate_cmd,
-                    "pywire dev",
-                ]
-            )
+            commands = [f"cd {project_location}", "uv run pywire dev"]
 
             if "Cloudflare Workers (wrangler.toml)" in adapters:
                 commands.extend(
                     [
                         "",
                         "# Cloudflare Workers — fast local dev (standard hot-reload):",
-                        "pywire dev",
+                        "uv run pywire dev",
                         "# Cloudflare Workers — workerd local dev (matches CF production):",
-                        "pywire build --platform cloudflare",
-                        "pywrangler dev",
+                        "uv run pywire build --platform cloudflare",
+                        "uv run pywrangler dev",
                     ]
                 )
 
@@ -977,7 +992,7 @@ def main():
 
             cf_tip = ""
             if "Cloudflare Workers (wrangler.toml)" in adapters:
-                cf_tip = "\n> **Deploy:** `pywire build --platform cloudflare && pywrangler deploy`"
+                cf_tip = "\n> **Deploy:** `uv run pywire build --platform cloudflare && uv run pywrangler deploy`"
 
             console.print(
                 Panel(

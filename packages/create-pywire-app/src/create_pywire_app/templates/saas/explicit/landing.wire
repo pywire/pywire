@@ -1,8 +1,26 @@
 !path "/"
 !layout "public-layout.wire"
 
-<section>
-    <h1>Ship a SaaS with pywire</h1>
-    <p>This starter includes Stripe + SQLAlchemy + stubbed auth.</p>
-    <a role="button" href="/pricing">View pricing</a>
+<section class="brand-hero">
+    <span class="brand-eyebrow">SaaS starter</span>
+    <h1>Ship a SaaS with pywire.</h1>
+    <p class="brand-lede">This starter wires up Stripe, SQLAlchemy, and a stubbed auth flow so you can focus on the product.</p>
+    <p>
+        <a class="brand-btn" href="/pricing">View pricing</a>
+        <a class="brand-btn brand-btn--ghost" href="/login">Sign in</a>
+    </p>
 </section>
+<ul class="brand-list brand-list--three">
+    <li class="brand-card">
+        <h3>Stripe-ready</h3>
+        <p>Drop in a publishable key and start charging.</p>
+    </li>
+    <li class="brand-card">
+        <h3>SQLAlchemy</h3>
+        <p>Typed models in <code>models.py</code>, ready to extend.</p>
+    </li>
+    <li class="brand-card">
+        <h3>Auth stub</h3>
+        <p>Swap the demo user for the real thing whenever you're ready.</p>
+    </li>
+</ul>

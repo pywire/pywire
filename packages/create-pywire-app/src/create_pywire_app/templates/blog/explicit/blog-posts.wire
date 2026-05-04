@@ -23,8 +23,6 @@ posts = cursor.execute(
 
 # Fetch single post for detail view
 post = None
-post_title = ""
-post_body_html = ""
 
 if path.detail:
     # slug is guaranteed non-null here due to path matcher
@@ -34,22 +32,24 @@ if path.detail:
     ).fetchone()
 
 ---
-<main>
-    <!-- List view: /posts -->
-    <section $if={path.list}>
-        <h1>Posts (Path-Dict SPA)</h1>
-        <p>This page handles both /posts and /posts/{slug} using path-dicts.</p>
-        <ul>
-            <li $for={post in posts} $key={post["slug"]}>
-                <a href="/posts/{post['slug']}">{post["title"]}</a>
-            </li>
-        </ul>
-    </section>
-    
-    <!-- Detail view: /posts/{slug} -->
-    <article $if={path.detail}>
-        <h1>{post_title if post else "Post not found"}</h1>
-        <div>{!html markdown.markdown(post["body"]) if post else "<p>We couldn't find that post.</p>"}</div>
-        <p><a href="/posts">← Back to all posts</a></p>
-    </article>
-</main>
+<!-- List view: /posts -->
+<section $if={path.list} class="brand-hero">
+    <span class="brand-eyebrow">Archive</span>
+    <h1>All posts</h1>
+    <p class="brand-lede">Both <code>/posts</code> and <code>/posts/&#123;slug&#125;</code> are served from one file via path-dicts.</p>
+</section>
+<ul $if={path.list} class="brand-list">
+    <li $for={post in posts} $key={post["slug"]}>
+        <a class="brand-card" href="/posts/{post['slug']}">
+            <h3>{post["title"]}</h3>
+            <p>Read the post →</p>
+        </a>
+    </li>
+</ul>
+
+<!-- Detail view: /posts/{slug} -->
+<article $if={path.detail} class="brand-prose">
+    <h1>{post["title"] if post else "Post not found"}</h1>
+    <div>{!html markdown.markdown(post["body"]) if post else "<p>We couldn't find that post.</p>"}</div>
+    <p><a href="/posts">← Back to all posts</a></p>
+</article>

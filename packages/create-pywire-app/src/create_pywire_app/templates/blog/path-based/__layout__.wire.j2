@@ -4,22 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ project_name }}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/static/pywire-brand.css">
 </head>
 <body>
-    <header class="container">
-        <nav>
-            <ul>
-                <li><strong>{{ project_name }}</strong></li>
-            </ul>
-            <ul>
+    <header class="brand-header">
+        <div class="container brand-nav">
+            <a class="brand-mark" href="/">{{ project_name }}</a>
+            <ul class="brand-links">
                 <li><a href="/">Home</a></li>
                 <li><a href="/posts">Posts</a></li>
             </ul>
-        </nav>
+            <button class="brand-theme-toggle" id="cs-toggle" aria-label="Toggle color scheme">Auto</button>
+        </div>
     </header>
     <main class="container">
         {$render children}
     </main>
+    <script>
+    (function(){var t=document.getElementById('cs-toggle'),m=['auto','light','dark'],l={auto:'Auto',light:'Light',dark:'Dark'},i=Math.max(0,m.indexOf(localStorage.getItem('cs')||'auto'));function a(){var s=m[i];document.documentElement.style.colorScheme=s==='auto'?'':s;t.textContent=l[s];}a();t.onclick=function(){i=(i+1)%3;localStorage.setItem('cs',m[i]);a();};})();
+    </script>
 </body>
 </html>
