@@ -123,9 +123,7 @@ class CompileErrorPage(BasePage):
     async def render(self, init: bool = True) -> HTMLResponse:
         is_syntax = isinstance(self.error, PyWireSyntaxError)
         title = "PyWire Syntax Error" if is_syntax else "Compilation Error"
-        tagline = random.choice(
-            _TAGLINES_SYNTAX if is_syntax else _TAGLINES_RUNTIME
-        )
+        tagline = random.choice(_TAGLINES_SYNTAX if is_syntax else _TAGLINES_RUNTIME)
         root_path = ""
         try:
             root_path = str(self.request.scope.get("root_path", "") or "")

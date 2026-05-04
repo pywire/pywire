@@ -1045,9 +1045,7 @@ class WebSocketHandler:
                 # the browser fetches a clean document for the URL it's
                 # already showing.
                 if connection in self._connection_in_error:
-                    await connection.send_bytes(
-                        msgpack.packb({"type": "reload"})
-                    )
+                    await connection.send_bytes(msgpack.packb({"type": "reload"}))
                     self._connection_in_error.discard(connection)
                     continue
 
@@ -1059,9 +1057,7 @@ class WebSocketHandler:
                         type(old_page), "__is_compile_error_page__", False
                     )
                     if is_error_page:
-                        await connection.send_bytes(
-                            msgpack.packb({"type": "reload"})
-                        )
+                        await connection.send_bytes(msgpack.packb({"type": "reload"}))
                         continue
 
                     try:
