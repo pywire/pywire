@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.26](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.25...pywire-docs-v0.5.26) (2026-05-04)
+
+
+### Bug Fixes
+
+* **pywire-docs:** move tutorial comments below directives/fences ([5df0ee2](https://github.com/pywire/pywire/commit/5df0ee2ff873e64c601f9197c9dc17593b8b2942))
+
 ## [0.5.25](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.24...pywire-docs-v0.5.25) (2026-05-04)
 
 
