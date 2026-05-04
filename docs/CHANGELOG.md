@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.27](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.26...pywire-docs-v0.5.27) (2026-05-04)
+
+
+### Bug Fixes
+
+* **pywire-docs:** design system alignment — header, sidebar, code blocks ([#217](https://github.com/pywire/pywire/issues/217)) ([43d4a66](https://github.com/pywire/pywire/commit/43d4a664cd3953967e759ff93060e38374136d16))
+* **pywire-docs:** landing/tutorial polish — favicon, EC theme parity, tabbed code-blocks ([#235](https://github.com/pywire/pywire/issues/235)) ([5623813](https://github.com/pywire/pywire/commit/562381355c3587e76db43b7e610eafc6bed7e079))
+
 ## [0.5.26](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.25...pywire-docs-v0.5.26) (2026-05-04)
 
 
