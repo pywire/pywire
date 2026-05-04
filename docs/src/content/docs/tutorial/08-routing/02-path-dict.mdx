@@ -6,14 +6,15 @@ description: Create complex pages with deep-linking using !path dictionaries.
 files:
   - path: pages/main.wire
     initial: |
-      # Turn this !path directive into a dictionary
       !path "/menu"
+
+      <!-- 1. Turn the !path directive above into a dictionary -->
 
       <div>
         <h1>This is the main menu</h1>
         <a href="/menu/settings">Go to Settings</a>
-        
-        <!-- Wrap settings in an `if` block targeting the settings path -->
+
+        <!-- 2. Wrap settings in an `if` block targeting the settings path -->
         <h2>Settings:</h2>
         <ul>
           <li>Preferences</li>
