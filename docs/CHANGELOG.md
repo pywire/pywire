@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.28](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.27...pywire-docs-v0.5.28) (2026-05-04)
+
+
+### Bug Fixes
+
+* **pywire-docs:** landing counter uses shorthand count += 1 ([#236](https://github.com/pywire/pywire/issues/236)) ([41b44c4](https://github.com/pywire/pywire/commit/41b44c4d8cca736ca691cc88e8d4383744256247))
+
 ## [0.5.27](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.26...pywire-docs-v0.5.27) (2026-05-04)
 
 

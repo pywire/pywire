@@ -1,7 +1,7 @@
 {
   "name": "docs",
   "type": "module",
-  "version": "0.5.27",
+  "version": "0.5.28",
   "scripts": {
     "dev": "PYWIRE_PYPI_INSTALL=1 pnpm build:assets && astro dev",
     "start": "PYWIRE_PYPI_INSTALL=1 pnpm build:assets && astro dev",
