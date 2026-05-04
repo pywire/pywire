@@ -504,6 +504,97 @@ starlight-tabs [role='tabpanel'] > .expressive-code:first-child {
   margin-block-start: 0;
 }
 
+/* ---------- CODE-BLOCK TABS — editor-frame recipe ---------------- */
+/* When <Tabs> wraps code blocks, fold the tablist into the macOS chrome
+   bar and hide the per-block EC chrome on tab panels. The tablist gets
+   the dots on the left and editor-style tab buttons. */
+
+starlight-tabs:has(.expressive-code) {
+  border: 1px solid var(--pywire-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--pywire-chrome-bg);
+}
+
+starlight-tabs:has(.expressive-code) .tablist-wrapper {
+  position: relative;
+  background: var(--pywire-chrome-bg);
+  border-bottom: 1px solid var(--pywire-border);
+  margin: 0;
+  padding-inline-start: 5rem; /* room for dots */
+  min-height: var(--pywire-chrome-h);
+  display: flex;
+  align-items: stretch;
+}
+
+/* macOS dots overlay on the tablist. */
+starlight-tabs:has(.expressive-code) .tablist-wrapper::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 11px;
+  background:
+    radial-gradient(circle at 5.5px 50%, #ff5f57 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 22px 50%, #febc2e 5.4px, transparent 5.6px) no-repeat,
+    radial-gradient(circle at 38.5px 50%, #28c840 5.4px, transparent 5.6px) no-repeat;
+  pointer-events: none;
+}
+
+starlight-tabs:has(.expressive-code) [role='tablist'] {
+  align-items: stretch;
+  gap: 0;
+  border: none;
+}
+
+starlight-tabs:has(.expressive-code) [role='tab'] {
+  margin: 0;
+  padding: 0 1rem;
+  display: flex;
+  align-items: center;
+  font-family: var(--pywire-font-mono);
+  font-size: 0.78rem;
+  color: var(--pywire-fg-muted);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--pywire-border);
+}
+
+starlight-tabs:has(.expressive-code) [role='tab'][aria-selected='true'] {
+  color: var(--pywire-accent);
+  background: var(--pywire-bg-code, var(--sl-color-bg));
+  border-bottom: 2px solid var(--pywire-accent);
+  font-weight: 600;
+}
+
+/* Hide EC's chrome on code blocks inside code-tab panels — the outer
+   Tabs container is now the chrome. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] {
+  padding: 0;
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame {
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame::before,
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame::after {
+  content: none !important;
+}
+
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .frame figcaption.header {
+  display: none !important;
+}
+
+/* Reset copy button position since chrome bar is gone within panel. */
+starlight-tabs:has(.expressive-code) [role='tabpanel'] .expressive-code .copy {
+  inset-block-start: 13px !important;
+}
+
 /* ---------- ASIDES / CALLOUTS ------------------------------------ */
 
 .starlight-aside {
