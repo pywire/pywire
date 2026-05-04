@@ -1,9 +1,13 @@
 """Per-file analysis context.
 
 A single pass over the Python AST collects simple name → kind bindings so
-individual rules don't each need to re-scan for wire/derived/store
+individual rules don't each need to re-scan for wire/derived/producer
 assignments. This is deliberately lightweight heuristics — not type
 inference. The ROADMAP covers real type-flow integration.
+
+Recognized factory kinds: wire, derived, effect, ref, producer. The
+former store kinds (writable, readable, store_derived) are gone — the
+downstream pywire package no longer ships those names.
 """
 
 from __future__ import annotations

@@ -12,6 +12,15 @@ It may optionally return a no-arg cleanup function that runs on
 Producers participate in the same render-context tracking as `wire()`,
 so accessing `producer.value` inside a `.wire` template makes the
 region re-render whenever the producer pushes a new value.
+
+Migration from the removed Svelte-style stores API:
+
+- `writable(x)`        -> `wire(x)`
+- `store_derived(...)` -> `derived(...)` (auto-tracks deps)
+- `readable(x, fn)`    -> `producer(x, fn)`
+- `store.set(x)`       -> `wire.value = x`
+- `store.update(fn)`   -> `wire.value = fn(wire.value)`
+- `store.subscribe(cb)`-> `wire.subscribe(cb)` (same signature)
 """
 
 from __future__ import annotations
