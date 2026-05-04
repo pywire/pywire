@@ -82,7 +82,7 @@ export default defineConfig({
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Your First Component', slug: 'guides/your-first-component' },
             { label: 'Interactive Tutorial', link: 'tutorial/' },
-            { label: 'Changelog', link: '/changelog' },
+            { label: 'Changelog', slug: 'changelog' },
           ],
         },
         {

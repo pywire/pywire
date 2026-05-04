@@ -1,0 +1,29 @@
+---
+title: Changelog
+description: Per-package release notes for the PyWire monorepo.
+template: doc
+---
+
+PyWire is a monorepo of independently-versioned packages. Releases are managed by [release-please](https://github.com/googleapis/release-please) — each package has its own `CHANGELOG.md` on GitHub.
+
+## Python packages
+
+- [**pywire**](https://github.com/pywire/pywire/blob/main/packages/pywire/CHANGELOG.md) — core framework (Starlette + .wire compiler).
+- [**pywire-cli**](https://github.com/pywire/pywire/blob/main/packages/pywire-cli/CHANGELOG.md) — `pywire` CLI: `dev`, `run`, `build`, `deploy`, `check`.
+- [**pywire-parser**](https://github.com/pywire/pywire/blob/main/packages/pywire-parser/CHANGELOG.md) — shared `.wire` parser + analysis engine.
+- [**pywire-auth**](https://github.com/pywire/pywire/blob/main/packages/pywire-auth/CHANGELOG.md) — auth providers + identity stores.
+- [**pywire-language-server**](https://github.com/pywire/pywire/blob/main/packages/pywire-language-server/CHANGELOG.md) — LSP server for `.wire`.
+- [**pywire-templates**](https://github.com/pywire/pywire/blob/main/packages/pywire-templates/CHANGELOG.md) — shared Jinja2 templates (deploy configs).
+- [**create-pywire-app**](https://github.com/pywire/pywire/blob/main/packages/create-pywire-app/CHANGELOG.md) — project scaffolding CLI.
+
+## Editor & tooling
+
+- [**tree-sitter-pywire**](https://github.com/pywire/pywire/blob/main/packages/tree-sitter-pywire/CHANGELOG.md) — Tree-sitter grammar for `.wire`.
+- [**prettier-plugin-pywire**](https://github.com/pywire/pywire/blob/main/packages/prettier-plugin-pywire/CHANGELOG.md) — Prettier formatter for `.wire`.
+- [**vscode-pywire**](https://github.com/pywire/pywire/blob/main/packages/vscode-pywire/CHANGELOG.md) — VS Code extension.
+
+## Docs site
+
+- [**pywire-docs**](https://github.com/pywire/pywire/blob/main/docs/CHANGELOG.md) — this site.
+
+For all releases across the monorepo, see the [GitHub Releases page](https://github.com/pywire/pywire/releases).
