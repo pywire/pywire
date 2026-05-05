@@ -7,7 +7,10 @@ CLAUDE.md "Version Floors" for the bump protocol.
 from importlib.metadata import PackageNotFoundError, version
 
 _FLOORS = {
-    "pywire": "0.14.2",
+    # pywire-secure stashes the CSRF token on scope and relies on
+    # BasePage.csrf_token (added in pywire 0.15.0) so templates can
+    # render `{{ csrf_token }}`.
+    "pywire": "0.15.0",
 }
 
 
