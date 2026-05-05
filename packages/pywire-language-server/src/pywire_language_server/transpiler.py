@@ -705,6 +705,10 @@ class Transpiler:
         _append(
             "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\ndef asset(path: str) -> str: ...\ndef set_cookie(key: str, value: str = '', *, max_age: int | None = None, expires: int | None = None, path: str = '/', domain: str | None = None, secure: bool = False, httponly: bool = False, samesite: str | None = 'lax') -> None: ...\ndef delete_cookie(key: str, *, path: str = '/', domain: str | None = None) -> None: ...\n\n"
         )
+        # request_id is always present on BasePage (defaults to "" when
+        # pywire-observability isn't installed), so unconditional
+        # emission gives templates a known type for completion / hover.
+        _append("request_id: str\n\n")
         if self.has_auth:
             _append(
                 "from pywire.auth.principal import ClaimsPrincipal\nuser: ClaimsPrincipal\n\n"
