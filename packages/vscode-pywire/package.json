@@ -5,7 +5,7 @@
   "version": "0.6.0",
   "type": "module",
   "publisher": "pywire",
-  "icon": "images/icon.jpg",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.75.0"
   },
