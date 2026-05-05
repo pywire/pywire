@@ -7,7 +7,10 @@ CLAUDE.md "Version Floors" for the bump protocol.
 from importlib.metadata import PackageNotFoundError, version
 
 _FLOORS = {
-    "pywire": "0.14.2",
+    # pywire-observability reads the observability ContextVars and
+    # BasePage.request_id attribute that ship in pywire 0.15.0
+    # (the same release that introduces the observability seams).
+    "pywire": "0.15.0",
 }
 
 
