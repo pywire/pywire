@@ -7,8 +7,26 @@ full request/response cycle (cookies, middleware, sessions).
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import MagicMock
+
+
+def response_to_html(response: Any) -> str:
+    """Decode a Starlette/httpx response body to ``str``.
+
+    Used by both :class:`TestClient.select` (over httpx ``Response``
+    instances, which expose ``.text``) and the direct render helpers
+    (over Starlette ``Response`` instances, which expose ``.body``).
+    """
+    text = getattr(response, "text", None)
+    if isinstance(text, str):
+        return text
+    body = getattr(response, "body", None)
+    if isinstance(body, (bytes, bytearray)):
+        return bytes(body).decode("utf-8", errors="replace")
+    if isinstance(body, str):
+        return body
+    return ""
 
 
 async def render_page(
@@ -35,7 +53,7 @@ async def render_page(
         page.user = user
 
     response = await page.render(init=True)
-    return _response_html(response)
+    return response_to_html(response)
 
 
 async def render_component(
@@ -49,7 +67,10 @@ async def render_component(
 
     ``component_class`` is a compiled component (a :class:`BasePage`
     subclass with ``__is_component__`` semantics). Props passed as
-    keyword arguments land on the instance directly.
+    keyword arguments are applied via ``_update_props`` when the class
+    exposes it (the path the parent-renders-child machinery uses), so
+    typed / validated props are coerced normally; otherwise they are
+    set directly with ``setattr``.
 
     A minimal mock :class:`Request` is built when ``request`` is None;
     pass an explicit one when component code reads request fields.
@@ -63,11 +84,15 @@ async def render_component(
         query={},
         __is_component__=True,
     )
-    for key, value in props.items():
-        setattr(instance, key, value)
+    update_props = getattr(instance, "_update_props", None)
+    if callable(update_props):
+        update_props(props)
+    else:
+        for key, value in props.items():
+            setattr(instance, key, value)
 
     response = await instance.render(init=init)
-    return _response_html(response)
+    return response_to_html(response)
 
 
 def _mock_request() -> Any:
@@ -88,12 +113,3 @@ def _mock_request() -> Any:
     request.url.path = "/"
     request.app.state = MagicMock()
     return request
-
-
-def _response_html(response: Any) -> str:
-    body: Optional[Any] = getattr(response, "body", None)
-    if isinstance(body, (bytes, bytearray)):
-        return bytes(body).decode("utf-8", errors="replace")
-    if isinstance(body, str):
-        return body
-    return ""

@@ -26,12 +26,14 @@ which pulls in ``httpx`` (for the TestClient transport) and ``lxml``
 from __future__ import annotations
 
 # Fail loudly with an actionable message when the extra isn't installed.
-# Importing pywire.testing without httpx/lxml is a developer error;
-# this guard turns it into an ImportError instead of a confusing
-# AttributeError on first use.
+# Importing pywire.testing without httpx/lxml/cssselect/starlette.testclient
+# is a developer error; this guard turns it into an ImportError instead of
+# a confusing AttributeError on first use. starlette.testclient itself
+# requires httpx so we test it directly — that catches both vanilla
+# starlette installs and partial extras setups.
 try:
-    import httpx as _httpx  # noqa: F401
-    import lxml.html as _lxml_html  # noqa: F401
+    import lxml.html  # noqa: F401
+    from starlette.testclient import TestClient as _StarletteTestClient  # noqa: F401
 except ImportError as exc:  # pragma: no cover - exercised only without extra
     raise ImportError(
         "pywire.testing requires the 'testing' extra. "

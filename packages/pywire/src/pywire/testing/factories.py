@@ -55,7 +55,9 @@ def wire_page(
 
         for path, src in sources.items():
             filename = _path_to_filename(path)
-            (pages_dir / filename).write_text(src)
+            target = pages_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(src)
 
         app = PyWire(
             pages_dir=str(pages_dir),

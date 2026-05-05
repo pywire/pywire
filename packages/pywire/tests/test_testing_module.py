@@ -107,7 +107,8 @@ def test_force_login_replaces_get_user() -> None:
 class _StubRequest:
     """Minimal stand-in for the request shape ``app.get_user`` walks."""
 
-    scope: dict = {}
+    def __init__(self) -> None:
+        self.scope: dict = {}
 
 
 def test_logout_restores_original_behavior() -> None:
@@ -195,20 +196,22 @@ def test_select_no_matches_returns_empty_list() -> None:
 # --- session() ---
 
 
-def test_session_context_reads_writes_dict() -> None:
+@pytest.mark.asyncio
+async def test_session_context_reads_writes_dict() -> None:
     with wire_page(FORM_PAGE, interactive_server_mode=False) as client:
         # Make a request so the session cookie is minted.
         client.get("/")
-        with client.session() as data:
+        async with client.session() as data:
             data["custom"] = "value"
-        with client.session() as data:
+        async with client.session() as data:
             assert data.get("custom") == "value"
 
 
-def test_session_without_cookie_raises() -> None:
+@pytest.mark.asyncio
+async def test_session_without_cookie_raises() -> None:
     with wire_page(COUNTER_PAGE, interactive_server_mode=False) as client:
         with pytest.raises(RuntimeError, match="No pywire_session cookie"):
-            with client.session():
+            async with client.session():
                 pass
 
 

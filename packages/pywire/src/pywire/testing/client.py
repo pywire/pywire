@@ -19,10 +19,11 @@ HTTP requests pass through unchanged, exposed via ``.get()``,
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from typing import Any, Iterator, Optional, Union
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Optional
 
 from pywire.testing.events import EventResult
+from pywire.testing.render import response_to_html
 
 
 class TestClient:
@@ -153,20 +154,27 @@ class TestClient:
         handler: str,
         data: Optional[dict[str, Any]] = None,
         user: Any = None,
+        init: bool = True,
     ) -> EventResult:
         """Drive an event handler directly against a freshly resolved page.
 
         Bypasses the WebSocket protocol — instantiates the page via
         :func:`pywire.runtime.page_resolver.resolve_page`, applies
-        ``page.user`` (from the active :meth:`force_login` if any, or
-        the explicit ``user`` argument), and calls
-        :meth:`page.handle_event`.
+        ``page.user`` (from the explicit ``user`` argument or the
+        active :meth:`force_login`), and calls :meth:`page.handle_event`.
+
+        Set ``init=False`` to skip the priming ``render(init=True)``
+        call. Production WebSocket dispatch runs ``render(init=True)``
+        once at connection time and reuses the live page across many
+        events; ``fire_event`` creates a fresh page per call, so
+        leaving ``init=True`` (the default) means ``@before_load`` and
+        ``@init`` hooks run on every event call. That matches a fresh
+        navigation but can be wasteful or surprising when the test
+        only cares about event behaviour — pass ``init=False`` then.
 
         Returns an :class:`EventResult` wrapping the dict from
         :meth:`render_update`. The page instance is discarded after the
-        call — there is no implicit state continuity across multiple
-        ``fire_event`` calls. Tests that need that should use the
-        WebSocket transport via :meth:`websocket_connect`.
+        call.
         """
         from pywire.runtime.page_resolver import resolve_page
 
@@ -185,24 +193,26 @@ class TestClient:
             # force_login is active; honor it.
             page.user = self.app.get_user(page.request)
 
-        await page.render(init=True)
+        if init:
+            await page.render(init=True)
         payload = await page.handle_event(handler, data or {})
         return EventResult.from_dict(payload)
 
     # ---- Session access ----
 
-    @contextmanager
-    def session(self) -> Iterator[dict[str, Any]]:
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[dict[str, Any]]:
         """Yield the live session dict for the current client cookie.
 
         Only meaningful when the underlying app uses
         ``interactive_server_mode=False`` (so :class:`SessionMiddleware`
         is installed). Mutations are written back when the context
-        block exits.
+        block exits. Async because the session store is async; works
+        cleanly inside ``pytest-asyncio`` tests.
 
         Example::
 
-            with client.session() as sess:
+            async with client.session() as sess:
                 sess["custom"] = "value"
         """
         store = getattr(self.app, "session_store", None)
@@ -231,16 +241,11 @@ class TestClient:
             raise RuntimeError("pywire_session cookie has unexpected shape.")
         sid = cookie.rsplit(".", 1)[0]
 
-        import asyncio
-
-        loop = asyncio.new_event_loop()
+        data = dict(await store.get(sid) or {})
         try:
-            data = loop.run_until_complete(store.get(sid)) or {}
-            data = dict(data)
             yield data
-            loop.run_until_complete(store.set(sid, data))
         finally:
-            loop.close()
+            await store.set(sid, data)
 
     # ---- HTML selection ----
 
@@ -252,20 +257,8 @@ class TestClient:
         """
         from lxml import html as lxml_html
 
-        body = self._extract_body(response)
+        body = response_to_html(response)
         if not body:
             return []
         tree = lxml_html.fromstring(body)
         return list(tree.cssselect(css))
-
-    @staticmethod
-    def _extract_body(response: Any) -> str:
-        text = getattr(response, "text", None)
-        if isinstance(text, str):
-            return text
-        body: Union[bytes, bytearray, str, None] = getattr(response, "body", None)
-        if isinstance(body, (bytes, bytearray)):
-            return bytes(body).decode("utf-8", errors="replace")
-        if isinstance(body, str):
-            return body
-        return ""
