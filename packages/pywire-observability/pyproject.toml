@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pywire-observability"
+version = "0.1.0"
+description = "Request-ID propagation, JSON logging, OpenTelemetry and Sentry recipes for PyWire"
+authors = [
+    { name = "Reece Holmdahl", email = "reece@pywire.dev" },
+]
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "pywire>=0.14.2",
+    "starlette>=0.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "httpx>=0.25",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pywire_observability"]
