@@ -639,6 +639,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cssselect"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/2e/cdfd8b01c37cbf4f9482eefd455853a3cf9c995029a46acd31dfaa9c1dd6/cssselect-1.4.0.tar.gz", hash = "sha256:fdaf0a1425e17dfe8c5cf66191d211b357cf7872ae8afc4c6762ddd8ac47fc92", size = 40589, upload-time = "2026-01-29T07:00:26.701Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/0c/7bb51e3acfafd16c48875bf3db03607674df16f5b6ef8d056586af7e2b8b/cssselect-1.4.0-py3-none-any.whl", hash = "sha256:c0ec5c0191c8ee39fcc8afc1540331d8b55b0183478c50e9c8a79d44dbceb1d8", size = 18540, upload-time = "2026-01-29T07:00:24.994Z" },
+]
+
+[[package]]
 name = "demo-app"
 version = "0.1.0"
 source = { virtual = "examples/demo-app" }
@@ -1900,6 +1909,11 @@ http3 = [
 redis = [
     { name = "redis" },
 ]
+testing = [
+    { name = "cssselect" },
+    { name = "httpx" },
+    { name = "lxml" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1912,9 +1926,12 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.3.0" },
+    { name = "cssselect", marker = "extra == 'testing'", specifier = ">=1.2.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+    { name = "httpx", marker = "extra == 'testing'", specifier = ">=0.23.0" },
     { name = "hypercorn", marker = "extra == 'http3'", specifier = ">=0.14.0" },
     { name = "jinja2", marker = "extra == 'cli'", specifier = ">=3.1.0" },
+    { name = "lxml", marker = "extra == 'testing'", specifier = ">=4.9.0" },
     { name = "msgpack", specifier = ">=1.0.0" },
     { name = "msgpack-types", marker = "extra == 'dev'" },
     { name = "nox", marker = "extra == 'dev'" },
@@ -1932,7 +1949,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.35.0" },
     { name = "ty", marker = "extra == 'dev'" },
 ]
-provides-extras = ["forms", "build", "cli", "dev", "http3", "redis"]
+provides-extras = ["forms", "build", "cli", "dev", "http3", "redis", "testing"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "mypy", specifier = ">=1.19.1" }]
@@ -2078,7 +2095,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.8.0"
+version = "0.7.1"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
