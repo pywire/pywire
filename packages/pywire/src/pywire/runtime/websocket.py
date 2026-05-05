@@ -30,6 +30,10 @@ class WebSocketHandler:
         self.connection_pages: Dict[WebSocket, BasePage] = {}
         # Map websocket to session ID for state persistence
         self.session_ids: Dict[WebSocket, str] = {}
+        # Map websocket to its observability connection_id (one per WS,
+        # surviving the lifetime of the socket — used to correlate logs
+        # and OTel spans across multiple events on the same connection).
+        self.connection_ids: Dict[WebSocket, str] = {}
         # Map websocket to its ping loop task
         self._ping_tasks: Dict[WebSocket, asyncio.Task[None]] = {}
         # Track pending pong events per connection
@@ -75,6 +79,16 @@ class WebSocketHandler:
         await websocket.accept()
         self.active_connections.add(websocket)
 
+        # Mint a connection id for the lifetime of this WS. Surfaced via
+        # the connection_id_ctx ContextVar so JSON log records and OTel
+        # spans can correlate every event on the same socket. Using uuid4
+        # keeps this stdlib-only — no observability dep needed in core.
+        from pywire.runtime.observability import connection_id_ctx
+
+        connection_id = uuid.uuid4().hex
+        self.connection_ids[websocket] = connection_id
+        conn_token = connection_id_ctx.set(connection_id)
+
         # Send init message
         await websocket.send_bytes(
             msgpack.packb({"type": "init", "version": __version__})
@@ -99,10 +113,10 @@ class WebSocketHandler:
         except asyncio.CancelledError:
             # Server shutdown, clean disconnect — don't re-raise
             pass
-        except Exception as e:
-            print(f"WebSocket error: {e}")
-            traceback.print_exc()
+        except Exception:
+            logger.exception("WebSocket connection error")
         finally:
+            connection_id_ctx.reset(conn_token)
             self._cleanup_connection(websocket)
 
     async def _resolve_user(self, websocket: WebSocket) -> Any:
@@ -238,6 +252,7 @@ class WebSocketHandler:
         self._connection_in_error.discard(websocket)
         # Keep session in store (TTL handles cleanup) — enables reconnect
         self.session_ids.pop(websocket, None)
+        self.connection_ids.pop(websocket, None)
         self._connection_cookies.pop(websocket, None)
         self._connection_httponly.pop(websocket, None)
         self._connection_reconciled.discard(websocket)
@@ -520,9 +535,7 @@ class WebSocketHandler:
             await page._run_hooks(page.MOUNT_HOOKS)
 
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
+            logger.exception("WebSocket init failed")
             await self._send_error_trace(websocket, e)
         finally:
             log_callback_ctx.reset(token)
@@ -540,6 +553,12 @@ class WebSocketHandler:
 
         # Set context for this operation
         token = log_callback_ctx.set(send_log)
+        # Mint a per-event id so log records emitted while this handler
+        # runs (and any background tasks it spawns) carry an event_id
+        # alongside the long-lived connection_id. Reset in finally.
+        from pywire.runtime.observability import event_id_ctx
+
+        event_token = event_id_ctx.set(uuid.uuid4().hex)
 
         try:
             # Get or create page instance
@@ -604,13 +623,14 @@ class WebSocketHandler:
                 self._persist_session(session_id, page)
 
         except Exception as e:
-            # Send structured trace to client (no print - trace is sufficient)
-            import traceback
-
-            traceback.print_exc()
+            logger.exception(
+                "WebSocket event handler failed",
+                extra={"handler": handler_name, "path": path},
+            )
             await self._send_error_trace(websocket, e)
         finally:
             log_callback_ctx.reset(token)
+            event_id_ctx.reset(event_token)
 
     async def _handle_relocate(
         self, websocket: WebSocket, data: Dict[str, Any]

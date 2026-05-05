@@ -1386,6 +1386,14 @@ class PyWire:
 
     async def _handle_500(self, request: Request, exc: Exception) -> Response:
         """Handle 500 errors with custom page if available."""
+        # Log the underlying exception so log aggregators / Sentry / OTel
+        # see the failure even when the custom error page hides the
+        # message from end users in prod.
+        logger.exception(
+            "Unhandled exception in page render",
+            extra={"path": request.url.path},
+        )
+
         # Try to find /__error__ page
         match = self.router.match("/__error__")
 
@@ -1407,10 +1415,10 @@ class PyWire:
                 # Force 500 status
                 response.status_code = 500
                 return response
-            except Exception as e:
-                # If 500 page fails, fall back
-                print(f"Error rendering 500 page: {e}")
-                pass
+            except Exception:
+                # If 500 page fails, log it too and fall back. This
+                # branch is rare — the error page itself exploded.
+                logger.exception("Failed to render custom 500 error page")
 
         # If no custom page or it failed:
         if self.debug:
