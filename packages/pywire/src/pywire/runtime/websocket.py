@@ -592,15 +592,12 @@ class WebSocketHandler:
             page._on_update = broadcast_update
 
             # Call handler
-            try:
-                if handler_name:
-                    update = await page.handle_event(
-                        cast(str, handler_name), event_data
-                    )
-                else:
-                    update = await page.render_update(init=False)
-            except Exception as e:
-                raise e
+            if handler_name:
+                update = await page.handle_event(
+                    cast(str, handler_name), event_data
+                )
+            else:
+                update = await page.render_update(init=False)
 
             # Check for pending navigation
             if page._pending_navigation:

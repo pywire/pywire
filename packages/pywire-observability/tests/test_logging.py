@@ -165,3 +165,64 @@ def test_configure_json_logging_idempotent() -> None:
 def test_levels_serialised(level_no: int, level_name: str) -> None:
     out = _format_record(level=level_no)
     assert out["level"] == level_name
+
+
+def test_cyclic_extra_does_not_crash_logging() -> None:
+    """A cyclic extra= dict would recurse forever in _coerce without
+    the depth guard. Confirm the formatter degrades cleanly to repr
+    instead of raising RecursionError."""
+    cycle: dict = {}
+    cycle["self"] = cycle
+    out = _format_record(weird=cycle)
+    # Formatter must produce SOMETHING — either a depth-limited
+    # representation under the field, or the fallback degraded record.
+    # Either way, it didn't raise.
+    assert "level" in out
+
+
+def test_configure_json_logging_warns_on_foreign_handlers() -> None:
+    import io
+    import warnings
+
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    foreign = logging.StreamHandler(io.StringIO())
+    root.addHandler(foreign)
+    try:
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("always")
+            handler = configure_json_logging(stream=io.StringIO())
+        assert any(
+            "removed" in str(w.message) and "handler" in str(w.message)
+            for w in recorded
+        )
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved:
+            root.addHandler(h)
+
+
+def test_configure_json_logging_does_not_warn_on_replace_self() -> None:
+    """Re-configuring after a previous configure_json_logging call must
+    not warn — the marker on our own handler tells us we're replacing
+    a pywire-installed handler, not a foreign one."""
+    import io
+    import warnings
+
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    try:
+        # Clean slate.
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        configure_json_logging(stream=io.StringIO())
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("always")
+            configure_json_logging(stream=io.StringIO())
+        assert not any("removed" in str(w.message) for w in recorded)
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved:
+            root.addHandler(h)

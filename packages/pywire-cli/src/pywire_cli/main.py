@@ -257,16 +257,11 @@ def dev(
 ) -> None:
     """Start development server."""
     import asyncio
-    import os
 
     from pywire_cli.config import get_setting
     from pywire.runtime.dev_server import run_dev_server
 
-    effective_log_format = (
-        log_format or os.environ.get("PYWIRE_LOG_FORMAT", "text")
-    ).lower()
-    if effective_log_format == "json":
-        _enable_json_logging()
+    _maybe_enable_json_logging(log_format)
 
     # Resolve TUI setting: CLI flag > settings.toml > default (False)
     if tui is None:
@@ -583,15 +578,10 @@ def run(
 ) -> None:
     """Run production server using Uvicorn."""
     import multiprocessing
-    import os
 
     import uvicorn
 
-    effective_log_format = (
-        log_format or os.environ.get("PYWIRE_LOG_FORMAT", "text")
-    ).lower()
-    if effective_log_format == "json":
-        _enable_json_logging()
+    _maybe_enable_json_logging(log_format)
 
     if not app:
         app = _discover_app_str()
@@ -619,12 +609,24 @@ def run(
     )
 
 
-def _enable_json_logging() -> None:
-    """Activate JSON log output via pywire-observability.
+def _maybe_enable_json_logging(flag: Optional[str]) -> None:
+    """Resolve --log-format / PYWIRE_LOG_FORMAT and configure if json.
 
-    Falls back to a clear error message when the package isn't
-    installed — JSON logging is opt-in, so we don't bundle the dep.
+    Sets ``PYWIRE_LOG_FORMAT=json`` in the environment unconditionally
+    when JSON mode is selected so uvicorn workers (spawned with a
+    fresh interpreter) inherit the choice and re-run
+    :func:`pywire_observability.connect_observability` with json
+    logging on. The parent process also gets JSON logging immediately
+    so startup messages match worker output.
     """
+    import os
+
+    effective = (flag or os.environ.get("PYWIRE_LOG_FORMAT", "text")).lower()
+    if effective != "json":
+        return
+
+    os.environ["PYWIRE_LOG_FORMAT"] = "json"
+
     try:
         from pywire_observability.logging import configure_json_logging
     except ImportError as exc:

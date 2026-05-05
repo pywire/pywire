@@ -80,14 +80,12 @@ class RequestIDMiddleware:
 
     def _extract_or_generate(self, scope: dict) -> str:
         for name, value in scope.get("headers", []):
-            try:
-                lower = name.lower()
-            except AttributeError:
-                continue
-            if isinstance(lower, bytes):
-                lower_str = lower.decode("latin-1")
+            # ASGI guarantees bytes for header names, but accept str
+            # defensively for tests / unusual middleware that ships str.
+            if isinstance(name, bytes):
+                lower_str = name.decode("latin-1").lower()
             else:
-                lower_str = lower
+                lower_str = name.lower()
             if lower_str not in self.inbound_headers:
                 continue
             decoded = self._decode_header_value(value)
@@ -125,7 +123,7 @@ class RequestIDMiddleware:
             if message["type"] == "http.response.start":
                 hdrs = list(message.get("headers", []))
                 if not any(
-                    (n.lower() if isinstance(n, bytes) else n.encode().lower())
+                    (n.lower() if isinstance(n, bytes) else n.encode("latin-1").lower())
                     == echo_name
                     for n, _ in hdrs
                 ):
@@ -136,13 +134,24 @@ class RequestIDMiddleware:
         return patched
 
 
+_INVALID_TRACE_ID = "0" * 32
+
+
 def _trace_id_from_traceparent(value: str) -> Optional[str]:
     """Pull the 32-hex trace_id from a W3C traceparent header.
 
     Returns ``None`` for malformed values so callers fall through to
     the next header in the priority list (or the UUID4 fallback).
+
+    The all-zeros trace_id is reserved by the W3C Trace Context spec
+    (§2.2.3) as "invalid"; treating it as a real id would collapse
+    every request from a misconfigured upstream into a single
+    correlation bucket. We reject it explicitly.
     """
     match = _TRACEPARENT_RE.match(value.strip())
     if match is None:
         return None
-    return match.group(1)
+    trace_id = match.group(1)
+    if trace_id == _INVALID_TRACE_ID:
+        return None
+    return trace_id

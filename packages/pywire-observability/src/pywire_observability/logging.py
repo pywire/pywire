@@ -112,9 +112,9 @@ class JSONFormatter(logging.Formatter):
 
         try:
             return json.dumps(payload, default=_coerce, separators=(",", ":"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             # Fall back to a degraded record so a bad ``extra=`` dict
-            # never breaks logging itself.
+            # (cycles, exotic types, etc.) never breaks logging itself.
             return json.dumps(
                 {
                     "timestamp": payload["timestamp"],
@@ -160,15 +160,29 @@ def _read_context() -> dict[str, str]:
     return out
 
 
-def _coerce(value: Any) -> Any:
-    """Best-effort conversion of non-JSON-native values to strings."""
+_MAX_COERCE_DEPTH = 8
+
+
+def _coerce(value: Any, _depth: int = 0) -> Any:
+    """Best-effort conversion of non-JSON-native values to strings.
+
+    Recurses into containers up to :data:`_MAX_COERCE_DEPTH` to keep
+    cyclic ``extra=`` dicts from blowing the stack. Beyond the depth
+    limit (or for unknown types) the value is replaced with its
+    ``repr`` so the record always serialises.
+    """
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
+    if _depth >= _MAX_COERCE_DEPTH:
+        return repr(value)
     if isinstance(value, (list, tuple)):
-        return [_coerce(v) for v in value]
+        return [_coerce(v, _depth + 1) for v in value]
     if isinstance(value, dict):
-        return {str(k): _coerce(v) for k, v in value.items()}
+        return {str(k): _coerce(v, _depth + 1) for k, v in value.items()}
     return repr(value)
+
+
+_PYWIRE_JSON_HANDLER_MARKER = "_pywire_json_handler"
 
 
 def configure_json_logging(
@@ -179,18 +193,35 @@ def configure_json_logging(
 ) -> logging.Handler:
     """Install :class:`JSONFormatter` on the root logger.
 
-    Removes any existing handlers and replaces them with a single
+    Removes any existing root handlers and replaces them with a single
     StreamHandler writing to stderr (default) so log line ordering is
-    deterministic. Returns the installed handler so callers can adjust
-    afterwards.
+    deterministic across uvicorn workers. **Destroys** any prior root
+    handlers — call this *before* installing app-specific handlers, or
+    skip JSON mode and configure logging yourself. A warning is emitted
+    when non-pywire handlers are removed so the destruction isn't silent.
 
-    Idempotent — calling twice replaces the previous handler.
+    Idempotent — calling twice replaces the previous JSON handler
+    without re-warning.
     """
+    import warnings
+
     handler = logging.StreamHandler(stream or sys.stderr)
     handler.setFormatter(JSONFormatter(static_fields=static_fields))
     handler.setLevel(level)
+    setattr(handler, _PYWIRE_JSON_HANDLER_MARKER, True)
 
     root = logging.getLogger()
+    foreign_handlers = [
+        h for h in root.handlers if not getattr(h, _PYWIRE_JSON_HANDLER_MARKER, False)
+    ]
+    if foreign_handlers:
+        warnings.warn(
+            f"configure_json_logging removed {len(foreign_handlers)} "
+            "existing root logger handler(s). Call configure_json_logging "
+            "before installing your own handlers, or set --log-format=text "
+            "and configure logging yourself.",
+            stacklevel=2,
+        )
     for existing in list(root.handlers):
         root.removeHandler(existing)
     root.addHandler(handler)

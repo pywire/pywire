@@ -204,7 +204,34 @@ async def test_existing_response_x_request_id_preserved() -> None:
         ("garbage", None),
         ("", None),
         ("00-tooshort-b7ad6b7169203331-01", None),
+        (
+            # All-zeros trace_id is W3C-reserved as "invalid". Accepting
+            # it would collapse every misconfigured-upstream request
+            # into a single correlation bucket.
+            "00-00000000000000000000000000000000-b7ad6b7169203331-01",
+            None,
+        ),
     ],
 )
 def test_trace_id_extraction(header: str, expected: str | None) -> None:
     assert _trace_id_from_traceparent(header) == expected
+
+
+@pytest.mark.asyncio
+async def test_all_zeros_traceparent_falls_through_to_uuid() -> None:
+    """An invalid traceparent must NOT become the request_id —
+    fall through to header priority, then UUID4."""
+    inner = _RecordingApp()
+    mw = RequestIDMiddleware(inner)
+    sink = _Sink()
+    await mw(
+        _scope(
+            [(b"traceparent", b"00-00000000000000000000000000000000-b7ad6b7169203331-01")]
+        ),
+        _noop_receive,
+        sink,
+    )
+    assert inner.scope is not None
+    rid = inner.scope["pywire_request_id"]
+    assert rid != "0" * 32
+    assert len(rid) == 32  # generated uuid4 hex

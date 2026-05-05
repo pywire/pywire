@@ -54,6 +54,50 @@ def test_json_logging_off_by_default() -> None:
     assert root.handlers == handlers_before
 
 
+def test_json_logging_env_var_activates_when_default_none(
+    monkeypatch,
+) -> None:
+    """connect_observability(json_logging=None) reads PYWIRE_LOG_FORMAT
+    so workers forked by uvicorn pick up the parent's --log-format=json
+    setting via env-var inheritance."""
+    monkeypatch.setenv("PYWIRE_LOG_FORMAT", "json")
+    app = _StubApp()
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    try:
+        connect_observability(app)
+        # JSON handler installed because env var said so.
+        from pywire_observability.logging import _PYWIRE_JSON_HANDLER_MARKER
+
+        assert any(
+            getattr(h, _PYWIRE_JSON_HANDLER_MARKER, False) for h in root.handlers
+        )
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved:
+            root.addHandler(h)
+
+
+def test_json_logging_explicit_false_overrides_env(monkeypatch) -> None:
+    monkeypatch.setenv("PYWIRE_LOG_FORMAT", "json")
+    app = _StubApp()
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    try:
+        connect_observability(app, json_logging=False)
+        from pywire_observability.logging import _PYWIRE_JSON_HANDLER_MARKER
+
+        assert not any(
+            getattr(h, _PYWIRE_JSON_HANDLER_MARKER, False) for h in root.handlers
+        )
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved:
+            root.addHandler(h)
+
+
 def test_json_logging_when_enabled() -> None:
     """connect_observability(json_logging=True) installs the JSON handler."""
     import io
