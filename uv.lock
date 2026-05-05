@@ -18,6 +18,7 @@ members = [
     "pywire-cli",
     "pywire-language-server",
     "pywire-monorepo",
+    "pywire-observability",
     "pywire-parser",
     "pywire-templates",
     "tree-sitter-pywire",
@@ -1857,7 +1858,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.14.2"
+version = "0.14.3"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "msgpack" },
@@ -2021,7 +2022,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
@@ -2077,8 +2078,34 @@ requires-dist = [
 ]
 
 [[package]]
+name = "pywire-observability"
+version = "0.1.0"
+source = { editable = "packages/pywire-observability" }
+dependencies = [
+    { name = "pywire" },
+    { name = "starlette" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21" },
+    { name = "pywire", editable = "packages/pywire" },
+    { name = "starlette", specifier = ">=0.31" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "pywire-parser"
-version = "0.8.0"
+version = "0.7.1"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
