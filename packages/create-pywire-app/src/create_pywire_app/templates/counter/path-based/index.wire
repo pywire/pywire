@@ -11,6 +11,6 @@ count = wire(0)
     <span class="brand-counter-value">{count}</span>
     <div class="brand-counter-buttons">
         <button class="brand-btn" @click={count += 1}>Increment</button>
-        <button class="brand-btn brand-btn--ghost" @click={count = 0}>Reset</button>
+        <button class="brand-btn brand-btn--ghost" @click={count.value = 0}>Reset</button>
     </div>
 </div>
