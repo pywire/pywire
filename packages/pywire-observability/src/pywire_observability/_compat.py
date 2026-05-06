@@ -8,9 +8,10 @@ from importlib.metadata import PackageNotFoundError, version
 
 _FLOORS = {
     # pywire-observability reads the observability ContextVars and
-    # BasePage.request_id attribute that ship in pywire 0.15.0
-    # (the same release that introduces the observability seams).
-    "pywire": "0.15.0",
+    # BasePage.request_id, added in the same monorepo release wave
+    # as pywire-observability 0.1.0. Bump in lockstep when release-please
+    # cuts the next pywire after the observability seams land.
+    "pywire": "0.14.3",
 }
 
 

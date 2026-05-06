@@ -12,7 +12,7 @@ authors = [
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
-    "pywire>=0.15.0",
+    "pywire>=0.14.3",
     "starlette>=0.31",
 ]
 
