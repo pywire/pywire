@@ -544,10 +544,19 @@ export class PyWireApp {
         redirect: 'follow',
       })
 
-      // 4xx/5xx responses carry the error page — a different document.
-      // Morphing it into the current DOM would leak its styles into the
-      // host app. Fall back to a full navigation.
+      // 4xx/5xx responses carry an error page (e.g. CSRF 403 from
+      // pywire-secure, or the app's __error__.wire). Morph it in-place
+      // like a normal SPA update so the user sees the error message
+      // instead of a silent reload that discards it. Non-HTML error
+      // bodies fall through to a full navigation.
       if (!response.ok) {
+        const errorHtml = await response.text()
+        const ct = (response.headers.get('content-type') || '').toLowerCase()
+        if (ct.includes('text/html') && errorHtml) {
+          this.updater.update(errorHtml)
+          this.eventHandler?.refreshListeners()
+          return
+        }
         window.location.href = path
         return
       }
