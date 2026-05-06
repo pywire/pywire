@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.6.0...vscode-pywire-v0.7.0) (2026-05-06)
+
+
+### Features
+
+* shared brand assets + fix iPhone header logo clipping ([#258](https://github.com/pywire/pywire/issues/258)) ([213ab2e](https://github.com/pywire/pywire/commit/213ab2e48cee12df297265d76edaec1268b2947f))
+
 ## [0.6.0](https://github.com/pywire/pywire/compare/vscode-pywire-v0.5.2...vscode-pywire-v0.6.0) (2026-05-04)
 
 
