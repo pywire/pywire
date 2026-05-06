@@ -15,11 +15,17 @@ Public API:
   ``sentry-sdk`` into PyWire's logging + ``@error`` hooks.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from pywire_observability import _compat as _compat  # noqa: F401  (runs floor check)
-from pywire_observability._version import __version__
 from pywire_observability.integration import connect_observability
 from pywire_observability.logging import JSONFormatter, configure_json_logging
 from pywire_observability.middleware import RequestIDMiddleware
+
+try:
+    __version__ = version("pywire-observability")
+except PackageNotFoundError:  # pragma: no cover
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     "JSONFormatter",
