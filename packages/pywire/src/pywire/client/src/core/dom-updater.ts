@@ -241,7 +241,9 @@ export class DOMUpdater {
    * Execute a list of previously extracted scripts.
    * - Scripts from data-pw-permanent elements are skipped (they already ran).
    * - External scripts with a src already in <head> are skipped to avoid duplicates.
-   * - Inline scripts use indirect eval() for global-scope execution.
+   * - Inline scripts are re-executed by cloning into a fresh <script>
+   *   element and appending it. This runs under CSP's 'unsafe-inline'
+   *   directive without requiring 'unsafe-eval' (which `eval()` needs).
    * - `<script type="module">` tags are warned about in dev mode (they cannot
    *   re-execute on SPA navigation per the browser spec).
    *
@@ -257,11 +259,23 @@ export class DOMUpdater {
     let chain: Promise<void> = Promise.resolve()
     let pendingSrc = false
 
-    const runInline = (code: string): void => {
+    const runInline = (script: HTMLScriptElement): void => {
+      // Clone into a fresh <script> and append. This is the only way to
+      // re-execute inline JS that's compatible with strict CSP — `eval()`
+      // would require 'unsafe-eval', but appending a <script> only needs
+      // 'unsafe-inline' (which is already required to render inline
+      // scripts in the initial HTML payload).
       try {
-        // Indirect eval runs in global scope
-        const globalEval = eval
-        globalEval(code)
+        const newScript = document.createElement('script')
+        Array.from(script.attributes).forEach((attr) => {
+          newScript.setAttribute(attr.name, attr.value)
+        })
+        newScript.textContent = script.textContent || ''
+        // Inserting and immediately removing keeps <head> tidy across
+        // many SPA navigations; the script still executes synchronously
+        // on insert per the HTML spec.
+        document.head.appendChild(newScript)
+        newScript.remove()
       } catch (e) {
         logger.error('[DOMUpdater] Inline script execution failed:', e)
       }
@@ -324,15 +338,14 @@ export class DOMUpdater {
           )
         }
       } else {
-        const code = script.textContent || ''
-        if (!code) continue
+        if (!script.textContent) continue
         if (pendingSrc) {
-          chain = chain.then(() => runInline(code))
+          chain = chain.then(() => runInline(script))
         } else {
           // No unresolved src ahead of us — run synchronously so postupdate
           // listeners see any side effects immediately (matches prior behavior
           // for the common inline-only case).
-          runInline(code)
+          runInline(script)
         }
       }
     }
