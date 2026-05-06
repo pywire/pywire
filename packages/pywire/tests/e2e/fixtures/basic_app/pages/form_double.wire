@@ -31,7 +31,7 @@ def handle_pywire_submit(payload=None):
 
 <h2>PyWire Form Component</h2>
 <p id="pywire-submit-count">Submits: {pywire_submit_count}</p>
-<Form on_submit={handle_pywire_submit}>
+<Form handle_submit={handle_pywire_submit}>
     <input type="text" id="pywire-input" name="pywire-input" value="" />
     <button type="submit" id="pywire-submit-btn">Submit PyWire Form</button>
 </Form>

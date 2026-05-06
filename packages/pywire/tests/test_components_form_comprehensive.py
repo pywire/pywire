@@ -96,7 +96,7 @@ def form_setup():
         {},
         {},
         model=AdvancedUser,
-        on_submit=submit_mock,
+        handle_submit=submit_mock,
     )
     # Bind form_ref so it auto-upgrades to FormElement
     _bind_form_ref_as_form(form)
@@ -118,7 +118,7 @@ def test_codegen_structure():
 
     # Verify props are handled
     assert "self.model = model" in code
-    assert "self.on_submit = on_submit" in code
+    assert "self.handle_submit = handle_submit" in code
     assert "self._errors_wire" in code
 
     # Verify handle_submit uses model validation
@@ -140,7 +140,7 @@ async def test_nested_model_validation(form_setup):
         "address.city": "Adminville",
     }
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     # Should be successful
     assert form.errors == {}
@@ -166,7 +166,7 @@ async def test_enum_validation_error(form_setup):
         "address.city": "City",
     }
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     # Should fail
     assert form.errors != {}
@@ -187,7 +187,7 @@ async def test_date_validation_error(form_setup):
         "address.city": "City",
     }
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert "birth_date" in form.errors
 
@@ -200,7 +200,7 @@ async def test_error_clearing_lifecycle(form_setup):
     # 1. Submit invalid data
     form.form_ref._data = {"username": "ab"}  # Too short
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert "username" in form.errors
     assert "role" in form.errors  # Missing
@@ -214,7 +214,7 @@ async def test_error_clearing_lifecycle(form_setup):
         "address.city": "City",
     }
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     # Errors should be cleared
     assert form.errors == {}
@@ -243,7 +243,7 @@ async def test_file_upload_handling(form_setup):
         "profile_pic": mock_file,
     }
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors == {}
     user = submit_mock.call_args[0][0]
@@ -262,7 +262,7 @@ def custom_validator_form():
         {},
         {},
         model=CustomValidatorUser,
-        on_submit=submit_mock,
+        handle_submit=submit_mock,
     )
     _bind_form_ref_as_form(form)
     return form, submit_mock
@@ -279,7 +279,7 @@ async def test_custom_field_validator_error(custom_validator_form):
     }
     form.form_ref._bound_type = "form"
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     # Custom validator should produce an error on username
     assert form.errors.username
@@ -299,7 +299,7 @@ async def test_custom_field_validator_success(custom_validator_form):
     }
     form.form_ref._bound_type = "form"
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors == {}
     submit_mock.assert_called_once()
@@ -319,7 +319,7 @@ async def test_custom_validator_email_error(custom_validator_form):
     }
     form.form_ref._bound_type = "form"
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors.email
     assert form.errors.email.source == "pydantic"
@@ -338,7 +338,7 @@ def nested_model_form():
         {},
         {},
         model=NestedUser,
-        on_submit=submit_mock,
+        handle_submit=submit_mock,
     )
     _bind_form_ref_as_form(form)
     return form, submit_mock
@@ -356,7 +356,7 @@ async def test_nested_model_error_dot_notation(nested_model_form):
     }
     form.form_ref._bound_type = "form"
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     # Nested error should be accessible via dot notation
     assert form.errors.address
@@ -378,7 +378,7 @@ async def test_nested_model_missing_required_field(nested_model_form):
     }
     form.form_ref._bound_type = "form"
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors.address
     assert form.errors.address.city
@@ -398,7 +398,7 @@ async def test_nested_model_success(nested_model_form):
     }
     form.form_ref._bound_type = "form"
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors == {}
     submit_mock.assert_called_once()

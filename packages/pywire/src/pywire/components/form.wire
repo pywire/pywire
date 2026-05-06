@@ -15,11 +15,15 @@ import logging as _logging
 @props
 class Props:
     model: Optional[Type[Any]] = None
-    on_submit: Optional[EventHandler] = None
+    handle_submit: Optional[EventHandler] = None
     _field_rules: Optional[Dict[str, Dict[str, Any]]] = None
 
 form_ref = ref()
 html5_rules = {}
+# Expose self.attrs (the catch-all bag for HTML attrs not declared in
+# Props — id, class, data-*, etc.) as a template-scope name so the
+# inner <form> can {**attrs} them through to the rendered DOM.
+attrs = self.attrs
 # Ensure component refs can access `errors` even if property exposure metadata
 # gets lost when a setter is attached.
 
@@ -67,7 +71,16 @@ def _build_schema_from_rules(rule_map):
             continue
     return schema
 
-async def handle_submit(event):
+async def _dispatch_submit(event):
+    """Internal DOM @submit.prevent handler. Validates the form, then
+    calls the user's `handle_submit` prop with the typed payload.
+
+    Bound to the inner <form>'s @submit.prevent so the browser's native
+    submit (which would do a GET-with-querystring navigation given how
+    HTMLFormElement defaults work) never runs. <Form> always wants the
+    JS-driven path: validate → dispatch via httpFormSubmit (non-interactive)
+    or sendEvent (interactive WS).
+    """
     raw_data = form_ref.data
     payload: Any = raw_data
 
@@ -99,8 +112,8 @@ async def handle_submit(event):
     else:
         _clear_errors()
 
-    if on_submit:
-        res = on_submit(payload)
+    if handle_submit:
+        res = handle_submit(payload)
         if inspect.isawaitable(res):
             await res
 
@@ -193,6 +206,6 @@ def _setup_validation_rules():
         return
     html5_rules = {}
 ---
-<form $ref={form_ref} @submit={handle_submit}>
+<form $ref={form_ref} method="post" {**attrs} @submit.prevent={_dispatch_submit}>
     {$render children}
 </form>

@@ -169,31 +169,73 @@ describe('DOMUpdater', () => {
     expect(postSpy).toHaveBeenCalled()
   })
 
-  it('should execute scripts in new content', () => {
-    // Mock global window property to track script execution
-    ;(window as Window & { scriptValue?: number }).scriptValue = 0
+  it('should re-inject inline scripts via <script> appendChild (CSP-safe)', () => {
+    // happy-dom does not actually run JS on appendChild, so we verify
+    // the DOM behavior the production browser then runs. Real browsers
+    // execute the appended <script> synchronously under the same
+    // 'unsafe-inline' that allowed it on the initial page load — without
+    // needing 'unsafe-eval' (which the previous indirect-eval approach
+    // required).
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
 
     updater.update('<div><script>window.scriptValue = 42</script></div>')
 
-    expect((window as Window & { scriptValue?: number }).scriptValue).toBe(42)
-    delete (window as Window & { scriptValue?: number }).scriptValue
+    const injected = appendSpy.mock.calls.find(
+      (call) =>
+        call[0] instanceof HTMLScriptElement &&
+        ((call[0] as HTMLScriptElement).textContent || '').includes('scriptValue')
+    )?.[0] as HTMLScriptElement | undefined
+
+    expect(injected).toBeDefined()
+    expect(injected!.getAttribute('src')).toBeNull()
+    appendSpy.mockRestore()
   })
 
-  it('should execute scripts after morphdom (before pywire:postupdate)', () => {
+  it('should NOT re-inject an identical inline script across SPA updates', () => {
+    // An inline script with top-level `const`/`let`/`function` can't be
+    // re-executed without a SyntaxError. Once a body has run, repeat
+    // injections of the same body are skipped.
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
+
+    const html = '<div><script>const tamperWired = true</script></div>'
+    updater.update(html)
+    updater.update(html)
+
+    const injections = appendSpy.mock.calls.filter(
+      (c) =>
+        c[0] instanceof HTMLScriptElement &&
+        ((c[0] as HTMLScriptElement).textContent || '').includes('tamperWired')
+    )
+    expect(injections.length).toBe(1)
+    appendSpy.mockRestore()
+  })
+
+  it('should re-inject inline scripts before pywire:postupdate fires', () => {
     const order: string[] = []
-    ;(window as Window & { testExecuted?: () => void }).testExecuted = () => {
-      order.push('script')
-    }
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => {
+        if (
+          node instanceof HTMLScriptElement &&
+          (node.textContent || '').includes('marker')
+        ) {
+          order.push('script-injected')
+        }
+        return node as Node
+      })
 
     document.documentElement.addEventListener('pywire:postupdate', () => {
       order.push('postupdate')
     })
 
-    updater.update('<div><script>window.testExecuted()</script></div>')
+    updater.update('<div><script>/* marker */</script></div>')
 
-    // Script should execute, then postupdate fires
-    expect(order).toEqual(['script', 'postupdate'])
-    delete (window as Window & { testExecuted?: () => void }).testExecuted
+    expect(order).toEqual(['script-injected', 'postupdate'])
+    appendSpy.mockRestore()
   })
 
   it('should not re-execute scripts inside data-pw-permanent elements', () => {
@@ -260,34 +302,39 @@ describe('DOMUpdater', () => {
 
   it('should defer an inline script until a preceding non-async src loads', async () => {
     const order: string[] = []
-    ;(window as Window & { chartCtor?: () => void }).chartCtor = () => {
-      order.push('inline')
-    }
 
     const appendSpy = vi.spyOn(document.head, 'appendChild').mockImplementation((node) => {
       const s = node as HTMLScriptElement
       if (s.tagName === 'SCRIPT' && s.getAttribute('src')) {
+        order.push('src-appended')
         // Simulate async load — dispatch `load` on the microtask queue so the
         // subsequent inline script can be observed to wait.
         queueMicrotask(() => {
           order.push('src-loaded')
           s.dispatchEvent(new Event('load'))
         })
+      } else if (
+        s.tagName === 'SCRIPT' &&
+        (s.textContent || '').includes('chartCtor')
+      ) {
+        order.push('inline-appended')
       }
       return node as Node
     })
 
-    updater.update('<div><script src="chart.js"></script><script>window.chartCtor()</script></div>')
+    updater.update(
+      '<div><script src="chart.js"></script><script>window.chartCtor()</script></div>'
+    )
 
-    // Inline must NOT have run yet — waiting for src load.
-    expect(order).toEqual([])
+    // Flush microtasks so the whole chain runs: src-appended → load
+    // handler resolves → chained inline gets appended.
+    for (let i = 0; i < 5; i++) {
+      await new Promise<void>((r) => queueMicrotask(r))
+    }
 
-    // Flush microtasks to let the simulated load fire, then the chained inline.
-    await new Promise<void>((r) => queueMicrotask(r))
-    await new Promise<void>((r) => queueMicrotask(r))
-
-    expect(order).toEqual(['src-loaded', 'inline'])
-    delete (window as Window & { chartCtor?: () => void }).chartCtor
+    // The inline append must not happen until AFTER the src has loaded —
+    // verifies the chain.then() ordering.
+    expect(order).toEqual(['src-appended', 'src-loaded', 'inline-appended'])
     appendSpy.mockRestore()
   })
 })
