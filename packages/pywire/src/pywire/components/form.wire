@@ -20,6 +20,10 @@ class Props:
 
 form_ref = ref()
 html5_rules = {}
+# Expose self.attrs (the catch-all bag for HTML attrs not declared in
+# Props — id, class, data-*, etc.) as a template-scope name so the
+# inner <form> can {**attrs} them through to the rendered DOM.
+attrs = self.attrs
 # Ensure component refs can access `errors` even if property exposure metadata
 # gets lost when a setter is attached.
 
@@ -202,6 +206,6 @@ def _setup_validation_rules():
         return
     html5_rules = {}
 ---
-<form $ref={form_ref} method="post" @submit.prevent={_dispatch_submit}>
+<form $ref={form_ref} method="post" {**attrs} @submit.prevent={_dispatch_submit}>
     {$render children}
 </form>

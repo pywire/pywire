@@ -516,6 +516,14 @@ class BasePage:
         if "_style_collector" in new_kwargs:
             self._style_collector = new_kwargs["_style_collector"]
         fallback_attrs: Dict[str, Any] = {}
+        # Codegen sometimes calls ``_update_props`` to set just the
+        # ``children`` Snippet after a fresh component init (see
+        # ``compiler/codegen/template.py``). In that "slot-only" call,
+        # we must not blow away the fallthrough HTML attrs that
+        # ``BasePage.__init__`` just stored — track whether the caller
+        # passed any non-Snippet, non-framework kwargs and only replace
+        # ``self.attrs`` when they did.
+        saw_real_prop = False
         for key, value in new_kwargs.items():
             if self._is_framework_prop_key(key):
                 continue
@@ -528,6 +536,8 @@ class BasePage:
                 setattr(self, key, value)
                 continue
 
+            saw_real_prop = True
+
             # Prop reconciliation:
             # - existing attributes on the component instance are treated as props/state
             # - unknown keys are fallthrough HTML attrs
@@ -536,7 +546,8 @@ class BasePage:
                 continue
             fallback_attrs[key] = value
 
-        self.attrs = fallback_attrs
+        if saw_real_prop:
+            self.attrs = fallback_attrs
 
     async def _invoke_component(
         self, comp: "BasePage", _pw_bypass_memo: bool = False
