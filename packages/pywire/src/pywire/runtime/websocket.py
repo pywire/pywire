@@ -593,9 +593,7 @@ class WebSocketHandler:
 
             # Call handler
             if handler_name:
-                update = await page.handle_event(
-                    cast(str, handler_name), event_data
-                )
+                update = await page.handle_event(cast(str, handler_name), event_data)
             else:
                 update = await page.render_update(init=False)
 

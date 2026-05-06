@@ -226,7 +226,12 @@ async def test_all_zeros_traceparent_falls_through_to_uuid() -> None:
     sink = _Sink()
     await mw(
         _scope(
-            [(b"traceparent", b"00-00000000000000000000000000000000-b7ad6b7169203331-01")]
+            [
+                (
+                    b"traceparent",
+                    b"00-00000000000000000000000000000000-b7ad6b7169203331-01",
+                )
+            ]
         ),
         _noop_receive,
         sink,
