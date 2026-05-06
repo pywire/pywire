@@ -191,7 +191,7 @@ def test_configure_json_logging_warns_on_foreign_handlers() -> None:
     try:
         with warnings.catch_warnings(record=True) as recorded:
             warnings.simplefilter("always")
-            handler = configure_json_logging(stream=io.StringIO())
+            configure_json_logging(stream=io.StringIO())
         assert any(
             "removed" in str(w.message) and "handler" in str(w.message)
             for w in recorded
