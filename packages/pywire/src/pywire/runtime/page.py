@@ -208,7 +208,9 @@ class BasePage:
         # Defaults to "" so templates using {csrf_token} render harmlessly
         # in apps that don't enable CSRF protection.
         scope = getattr(request, "scope", None) if request is not None else None
-        self.csrf_token: str = (scope.get("pywire_csrf_token", "") or "") if scope else ""
+        self.csrf_token: str = (
+            (scope.get("pywire_csrf_token", "") or "") if scope else ""
+        )
 
         # Expose params as attributes for easy access in templates
         for k, v in self.params.items():

@@ -1884,7 +1884,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.14.2"
+version = "0.14.3"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "msgpack" },
@@ -2048,7 +2048,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
@@ -2105,7 +2105,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.8.0"
+version = "0.7.1"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },

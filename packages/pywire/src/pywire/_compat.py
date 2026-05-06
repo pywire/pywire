@@ -18,7 +18,7 @@ from importlib.metadata import PackageNotFoundError, version
 _FLOORS = {
     # pywire-parser is a [build] extra. When installed, must match the
     # AST/directive surface this pywire release was built against.
-    "pywire-parser": "0.8.0",
+    "pywire-parser": "0.7.1",
 }
 
 

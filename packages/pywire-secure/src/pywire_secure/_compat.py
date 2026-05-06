@@ -8,9 +8,10 @@ from importlib.metadata import PackageNotFoundError, version
 
 _FLOORS = {
     # pywire-secure stashes the CSRF token on scope and relies on
-    # BasePage.csrf_token (added in pywire 0.15.0) so templates can
-    # render `{{ csrf_token }}`.
-    "pywire": "0.15.0",
+    # BasePage.csrf_token, added in the same monorepo release wave as
+    # pywire-secure 0.1.0. Bump in lockstep when release-please cuts
+    # the next pywire after the BasePage.csrf_token attribute lands.
+    "pywire": "0.14.3",
 }
 
 
