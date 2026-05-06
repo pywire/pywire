@@ -193,6 +193,27 @@ describe('DOMUpdater', () => {
     appendSpy.mockRestore()
   })
 
+  it('should NOT re-inject an identical inline script across SPA updates', () => {
+    // An inline script with top-level `const`/`let`/`function` can't be
+    // re-executed without a SyntaxError. Once a body has run, repeat
+    // injections of the same body are skipped.
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
+
+    const html = '<div><script>const tamperWired = true</script></div>'
+    updater.update(html)
+    updater.update(html)
+
+    const injections = appendSpy.mock.calls.filter(
+      (c) =>
+        c[0] instanceof HTMLScriptElement &&
+        ((c[0] as HTMLScriptElement).textContent || '').includes('tamperWired')
+    )
+    expect(injections.length).toBe(1)
+    appendSpy.mockRestore()
+  })
+
   it('should re-inject inline scripts before pywire:postupdate fires', () => {
     const order: string[] = []
     const appendSpy = vi

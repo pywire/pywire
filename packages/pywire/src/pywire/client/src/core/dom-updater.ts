@@ -36,6 +36,11 @@ export class DOMUpdater {
   private debug: boolean
   /** Tracks module script sources that have already been warned about to avoid log spam. */
   private warnedModuleSrcs = new Set<string>()
+  // Hashes of inline script bodies that have already executed once on
+  // this page. Re-injecting an identical inline <script> after an SPA
+  // update would re-run any top-level `const`/`let`/`function`
+  // declarations, throwing a SyntaxError on the second run. Skip them.
+  private executedInlineHashes = new Set<string>()
 
   constructor(debug: boolean = false) {
     this.debug = debug
@@ -265,12 +270,23 @@ export class DOMUpdater {
       // would require 'unsafe-eval', but appending a <script> only needs
       // 'unsafe-inline' (which is already required to render inline
       // scripts in the initial HTML payload).
+      const code = script.textContent || ''
+
+      // Idempotency: top-level `const`/`let`/`function` in an inline
+      // script can't be re-declared. If the EXACT same body already ran
+      // once on this page (initial render or a prior SPA update), skip
+      // re-running it. Authors who want a script to run on every update
+      // can wrap it in an IIFE so the body hash differs per render or
+      // simply make it side-effect-only.
+      if (this.executedInlineHashes.has(code)) return
+      this.executedInlineHashes.add(code)
+
       try {
         const newScript = document.createElement('script')
         Array.from(script.attributes).forEach((attr) => {
           newScript.setAttribute(attr.name, attr.value)
         })
-        newScript.textContent = script.textContent || ''
+        newScript.textContent = code
         // Inserting and immediately removing keeps <head> tidy across
         // many SPA navigations; the script still executes synchronously
         // on insert per the HTML spec.
