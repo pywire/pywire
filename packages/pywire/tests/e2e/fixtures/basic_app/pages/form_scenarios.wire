@@ -40,7 +40,7 @@ def trigger_manual_submit():
 
     <section id="comp-form">
         <h2>Component Form (form.wire)</h2>
-        <Form model={UserSchema} on_submit={on_comp_submit} $ref={form_comp}>
+        <Form model={UserSchema} handle_submit={on_comp_submit} $ref={form_comp}>
             <div>
                 <label>Username: <input name="username" id="comp-user" /></label>
                 <p id="err-user" $show={form_comp.errors.username}>{form_comp.errors.username}</p>

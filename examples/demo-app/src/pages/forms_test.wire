@@ -354,7 +354,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
 
-        <Form model={RegistrationModel} @submit={handle_custom_submit} $ref={custom_form_ref} $if={not custom_success}>
+        <Form model={RegistrationModel} handle-submit={handle_custom_submit} $ref={custom_form_ref} $if={not custom_success}>
             <label>
                 Username (no spaces)
                 <input name="username" required
@@ -388,7 +388,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
 
-        <Form model={ContactModel} @submit={handle_nested_submit} $ref={nested_form_ref} $if={not nested_success}>
+        <Form model={ContactModel} handle-submit={handle_nested_submit} $ref={nested_form_ref} $if={not nested_success}>
             <label>
                 Name
                 <input name="name" required
@@ -427,7 +427,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
 
-        <Form @submit={handle_submit} $ref={basic_form_ref} $if={not success_message}>
+        <Form handle-submit={handle_submit} $ref={basic_form_ref} $if={not success_message}>
             <!-- Username: Required, Min Lenth 3, Pattern -->
             <label for="username">
                 Username (3+ chars, letters only)
@@ -510,7 +510,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
         
-        <Form model={User} @submit={handle_pydantic_submit} $ref={pydantic_form_ref} $if={not pydantic_success}>
+        <Form model={User} handle-submit={handle_pydantic_submit} $ref={pydantic_form_ref} $if={not pydantic_success}>
             <label>
                 Username (Pydantic)
                 <input name="username" required>
@@ -541,7 +541,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
 
-        <Form @submit={handle_file_rules_submit} $ref={file_form_ref}>
+        <Form handle-submit={handle_file_rules_submit} $ref={file_form_ref}>
             <label>
                 Avatar (required, min 1KB, max 2MB, dynamic accept, filename rule)
                 <input
@@ -583,7 +583,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
 
-        <Form @submit={handle_fileinput_submit} $ref={fileinput_form_ref}>
+        <Form handle-submit={handle_fileinput_submit} $ref={fileinput_form_ref}>
             <label>
                 Avatar via FileInput (required, min 1KB, max 2MB, avatar_* names)
                 <FileInput
@@ -632,7 +632,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
         
-        <Form model={AdvancedUser} @submit={handle_advanced} $ref={advanced_form_ref} $if={not advanced_success}>
+        <Form model={AdvancedUser} handle-submit={handle_advanced} $ref={advanced_form_ref} $if={not advanced_success}>
             <label>
                 Full Name
                 <input name="full_name" required>
@@ -695,7 +695,7 @@ async def handle_fileinput_submit(data: Dict[str, Any]):
             </article>
         </div>
         
-        <Form model={ShipmentModel} @submit={create_shipment} $ref={shipment_form_ref} $if={not shipment_success}>
+        <Form model={ShipmentModel} handle-submit={create_shipment} $ref={shipment_form_ref} $if={not shipment_success}>
             <div>
                 <label>Delivery Method</label>
                 <select name="delivery_method" @change={update_delivery_method}>
