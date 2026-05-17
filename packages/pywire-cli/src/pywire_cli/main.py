@@ -236,6 +236,15 @@ cli.add_command(config_command)
 @click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.option("--env-file", default=None, help="Environment configuration file")
 @click.option("--tui/--no-tui", default=None, help="Enable/disable TUI dashboard")
+@click.option(
+    "--log-format",
+    type=click.Choice(["text", "json"]),
+    default=None,
+    help=(
+        "Log output format. 'json' emits one JSON record per line. "
+        "Defaults to PYWIRE_LOG_FORMAT env var, or 'text' if unset."
+    ),
+)
 def dev(
     app: Optional[str],
     host: str,
@@ -244,12 +253,15 @@ def dev(
     ssl_certfile: Optional[str],
     env_file: Optional[str],
     tui: Optional[bool],
+    log_format: Optional[str],
 ) -> None:
     """Start development server."""
     import asyncio
 
     from pywire_cli.config import get_setting
     from pywire.runtime.dev_server import run_dev_server
+
+    _maybe_enable_json_logging(log_format)
 
     # Resolve TUI setting: CLI flag > settings.toml > default (False)
     if tui is None:
@@ -545,17 +557,31 @@ def check(
 @click.option("--port", default=8000, type=int, help="Port to bind to")
 @click.option("--workers", default=None, type=int, help="Number of worker processes")
 @click.option("--no-access-log", is_flag=True, help="Disable access logging")
+@click.option(
+    "--log-format",
+    type=click.Choice(["text", "json"]),
+    default=None,
+    help=(
+        "Log output format. 'json' emits one JSON record per line "
+        "(Datadog/ELK/Loki/CloudWatch compatible). Defaults to "
+        "PYWIRE_LOG_FORMAT env var, or 'text' if unset. Requires "
+        "pywire-observability to be installed for json mode."
+    ),
+)
 def run(
     app: Optional[str],
     host: str,
     port: int,
     workers: Optional[int],
     no_access_log: bool,
+    log_format: Optional[str],
 ) -> None:
     """Run production server using Uvicorn."""
     import multiprocessing
 
     import uvicorn
+
+    _maybe_enable_json_logging(log_format)
 
     if not app:
         app = _discover_app_str()
@@ -581,6 +607,34 @@ def run(
         access_log=not no_access_log,
         factory=False,
     )
+
+
+def _maybe_enable_json_logging(flag: Optional[str]) -> None:
+    """Resolve --log-format / PYWIRE_LOG_FORMAT and configure if json.
+
+    Sets ``PYWIRE_LOG_FORMAT=json`` in the environment unconditionally
+    when JSON mode is selected so uvicorn workers (spawned with a
+    fresh interpreter) inherit the choice and re-run
+    :func:`pywire_observability.connect_observability` with json
+    logging on. The parent process also gets JSON logging immediately
+    so startup messages match worker output.
+    """
+    import os
+
+    effective = (flag or os.environ.get("PYWIRE_LOG_FORMAT", "text")).lower()
+    if effective != "json":
+        return
+
+    os.environ["PYWIRE_LOG_FORMAT"] = "json"
+
+    try:
+        from pywire_observability.logging import configure_json_logging
+    except ImportError as exc:
+        raise click.ClickException(
+            "pywire-observability is required for --log-format=json. "
+            "Install with: pip install pywire-observability"
+        ) from exc
+    configure_json_logging()
 
 
 def _print_skip_hint(

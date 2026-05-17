@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+echo "🧪 Running tests for pywire-observability..."
+
+uv run --package pywire-observability --extra dev pytest tests/ "$@"
