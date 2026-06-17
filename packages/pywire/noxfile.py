@@ -5,7 +5,7 @@ nox.options.sessions = ["tests"]
 
 @nox.session(python=["3.11", "3.12", "3.13", "3.14"], venv_backend="uv")
 def tests(session):
-    session.install(".[dev]")
+    session.install(".[dev,testing]")
     # Install the chromium browser for the playwright version this session
     # just resolved. The outer CI venv may have a different playwright
     # version than what `[dev]` resolves to here, leading to a browser
