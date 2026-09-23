@@ -76,8 +76,8 @@ show = True
         content = await page._render_template()
 
         # 1. Check directive fix: <Form $if={show}> should render its <form> tag
-        # The real Form component adds data-pw-ref
-        assert '<form data-pw-ref="' in content
+        # The real Form component adds data-pw-ref (and method="post" by default)
+        assert '<form method="post" data-pw-ref="' in content
         assert 'data-pw-ref="' in content
         assert "pw-ref-" in content
         assert '<input name="username"' in content

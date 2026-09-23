@@ -18,6 +18,7 @@ jobs:
       cli: ${{ steps.filter.outputs.cli }}
       templates: ${{ steps.filter.outputs.templates }}
       auth: ${{ steps.filter.outputs.auth }}
+      secure: ${{ steps.filter.outputs.secure }}
       ls: ${{ steps.filter.outputs.ls }}
       vscode: ${{ steps.filter.outputs.vscode }}
       prettier: ${{ steps.filter.outputs.prettier }}
@@ -52,6 +53,8 @@ jobs:
               - 'packages/pywire-templates/**'
             auth:
               - 'packages/pywire-auth/**'
+            secure:
+              - 'packages/pywire-secure/**'
             ls:
               - 'packages/pywire-language-server/**'
             vscode:
@@ -162,6 +165,22 @@ jobs:
         run: uv sync
       - name: Run Checks
         run: cd packages/pywire-auth && ./scripts/check
+
+  # pywire-secure: CSRF, security headers, rate limit, HTTPS redirect. Depends on pywire.
+  check-pywire-secure:
+    name: "Check PyWire Secure"
+    needs: changes
+    if: needs.changes.outputs.secure == 'true' || needs.changes.outputs.pywire == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync Dependencies
+        run: uv sync
+      - name: Run Checks
+        run: cd packages/pywire-secure && ./scripts/check
 
   # Language Server: depends on pywire (runtime types), pywire-parser (analysis),
   # tree-sitter-pywire (via parser).

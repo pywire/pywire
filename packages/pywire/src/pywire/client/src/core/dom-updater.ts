@@ -36,6 +36,11 @@ export class DOMUpdater {
   private debug: boolean
   /** Tracks module script sources that have already been warned about to avoid log spam. */
   private warnedModuleSrcs = new Set<string>()
+  // Hashes of inline script bodies that have already executed once on
+  // this page. Re-injecting an identical inline <script> after an SPA
+  // update would re-run any top-level `const`/`let`/`function`
+  // declarations, throwing a SyntaxError on the second run. Skip them.
+  private executedInlineHashes = new Set<string>()
 
   constructor(debug: boolean = false) {
     this.debug = debug
@@ -241,7 +246,9 @@ export class DOMUpdater {
    * Execute a list of previously extracted scripts.
    * - Scripts from data-pw-permanent elements are skipped (they already ran).
    * - External scripts with a src already in <head> are skipped to avoid duplicates.
-   * - Inline scripts use indirect eval() for global-scope execution.
+   * - Inline scripts are re-executed by cloning into a fresh <script>
+   *   element and appending it. This runs under CSP's 'unsafe-inline'
+   *   directive without requiring 'unsafe-eval' (which `eval()` needs).
    * - `<script type="module">` tags are warned about in dev mode (they cannot
    *   re-execute on SPA navigation per the browser spec).
    *
@@ -257,11 +264,34 @@ export class DOMUpdater {
     let chain: Promise<void> = Promise.resolve()
     let pendingSrc = false
 
-    const runInline = (code: string): void => {
+    const runInline = (script: HTMLScriptElement): void => {
+      // Clone into a fresh <script> and append. This is the only way to
+      // re-execute inline JS that's compatible with strict CSP — `eval()`
+      // would require 'unsafe-eval', but appending a <script> only needs
+      // 'unsafe-inline' (which is already required to render inline
+      // scripts in the initial HTML payload).
+      const code = script.textContent || ''
+
+      // Idempotency: top-level `const`/`let`/`function` in an inline
+      // script can't be re-declared. If the EXACT same body already ran
+      // once on this page (initial render or a prior SPA update), skip
+      // re-running it. Authors who want a script to run on every update
+      // can wrap it in an IIFE so the body hash differs per render or
+      // simply make it side-effect-only.
+      if (this.executedInlineHashes.has(code)) return
+      this.executedInlineHashes.add(code)
+
       try {
-        // Indirect eval runs in global scope
-        const globalEval = eval
-        globalEval(code)
+        const newScript = document.createElement('script')
+        Array.from(script.attributes).forEach((attr) => {
+          newScript.setAttribute(attr.name, attr.value)
+        })
+        newScript.textContent = code
+        // Inserting and immediately removing keeps <head> tidy across
+        // many SPA navigations; the script still executes synchronously
+        // on insert per the HTML spec.
+        document.head.appendChild(newScript)
+        newScript.remove()
       } catch (e) {
         logger.error('[DOMUpdater] Inline script execution failed:', e)
       }
@@ -324,15 +354,14 @@ export class DOMUpdater {
           )
         }
       } else {
-        const code = script.textContent || ''
-        if (!code) continue
+        if (!script.textContent) continue
         if (pendingSrc) {
-          chain = chain.then(() => runInline(code))
+          chain = chain.then(() => runInline(script))
         } else {
           // No unresolved src ahead of us — run synchronously so postupdate
           // listeners see any side effects immediately (matches prior behavior
           // for the common inline-only case).
-          runInline(code)
+          runInline(script)
         }
       }
     }

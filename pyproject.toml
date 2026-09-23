@@ -14,6 +14,7 @@ workspace = { members = [
     "packages/pywire",
     "packages/pywire-auth",
     "packages/pywire-cli",
+    "packages/pywire-secure",
     "packages/pywire-language-server",
     "packages/pywire-parser",
     "packages/pywire-templates",
@@ -30,6 +31,7 @@ workspace = { members = [
 pywire = { workspace = true }
 pywire-auth = { workspace = true }
 pywire-cli = { workspace = true }
+pywire-secure = { workspace = true }
 pywire-language-server = { workspace = true }
 pywire-parser = { workspace = true }
 pywire-templates = { workspace = true }

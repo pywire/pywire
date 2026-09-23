@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running checks for pywire-secure..."
+
+echo "-> ruff format"
+uv run ruff format --check src/ tests/
+
+echo "-> ruff lint"
+uv run ruff check src/ tests/
+
+echo "-> pytest"
+uv run --package pywire-secure pytest tests/

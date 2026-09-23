@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+echo "🧪 Running tests for pywire-secure..."
+
+uv run --package pywire-secure --extra ratelimit --extra dev pytest tests/ "$@"

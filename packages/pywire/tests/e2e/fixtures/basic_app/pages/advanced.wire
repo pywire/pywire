@@ -42,7 +42,7 @@ def handle_form_submit(data):
     <!-- Exposed refs test -->
     <h2>Dynamic Form Component</h2>
     <div id="submitted-data">{json.dumps(submitted_data.value.model_dump()) if submitted_data else "None"}</div>
-    <Form model={User} $ref={my_form} on_submit={handle_form_submit}>
+    <Form model={User} $ref={my_form} handle_submit={handle_form_submit}>
         <div id="form-fields">
             <div $for={field in my_form.schema_fields()} reactive="exclude" class="dyn-field" data-name={field['name']}>
                 <label>{field['title']}</label>

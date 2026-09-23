@@ -705,6 +705,10 @@ class Transpiler:
         _append(
             "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\ndef asset(path: str) -> str: ...\ndef set_cookie(key: str, value: str = '', *, max_age: int | None = None, expires: int | None = None, path: str = '/', domain: str | None = None, secure: bool = False, httponly: bool = False, samesite: str | None = 'lax') -> None: ...\ndef delete_cookie(key: str, *, path: str = '/', domain: str | None = None) -> None: ...\n\n"
         )
+        # csrf_token is always present on BasePage (defaults to "" when
+        # pywire-secure is not installed), so unconditional emission is
+        # safe and gives templates a known type for completion / hover.
+        _append("csrf_token: str\n\n")
         if self.has_auth:
             _append(
                 "from pywire.auth.principal import ClaimsPrincipal\nuser: ClaimsPrincipal\n\n"

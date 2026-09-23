@@ -40,7 +40,7 @@ async def test_form_validation_success():
     submit_mock = AsyncMock()
 
     # Instantiate component
-    form = Form(None, {}, {}, model=UserModel, on_submit=submit_mock)
+    form = Form(None, {}, {}, model=UserModel, handle_submit=submit_mock)
 
     # Bind the form_ref so it upgrades to FormElement
     _bind_form_ref_as_form(form)
@@ -49,7 +49,7 @@ async def test_form_validation_success():
     form.form_ref._data = {"username": "testuser", "email": "test@example.com"}
 
     # Simulate submit
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     # Assertions
     assert form.errors == {}
@@ -64,7 +64,7 @@ async def test_form_validation_failure():
     """Test that invalid data populates errors."""
     submit_mock = AsyncMock()
 
-    form = Form(None, {}, {}, model=UserModel, on_submit=submit_mock)
+    form = Form(None, {}, {}, model=UserModel, handle_submit=submit_mock)
 
     # Bind the form_ref so it upgrades to FormElement
     _bind_form_ref_as_form(form)
@@ -72,7 +72,7 @@ async def test_form_validation_failure():
     # Invalid data (username too short)
     form.form_ref._data = {"username": "ab", "email": "test@example.com"}
 
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors != {}
     assert "username" in form.errors
@@ -101,7 +101,7 @@ async def test_form_html5_rules_validation_failure():
         None,
         {},
         {},
-        on_submit=submit_mock,
+        handle_submit=submit_mock,
         _field_rules={
             "username": {"required": True, "minlength": 3, "pattern": "^[A-Za-z]+$"},
             "email": {"required": True, "input_type": "email"},
@@ -111,7 +111,7 @@ async def test_form_html5_rules_validation_failure():
 
     _bind_form_ref_as_form(form)
     form.form_ref._data = {"username": "te", "email": "bad-email", "age": "15"}
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert "username" in form.errors
     assert "age" in form.errors
@@ -127,7 +127,7 @@ async def test_form_html5_rules_validation_success():
         None,
         {},
         {},
-        on_submit=submit_mock,
+        handle_submit=submit_mock,
         _field_rules={
             "username": {"required": True, "minlength": 3},
             "email": {"required": True, "input_type": "email"},
@@ -141,7 +141,7 @@ async def test_form_html5_rules_validation_success():
         "email": "alice@example.com",
         "age": "25",
     }
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors == {}
     submit_mock.assert_called_once()
@@ -158,7 +158,7 @@ async def test_form_html5_file_rules_validation():
         None,
         {},
         {},
-        on_submit=submit_mock,
+        handle_submit=submit_mock,
         _field_rules={
             "avatar": {
                 "input_type": "file",
@@ -178,7 +178,7 @@ async def test_form_html5_file_rules_validation():
             "size": 10,
         }
     }
-    await form.handle_submit(AsyncMock())
+    await form._dispatch_submit(AsyncMock())
 
     assert form.errors.avatar
     assert form.errors.avatar.rule == "file_too_large"
