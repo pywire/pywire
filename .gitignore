@@ -78,4 +78,4 @@ chatbot.db
 .gemini/
 .claude/worktrees/
 gha-creds-*.json
-.agent/settings.local.json
+.agents/settings.local.json
