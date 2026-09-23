@@ -291,3 +291,45 @@ jobs:
         run: pnpm install
       - name: Run Checks
         run: cd docs && pnpm check
+
+  # Always-on: the derived monorepo graph is the source of truth for
+  # version floors, ci.yml fan-outs and the local-tooling contract.
+  # Runs in seconds on the runner's system python3 (no uv sync, no
+  # paths filter — floors must hold on release PRs too).
+  check-monorepo-graph:
+    name: "Check Monorepo Graph"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Check floors, ci fan-out, tooling contract
+        run: |
+          python3 scripts/monorepo_graph.py check-floors
+          python3 scripts/monorepo_graph.py check-ci
+          python3 scripts/monorepo_graph.py check-scripts
+      - name: Graph tool tests
+        run: uv run --no-project --with pytest -- pytest scripts/tests -q
+
+  # Release-PR gate: a release-please PR is only mergeable when every
+  # monorepo floor it declares is already published upstream — merging
+  # out of order becomes a red check instead of a remembered ritual.
+  release-floors-gate:
+    name: "Release Floors Gate"
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check floors are published
+        run: |
+          pkgs=$(git diff --name-only origin/main...HEAD \
+            | grep -E '^packages/[^/]+/pyproject.toml$' \
+            | xargs -n1 dirname | sed 's|^packages/||' || true)
+          if [ -z "$pkgs" ]; then
+            echo "no package pyprojects changed — nothing to gate"
+            exit 0
+          fi
+          for p in $pkgs; do
+            python3 scripts/monorepo_graph.py check-publishable "$p"
+          done
