@@ -1,5 +1,8 @@
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 utilities (via @tailwindcss/vite) without preflight/base styles,
+   so Starlight's own reset is untouched. `source(none)` + explicit @source. */
+@import 'tailwindcss/theme.css' layer(theme) source(none);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source '../../src/';
 
 /* =================================================================
    PyWire Design System — applied to Starlight docs.

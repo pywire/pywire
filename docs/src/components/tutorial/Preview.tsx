@@ -391,8 +391,7 @@ export const Preview: React.FC<PreviewProps> = ({ url, onMessage, theme = 'dark'
       // installed pywire package (sent by the worker via STATIC_FILES message).
       // This eliminates the need to pre-copy client JS into docs/public/.
       const blobUrls = (window as any).__PYWIRE_STATIC_BLOB_URLS__ as
-        | Record<string, string>
-        | undefined
+        Record<string, string> | undefined
       let processedHtml = html
       if (blobUrls) {
         processedHtml = processedHtml.replace(
