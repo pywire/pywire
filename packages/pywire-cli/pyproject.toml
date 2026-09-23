@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
-    "pywire[build]>=0.13.0",
+    "pywire[build]>=0.14.4",
     "pywire-templates>=0.2.0",
     "jinja2>=3.1.0",
     "uvicorn[standard]>=0.27.0",
