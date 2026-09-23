@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -151,11 +153,10 @@ def test_ref_remove_attribute(page: Page, pywire_server: str):
     # Now remove it
     page.click("#remove-attr-btn")
 
-    # Verify attribute is gone
-    has_attr = page.locator("#generic-div").evaluate(
-        "el => el.hasAttribute('data-custom')"
+    # Auto-waits for the server round trip
+    expect(page.locator("#generic-div")).not_to_have_attribute(
+        "data-custom", re.compile(".*")
     )
-    assert has_attr is False, "data-custom attribute should have been removed"
 
 
 # --- Form Ref Tests ---
