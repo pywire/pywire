@@ -21,6 +21,25 @@ from typing import Any, Dict, Optional, cast
 from urllib.parse import parse_qs, urlparse
 
 
+class ThrottledPersister:
+    """Rate-limit DO storage writes; always persist on close/hibernate."""
+
+    def __init__(self, interval: float = 2.0) -> None:
+        self._interval = interval
+        self._last: float | None = None
+
+    def should_persist(self, now: float) -> bool:
+        if self._last is None or now - self._last >= self._interval:
+            self._last = now
+            return True
+        return False
+
+    def force(self) -> bool:
+        import time
+        self._last = time.monotonic()
+        return True
+
+
 def _make_request(pathname: str, query_string: str = "") -> Any:
     """Create a minimal Starlette Request for page instantiation."""
     from starlette.requests import Request
