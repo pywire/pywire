@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, "feat/**"]
 
+# New pushes to a PR supersede older runs; main runs are never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Determine which packages changed. Each package has its own filter; jobs
   # combine filters for upstream dependencies so a change to e.g. pywire-parser
@@ -34,9 +39,9 @@ jobs:
           if [[ "$MSG" == "chore(main): release"* ]] || [[ "$MSG" == *"release-please"* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.release-check.outputs.is_release != 'true'
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         if: steps.release-check.outputs.is_release != 'true'
         id: filter
         with:
@@ -66,6 +71,7 @@ jobs:
               - 'examples/**'
             pywire-docs:
               - 'docs/**'
+              - '!docs/superpowers/**'
 
   # pywire-parser: parser + analysis engine. Wraps tree-sitter-pywire.
   check-pywire-parser:
@@ -74,12 +80,10 @@ jobs:
     if: needs.changes.outputs.parser == 'true' || needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-parser && ./scripts/check
 
@@ -90,12 +94,10 @@ jobs:
     if: needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-templates && ./scripts/check
 
@@ -111,17 +113,25 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - uses: pnpm/action-setup@v4
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
         with:
-          version: 9
-      - name: Install Workspace
-        run: scripts/install
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
       - name: Install Playwright Browsers
-        run: uv run playwright install --with-deps
+        run: uv run --extra dev playwright install --with-deps
+        working-directory: packages/pywire
       - name: Python Checks
         run: cd packages/pywire && ./scripts/check
 
@@ -138,12 +148,10 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-cli && ./scripts/check
 
@@ -151,15 +159,17 @@ jobs:
   check-pywire-auth:
     name: "Check PyWire Auth"
     needs: changes
-    if: needs.changes.outputs.auth == 'true' || needs.changes.outputs.pywire == 'true'
+    if: >
+      needs.changes.outputs.auth == 'true' ||
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-auth && ./scripts/check
 
@@ -175,12 +185,10 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd packages/pywire-language-server && ./scripts/check
 
@@ -191,13 +199,14 @@ jobs:
     if: needs.changes.outputs.vscode == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
-          node-version: '22'
-      - uses: pnpm/action-setup@v4
+          version: 10
+      - uses: actions/setup-node@v7
         with:
-          version: 9
+          node-version: '24'
+          cache: pnpm
       - name: Run Checks
         run: cd packages/vscode-pywire && ./scripts/check
 
@@ -208,13 +217,14 @@ jobs:
     if: needs.changes.outputs.prettier == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
-          node-version: '22'
-      - uses: pnpm/action-setup@v4
+          version: 10
+      - uses: actions/setup-node@v7
         with:
-          version: 9
+          node-version: '24'
+          cache: pnpm
       - name: Run Checks
         run: cd packages/prettier-plugin-pywire && ./scripts/check
 
@@ -225,7 +235,7 @@ jobs:
     if: needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -240,12 +250,10 @@ jobs:
     if: needs.changes.outputs.create-app == 'true' || needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd packages/create-pywire-app && ./scripts/check
 
@@ -253,15 +261,17 @@ jobs:
   check-examples:
     name: "Check Examples"
     needs: changes
-    if: needs.changes.outputs.examples == 'true' || needs.changes.outputs.pywire == 'true'
+    if: >
+      needs.changes.outputs.examples == 'true' ||
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - name: Sync Dependencies
-        run: uv sync
       - name: Run Checks
         run: cd examples && ./scripts/check
 
@@ -272,14 +282,31 @@ jobs:
     if: needs.changes.outputs.pywire-docs == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
-          node-version: '22'
-      - uses: pnpm/action-setup@v4
+          version: 10
+      - uses: actions/setup-node@v7
         with:
-          version: 9
-      - name: Install Dependencies
-        run: pnpm install
+          node-version: '24'
+          cache: pnpm
       - name: Run Checks
-        run: cd docs && pnpm check
+        run: cd docs && ./scripts/check
+
+  # Always-on: the derived monorepo graph is the source of truth for
+  # version floors, ci.yml fan-outs and the local-tooling contract.
+  # Runs in seconds on the runner's system python3 (no uv sync, no
+  # paths filter — floors must hold on release PRs too).
+  check-monorepo-graph:
+    name: "Check Monorepo Graph"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Check floors, ci fan-out, tooling contract
+        run: |
+          python3 scripts/monorepo_graph.py check-floors
+          python3 scripts/monorepo_graph.py check-ci
+          python3 scripts/monorepo_graph.py check-scripts
+      - name: Graph tool tests
+        run: uv run --no-project --with pytest -- pytest scripts/tests -q

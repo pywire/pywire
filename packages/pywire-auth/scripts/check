@@ -4,10 +4,10 @@ set -e
 echo "🔍 Running checks for pywire-auth..."
 
 echo "-> ruff format"
-uv run ruff format --check src/ tests/
+uv run --package pywire-auth --extra dev ruff format --check src/ tests/
 
 echo "-> ruff lint"
-uv run ruff check src/ tests/
+uv run --package pywire-auth --extra dev ruff check src/ tests/
 
 # TODO: ty check (auth pkg has existing type issues untouched by this branch)
 

@@ -29,5 +29,11 @@ dependencies = [
 Homepage = "https://pywire.dev"
 Repository = "https://github.com/pywire/pywire"
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "ty",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pywire_templates"]

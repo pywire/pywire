@@ -1857,7 +1857,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.14.2"
+version = "0.14.4"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "msgpack" },
@@ -1954,6 +1954,7 @@ dev = [
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "ruff" },
 ]
 redis = [
     { name = "redis" },
@@ -1974,6 +1975,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21" },
     { name = "pywire", editable = "packages/pywire" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'sqlalchemy'", specifier = ">=2.0" },
     { name = "starlette", specifier = ">=0.31" },
 ]
@@ -2021,10 +2023,11 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.7.0"
+version = "0.7.2"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
+    { name = "pywire" },
     { name = "pywire-parser" },
     { name = "ty" },
 ]
@@ -2048,6 +2051,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
+    { name = "pywire", editable = "packages/pywire" },
     { name = "pywire-parser", editable = "packages/pywire-parser" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "ty", specifier = ">=0.0.15" },
@@ -2078,18 +2082,27 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.8.0"
+version = "0.7.1"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
     { name = "tree-sitter-pywire" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "tree-sitter", specifier = ">=0.23" },
     { name = "tree-sitter-pywire", editable = "packages/tree-sitter-pywire" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-templates"
@@ -2099,8 +2112,19 @@ dependencies = [
     { name = "jinja2" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "ruff" },
+    { name = "ty" },
+]
+
 [package.metadata]
-requires-dist = [{ name = "jinja2", specifier = ">=3.1.0" }]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "ty", marker = "extra == 'dev'" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "pyyaml"
