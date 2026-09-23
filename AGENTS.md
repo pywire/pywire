@@ -62,6 +62,12 @@ JS packages (`vscode-pywire`, `prettier-plugin-pywire`) don't depend on tree-sit
 
 Import across packages only via published dependencies, never by folder path.
 
+## Worktrees & commit gate
+
+Create git worktrees under `.worktrees/`. Tool-managed ones live in `.claude/worktrees/` (Claude Code) and `.pi/worktrees/` (pi-dynamic-workflows); all three are gitignored.
+
+Agent-run `git commit` / `git push` goes through `scripts/hooks/pre-git-check.sh`, which runs `./scripts/check` for the affected packages and blocks on failure. Fix the reported errors; don't bypass it.
+
 ## Commits, PRs, releases
 
 Releases are automated by release-please (one PR per package; merge it to publish to PyPI / npm / Marketplace). Never bump versions by hand.
