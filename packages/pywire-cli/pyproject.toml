@@ -62,6 +62,10 @@ allowed-unresolved-imports = [
     "pywire_parser.**",
     "pywire_templates",
     "pywire_templates.**",
+    # Lazy-imported inside _maybe_enable_json_logging when users opt
+    # into `--log-format=json`. Not a hard runtime dep of the CLI.
+    "pywire_observability",
+    "pywire_observability.**",
 ]
 
 [[tool.ty.overrides]]

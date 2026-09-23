@@ -18,6 +18,7 @@ jobs:
       cli: ${{ steps.filter.outputs.cli }}
       templates: ${{ steps.filter.outputs.templates }}
       auth: ${{ steps.filter.outputs.auth }}
+      observability: ${{ steps.filter.outputs.observability }}
       ls: ${{ steps.filter.outputs.ls }}
       vscode: ${{ steps.filter.outputs.vscode }}
       prettier: ${{ steps.filter.outputs.prettier }}
@@ -52,6 +53,8 @@ jobs:
               - 'packages/pywire-templates/**'
             auth:
               - 'packages/pywire-auth/**'
+            observability:
+              - 'packages/pywire-observability/**'
             ls:
               - 'packages/pywire-language-server/**'
             vscode:
@@ -162,6 +165,22 @@ jobs:
         run: uv sync
       - name: Run Checks
         run: cd packages/pywire-auth && ./scripts/check
+
+  # pywire-observability: request-ID propagation, JSON logging, OTel/Sentry recipes. Depends on pywire.
+  check-pywire-observability:
+    name: "Check PyWire Observability"
+    needs: changes
+    if: needs.changes.outputs.observability == 'true' || needs.changes.outputs.pywire == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync Dependencies
+        run: uv sync
+      - name: Run Checks
+        run: cd packages/pywire-observability && ./scripts/check
 
   # Language Server: depends on pywire (runtime types), pywire-parser (analysis),
   # tree-sitter-pywire (via parser).

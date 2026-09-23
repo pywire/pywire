@@ -204,6 +204,13 @@ class BasePage:
             self._style_collector = StyleCollector()
 
         self.user: Any = None  # Set by middleware
+        # Set by pywire-observability's RequestIDMiddleware (via scope)
+        # when installed. Defaults to "" so templates using
+        # {request_id} render harmlessly without observability wired up.
+        scope = getattr(request, "scope", None) if request is not None else None
+        self.request_id: str = (
+            (scope.get("pywire_request_id", "") or "") if scope else ""
+        )
 
         # Expose params as attributes for easy access in templates
         for k, v in self.params.items():
