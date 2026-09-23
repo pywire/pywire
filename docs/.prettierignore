@@ -8,3 +8,6 @@ CHANGELOG.md
 
 # Build script — not subject to prettier formatting enforcement
 scripts/build-assets.mjs
+
+# Spec/planning docs are authoring artifacts, not site content
+superpowers/

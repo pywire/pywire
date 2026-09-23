@@ -1,0 +1,7 @@
+#!/bin/sh -e
+# Full docs gate: format check, lint, typecheck (astro check).
+if [ ! -x node_modules/.bin/astro ]; then
+    echo "-> Installing dependencies..."
+    pnpm install
+fi
+exec pnpm check

@@ -103,7 +103,11 @@ export interface ConsoleMessage {
 }
 
 export type ClientMessage =
-  EventMessage | RelocateMessage | RefSyncMessage | RefPropertySyncMessage | InitClientMessage
+  | EventMessage
+  | RelocateMessage
+  | RefSyncMessage
+  | RefPropertySyncMessage
+  | InitClientMessage
 
 export interface InitClientMessage {
   type: 'init'

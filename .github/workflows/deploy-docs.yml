@@ -36,19 +36,20 @@ jobs:
       deployments: write
     name: Deploy Documentation
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.13"
           enable-cache: false
@@ -63,11 +64,14 @@ jobs:
           PYWIRE_WASM_BUILD: ${{ (inputs.environment || 'production') != 'production' && '1' || '' }}
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: pywire-docs
-          directory: docs/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ (inputs.environment || 'production') == 'production' && 'main' || 'nightly' }}
+          # wrangler lives in docs devDeps; run there so the action finds it
+          # instead of ad-hoc `pnpm add` (which fails at a workspace root).
+          workingDirectory: docs
+          command: >-
+            pages deploy dist --project-name=pywire-docs
+            --branch=${{ (inputs.environment || 'production') == 'production' && 'main' || 'nightly' }}
