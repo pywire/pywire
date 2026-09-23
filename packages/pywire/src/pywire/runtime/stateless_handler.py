@@ -61,7 +61,16 @@ class StatelessHandler:
         except SnapshotError as exc:
             logger.warning("stateless: rejected snapshot: %s", exc)
             return self._err(400, "invalid snapshot")
-        page = await self.build_page(request, data.get("path", "/"), snapshot)
+        path = data.get("path", "/")
+        if not isinstance(path, str):
+            return self._err(400, "invalid path")
+        try:
+            page = await self.build_page(request, path, snapshot)
+        except Exception as exc:
+            # A stale snapshot (e.g. signed before a deploy) or unrestorable
+            # state is a client fault: 400, never a crash.
+            logger.warning("stateless: page rebuild failed: %s", exc)
+            return self._err(400, "invalid snapshot")
         if page is None:
             return self._err(404, "no route")
 
@@ -84,6 +93,14 @@ class StatelessHandler:
 
             handler_name = data.get("handler")
             if handler_name:
+                # Pre-check the allowlist (like _handle_form_post) so probing
+                # clients get a clean 400 while business ValueErrors raised
+                # inside handlers stay 500s with logger.exception.
+                if not isinstance(handler_name, str) or self._refused(
+                    page, handler_name
+                ):
+                    logger.warning("stateless: rejected handler: %r", handler_name)
+                    return self._err(400, "invalid handler")
                 update = await page.handle_event(handler_name, data.get("data", {}))
             else:
                 update = await page.render_update(init=False)
@@ -98,10 +115,6 @@ class StatelessHandler:
                 pending = sum(1 for t in tasks if not t.done())
                 if captured:
                     update = self._merge_updates(update, captured)
-        except ValueError as exc:
-            # Allowlist rejection from _dispatch_handler (e.g. "render")
-            logger.warning("stateless: rejected handler: %s", exc)
-            return self._err(400, "invalid handler")
         except Exception:
             logger.exception("stateless: event failed")
             return self._err(500, "event failed")
@@ -118,6 +131,27 @@ class StatelessHandler:
         )
         payload.setdefault("meta", {})["pending_awaits"] = pending
         return self._msg(payload)
+
+    @staticmethod
+    def _refused(page: Any, handler_name: str) -> bool:
+        """True when dispatch must be refused per ``__event_handlers__``.
+
+        Mirrors ``BasePage._dispatch_handler`` allowlist semantics (None =
+        permissive hand-rolled) for both page-level and ``_comp:`` names.
+        """
+        if handler_name.startswith("_comp:"):
+            comp_key, sep, remainder = handler_name[len("_comp:") :].partition(":")
+            component = (
+                page._components.get(comp_key)
+                if sep and comp_key and remainder
+                else None
+            )
+            if component is None:
+                return True
+            allowed = component.__class__.__event_handlers__
+            return allowed is not None and remainder not in allowed
+        allowed = page.__class__.__event_handlers__
+        return allowed is not None and handler_name not in allowed
 
     @staticmethod
     def _take_navigation(page: Any) -> Optional[Response]:

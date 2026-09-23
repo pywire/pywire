@@ -9,6 +9,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
+from pywire.runtime.page import BasePage
 
 FIXTURE_PAGES = Path(__file__).parent / "fixtures" / "stateless_app" / "pages"
 SECRET = "test-secret-key"
@@ -35,6 +36,10 @@ def _post(client, blob: str, path: str = "/", handler: str = "increment"):
         ),
         headers=_MSGPACK,
     )
+
+
+def _error(r) -> str:
+    return msgpack.unpackb(r.content, raw=False)["error"]
 
 
 def test_missing_secret_raises(monkeypatch):
@@ -93,6 +98,7 @@ def test_tampered_snapshot_400(client):
     raw[-1] ^= 0xFF
     r = _post(client, base64.urlsafe_b64encode(bytes(raw)).decode())
     assert r.status_code == 400
+    assert _error(r) == "invalid snapshot"
 
 
 def test_user_never_restored_from_client(client):
@@ -106,6 +112,25 @@ def test_unknown_path_404(client):
     blob = _blob(client.get("/").text)
     r = _post(client, blob, path="/nope")
     assert r.status_code == 404
+    assert _error(r) == "no route"
+
+
+def test_non_string_path_400(client):
+    # Forged msgpack int path must not reach urlparse() as a 500
+    blob = _blob(client.get("/").text)
+    r = _post(client, blob, path=42)
+    assert r.status_code == 400
+    assert _error(r) == "invalid path"
+
+
+def test_non_ascii_path_resolves_cleanly(client):
+    # Deterministic outcome: router patterns are ASCII, so "/caf\u00e9" matches
+    # no route and resolve_page returns None *before* the raw_path
+    # ascii-encoding is reached \u2014 a clean 404, never a UnicodeEncodeError 500.
+    blob = _blob(client.get("/").text)
+    r = _post(client, blob, path="/caf\u00e9")
+    assert r.status_code == 404
+    assert _error(r) == "no route"
 
 
 def test_endpoint_rejects_unlisted_handler(client):
@@ -113,6 +138,42 @@ def test_endpoint_rejects_unlisted_handler(client):
     blob = _blob(client.get("/").text)
     r = _post(client, blob, handler="render")
     assert r.status_code == 400
+    assert _error(r) == "invalid handler"
+
+
+def test_handler_business_value_error_is_500(client):
+    # A ValueError raised *inside* an allowlisted handler is a server fault:
+    # it must hit the 500 path (with logger.exception), not masquerade as
+    # a client-level "invalid handler" 400.
+    blob = _blob(client.get("/boom").text)
+    r = client.post(
+        "/_pywire/stateless",
+        content=msgpack.packb(
+            {"path": "/boom", "handler": "explode", "data": {}, "snapshot": blob}
+        ),
+        headers=_MSGPACK,
+    )
+    assert r.status_code == 500
+    assert _error(r) == "event failed"
+
+
+def test_stateless_embedding_preserves_set_cookie():
+    # page.render() applies pending cookies to the response it returns; the
+    # snapshot embedding must mutate that response in place, not rebuild it.
+    class CookiePage(BasePage):
+        __route__ = "/cookie"
+
+        async def _render_template(self):
+            self.set_cookie("flavor", "choc")
+            return "<html><body><p>cookie</p></body></html>"
+
+    app = PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True, secret_key=SECRET)
+    app.router.add_route("/cookie", CookiePage)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        r = c.get("/cookie")
+    assert r.status_code == 200
+    assert "_pywire_snapshot" in r.text
+    assert "flavor=choc" in r.headers.get("set-cookie", "")
 
 
 def test_malformed_body_400(client):

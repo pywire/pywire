@@ -1,0 +1,5 @@
+---
+def explode():
+    raise ValueError("boom")
+---
+<button @click={explode()}>boom</button>

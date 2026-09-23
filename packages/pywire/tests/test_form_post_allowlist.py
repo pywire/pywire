@@ -7,7 +7,9 @@ allowlist — in non-interactive mode ``handler="render"`` was invocable
 by a client.
 """
 
+import re
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -88,4 +90,48 @@ def test_hand_rolled_page_stays_permissive():
         assert r.status_code == 200
         assert touched == [{"a": "1"}]
     finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+COMP_CHILD = (
+    "---\n"
+    "n = wire(0)\n"
+    "\n"
+    "def bump(data):\n"
+    "    n.value += 1\n"
+    "---\n"
+    "<button @click={bump}>{n}</button>\n"
+)
+
+COMP_PARENT = "---\nfrom comp_child import CompChild\n---\n<CompChild />\n"
+
+
+def test_form_post_component_dispatch_enforces_allowlist(monkeypatch):
+    """The ``_comp:`` branch must check the component's allowlist too —
+    ``_comp:<key>:render`` was invocable by any client before the guard."""
+    test_dir = tempfile.mkdtemp()
+    pages_dir = Path(test_dir) / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "comp_child.wire").write_text(COMP_CHILD)
+    (pages_dir / "comppost.wire").write_text(COMP_PARENT)
+    monkeypatch.syspath_prepend(str(pages_dir))
+    try:
+        app = PyWire(pages_dir=str(pages_dir), interactive_server_mode=False)
+        client = TestClient(app, raise_server_exceptions=False)
+        html = client.get("/comppost").text
+        key = re.search(r'_comp:([^:"]+):bump', html).group(1)
+
+        r = client.post(
+            "/comppost", data={}, headers={"X-PyWire-Handler": f"_comp:{key}:render"}
+        )
+        assert r.status_code == 400
+        assert "not a registered event handler" in r.text
+
+        r = client.post(
+            "/comppost", data={}, headers={"X-PyWire-Handler": f"_comp:{key}:bump"}
+        )
+        assert r.status_code == 200
+        assert ">1<" in r.text  # bump() fired
+    finally:
+        sys.modules.pop("comp_child", None)
         shutil.rmtree(test_dir, ignore_errors=True)

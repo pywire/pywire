@@ -1658,7 +1658,11 @@ class PyWire:
                 body = body[:idx] + tag + body[idx:]
             else:
                 body += tag
-            response = Response(body, media_type="text/html")
+            # Mutate in place — page.render() already applied pending cookies
+            # (Set-Cookie) and status to this response; rebuilding it would
+            # silently drop them.
+            response.body = body.encode("utf-8")
+            response.headers["content-length"] = str(len(response.body))
 
         # In non-interactive mode, persist session state after handling
         if not self.interactive_server_mode and session_id:
@@ -1700,7 +1704,10 @@ class PyWire:
                     body = parts[0] + injection_str + "</body>" + parts[1]
                 else:
                     body += injection_str
-                response = Response(body, media_type="text/html")
+                # Mutate in place — same reason as the snapshot embedding
+                # above: a rebuilt Response would drop cookies/status.
+                response.body = body.encode("utf-8")
+                response.headers["content-length"] = str(len(response.body))
 
         return response
 
@@ -1751,6 +1758,18 @@ class PyWire:
                 if component is None:
                     return PlainTextResponse(
                         f"PyWire: component '{comp_key}' not found",
+                        status_code=400,
+                    )
+
+                # Enforce the component's compile-time allowlist exactly like
+                # the page-level branch below — a client must not be able to
+                # invoke arbitrary component methods (e.g. "render") via the
+                # X-PyWire-Handler header.
+                comp_allowed = component.__class__.__event_handlers__
+                if comp_allowed is not None and remainder not in comp_allowed:
+                    return PlainTextResponse(
+                        f"PyWire: handler '{remainder}' is not a registered "
+                        "event handler",
                         status_code=400,
                     )
 
