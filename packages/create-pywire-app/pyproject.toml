@@ -33,3 +33,8 @@ exclude = [
     "src/create_pywire_app/templates",
 ]
 
+[tool.ty.rules]
+# ty (unpinned in nox venvs) flaps on the set_event_loop_policy directive:
+# versions that flag the 3.14 deprecation need it; older ones call it unused.
+unused-ignore-comment = "ignore"
+
