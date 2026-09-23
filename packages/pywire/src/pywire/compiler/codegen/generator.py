@@ -58,6 +58,8 @@ class CodeGenerator:
         self._collected_derived_hooks: List[str] = []
         self._collected_effect_hooks: List[str] = []
         self._collected_exposed_methods: List[str] = []
+        # Bare user-def names the template wires as event handlers
+        self._wired_handler_names: Set[str] = set()
         self._wire_vars_from_decorators: Set[str] = set()
         self._collected_props: Optional[PropsDirective] = None
         module_body = []
@@ -510,10 +512,36 @@ class CodeGenerator:
         # Generate auth metadata (only when !auth directive present)
         class_body.extend(self._generate_auth_metadata(parsed))
 
+        # Transform user Python code to class methods (Must run before __init__ to set flags)
+        route_params = self._extract_route_params(parsed)
+        all_globals = set(known_methods.keys()).union(known_vars).union(route_params)
+        user_code_stmts: List[ast.stmt] = []
+        if parsed.python_ast:
+            user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
+
         # Compile-time dispatch allowlist: frontmatter defs + generated
-        # ``_handler_N`` wrappers. Anything else (base methods, attributes,
-        # dunders) is refused by ``BasePage._dispatch_handler``.
-        event_handlers = set(known_methods) | {h.name for h in handlers}
+        # ``_handler_N`` wrappers, minus framework-invoked defs (lifecycle
+        # hooks, @derived/@effect, @expose - reached via ComponentRef, never by
+        # client name) unless the template wires one directly as a handler.
+        # Anything else is refused by ``BasePage._dispatch_handler``.
+        # Must run after _transform_user_code, which collects the hooks.
+        framework_invoked = {
+            *self._collected_init_hooks,
+            *self._collected_mount_hooks,
+            *self._collected_unmount_hooks,
+            *self._collected_before_load_hooks,
+            *self._collected_before_update_hooks,
+            *self._collected_after_update_hooks,
+            *self._collected_error_hooks,
+            *self._collected_derived_hooks,
+            *self._collected_effect_hooks,
+            *self._collected_exposed_methods,
+        }
+        event_handlers = (
+            (set(known_methods) - framework_invoked)
+            | self._wired_handler_names
+            | {h.name for h in handlers}
+        )
         class_body.append(
             ast.Assign(
                 targets=[ast.Name(id="__event_handlers__", ctx=ast.Store())],
@@ -531,13 +559,6 @@ class CodeGenerator:
                 ),
             )
         )
-
-        # Transform user Python code to class methods (Must run before __init__ to set flags)
-        route_params = self._extract_route_params(parsed)
-        all_globals = set(known_methods.keys()).union(known_vars).union(route_params)
-        user_code_stmts: List[ast.stmt] = []
-        if parsed.python_ast:
-            user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
 
         # Track exposed methods
         initial_exposed = ast.Assign(
@@ -874,6 +895,7 @@ class CodeGenerator:
                                     e,
                                 )
                         else:
+                            self._wired_handler_names.add(attr.handler_name)
                             # User-defined method — analyze its source for field mask
                             source = user_handler_sources.get(attr.handler_name)
                             if source is not None:
