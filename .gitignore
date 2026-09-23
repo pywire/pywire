@@ -79,3 +79,16 @@ chatbot.db
 .claude/worktrees/
 gha-creds-*.json
 .agents/settings.local.json
+
+# ─────────────────────── Agent harnesses ─────────────
+# Committed (team-shared, no secrets or personal model/theme prefs):
+# .pi/settings.json, .pi/{extensions,skills,prompts,themes,agents}/,
+# .pi/subagents.json, .pi/agent-memory/, .pi/workflows/settings.json,
+# .mcp.json, .pi/mcp.json (team overrides only; /mcp enable|disable writes here)
+.pi/npm/
+.pi/git/
+.pi/worktrees/
+.pi/workflows/runs/
+.pi/agent-memory-local/
+.superpowers/
+.worktrees/
