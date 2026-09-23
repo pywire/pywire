@@ -27,7 +27,7 @@ Tooling: Python → ruff format / ruff check / **ty** (not mypy) / pytest (+ nox
 | `packages/pywire-auth` | Auth providers (OIDC, local IdP) + identity stores | Core auth primitives live in `pywire.auth`. |
 | `packages/pywire-language-server` | LSP (pygls) | `.wire` → Python transpile + sourcemap, `ty` diagnostics. |
 | `packages/create-pywire-app` | Scaffolding CLI | Try it: `uv run create-pywire-app` (`USE_LOCAL_PYWIRE=1` for local core). Templates: skeleton, counter, blog, saas. |
-| `packages/tree-sitter-pywire` | Grammar for `.wire` | Edit `grammar.js` only; `src/` is generated (`pnpm exec tree-sitter generate`). Test: `pnpm test` + `cargo test`. |
+| `packages/tree-sitter-pywire` | Grammar for `.wire` | Edit `grammar.js` only; `src/` is generated (`pnpm exec tree-sitter generate`) and committed. `./scripts/check` fails if it is stale. |
 | `packages/vscode-pywire` | VS Code extension | Spawns the LSP from `src/lsServerManager.ts`. Debug via "Run Extension" launch config. |
 | `packages/prettier-plugin-pywire` | Prettier formatter for `.wire` | vitest. |
 | `docs/` | Astro + Starlight docs site with Pyodide tutorial | `pnpm build` must pass. See `update-docs` skill. |
