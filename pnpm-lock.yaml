@@ -9,8 +9,6 @@ overrides:
 
 importers:
 
-  .: {}
-
   docs:
     dependencies:
       '@astrojs/check':

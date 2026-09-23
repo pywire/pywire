@@ -1,9 +1,0 @@
-{
-  "name": "pywire-monorepo",
-  "private": true,
-  "pnpm": {
-    "overrides": {
-      "dompurify": "^3.4.13"
-    }
-  }
-}
