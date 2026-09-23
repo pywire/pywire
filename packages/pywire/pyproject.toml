@@ -70,6 +70,13 @@ http3 = [
 redis = [
     "redis>=5.0.0",
 ]
+# Test helpers in pywire.testing — TestClient, wire_page, render_page,
+# fire_event, css selectors. Production deploys never need this extra.
+testing = [
+    "httpx>=0.23.0",
+    "lxml>=4.9.0",
+    "cssselect>=1.2.0",
+]
 
 [project.scripts]
 pywire = "pywire.cli_entry:main"
