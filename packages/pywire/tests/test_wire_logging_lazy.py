@@ -39,6 +39,8 @@ def test_wire_debug_logs_lazy(caplog):
 
 def test_no_formatting_when_disabled(caplog):
     w = wire(1)
+    page = FakePage()
+    w._pages.add(page)  # ensure the write reaches the notify path
     with caplog.at_level(logging.INFO, logger="pywire"):
         for i in range(100):
             w.value = i
