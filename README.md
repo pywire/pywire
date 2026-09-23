@@ -97,3 +97,5 @@ If PyWire is helping you build, consider supporting the project. Donations cover
 
 [![GitHub Sponsor](https://img.shields.io/badge/Sponsor-pywire-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/pywire)
 [![Ko-Fi](https://img.shields.io/badge/Ko--fi-reecelikesramen-ff5e5b?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/reecelikesramen)
+
+<!-- gate required-check smoke test -->
