@@ -1408,7 +1408,11 @@ class BasePage:
         self._region_dependencies[region_id].add(key)
 
         logger.debug(
-            f"register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
+            "register_read: page=%s wire=%s field=%s region=%s",
+            id(self),
+            id(wire_obj),
+            field,
+            region_id,
         )
 
         if self._capturing_deps:
