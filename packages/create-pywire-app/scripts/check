@@ -11,7 +11,7 @@ fi
 
 echo "-> Testing (Multi-version)..."
 # Use uv run to execute nox from dev dependencies
-uv run nox
+uv run --package create-pywire-app --extra dev nox
 
 echo "Running ruff format..."
 uv run --with ruff ruff format --check src/

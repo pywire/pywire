@@ -4,13 +4,13 @@ set -e
 echo "🔍 Running checks for pywire-cli..."
 
 echo "-> ruff format"
-uv run ruff format --check src/ tests/
+uv run --package pywire-cli --extra dev ruff format --check src/ tests/
 
 echo "-> ruff lint"
-uv run ruff check src/ tests/
+uv run --package pywire-cli --extra dev ruff check src/ tests/
 
 echo "-> ty"
-uv run ty check src/
+uv run --package pywire-cli --extra dev ty check src/
 
 echo "-> pytest"
-uv run --package pywire-cli pytest tests/
+uv run --package pywire-cli --extra dev pytest tests/
