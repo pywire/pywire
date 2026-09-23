@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.1...pywire-language-server-v0.7.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* **pywire-language-server:** lower pywire-parser floor to 0.7.1 ([c454654](https://github.com/pywire/pywire/commit/c4546548131d1a7e271e35db134c5d5038c575cc))
+
 ## [0.7.1](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.0...pywire-language-server-v0.7.1) (2026-05-04)
 
 
