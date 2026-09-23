@@ -69,6 +69,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          # wrangler lives in docs devDeps; run there so the action finds it
+          # instead of ad-hoc `pnpm add` (which fails at a workspace root).
+          workingDirectory: docs
           command: >-
-            pages deploy docs/dist --project-name=pywire-docs
+            pages deploy dist --project-name=pywire-docs
             --branch=${{ (inputs.environment || 'production') == 'production' && 'main' || 'nightly' }}

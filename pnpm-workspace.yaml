@@ -13,3 +13,4 @@ allowBuilds:
   keytar: false
   sharp: true
   tree-sitter-cli: true
+  workerd: true
