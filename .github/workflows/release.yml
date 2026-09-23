@@ -171,7 +171,7 @@ jobs:
       - name: Build JS client
         run: pnpm install && pnpm build
         working-directory: packages/pywire/src/pywire/client
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire
       - uses: actions/upload-artifact@v7
@@ -223,7 +223,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --sdist --out-dir dist
         working-directory: packages/tree-sitter-pywire
       - uses: actions/upload-artifact@v7
@@ -238,7 +238,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.13"
           enable-cache: false
@@ -317,7 +317,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-parser
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -334,7 +334,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-auth
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -351,7 +351,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-cli
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -368,7 +368,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-templates
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -385,7 +385,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-language-server
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -420,7 +420,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/create-pywire-app
       - uses: pypa/gh-action-pypi-publish@release/v1
