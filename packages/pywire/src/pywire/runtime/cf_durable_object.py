@@ -36,6 +36,7 @@ class ThrottledPersister:
 
     def force(self) -> bool:
         import time
+
         self._last = time.monotonic()
         return True
 
