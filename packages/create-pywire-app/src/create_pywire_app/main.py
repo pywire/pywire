@@ -1,5 +1,6 @@
 import argparse
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -540,7 +541,9 @@ class ProjectGenerator:
 def main():
     # Fix for macOS when running with redirected stdin (e.g. via pipe)
     # KqueueSelector fails with /dev/tty on macOS, so we force SelectSelector.
-    if sys.platform == "darwin":
+    # platform.system() rather than sys.platform so type checkers analyze
+    # this branch on every OS.
+    if platform.system() == "Darwin":
         import asyncio
         import selectors
 
