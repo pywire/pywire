@@ -3,11 +3,11 @@ import os
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import questionary
-import tomllib
 from jinja2 import Environment, PackageLoader, select_autoescape
 from pywire_templates import render_deploy_template
 from rich.console import Console
@@ -30,14 +30,14 @@ LOGO = r"""
 """
 
 
-def get_local_version(path: Path) -> Optional[str]:
+def get_local_version(path: Path) -> str | None:
     """Try to read version from a local pyproject.toml file."""
     try:
         if path.exists():
             with open(path, "rb") as f:
                 data = tomllib.load(f)
                 return data.get("project", {}).get("version")
-    except Exception:
+    except (OSError, tomllib.TOMLDecodeError):
         pass
     return None
 
@@ -46,7 +46,7 @@ def get_version() -> str:
     return __version__
 
 
-def resolve_pywire_version(pywire_dep: str) -> Optional[str]:
+def resolve_pywire_version(pywire_dep: str) -> str | None:
     """Resolve the actual pywire version that will be installed.
 
     Args:
@@ -98,7 +98,7 @@ class TemplateRenderer:
             lstrip_blocks=True,
         )
 
-    def render(self, template_path: str, context: Dict[str, Any]) -> str:
+    def render(self, template_path: str, context: dict[str, Any]) -> str:
         """Render a template with the given context."""
         template = self.env.get_template(template_path)
         return template.render(**context)
@@ -120,7 +120,7 @@ class ProjectGenerator:
         template: str,
         routing_strategy: str,
         use_src: bool,
-        adapters: List[str],
+        adapters: list[str],
         pywire_dep: str,
         redis_enabled: bool = False,
         workers: int = 1,
@@ -139,7 +139,7 @@ class ProjectGenerator:
         self.app_root = project_path / "src" if use_src else project_path
         self.pages_dir = self.app_root / "pages"
 
-    def get_dependencies(self) -> List[str]:
+    def get_dependencies(self) -> list[str]:
         """Get runtime dependencies for the selected template."""
         import re
 
@@ -170,9 +170,9 @@ class ProjectGenerator:
 
         return dependencies
 
-    def get_dev_dependencies(self) -> List[str]:
+    def get_dev_dependencies(self) -> list[str]:
         """Get dev dependencies — CLI tooling and platform-specific packages."""
-        dev_deps: List[str] = []
+        dev_deps: list[str] = []
 
         # All projects need pywire[cli] for dev/build/deploy commands
         base = self.pywire_dep
@@ -202,7 +202,7 @@ class ProjectGenerator:
         }
         return descriptions.get(self.template, "")
 
-    def get_deploy_adapters(self) -> List[str]:
+    def get_deploy_adapters(self) -> list[str]:
         """Get list of selected deployment adapter names."""
         adapter_map = {
             "Fly.io (fly.toml + Dockerfile)": "fly",
@@ -549,7 +549,8 @@ def main():
                 selector = selectors.SelectSelector()
                 return asyncio.SelectorEventLoop(selector)
 
-        asyncio.set_event_loop_policy(MacOSEventLoopPolicy())
+        # Deprecated in 3.14 (removed in 3.16); replace before dropping <3.16 support.
+        asyncio.set_event_loop_policy(MacOSEventLoopPolicy())  # ty: ignore[deprecated]
 
     console.clear()
 
