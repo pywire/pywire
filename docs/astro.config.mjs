@@ -2,7 +2,7 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import react from '@astrojs/react'
-import tailwind from '@astrojs/tailwind'
+import tailwindcss from '@tailwindcss/vite'
 import favicons from 'astro-favicons'
 import starlightLlmsTxt from 'starlight-llms-txt'
 import fs from 'node:fs'
@@ -15,7 +15,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   site: 'https://pywire.dev/',
   base: '/docs',
+  // Astro 7 defaults to 'jsx' HTML compression; keep v6 HTML-aware behavior.
+  compressHTML: true,
   vite: {
+    plugins: [tailwindcss()],
     ssr: {
       noExternal: ['monaco-editor'],
     },
@@ -24,7 +27,6 @@ export default defineConfig({
     },
   },
   integrations: [
-    tailwind({ applyBaseStyles: false }), // Don't override Starlight's base styles
     react(),
     favicons({
       name: 'PyWire Docs',
@@ -136,7 +138,7 @@ export default defineConfig({
         },
         {
           label: 'Reference',
-          autogenerate: { directory: 'reference' },
+          items: [{ autogenerate: { directory: 'reference' } }],
         },
       ],
     }),

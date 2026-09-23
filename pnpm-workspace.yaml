@@ -5,7 +5,7 @@ packages:
   - "packages/vscode-pywire"
   - "packages/prettier-plugin-pywire"
 
-# pnpm 10+ skips dependency build scripts unless approved here (CI's pnpm 9 ignores this).
+# pnpm 10+ skips dependency build scripts unless approved here.
 allowBuilds:
   '@parcel/watcher': true
   '@vscode/vsce-sign': true
@@ -14,3 +14,6 @@ allowBuilds:
   sharp: true
   tree-sitter-cli: true
   workerd: true
+
+overrides:
+  dompurify: ^3.4.13
