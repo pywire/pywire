@@ -132,6 +132,9 @@ class PyWire:
         reconnect_overlay: bool = True,
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
+        stateless: bool = False,
+        secret_key: Optional[str] = None,
+        await_budget: float = 5.0,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -303,6 +306,26 @@ class PyWire:
         self.ws_ping_interval = max(0, int(ws_ping_interval))
         self.ws_ping_timeout = max(1, int(ws_ping_timeout))
 
+        # Stateless (client-held state) mode: signed snapshots replace the
+        # server session; interactive transports (WS/long-poll) are not mounted.
+        self.stateless = stateless
+        self.await_budget = max(0.0, float(await_budget))
+        self._stateless_secret: bytes = b""
+        self.stateless_handler: Optional[Any] = None
+        if stateless:
+            secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
+            if not secret:
+                raise RuntimeError(
+                    "PyWire(stateless=True) requires secret_key= or the "
+                    "PYWIRE_SECRET_KEY env var — it signs client-held session "
+                    "snapshots"
+                )
+            self._stateless_secret = secret.encode("utf-8")
+
+            from pywire.runtime.stateless_handler import StatelessHandler
+
+            self.stateless_handler = StatelessHandler(self)
+
         # Transport handlers — only instantiate when interactive mode is on
         if self.interactive_server_mode:
             self.ws_handler = WebSocketHandler(self)
@@ -354,7 +377,7 @@ class PyWire:
             ),
         ]
 
-        if self.interactive_server_mode:
+        if self.interactive_server_mode and not self.stateless:
             assert self.ws_handler is not None
             assert self.http_handler is not None
             # WebSocket transport
@@ -374,6 +397,16 @@ class PyWire:
                 Route(
                     "/_pywire/event",
                     self.http_handler.handle_event,
+                    methods=["POST"],
+                )
+            )
+
+        if self.stateless:
+            assert self.stateless_handler is not None
+            routes.append(
+                Route(
+                    "/_pywire/stateless",
+                    self.stateless_handler.handle_event,
                     methods=["POST"],
                 )
             )
@@ -480,6 +513,7 @@ class PyWire:
         self.app.state.debug = self.debug
         self.app.state.pywire = self
         self.app.state.interactive_server_mode = self.interactive_server_mode
+        self.app.state.stateless = self.stateless
 
         # Add Middleware to set request context for shell API
         from starlette.middleware.base import BaseHTTPMiddleware
@@ -1472,6 +1506,39 @@ class PyWire:
         )
         return HTMLResponse(html_content, status_code=500)
 
+    def _instantiate_page(
+        self,
+        page_class: Any,
+        request: Request,
+        params: Dict[str, str],
+        variant_name: Optional[str],
+    ) -> Any:
+        """Build query/path/url context and instantiate a page class."""
+        query = dict(request.query_params)
+
+        path_info: Dict[str, bool] = {}
+        routes = getattr(page_class, "__routes__", {})
+        if routes:
+            for name in routes.keys():
+                path_info[name] = name == variant_name
+        elif hasattr(page_class, "__route__"):
+            path_info["main"] = True
+
+        from pywire.runtime.router import URLHelper
+
+        url_helper = None
+        if routes:
+            url_helper = URLHelper(cast(dict[str, str], routes))
+
+        return page_class(request, params, query, path=path_info, url=url_helper)
+
+    def _resolve_user_for_request(self, request: Request) -> Any:
+        """Resolve page.user from the request (middleware/session scope).
+
+        Identity is NEVER taken from a client-held snapshot.
+        """
+        return self.get_user(request)
+
     async def _handle_request(self, request: Request) -> Response:
         """Handle HTTP request.
 
@@ -1501,31 +1568,10 @@ class PyWire:
                 # Render 404/error page
                 # Note: We pass original request so URL is preserved?
                 # Yes, user checking request.url on 404 page might want to know what failed.
-
-                # Construct params/query
-                query = dict(request.query_params)
-
-                # Path info
-                path_info = {}
-                routes = getattr(page_class, "__routes__", {})
-                if routes:
-                    for name in routes.keys():
-                        path_info[name] = name == variant_name
-                elif hasattr(page_class, "__route__"):
-                    path_info["main"] = True
-
-                from pywire.runtime.router import URLHelper
-
-                url_helper = None
-                url_helper = None
-                routes = getattr(page_class, "__routes__", None)
-                if routes:
-                    url_helper = URLHelper(cast(dict[str, str], routes))
-
                 try:
                     page = cast(
                         ErrorBasePage,
-                        page_class(request, {}, query, path=path_info, url=url_helper),
+                        self._instantiate_page(page_class, request, {}, variant_name),
                     )
                     page.error_code = 404
                     page.error_message = f"The path '{path}' could not be found."
@@ -1543,34 +1589,12 @@ class PyWire:
             return HTMLResponse("404 Not Found", status_code=404)
 
         page_class, params, variant_name = match
-        # ... (params, query, path_info, url_helper construction)
-        # Build query params
-        query = dict(request.query_params)
-
-        # Build path info dict
-        path_info = {}
-        routes = getattr(page_class, "__routes__", {})
-        if routes:
-            for name in routes.keys():
-                path_info[name] = name == variant_name
-        elif hasattr(page_class, "__route__"):
-            path_info["main"] = True
-
-        # Build URL helper
-        from pywire.runtime.router import URLHelper
-
-        url_helper = None
-        routes = getattr(page_class, "__routes__", None)
-        if routes:
-            url_helper = URLHelper(cast(dict[str, str], routes))
-
-        # Instantiate page
-        page = page_class(request, params, query, path=path_info, url=url_helper)
+        page = self._instantiate_page(page_class, request, params, variant_name)
 
         # Populate page.user from scope so the auth guard, templates, and
         # @before_load hooks all see the same principal AuthMiddleware wrote.
         # Mirrors http_transport.py and websocket.py.
-        resolved_user = self.get_user(request)
+        resolved_user = self._resolve_user_for_request(request)
         if resolved_user is not None:
             page.user = resolved_user
 
@@ -1609,6 +1633,32 @@ class PyWire:
         else:
             # Normal render
             response = await page.render()
+
+        # Stateless mode: embed the signed client-held snapshot in full-page
+        # renders. Locked wires are excluded by the codec; identity is never
+        # in the snapshot (re-resolved from the request on every POST).
+        if (
+            self.stateless
+            and not is_internal_relocate
+            and isinstance(response, Response)
+            and response.media_type == "text/html"
+        ):
+            from pywire.runtime.page import _find_tag_outside_raw_text
+            from pywire.runtime.snapshot_codec import encode_snapshot
+
+            body = cast(bytes, response.body).decode("utf-8")
+            blob = encode_snapshot(
+                page,
+                secret=self._stateless_secret,
+                warn_size=self.session_warn_size,
+            )
+            tag = f'<script id="_pywire_snapshot" type="text/plain">{blob}</script>'
+            idx = _find_tag_outside_raw_text(body, "</body>", from_end=True)
+            if idx >= 0:
+                body = body[:idx] + tag + body[idx:]
+            else:
+                body += tag
+            response = Response(body, media_type="text/html")
 
         # In non-interactive mode, persist session state after handling
         if not self.interactive_server_mode and session_id:
@@ -1727,6 +1777,18 @@ class PyWire:
                 if handler is None or not callable(handler):
                     return PlainTextResponse(
                         f"PyWire: handler '{handler_name}' not found on page",
+                        status_code=400,
+                    )
+                # Enforce the compile-time handler allowlist exactly like
+                # BasePage._dispatch_handler — a client must not be able to
+                # invoke arbitrary page methods (e.g. "render") via the
+                # X-PyWire-Handler header. Hand-rolled pages (allowlist
+                # None) keep the permissive behavior.
+                allowed = page.__class__.__event_handlers__
+                if allowed is not None and handler_name not in allowed:
+                    return PlainTextResponse(
+                        f"PyWire: handler '{handler_name}' is not a registered "
+                        "event handler",
                         status_code=400,
                     )
                 if inspect.iscoroutinefunction(handler):

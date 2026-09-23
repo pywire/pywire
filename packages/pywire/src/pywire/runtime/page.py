@@ -1214,6 +1214,15 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
+                # Stateless (client-held state) mode
+                stateless_mode = False
+                try:
+                    stateless_mode = bool(
+                        getattr(self.request.app.state, "stateless", False)
+                    )
+                except (AttributeError, KeyError):
+                    pass
+
                 # Dev-only SSE reload channel for non-interactive mode. The
                 # dev server mounts /_pywire/dev/reload when both conditions
                 # hold; client subscribes via EventSource if this is set.
@@ -1239,6 +1248,7 @@ class BasePage:
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
                     "interactive": interactive_mode,
+                    "stateless": stateless_mode,
                     # Per-page !no_interactive: WebSocket stays connected,
                     # but the client skips event/wire wiring on this page.
                     "page_interactive": not page_no_interactive,
