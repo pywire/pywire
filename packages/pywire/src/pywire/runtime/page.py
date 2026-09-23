@@ -146,6 +146,9 @@ class BasePage:
     """Base class for all compiled pages."""
 
     __file_path__: ClassVar[str]
+    # Compile-time allowlist of names ``_dispatch_handler`` may invoke. Set by
+    # the .wire codegen; ``None`` (hand-rolled pages) keeps dispatch permissive.
+    __event_handlers__: ClassVar[Optional[frozenset[str]]] = None
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
         "params",
@@ -737,6 +740,19 @@ class BasePage:
         is_framework_handler = event_name.startswith(
             "_handle_bind_"
         ) or event_name.startswith("_handler_")
+        allowed = self.__class__.__event_handlers__
+        if allowed is not None and event_name not in allowed:
+            # Unresolvable names are stale DOM refs from hot reload: ignore
+            # without dispatching. getattr_static runs no descriptors and no
+            # __getattr__, so nothing unlisted is ever invoked.
+            try:
+                inspect.getattr_static(self, event_name)
+            except AttributeError:
+                logger.debug("Ignoring unknown handler '%s'", event_name)
+                return
+            raise ValueError(
+                f"Handler '{event_name}' is not a registered event handler"
+            )
         if not is_framework_handler and event_name.startswith("_"):
             raise ValueError(f"Handler '{event_name}' not allowed")
 

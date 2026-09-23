@@ -510,7 +510,27 @@ class CodeGenerator:
         # Generate auth metadata (only when !auth directive present)
         class_body.extend(self._generate_auth_metadata(parsed))
 
-        # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
+        # Compile-time dispatch allowlist: frontmatter defs + generated
+        # ``_handler_N`` wrappers. Anything else (base methods, attributes,
+        # dunders) is refused by ``BasePage._dispatch_handler``.
+        event_handlers = set(known_methods) | {h.name for h in handlers}
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="__event_handlers__", ctx=ast.Store())],
+                value=ast.Call(
+                    func=ast.Name(id="frozenset", ctx=ast.Load()),
+                    args=[
+                        ast.Tuple(
+                            elts=[
+                                ast.Constant(value=n) for n in sorted(event_handlers)
+                            ],
+                            ctx=ast.Load(),
+                        )
+                    ],
+                    keywords=[],
+                ),
+            )
+        )
 
         # Transform user Python code to class methods (Must run before __init__ to set flags)
         route_params = self._extract_route_params(parsed)
