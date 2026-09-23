@@ -66,13 +66,35 @@ no third-party deps, runnable as `python3 scripts/monorepo_graph.py <cmd>`).
     `needs.changes.outputs.*` set, compare against the graph-derived fan-out
     (a job's trigger set = its own package + all transitive upstream
     packages). Exit 1 with a diff on mismatch, so the YAML can't silently rot.
+  - `check-publishable <pkg>` — for every monorepo dep of `<pkg>`, verify the
+    floor in `<pkg>`'s pyproject is satisfiable by a version already published
+    on PyPI (npm registry for the JS packages). This is the release-ordering
+    invariant: a release PR is safe to merge only when all its floors are
+    publicly installable. It subsumes "merge upstream first" *and* catches
+    "upstream release PR merged but its publish job failed."
+  - `release-order [pkgs...]` — print the topological merge order for the
+    given packages (or, with no args, auto-detect open `release-please--*`
+    PRs via `gh pr list` and order those). Registry-independent packages
+    (e.g. `vscode-pywire`, npm-side) are marked order-free.
 - New always-on CI job `check-monorepo-graph` in `ci.yml` (no `uv sync`, no
   paths filter — runs in seconds on the runner's system python3) running
   `check-floors` + `check-ci`.
+- New **release-PR gate** job in `ci.yml`: triggers on PRs from
+  `release-please--*` branches, runs `check-publishable` for that PR's
+  package, and fails the status check while any floor is unsatisfiable.
+  Merging release PRs out of order becomes impossible (a red check), not a
+  remembered ritual.
 
 `AGENTS.md` "Cross-package version floors" section gets updated to point at
 the tool (the rule "bump both in the same commit" becomes "`check-floors`
-tells you what to bump").
+tells you what to bump"), and the "Commits, PRs, releases" section gains a
+short release-ordering protocol:
+
+1. Feature PR bumps floors for any new upstream feature it uses (same commit).
+2. Merge release PRs upstream-first (`release-order` prints the order);
+   the release-PR gate enforces it.
+3. If the gate is red, the blocker is upstream: an unmerged release PR or a
+   failed publish job — fix that, not the gate.
 
 ## Part B — CI/CD speed & hygiene (monorepo + pywire.dev)
 
@@ -86,6 +108,9 @@ Monorepo (`ci.yml`, `release.yml`, `test-publish.yml`, `deploy-docs.yml`,
    action's current latest major and runtime at implementation time —
    `dorny/paths-filter`, `Swatinem/rust-cache`, `dtolnay/rust-toolchain`,
    `cloudflare/pages-action`, `astral-sh/setup-uv` included in the sweep).
+   Explicitly: `googleapis/release-please-action@v4` → `@v5` (v5.0.0's only
+   breaking change is the node24 runtime; config/manifest interface
+   unchanged, and it bumps the bundled release-please lib 17.3.0 → 17.6.0).
 3. **pnpm 10 in CI**: all `pnpm/action-setup` `version: 9` → `10` (matches
    local; `pnpm-workspace.yaml` `allowBuilds` starts applying — sanity-check
    the install step afterward).
@@ -214,7 +239,8 @@ pinned to a current 1.x in the workflows via `hashicorp/setup-terraform`.)
 - CI on a docs-only PR runs zero Python jobs; a parser-only PR runs exactly
   the parser's downstream jobs (unchanged behavior, now machine-verified).
 - No workflow in either repo references Node 20/22 or node20-runtime action
-  majors; GHA deprecation warnings gone from run summaries.
+  majors (including release-please-action, on v5); GHA deprecation warnings
+  gone from run summaries.
 - `terraform plan` in CI (pywire.dev) is green on main; a PR editing
   `infra/` shows a plan comment; merging without applying turns the main
   drift job red; `infra-apply` dispatch turns it green again.
