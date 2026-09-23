@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.4](https://github.com/pywire/pywire/compare/pywire-v0.14.3...pywire-v0.14.4) (2026-05-06)
+
+
+### Bug Fixes
+
+* **pywire:** lower pywire-parser floor to 0.7.1 ([72525fe](https://github.com/pywire/pywire/commit/72525fe9042f7090eab521586e2aaeff1ab87631))
+
 ## [0.14.3](https://github.com/pywire/pywire/compare/pywire-v0.14.2...pywire-v0.14.3) (2026-05-04)
 
 
