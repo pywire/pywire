@@ -258,6 +258,12 @@ export class PyWireApp {
         if (meta.page_interactive !== undefined) {
           this.config.pageInteractive = !!meta.page_interactive
         }
+        // Stateless (client-held state) mode: branch to the fetch-based
+        // transport BEFORE the WS/WebTransport/HTTP fallback order —
+        // stateless servers mount none of those endpoints.
+        if (meta.stateless) {
+          this.transport.useStatelessTransport()
+        }
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
           logger.setDebug(this.config.debug)
