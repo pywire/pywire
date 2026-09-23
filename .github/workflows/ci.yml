@@ -151,7 +151,11 @@ jobs:
   check-pywire-auth:
     name: "Check PyWire Auth"
     needs: changes
-    if: needs.changes.outputs.auth == 'true' || needs.changes.outputs.pywire == 'true'
+    if: >
+      needs.changes.outputs.auth == 'true' ||
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -253,7 +257,11 @@ jobs:
   check-examples:
     name: "Check Examples"
     needs: changes
-    if: needs.changes.outputs.examples == 'true' || needs.changes.outputs.pywire == 'true'
+    if: >
+      needs.changes.outputs.examples == 'true' ||
+      needs.changes.outputs.pywire == 'true' ||
+      needs.changes.outputs.parser == 'true' ||
+      needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
