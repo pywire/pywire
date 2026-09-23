@@ -1,0 +1,8 @@
+---
+import asyncio
+
+async def slow_thing():
+    await asyncio.sleep(10)
+    return "done"
+---
+{$await slow_thing()}loading...{$then result}{result}{/await}

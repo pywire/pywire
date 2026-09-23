@@ -1,0 +1,9 @@
+!path "/fast"
+---
+import asyncio
+
+async def fast_thing():
+    await asyncio.sleep(0)
+    return "done"
+---
+{$await fast_thing()}loading...{$then result}{result}{/await}
