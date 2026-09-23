@@ -1,0 +1,3 @@
+#!/bin/sh -e
+# Full docs gate: format check, lint, build.
+exec pnpm check
