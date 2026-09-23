@@ -293,6 +293,28 @@ jobs:
       - name: Run Checks
         run: cd docs && ./scripts/check
 
+  # "Release Floors Gate" is a required status check, but its real evaluation
+  # lives in release.yml (push to main) and only posts on release-please PRs,
+  # which never trigger pull_request workflows. Regular PRs get a pass-through
+  # success here so the required check resolves; floors on feature PRs are
+  # governed by the AGENTS.md release protocol.
+  floors-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Post Release Floors Gate status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=success \
+            -f context="Release Floors Gate" \
+            -f description="Feature PR — floors governed by AGENTS.md release protocol" \
+            --silent
+
   # Always-on: the derived monorepo graph is the source of truth for
   # version floors, ci.yml fan-outs and the local-tooling contract.
   # Runs in seconds on the runner's system python3 (no uv sync, no
