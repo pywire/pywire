@@ -13,3 +13,6 @@ allowBuilds:
   keytar: false
   sharp: true
   tree-sitter-cli: true
+
+overrides:
+  dompurify: ^3.4.13
