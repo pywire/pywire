@@ -85,6 +85,12 @@ no third-party deps, runnable as `python3 scripts/monorepo_graph.py <cmd>`).
   Merging release PRs out of order becomes impossible (a red check), not a
   remembered ritual.
 
+  - `units` — print all checkable units in topological order (upstream
+    first), for the root orchestrators below.
+  - `check-scripts` — verify the local-tooling contract (Part D): every unit
+    exposes `scripts/check`, and each root orchestrator covers exactly the
+    intended unit set. Exit 1 listing any drift.
+
 `AGENTS.md` "Cross-package version floors" section gets updated to point at
 the tool (the rule "bump both in the same commit" becomes "`check-floors`
 tells you what to bump"), and the "Commits, PRs, releases" section gains a
@@ -95,6 +101,37 @@ short release-ordering protocol:
    the release-PR gate enforces it.
 3. If the gate is red, the blocker is upstream: an unmerged release PR or a
    failed publish job — fix that, not the gate.
+
+## Part D — Consistent local tooling & orchestration (monorepo)
+
+Current state is inconsistent: `pywire-templates` and `tree-sitter-pywire`
+have only `scripts/check`; `lint`/`test`/`coverage` exist in some units and
+not others; and the root orchestrators (`scripts/check`, `scripts/test`,
+`scripts/lint`) are hardcoded per-package lists in dependency order — the
+same hand-maintained graph as `ci.yml`, and already drifting (`scripts/lint`
+omits cli/auth/parser/templates/prettier/tree-sitter with nothing verifying
+whether that's intentional).
+
+**Interface contract** (documented in `AGENTS.md`):
+- Every checkable unit MUST expose `scripts/check` = the full local gate
+  (format, lint, types, generated-code staleness, tests) — already true
+  today, now enforced by `check-scripts`.
+- `scripts/lint` (format+lint only) and `scripts/test` (tests only) are
+  OPTIONAL granular entry points. No forced shims — orchestrators skip units
+  that lack them.
+
+**Orchestration**:
+- Root `scripts/check`, `scripts/test`, `scripts/lint` iterate
+  `monorepo_graph.py units` (topological order: grammar/parser before
+  consumers, client build before pywire checks) instead of hardcoded lists —
+  a new package is orchestrated automatically and ordering is correct by
+  construction.
+- Root `scripts/check` gains `--changed [base-ref]`: run only units affected
+  by the working tree / branch diff, computed from the same graph (cheap
+  local scoped checks — addresses local-speed pain without nx).
+- `scripts/hooks/pre-git-check.sh` keeps its file→unit mapping but sources
+  the unit list from the graph script, so hook, orchestrators, and `ci.yml`
+  can't drift apart (all three verified by `check-scripts`/`check-ci`).
 
 ## Part B — CI/CD speed & hygiene (monorepo + pywire.dev)
 
@@ -233,9 +270,12 @@ pinned to a current 1.x in the workflows via `hashicorp/setup-terraform`.)
 
 ## Success criteria
 
-- `python3 scripts/monorepo_graph.py check-floors` and `check-ci` pass on
-  main, and each demonstrably fails when a floor or an `if:` condition is
-  perturbed.
+- `python3 scripts/monorepo_graph.py check-floors`, `check-ci`, and
+  `check-scripts` pass on main, and each demonstrably fails when a floor, an
+  `if:` condition, or a unit's script interface is perturbed.
+- `./scripts/check` iterates units in topological order from the graph (no
+  hardcoded package list); `./scripts/check --changed` on a parser-only
+  branch runs parser + its downstream units and nothing else.
 - CI on a docs-only PR runs zero Python jobs; a parser-only PR runs exactly
   the parser's downstream jobs (unchanged behavior, now machine-verified).
 - No workflow in either repo references Node 20/22 or node20-runtime action
