@@ -1,6 +1,7 @@
 """Main code generator orchestrator."""
 
 import ast
+import logging
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
 
@@ -22,6 +23,8 @@ from pywire.compiler.codegen.attributes.events import EventAttributeCodegen
 from pywire.compiler.codegen.directives.base import DirectiveCodegen
 from pywire.compiler.codegen.directives.path import PathDirectiveCodegen
 from pywire.compiler.codegen.template import TemplateCodegen
+
+logger = logging.getLogger(__name__)
 
 
 class CodeGenerator:
@@ -845,8 +848,10 @@ class CodeGenerator:
                                 attr.handler_name = method_name
 
                             except Exception as e:
-                                print(
-                                    f"Error compiling handler '{attr.handler_name}': {e}"
+                                logger.warning(
+                                    "Error compiling handler %r: %s",
+                                    attr.handler_name,
+                                    e,
                                 )
                         else:
                             # User-defined method — analyze its source for field mask

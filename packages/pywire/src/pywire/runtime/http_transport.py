@@ -58,7 +58,7 @@ class HTTPTransportHandler:
             for sid in expired:
                 del self.sessions[sid]
             if expired:
-                print(f"PyWire: Cleaned up {len(expired)} expired HTTP sessions")
+                logger.debug("Cleaned up %d expired HTTP sessions", len(expired))
 
     async def create_session(self, request: Request) -> Response:
         """Create a new HTTP polling session."""
