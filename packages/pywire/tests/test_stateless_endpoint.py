@@ -3,6 +3,7 @@
 import base64
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import msgpack
 import pytest
@@ -28,11 +29,16 @@ def _blob(html: str) -> str:
     return html.split('_pywire_snapshot" type="text/plain">')[1].split("</script>")[0]
 
 
-def _post(client, blob: str, path: str = "/", handler: str = "increment"):
+def _post(client, blob: str, path: str = "/", handler: str = "increment", data=None):
     return client.post(
         "/_pywire/stateless",
         content=msgpack.packb(
-            {"path": path, "handler": handler, "data": {}, "snapshot": blob}
+            {
+                "path": path,
+                "handler": handler,
+                "data": {} if data is None else data,
+                "snapshot": blob,
+            }
         ),
         headers=_MSGPACK,
     )
@@ -66,6 +72,17 @@ def test_stateless_skips_ws_and_session_routes():
         "/_pywire/event",
     ):
         assert absent not in paths
+
+
+@pytest.mark.asyncio
+async def test_stateless_rejects_webtransport_scope():
+    # WebTransport bypasses the route list AND the middleware stack — the
+    # handler must never be created, and the scope falls through to Starlette.
+    app = PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True, secret_key=SECRET)
+    assert app.web_transport_handler is None
+    with patch.object(app, "app", new_callable=AsyncMock) as mock_starlette:
+        await app({"type": "webtransport"}, AsyncMock(), AsyncMock())
+        mock_starlette.assert_called_once()
 
 
 def test_get_embeds_snapshot_without_secrets(client):
@@ -121,6 +138,14 @@ def test_non_string_path_400(client):
     r = _post(client, blob, path=42)
     assert r.status_code == 400
     assert _error(r) == "invalid path"
+
+
+def test_non_dict_event_data_400(client):
+    # Forged msgpack int data must not die mid-dispatch as a 500
+    blob = _blob(client.get("/").text)
+    r = _post(client, blob, data=42)
+    assert r.status_code == 400
+    assert _error(r) == "invalid data"
 
 
 def test_non_ascii_path_resolves_cleanly(client):

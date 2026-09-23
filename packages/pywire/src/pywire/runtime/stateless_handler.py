@@ -64,6 +64,9 @@ class StatelessHandler:
         path = data.get("path", "/")
         if not isinstance(path, str):
             return self._err(400, "invalid path")
+        event_data = data.get("data", {})
+        if not isinstance(event_data, dict):
+            return self._err(400, "invalid data")
         try:
             page = await self.build_page(request, path, snapshot)
         except Exception as exc:
@@ -101,7 +104,7 @@ class StatelessHandler:
                 ):
                     logger.warning("stateless: rejected handler: %r", handler_name)
                     return self._err(400, "invalid handler")
-                update = await page.handle_event(handler_name, data.get("data", {}))
+                update = await page.handle_event(handler_name, event_data)
             else:
                 update = await page.render_update(init=False)
             nav = self._take_navigation(page)

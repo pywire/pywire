@@ -331,9 +331,16 @@ class PyWire:
             self.ws_handler = WebSocketHandler(self)
             self.http_handler = HTTPTransportHandler(self)
 
-            from pywire.runtime.webtransport_handler import WebTransportHandler
+            if self.stateless:
+                # WebTransport bypasses the Starlette router entirely, so
+                # unmounting routes is not enough — never create the handler
+                # in stateless mode. The __call__ gate falls through to
+                # Starlette on web_transport_handler is None.
+                self.web_transport_handler = None  # type: ignore[assignment]
+            else:
+                from pywire.runtime.webtransport_handler import WebTransportHandler
 
-            self.web_transport_handler = WebTransportHandler(self)
+                self.web_transport_handler = WebTransportHandler(self)
         else:
             self.ws_handler = None  # type: ignore[assignment]
             self.http_handler = None  # type: ignore[assignment]

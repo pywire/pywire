@@ -247,6 +247,10 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
     for name, value in attrs.items():
         try:
             current = getattr(page, name, None)
+            if isinstance(current, WireBase) and current._locked:
+                # Stale signed snapshot (attr locked after it was signed):
+                # the fresh frontmatter value always wins, never the client's.
+                continue
             if name in wire_tags:
                 # Current page has a wire attribute — update its value
                 if isinstance(current, WireBase):

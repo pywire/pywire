@@ -655,7 +655,14 @@ class BasePage:
 
         snapshot = self._component_state_snapshots.pop(key, None)
         if snapshot:
+            from pywire.core.wire import WireBase  # noqa: PLC0415
+
             for attr, value in snapshot.items():
+                current = getattr(instance, attr, None)
+                if isinstance(current, WireBase) and current._locked:
+                    # Stale snapshot carrying an attr locked after signing:
+                    # keep the fresh frontmatter wire (still locked).
+                    continue
                 try:
                     setattr(instance, attr, value)
                 except AttributeError:
