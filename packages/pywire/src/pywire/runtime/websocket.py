@@ -100,8 +100,7 @@ class WebSocketHandler:
             # Server shutdown, clean disconnect — don't re-raise
             pass
         except Exception as e:
-            print(f"WebSocket error: {e}")
-            traceback.print_exc()
+            logger.exception("WebSocket error: %s", e)
         finally:
             self._cleanup_connection(websocket)
 
@@ -296,7 +295,7 @@ class WebSocketHandler:
         elif msg_type == "ref_sync":
             await self._handle_ref_sync(websocket, data)
         else:
-            print(f"Unknown message type: {msg_type}")
+            logger.warning("Unknown message type: %s", msg_type)
             await self._send_console_message(
                 websocket, f"Unknown message type: {msg_type}", level="error"
             )
@@ -418,7 +417,7 @@ class WebSocketHandler:
                 self.app.router, path, base_scope=dict(websocket.scope)
             )
             if not result:
-                print(f"Init: No route found for path: {path}")
+                logger.debug("Init: no route found for path: %s", path)
                 # Browser likely arrived from a full nav and is currently
                 # showing the built-in error page. Mark the connection so
                 # the next hot-reload forces a hard browser reload rather
@@ -520,9 +519,7 @@ class WebSocketHandler:
             await page._run_hooks(page.MOUNT_HOOKS)
 
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
+            logger.exception("Error initializing page")
             await self._send_error_trace(websocket, e)
         finally:
             log_callback_ctx.reset(token)
@@ -550,7 +547,7 @@ class WebSocketHandler:
                     self.app.router, path, base_scope=dict(websocket.scope)
                 )
                 if not result:
-                    print(f"No route found for path: {path}")
+                    logger.debug("No route found for path: %s", path)
                     return
 
                 page, _params, _variant_name = result
@@ -604,10 +601,7 @@ class WebSocketHandler:
                 self._persist_session(session_id, page)
 
         except Exception as e:
-            # Send structured trace to client (no print - trace is sufficient)
-            import traceback
-
-            traceback.print_exc()
+            logger.exception("Error handling event")
             await self._send_error_trace(websocket, e)
         finally:
             log_callback_ctx.reset(token)
@@ -776,7 +770,7 @@ class WebSocketHandler:
         except Exception as e:
             # If relocation fails, force a full reload so the browser
             # hits the server and gets the proper error page
-            print(f"Error handling relocate: {e}", file=sys.stderr)
+            logger.exception("Error handling relocate: %s", e)
             self._connection_in_error.add(websocket)
             await websocket.send_bytes(msgpack.packb({"type": "reload"}))
         finally:
@@ -1242,5 +1236,4 @@ class WebSocketHandler:
                     if hasattr(ref, "_update_value"):
                         ref._update_value(value)
             except Exception as e:
-                if getattr(self.app, "debug", False):
-                    print(f"Ref sync error for {ref_id}: {e}")
+                logger.debug("Ref sync error for %s: %s", ref_id, e)

@@ -59,13 +59,11 @@ class WebTransportHandler:
             while True:
                 message = await receive()
                 msg_type = message["type"]
-                # print(f"DEBUG: Received WT message: {msg_type}")
 
                 if msg_type == "webtransport.stream.connect":
                     # New bidirectional stream opened by client
                     stream_id = message["stream_id"]
                     streams[stream_id] = bytearray()
-                    # print(f"DEBUG: Stream {stream_id} connected")
 
                 elif msg_type == "webtransport.stream.receive":
                     stream_id = message["stream_id"]

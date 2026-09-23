@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 import time
 import uuid
@@ -8,6 +9,8 @@ from typing import Optional
 from starlette.datastructures import UploadFile
 
 from pywire.runtime.files import FileUpload
+
+logger = logging.getLogger(__name__)
 
 
 class UploadManager:
@@ -105,7 +108,7 @@ class UploadManager:
                 content=file_path.read_bytes(),
             )
         except (OSError, ValueError, json.JSONDecodeError) as e:
-            print(f"Error retrieving upload {upload_id}: {e}")
+            logger.warning("Error retrieving upload %s: %s", upload_id, e)
             return None
 
     def delete(self, upload_id: str) -> None:

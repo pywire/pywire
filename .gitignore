@@ -78,4 +78,18 @@ chatbot.db
 .gemini/
 .claude/worktrees/
 gha-creds-*.json
-.agent/settings.local.json
+.agents/settings.local.json
+
+# ─────────────────────── Agent harnesses ─────────────
+# Committed (team-shared, no secrets or personal model/theme prefs):
+# .pi/settings.json, .pi/{extensions,skills,prompts,themes,agents}/,
+# .pi/subagents.json, .pi/agent-memory/, .pi/workflows/settings.json,
+# .mcp.json, .pi/mcp.json (team overrides only; /mcp enable|disable writes here),
+# .rtk/filters.toml. Ponytail and rtk otherwise keep state outside the repo.
+.pi/npm/
+.pi/git/
+.pi/worktrees/
+.pi/workflows/runs/
+.pi/agent-memory-local/
+.superpowers/
+.worktrees/

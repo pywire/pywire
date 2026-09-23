@@ -1,0 +1,11 @@
+# Project defaults for Codex; applied once the project is trusted.
+# Hooks (the pre-commit check gate) are in .codex/hooks.json.
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+# uv sync, pnpm install and playwright install download packages.
+network_access = true
+# Package caches live outside the repo (~/.cache/uv, the pnpm store,
+# ms-playwright), so the first install may ask to run unsandboxed. To avoid
+# that, add their absolute paths to `writable_roots` in ~/.codex/config.toml.

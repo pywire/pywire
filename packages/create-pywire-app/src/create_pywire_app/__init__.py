@@ -1,6 +1,7 @@
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
-from create_pywire_app import _compat as _compat  # noqa: F401  (runs version floor checks)
+# Imported for its side effect: runs the version floor checks.
+from create_pywire_app import _compat as _compat
 
 try:
     __version__ = version("create-pywire-app")

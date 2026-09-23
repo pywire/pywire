@@ -8,3 +8,9 @@ build/
 *.egg-info/
 .build-venv/
 emsdk/
+
+# Local build/debug output (`tree-sitter build`, ad-hoc parses). Scratch .wire files go in /scratch.
+/*.dylib
+/*.so
+/*.wire
+/*.txt

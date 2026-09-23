@@ -1,0 +1,12 @@
+#!/bin/sh -e
+# src/ is generated from grammar.js; regenerate first so tests run against the current grammar.
+
+echo "-> tree-sitter generate (src/ must be up to date)"
+pnpm exec tree-sitter generate
+git diff --exit-code --stat -- src/ || { echo "src/ is stale: commit the regenerated files"; exit 1; }
+
+echo "-> tree-sitter test (corpus)"
+pnpm test
+
+echo "-> cargo test"
+cargo test

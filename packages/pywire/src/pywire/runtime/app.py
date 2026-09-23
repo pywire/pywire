@@ -1409,8 +1409,7 @@ class PyWire:
                 return response
             except Exception as e:
                 # If 500 page fails, fall back
-                print(f"Error rendering 500 page: {e}")
-                pass
+                logger.exception("Error rendering 500 page: %s", e)
 
         # If no custom page or it failed:
         if self.debug:
@@ -1535,11 +1534,9 @@ class PyWire:
                     response.status_code = 404
                     return response
                 except Exception as e:
-                    print(f"Failed to render custom error page {page_class}: {e}")
-                    import traceback
-
-                    traceback.print_exc()
-                    pass  # Fallback
+                    logger.exception(
+                        "Failed to render custom error page %s: %s", page_class, e
+                    )
 
             from starlette.responses import HTMLResponse
 
