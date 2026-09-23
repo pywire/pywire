@@ -127,6 +127,8 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
 
         # Handle wire types
         if isinstance(value, WireBase):
+            if value._locked:
+                continue
             tag = _get_wire_tag(value)
             if tag:
                 wire_tags[name] = tag
@@ -188,6 +190,8 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
             if attr in {"request", "params", "query", "path", "url"}:
                 continue
             if isinstance(value, WireBase):
+                if value._locked:
+                    continue
                 tag = _get_wire_tag(value)
                 if tag:
                     raw = _peek_wire(value)

@@ -67,6 +67,7 @@ class WireBase:
         self._parent = parent
         self._field = field
         self._frozen = False
+        self._locked = False
         # Per-wire write counter. Bumped on every `_notify_write`. Used
         # by component-level memoization to invalidate only when wires
         # this specific component reads have been written.
@@ -173,6 +174,12 @@ class WireBase:
     def freeze(self) -> None:
         """Make the wire read-only."""
         self._frozen = True
+
+    def lock(self) -> "WireBase":
+        """Exclude this wire from client-visible session snapshots.
+        The attr must be re-derivable by frontmatter on every instantiation."""
+        self._locked = True
+        return self
 
     def _check_frozen(self):
         if self._frozen:
