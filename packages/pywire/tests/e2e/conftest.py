@@ -1,9 +1,12 @@
+import contextlib
 import os
 import re
 import signal
-import subprocess
-import time
 import socket
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -18,41 +21,28 @@ def assert_no_nested_html_body(page: Page):
     assert page.locator("body body").count() == 0, "Found nested <body> tags!"
 
 
-@pytest.fixture(scope="session")
-def server_port():
+def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="session")
-def test_app_dir(tmp_path_factory):
-    # Copy basic_app to tmp_path
-    fixture_dir = Path(__file__).parent / "fixtures" / "basic_app"
-    app_dir = tmp_path_factory.mktemp("app")
-
-    # Simple copy
+def _copy_fixture_app(tmp_path_factory, fixture_name: str) -> Path:
+    fixture_dir = Path(__file__).parent / "fixtures" / fixture_name
+    app_dir = tmp_path_factory.mktemp(fixture_name)
     for item in fixture_dir.glob("**/*"):
         if item.is_file():
             relative = item.relative_to(fixture_dir)
             target = app_dir / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(item.read_bytes())
-
     return app_dir
 
 
-@pytest.fixture(scope="session")
-def browser_context_args(browser_context_args):
-    return {**browser_context_args, "ignore_https_errors": True}
-
-
-@pytest.fixture(scope="session")
-def pywire_server(test_app_dir, server_port):
+@contextlib.contextmanager
+def _run_pywire_server(app_dir: Path, port: int):
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-
-    import sys
 
     cmd = [
         sys.executable,
@@ -63,14 +53,14 @@ def pywire_server(test_app_dir, server_port):
         "--host",
         "127.0.0.1",
         "--port",
-        str(server_port),
+        str(port),
         "--no-tui",
     ]
     print(f"\nDEBUG: Starting server with command: {' '.join(cmd)}")
 
     process = subprocess.Popen(
         cmd,
-        cwd=test_app_dir,
+        cwd=app_dir,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
@@ -91,8 +81,6 @@ def pywire_server(test_app_dir, server_port):
     fd = process.stdout.fileno()
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-
-    import threading
 
     url_found_event = threading.Event()
     stop_event = threading.Event()
@@ -150,15 +138,48 @@ def pywire_server(test_app_dir, server_port):
             f"Server timeout or URL not found.\nCaptured Output: {''.join(captured_output)}"
         )
 
-    yield url
-
-    # Cleanup
-    stop_event.set()
     try:
-        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-        process.wait(timeout=5)
-    except Exception:
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-    thread.join(timeout=2)
-    if process.stdout:
-        process.stdout.close()
+        yield url
+    finally:
+        # Cleanup
+        stop_event.set()
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            process.wait(timeout=5)
+        except Exception:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        thread.join(timeout=2)
+        if process.stdout:
+            process.stdout.close()
+
+
+@pytest.fixture(scope="session")
+def server_port():
+    return _free_port()
+
+
+@pytest.fixture(scope="session")
+def test_app_dir(tmp_path_factory):
+    return _copy_fixture_app(tmp_path_factory, "basic_app")
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    return {**browser_context_args, "ignore_https_errors": True}
+
+
+@pytest.fixture(scope="session")
+def pywire_server(test_app_dir, server_port):
+    with _run_pywire_server(test_app_dir, server_port) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def stateless_app_dir(tmp_path_factory):
+    return _copy_fixture_app(tmp_path_factory, "stateless_app")
+
+
+@pytest.fixture(scope="session")
+def stateless_server(stateless_app_dir):
+    with _run_pywire_server(stateless_app_dir, _free_port()) as url:
+        yield url
