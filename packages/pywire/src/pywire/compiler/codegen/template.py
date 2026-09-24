@@ -82,6 +82,10 @@ class TemplateCodegen:
         self._region_counter = 0
         self._region_id_prefix = ""
         self.region_renderers: Dict[str, str] = {}
+        # Site id -> single-item renderer method name for keyed ``{$for}``
+        # loops. ``render_update`` dispatches dirty ``{site}#{key}`` region
+        # ids through this map.
+        self.keyed_region_renderers: Dict[str, str] = {}
         # Region IDs whose codegen happened under `{$dynamic}`. These regions
         # are force-marked dirty in `render_update` so the bypass kwarg on
         # inner `_invoke_render`/`_invoke_component` calls actually executes.
@@ -159,6 +163,7 @@ class TemplateCodegen:
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
+        self.keyed_region_renderers = {}
         self.dynamic_regions = set()
         self._region_codegen_stack = []
         self._wire_vars = set()
@@ -717,6 +722,417 @@ class TemplateCodegen:
         self._region_counter += 1
         suffix = f"r{self._region_counter}"
         return f"{self._region_id_prefix}{suffix}" if self._region_id_prefix else suffix
+
+    # ---------------- Keyed {$for} item regions ----------------
+
+    def _keyed_derivation_strategy(
+        self, iterable_str: str, key_str: str, loop_vars_str: str
+    ) -> Tuple[str, Optional[str]]:
+        """Pick how ``_pw_item_<site>`` re-derives loop vars from a key.
+
+        Returns ``("index", src)`` for ``enumerate(SRC)`` keyed by the index
+        var (re-derive via ``SRC[int(key)]``), ``("dict", src)`` for
+        ``SRC.items()`` keyed by the key var (re-derive via ``SRC[key]``),
+        else ``("scan", None)`` (linear scan matching ``str(key_expr)``).
+        """
+        try:
+            it = ast.parse(iterable_str, mode="eval").body
+            tgt = ast.parse(loop_vars_str, mode="eval").body
+        except SyntaxError:
+            return ("scan", None)
+        names: Optional[List[str]] = None
+        if isinstance(tgt, ast.Tuple) and all(
+            isinstance(e, ast.Name) for e in tgt.elts
+        ):
+            names = [cast(ast.Name, e).id for e in tgt.elts]
+        two_plain_vars = names is not None and len(names) == 2
+        keyed_by_first_var = two_plain_vars and key_str == (names or [""])[0]
+        if (
+            keyed_by_first_var
+            and isinstance(it, ast.Call)
+            and isinstance(it.func, ast.Name)
+            and it.func.id == "enumerate"
+            and len(it.args) == 1
+            and not it.keywords
+        ):
+            return ("index", ast.unparse(it.args[0]))
+        if (
+            keyed_by_first_var
+            and isinstance(it, ast.Call)
+            and isinstance(it.func, ast.Attribute)
+            and it.func.attr == "items"
+            and not it.args
+            and not it.keywords
+        ):
+            return ("dict", ast.unparse(it.func.value))
+        return ("scan", None)
+
+    def _keyed_derivation_stmts(
+        self,
+        site_id: str,
+        for_attr: ForAttribute,
+        new_locals: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        wire_vars: Set[str],
+        node: TemplateNode,
+    ) -> List[ast.stmt]:
+        """Statements that bind the loop vars for the item matching the
+        ``_pw_key`` argument, evaluated with the render context SUSPENDED
+        so re-derivation reads don't subscribe the item region to the
+        top-level container (that would re-dirty every sibling region on
+        any item write)."""
+        loop_vars_str = for_attr.loop_vars.strip()
+        key_str = (for_attr.key or "").strip()
+        iterable_str = for_attr.iterable.strip()
+        strategy, src_str = self._keyed_derivation_strategy(
+            iterable_str, key_str, loop_vars_str
+        )
+        not_found = (
+            f'raise ValueError("pywire: keyed $for region {site_id}: '
+            'no item with key \'" + str(_pw_key) + "\'")\n'
+        )
+        if strategy == "index":
+            idx_v, item_v = [v.strip() for v in loop_vars_str.split(",")]
+            tmpl = (
+                "_pw_tok0 = suspend_render_context()\n"
+                "try:\n"
+                f"    _pw_src = {src_str}\n"
+                f"    {idx_v} = int(_pw_key)\n"
+                f"    {item_v} = _pw_src[{idx_v}]\n"
+                "finally:\n"
+                "    reset_render_context(_pw_tok0)\n"
+            )
+        elif strategy == "dict":
+            k_v, v_v = [v.strip() for v in loop_vars_str.split(",")]
+            tmpl = (
+                "_pw_tok0 = suspend_render_context()\n"
+                "try:\n"
+                f"    _pw_src = {src_str}\n"
+                "    if _pw_key in _pw_src:\n"
+                f"        {k_v} = _pw_key\n"
+                f"        {v_v} = _pw_src[_pw_key]\n"
+                "    else:\n"
+                "        _pw_found = False\n"
+                f"        for {k_v}, {v_v} in _pw_src.items():\n"
+                f"            if str({k_v}) == _pw_key:\n"
+                "                _pw_found = True\n"
+                "                break\n"
+                "        if not _pw_found:\n"
+                f"            {not_found}"
+                "finally:\n"
+                "    reset_render_context(_pw_tok0)\n"
+            )
+        else:
+            tmpl = (
+                "_pw_tok0 = suspend_render_context()\n"
+                "try:\n"
+                "    _pw_found = False\n"
+                f"    async for {loop_vars_str} in ensure_async_iterator({iterable_str}):\n"
+                f"        if str({key_str}) == _pw_key:\n"
+                "            _pw_found = True\n"
+                "            break\n"
+                "    if not _pw_found:\n"
+                f"        {not_found}"
+                "finally:\n"
+                "    reset_render_context(_pw_tok0)\n"
+            )
+        derive_locals = set(new_locals) | {
+            "_pw_key",
+            "_pw_tok0",
+            "_pw_found",
+            "_pw_src",
+            "suspend_render_context",
+            "reset_render_context",
+            "ensure_async_iterator",
+        }
+        tree = self._transform_expr(
+            tmpl,
+            derive_locals,
+            known_globals,
+            known_imports,
+            line_offset=node.line,
+            col_offset=node.column,
+            mode="exec",
+            wire_vars=wire_vars,
+        )
+        assert isinstance(tree, ast.Module)
+        return tree.body
+
+    def _keyed_wrapper_str(self, site_id: str, key_name: ast.expr) -> ast.JoinedStr:
+        """f'<div data-pw-region="{site}#<key>" style="display: contents;">'
+        — byte-identical to the existing region-wrapper emission."""
+        return ast.JoinedStr(
+            values=[
+                ast.Constant(value=f'<div data-pw-region="{site_id}#'),
+                ast.FormattedValue(value=key_name, conversion=-1),
+                ast.Constant(value='" style="display: contents;">'),
+            ]
+        )
+
+    def _wrap_keyed_iterations(
+        self,
+        item_body: List[ast.stmt],
+        for_attr: ForAttribute,
+        site_id: str,
+        seen_var: str,
+        new_locals: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        wire_vars: Set[str],
+        node: TemplateNode,
+        parts_var: str,
+    ) -> List[ast.stmt]:
+        """Per-iteration statements for a keyed ``{$for}``: compute the
+        region key untracked, guard duplicates, emit the wrapper div and
+        render the body under the ``{site}#{key}`` render context."""
+        k_n = f"_pw_k_{site_id}"
+        rid_n = f"_pw_rid_{site_id}"
+        tok_n = f"_pw_tok_{site_id}"
+        tok0_n = f"_pw_tok0_{site_id}"
+
+        def nm(ident: str, store: bool = False) -> ast.Name:
+            return ast.Name(id=ident, ctx=ast.Store() if store else ast.Load())
+
+        def call(ident: str, *args: ast.expr) -> ast.Call:
+            return ast.Call(func=nm(ident), args=list(args), keywords=[])
+
+        key_expr = cast(
+            ast.expr,
+            self._transform_expr(
+                for_attr.key or "",
+                set(new_locals),
+                known_globals,
+                known_imports,
+                line_offset=node.line,
+                col_offset=node.column,
+                cached=False,
+                wire_vars=wire_vars,
+            ),
+        )
+
+        parts_append = ast.Attribute(value=nm(parts_var), attr="append", ctx=ast.Load())
+        stmts: List[ast.stmt] = [
+            # _pw_tok0 = suspend_render_context()
+            ast.Assign(
+                targets=[nm(tok0_n, True)], value=call("suspend_render_context")
+            ),
+            # try: _pw_k = str(<key expr>) finally: reset_render_context(_pw_tok0)
+            ast.Try(
+                body=[ast.Assign(targets=[nm(k_n, True)], value=call("str", key_expr))],
+                handlers=[],
+                orelse=[],
+                finalbody=[ast.Expr(value=call("reset_render_context", nm(tok0_n)))],
+            ),
+            # _pw_rid = "<site>#" + _pw_k
+            ast.Assign(
+                targets=[nm(rid_n, True)],
+                value=ast.BinOp(
+                    left=ast.Constant(value=f"{site_id}#"),
+                    op=ast.Add(),
+                    right=nm(k_n),
+                ),
+            ),
+            # if _pw_rid in _pw_seen: raise ValueError(...)
+            ast.If(
+                test=ast.Compare(
+                    left=nm(rid_n), ops=[ast.In()], comparators=[nm(seen_var)]
+                ),
+                body=[
+                    ast.Raise(
+                        exc=call(
+                            "ValueError",
+                            ast.JoinedStr(
+                                values=[
+                                    ast.Constant(value="pywire: duplicate key '"),
+                                    ast.FormattedValue(value=nm(k_n), conversion=-1),
+                                    ast.Constant(
+                                        value=f"' in {{$for}} at line {node.line}"
+                                    ),
+                                ]
+                            ),
+                        ),
+                        cause=None,
+                    )
+                ],
+                orelse=[],
+            ),
+            # _pw_seen.add(_pw_rid)
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(value=nm(seen_var), attr="add", ctx=ast.Load()),
+                    args=[nm(rid_n)],
+                    keywords=[],
+                )
+            ),
+            # parts.append(f'<div data-pw-region="{site}#{key}" ...>')
+            ast.Expr(
+                value=ast.Call(
+                    func=parts_append,
+                    args=[self._keyed_wrapper_str(site_id, nm(k_n))],
+                    keywords=[],
+                )
+            ),
+            # self._begin_region_render(_pw_rid)
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("self"), attr="_begin_region_render", ctx=ast.Load()
+                    ),
+                    args=[nm(rid_n)],
+                    keywords=[],
+                )
+            ),
+            # _pw_tok = set_render_context(self, _pw_rid)
+            ast.Assign(
+                targets=[nm(tok_n, True)],
+                value=call("set_render_context", nm("self"), nm(rid_n)),
+            ),
+            # try: <body> finally: reset_render_context(_pw_tok)
+            ast.Try(
+                body=item_body if item_body else [ast.Pass()],
+                handlers=[],
+                orelse=[],
+                finalbody=[ast.Expr(value=call("reset_render_context", nm(tok_n)))],
+            ),
+            # parts.append('</div>')
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm(parts_var), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Constant(value="</div>")],
+                    keywords=[],
+                )
+            ),
+        ]
+        for s in stmts:
+            self._set_line(s, node)
+        return stmts
+
+    def _generate_keyed_item_renderer(
+        self,
+        site_id: str,
+        for_attr: ForAttribute,
+        item_body: List[ast.stmt],
+        new_locals: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        wire_vars: Set[str],
+        node: TemplateNode,
+    ) -> ast.AsyncFunctionDef:
+        """``async def _pw_item_<site>(self, _pw_key) -> str`` — renders ONE
+        iteration under the ``{site}#{key}`` render context, re-deriving the
+        loop vars from the loop source by key."""
+        method_name = f"_pw_item_{site_id}"
+        rid_n = f"_pw_rid_{site_id}"
+        tok_n = f"_pw_tok_{site_id}"
+
+        def nm(ident: str, store: bool = False) -> ast.Name:
+            return ast.Name(id=ident, ctx=ast.Store() if store else ast.Load())
+
+        def call(ident: str, *args: ast.expr) -> ast.Call:
+            return ast.Call(func=nm(ident), args=list(args), keywords=[])
+
+        body: List[ast.stmt] = [
+            ast.Assign(
+                targets=[nm("parts", True)],
+                value=ast.List(elts=[], ctx=ast.Load()),
+            ),
+            ast.Import(names=[ast.alias(name="json", asname=None)]),
+            ast.ImportFrom(
+                module="pywire.runtime.helpers",
+                names=[ast.alias(name="ensure_async_iterator", asname=None)],
+                level=0,
+            ),
+            ast.ImportFrom(
+                module="pywire.runtime.escape",
+                names=[ast.alias(name="escape_html", asname=None)],
+                level=0,
+            ),
+        ]
+        body += self._keyed_derivation_stmts(
+            site_id,
+            for_attr,
+            new_locals,
+            known_globals,
+            known_imports,
+            wire_vars,
+            node,
+        )
+        tail: List[ast.stmt] = [
+            ast.Assign(
+                targets=[nm(rid_n, True)],
+                value=ast.BinOp(
+                    left=ast.Constant(value=f"{site_id}#"),
+                    op=ast.Add(),
+                    right=nm("_pw_key"),
+                ),
+            ),
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("self"), attr="_begin_region_render", ctx=ast.Load()
+                    ),
+                    args=[nm(rid_n)],
+                    keywords=[],
+                )
+            ),
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("parts"), attr="append", ctx=ast.Load()
+                    ),
+                    args=[self._keyed_wrapper_str(site_id, nm("_pw_key"))],
+                    keywords=[],
+                )
+            ),
+            ast.Assign(
+                targets=[nm(tok_n, True)],
+                value=call("set_render_context", nm("self"), nm(rid_n)),
+            ),
+            ast.Try(
+                body=item_body if item_body else [ast.Pass()],
+                handlers=[],
+                orelse=[],
+                finalbody=[ast.Expr(value=call("reset_render_context", nm(tok_n)))],
+            ),
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("parts"), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Constant(value="</div>")],
+                    keywords=[],
+                )
+            ),
+            ast.Return(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                    ),
+                    args=[nm("parts")],
+                    keywords=[],
+                )
+            ),
+        ]
+        for s in tail:
+            self._set_line(s, node)
+        body += tail
+        return ast.AsyncFunctionDef(
+            name=method_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self"), ast.arg(arg="_pw_key")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=body,
+            decorator_list=[],
+            returns=ast.Name(id="str", ctx=ast.Load()),
+        )
 
     def _node_is_dynamic(
         self, node: TemplateNode, known_globals: Optional[Set[str]] = None
@@ -1946,6 +2362,35 @@ class TemplateCodegen:
                     wire_vars=wire_vars,
                 )
 
+            # Keyed loops ({$for ..., key=<expr>}) wrap every iteration in
+            # a <div data-pw-region="{site}#{key}"> rendered under the
+            # per-item render context. Keyless loops are untouched.
+            keyed_site_id: Optional[str] = None
+            keyed_item_body = for_body
+            if for_attr.key:
+                keyed_site_id = self._next_region_id()
+                seen_var = f"_pw_seen_{keyed_site_id}"
+                seen_init = ast.Assign(
+                    targets=[ast.Name(id=seen_var, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[]
+                    ),
+                )
+                self._set_line(seen_init, node)
+                body.append(seen_init)
+                for_body = self._wrap_keyed_iterations(
+                    for_body,
+                    for_attr,
+                    keyed_site_id,
+                    seen_var,
+                    new_locals,
+                    known_globals,
+                    known_imports,
+                    wire_vars,
+                    node,
+                    parts_var,
+                )
+
             # Wrap iterable in ensure_async_iterator
             wrapped_iterable = ast.Call(
                 func=ast.Name(id="ensure_async_iterator", ctx=ast.Load()),
@@ -1999,6 +2444,25 @@ class TemplateCodegen:
                 # Tag with line number
                 self._set_line(for_stmt, node)
                 body.append(for_stmt)
+
+            # Single-item renderer for partial updates — only when the
+            # loop source/key can be re-derived from `self` alone (no
+            # enclosing locals). Otherwise the wrappers still render, but
+            # dirty ``{site}#{key}`` ids fall back to a full re-render.
+            if keyed_site_id is not None and not local_vars:
+                self.keyed_region_renderers[keyed_site_id] = f"_pw_item_{keyed_site_id}"
+                self.auxiliary_functions.append(
+                    self._generate_keyed_item_renderer(
+                        keyed_site_id,
+                        for_attr,
+                        keyed_item_body,
+                        new_locals,
+                        known_globals,
+                        known_imports,
+                        wire_vars,
+                        node,
+                    )
+                )
             return
 
         # 2. Handle $if

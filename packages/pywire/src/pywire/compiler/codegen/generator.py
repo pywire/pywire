@@ -184,6 +184,7 @@ class CodeGenerator:
                     ast.alias(name="unwrap_wire", asname=None),
                     ast.alias(name="set_render_context", asname=None),
                     ast.alias(name="reset_render_context", asname=None),
+                    ast.alias(name="suspend_render_context", asname=None),
                 ],
                 level=0,
             ),
@@ -1987,5 +1988,19 @@ class CodeGenerator:
                         ),
                     )
                 )
+
+        keyed = self.template_codegen.keyed_region_renderers
+        if keyed:
+            binding_funcs.append(
+                ast.Assign(
+                    targets=[
+                        ast.Name(id="__keyed_region_renderers__", ctx=ast.Store())
+                    ],
+                    value=ast.Dict(
+                        keys=[ast.Constant(value=k) for k in keyed],
+                        values=[ast.Constant(value=v) for v in keyed.values()],
+                    ),
+                )
+            )
 
         return render_func, binding_funcs
