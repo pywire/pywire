@@ -1135,7 +1135,7 @@ git commit -m "feat(pywire-cli): cloudflare-edge stateless worker deploy target"
 - **Kernel (identical both tiers):** events/handlers/forms, wires + reactive regions, keyed `{$for}` regions, optimistic UI, SPA nav/pjax, auth/middleware parity, `@poll` (Phase 5B), error pages, deploy tooling, file uploads (verified in T27).
 - **Stateless-only:** snapshot round-trip; pure-FaaS portability. Idiomatic pattern for long-running work: `@poll` + external store/queue.
 - **Stateful-only:** `{$await}` template blocks (server holds the timeline), WebSocket push, server-side background tasks, DO hibernation, future WS rooms (multi-user concurrent — the ONE accepted fundamental loss in stateless).
-- **No-JS floor (`!no_interactive`):** not a third tier — a progressive-enhancement floor of the kernel. Forms + full-page morphs with JS disabled; optimistic/poll/SPA-nav degrade silently.
+- **No-JS floor (`!no_interactive`):** not a third tier — the framework JS always loads; the directive skips event/wire wiring on the page (page.py: client script injected unconditionally, `page_interactive` meta). Whether forms work with JS fully disabled (native POST, no `X-PyWire-Handler` from JS) is UNVERIFIED — T27 checks and fixes, then docs may claim the floor.
 
 **Accepted costs (documented, from adversarial review):** O(n) snapshot tax means bulk collections live in `.lock()`ed wires + store reads, not page state (teach this as THE stateless design pattern); snapshot state is opaque in devtools (T27 adds a debug-mode inspector); `@poll` bills per invocation on FaaS (docs guidance on intervals; SSE is the future upgrade for per-token streaming — roadmap, not this plan).
 
@@ -1168,8 +1168,9 @@ git commit -m "feat(pywire)!: exclude {$await} from stateless tier — build-tim
 - Test: `packages/pywire/tests/test_stateless_uploads.py` (file upload through a stateless app — upload endpoints must work without WS; if not mounted in stateless mode, mount them)
 - Modify: `packages/pywire/src/pywire/runtime/app.py` (debug-mode only: `GET /_pywire/debug/snapshot?blob=...` decodes + pretty-prints a snapshot for development; registered only when `debug=True`)
 - Test: `packages/pywire/tests/test_debug_snapshot.py`
+- Test: `packages/pywire/tests/test_no_js_floor.py` — render a `!no_interactive` page with a form; POST it WITHOUT any JS-set headers (exactly what a browser with JS disabled sends); assert the server handles it (fix `_handle_form_post`'s header expectation if it blocks the native path) and returns a full document.
 
-- [ ] **Step 1: TDD** — upload test first (verify current behavior; mount endpoints if missing) → inspector test (debug on: 200 + decoded JSON; debug off: 404) → implement → GREEN.
+- [ ] **Step 1: TDD** — upload test first (verify current behavior; mount endpoints if missing) → inspector test (debug on: 200 + decoded JSON; debug off: 404) → no-JS form test → implement → GREEN.
 - [ ] **Step 2: Commit**
 
 ```bash
