@@ -64,6 +64,8 @@ Model tiers from `~/.pi/agent/models.json` + store pricing (in/out per Mtok):
 | 4 — optimistic UI (T14–17)         | **Medium-high** — client + attrs codegen, e2e timing                   | `qwen3.8-max-0902`; T14 → `z-ai/glm-5.3`                                           | `google/gemini-3.8-flash`; T17 → `qwen3.8-max-0902`                                          | $5–12     |
 | 5 — validation gate (T18–20)       | **Low-medium** to build, **judgment-heavy** to evaluate                | `xiaomi/mimo-v2.6-pro`                                                             | Numbers reviewed by parent session; `claude-opus-5.5` only if gate marginally fails          | $2–5      |
 | 6 — deploy targets + docs (T21–25) | **Low-medium** — pattern repeats after T20/T21                         | `xiaomi/mimo-v2.6-pro`; T21 (AWS, first of pattern) → `z-ai/glm-5.3`               | `google/gemini-3.8-flash`                                                                    | $3–8      |
+| 5A — tier rectification (T26–27)   | **Medium-high** — removes shipped machinery, gates tiers at build      | `qwen/qwen3.8-max-0902` (T26); `xiaomi/mimo-v2.6-pro` (T27)                        | `google/gemini-3.8-flash`                                                                    | $3–6      |
+| 5B — poll primitive (T28–29)       | **Medium** — grammar + client directive, e2e + demo                    | `deepseek/deepseek-v4-pro-0813` (T28); `xiaomi/mimo-v2.6-pro` (T29)                | `google/gemini-3.8-flash`                                                                    | $3–6      |
 
 **Total est. $40–100.** Cost levers: (a) reviewer prompts get the diff only, not the codebase — reviews are cheap even on opus; (b) if Phase 3's spike (T10) shows item-level invalidation already works via nested proxies, T11–12 shrink substantially — reassess model tier after the spike rather than pre-committing opus for all of Phase 3; (c) batch-mode variants (`:batch`, half price) fit T21–25 if you're not waiting interactively.
 
@@ -1124,6 +1126,97 @@ git commit -m "feat(pywire-cli): cloudflare-edge stateless worker deploy target"
 
 ---
 
+## Phase 5A — Tier rectification (inserted 2026-09-24 after adversarial model review)
+
+**Rationale (owner decision):** the framework currently has three overlapping paradigms — interactive (WS), non-interactive (`!no_interactive` form-post), and stateless (snapshot POST). Rectify into a clean model: a **feature kernel** that works identically in both deployment tiers, plus tier-specific features. The kernel's teaching boundary is *who owns the timeline*: stateless pages only change when the user acts (request-driven); stateful pages can change on their own (server-driven). Everything excluded from stateless follows from that one sentence.
+
+**Feature model (binding for T26+ and docs):**
+
+- **Kernel (identical both tiers):** events/handlers/forms, wires + reactive regions, keyed `{$for}` regions, optimistic UI, SPA nav/pjax, auth/middleware parity, `@poll` (Phase 5B), error pages, deploy tooling, file uploads (verified in T27).
+- **Stateless-only:** snapshot round-trip; pure-FaaS portability. Idiomatic pattern for long-running work: `@poll` + external store/queue.
+- **Stateful-only:** `{$await}` template blocks (server holds the timeline), WebSocket push, server-side background tasks, DO hibernation, future WS rooms (multi-user concurrent — the ONE accepted fundamental loss in stateless).
+- **No-JS floor (`!no_interactive`):** not a third tier — a progressive-enhancement floor of the kernel. Forms + full-page morphs with JS disabled; optimistic/poll/SPA-nav degrade silently.
+
+**Accepted costs (documented, from adversarial review):** O(n) snapshot tax means bulk collections live in `.lock()`ed wires + store reads, not page state (teach this as THE stateless design pattern); snapshot state is opaque in devtools (T27 adds a debug-mode inspector); `@poll` bills per invocation on FaaS (docs guidance on intervals; SSE is the future upgrade for per-token streaming — roadmap, not this plan).
+
+### Task 26: Tier gating + `{$await}` removal from stateless
+
+**Files:**
+
+- Modify: `packages/pywire/src/pywire/compiler/` (codegen/validation: page containing `{$await}` blocks compiled into a `stateless=True` app → **build/compile-time error** naming the page and pointing to `@poll` or the stateful tier)
+- Modify: `packages/pywire/src/pywire/runtime/stateless_handler.py` (delete the hold-open machinery: `await_budget` drain, `meta.pending_awaits`), `packages/pywire/src/pywire/runtime/app.py` (delete `await_budget` param — BREAKING, pre-1.0)
+- Delete: `packages/pywire/tests/test_stateless_await.py`, `packages/pywire/tests/fixtures/stateless_app/pages/{slow,fast_await}.wire` (superseded by gating tests)
+- Modify: `examples/demo-edge-stateless/` (remove `/await` page + README section — replaced by poll page in T29; keep the "no-JS floor" and ceilings honest)
+- Test: `packages/pywire/tests/test_tier_gating.py` (stateless app with `{$await}` page fails at build with actionable message; stateful app with same page compiles fine; async *handlers* still allowed in stateless — only template await blocks are excluded)
+
+- [ ] **Step 1: TDD** — gating test RED (no error today) → implement compile-time check → GREEN.
+- [ ] **Step 2: Delete hold-open machinery** — `await_budget` param, drain loop, `meta.pending_awaits`, T7 tests + fixtures. Suite stays green (delete dead code, no forwarding shims).
+- [ ] **Step 3: Demo rework** — remove `/await` page; README drops the await section (T29 adds the poll replacement).
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/pywire examples/demo-edge-stateless
+git commit -m "feat(pywire)!: exclude {$await} from stateless tier — build-time gate, drop hold-open machinery"
+```
+
+(BREAKING CHANGE footer: `PyWire(await_budget=...)` removed; `{$await}` blocks no longer render in stateless apps.)
+
+### Task 27: Kernel verification gaps + debug snapshot inspector
+
+**Files:**
+
+- Test: `packages/pywire/tests/test_stateless_uploads.py` (file upload through a stateless app — upload endpoints must work without WS; if not mounted in stateless mode, mount them)
+- Modify: `packages/pywire/src/pywire/runtime/app.py` (debug-mode only: `GET /_pywire/debug/snapshot?blob=...` decodes + pretty-prints a snapshot for development; registered only when `debug=True`)
+- Test: `packages/pywire/tests/test_debug_snapshot.py`
+
+- [ ] **Step 1: TDD** — upload test first (verify current behavior; mount endpoints if missing) → inspector test (debug on: 200 + decoded JSON; debug off: 404) → implement → GREEN.
+- [ ] **Step 2: Commit**
+
+```bash
+git add packages/pywire
+git commit -m "feat(pywire): stateless file uploads + debug-mode snapshot inspector"
+```
+
+---
+
+## Phase 5B — Poll primitive (the stateless long-running-action idiom)
+
+### Task 28: `@poll` directive (grammar + client)
+
+**Files:**
+
+- Modify: `packages/pywire-parser/src/pywire_parser/attributes/` (new directive family: `@poll={handler}` with modifiers `.every=<ms>` (default 1000) and `.while={expr}` (default: always while mounted); validates like event attributes — see `attributes/events.py` for the pattern; NOT an event — own module)
+- Modify: `packages/pywire/src/pywire/compiler/codegen/` (compile to `data-pw-poll`, `data-pw-poll-every`, `data-pw-poll-while` + handler allowlist entry — poll handlers are event handlers for dispatch purposes)
+- Modify: `packages/pywire/src/pywire/client/src/events/` or new `src/events/poll.ts` (interval dispatch: start on mount of element, stop on region unmount / `while` false / page nav; transport-agnostic — dispatches through the same event path as clicks, so WS and stateless POST both work; guarded like events against overlap — one in-flight poll per element)
+- Test: parser tests + `packages/pywire/tests/test_poll_directive.py` (codegen) + client vitest (`src/events/poll.test.ts`)
+
+- [ ] **Step 1: TDD** — parser + codegen tests RED → grammar + codegen → GREEN.
+- [ ] **Step 2: Client** — vitest RED (fake timers: interval dispatch, stop-on-unmount, while-condition, no overlap) → implement → GREEN.
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/pywire-parser packages/pywire
+git commit -m "feat(pywire): @poll directive — interval handler dispatch, kernel across tiers"
+```
+
+### Task 29: Poll e2e + demo page
+
+**Files:**
+
+- Test: `packages/pywire/tests/e2e/test_poll.py` (stateless fixture: `@poll` ticks visible in Network as stateless POSTs; stops when condition false; works identically on a stateful fixture over WS)
+- Modify: `examples/demo-edge-stateless/` (new `/poll` page replacing the removed `/await`: a fake "LLM job" — a store-backed counter filled by an in-process asyncio task on first send; `@poll.while={status=='running'}` every 400ms renders progress + completes with a region flip; README section teaching the poll pattern + when NOT to use it: per-token streaming → stateful tier or future SSE)
+
+- [ ] **Step 1: e2e RED → app/attribute wiring → GREEN** (both tiers).
+- [ ] **Step 2: Demo page + README.**
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/pywire examples/demo-edge-stateless
+git commit -m "test(pywire): @poll e2e both tiers + stateless demo poll page"
+```
+
+---
+
 ## Phase 6 — Multi-provider deployment targets (gated on Task 20)
 
 ### Task 21: AWS Lambda target
@@ -1231,6 +1324,8 @@ git commit -m "feat(pywire-cli): gcp-cloudrun and gcp-functions deploy targets"
 
 ### Task 24: Build-time feature gating + version floors
 
+> **Scope note (Phase 5A amendment):** `{$await}`-on-stateless gating moved to T26. This task keeps the platform-vs-tier check (`_require_stateless` for pure-FaaS platforms), the missing-secret build error, and the version floors.
+
 **Files:**
 
 - Modify: `packages/pywire-cli/src/pywire_cli/main.py` (`_require_stateless(app_instance, platform)` pre-build validation)
@@ -1256,7 +1351,9 @@ git commit -m "feat(pywire-cli): fail-fast stateless config checks + cross-packa
 **Files:**
 
 - Modify: `docs/src/content/docs/**` — follow the `update-docs` skill (`.agents/skills/update-docs/SKILL.md`) for placement/nav
-- New pages: "Edge & serverless deployment" (model overview; tier table: stateless vs DO/container), "Stateless mode" (snapshots, `wire.lock()`, `await_budget`, security notes), "Optimistic UI" (`.optimistic` modifier grammar, reconciliation model, when NOT to use it), "Fast lists" (`key=` + keyed regions, structural-change fallback), per-provider quickstarts (CF edge, Lambda, Azure, GCP Run/Functions)
+- New pages: "Edge & serverless deployment" (model overview; **deployment support matrix**: host × tier table — docker/Fly/Render/Railway/Cloud Run → both tiers, CF DO → stateful at edge, CF plain Worker/Lambda/Azure/GCP Functions → stateless only; ideology column: who owns the timeline), "Stateless mode" (snapshots, `wire.lock()`, security notes, **the O(n)-snapshot design pattern**: bulk data in locked wires + store reads, not page state), "Optimistic UI" (`.optimistic` modifier grammar, reconciliation model, when NOT to use it), "Fast lists" (`key=` + keyed regions, structural-change fallback), "Long-running actions" (`@poll` pattern + cookbook per platform — D1+Queues, Firestore+Tasks; when to use the stateful tier instead; `{$await}` is stateful-only), per-provider quickstarts (CF edge, Lambda, Azure, GCP Run/Functions)
+
+> **Scope note (Phase 5A/5B amendment):** `await_budget` is deleted in T26 — docs must NOT mention it. Add the tier feature matrix page (kernel vs stateless-only vs stateful-only, no-JS floor), the `@poll` directive reference, and the chat/streaming guidance (stateful tier for per-token UX; poll for bounded waits; SSE is roadmap).
 
 - [ ] **Step 1: Load the update-docs skill and follow it.** Must include: the stateful/stateless tier decision rule (push features → stateful), `{$await}` hold-open semantics + budget, locked-attr guidance, secret provisioning per provider, the v1 keyed-region ceiling (structural changes = whole-loop).
 - [ ] **Step 2: `cd docs && pnpm build` must pass.**
