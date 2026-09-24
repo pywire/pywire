@@ -1668,6 +1668,11 @@ class CodeGenerator:
         """Generate _render_template method."""
         if component_map is None:
             component_map = {}
+        # `!no_interactive` pages need the no-JS form floor: the template
+        # codegen drops a `__pywire_handler` hidden input into @submit forms.
+        self.template_codegen.no_interactive = (
+            parsed.get_directive_by_type(NoInteractiveDirective) is not None
+        )
         # Check for layout
         layout_directive = parsed.get_directive_by_type(LayoutDirective)
         if layout_directive:

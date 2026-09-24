@@ -79,6 +79,9 @@ class TemplateCodegen:
         self.interpolation_parser = BraceInterpolationParser()
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
+        # Set per page by the generator: `!no_interactive` pages get the no-JS
+        # form floor (a `__pywire_handler` hidden input inside @submit forms).
+        self.no_interactive = False
         self._region_counter = 0
         self._region_id_prefix = ""
         self.region_renderers: Dict[str, str] = {}
@@ -5317,6 +5320,14 @@ class TemplateCodegen:
                 )
                 body.append(check)
 
+            # Upload kernel: a plain `<input type="file">` marks the page as
+            # needing an upload token (`__has_uploads__`) — otherwise the
+            # client can never authenticate its POST to `/_pywire/upload`.
+            if node.tag.lower() == "input":
+                _input_type = node.attributes.get("type")
+                if isinstance(_input_type, str) and _input_type.lower() == "file":
+                    self.has_file_inputs = True
+
             # Generate opening tag
             # header_parts = [] ...
             # parts.append(f"<{tag}{''.join(header_parts)}>")
@@ -5422,6 +5433,54 @@ class TemplateCodegen:
                     )
                 )
             )
+
+            # No-JS floor: `!no_interactive` pages skip client wiring, so the
+            # browser's native form POST is the only submit path. Carry the
+            # @submit handler name in a hidden input — `_handle_form_post`
+            # falls back to it when the X-PyWire-Handler header is absent.
+            if node.tag.lower() == "form" and self.no_interactive:
+                for _evt in node.special_attributes:
+                    if isinstance(_evt, EventAttribute) and _evt.event_type == "submit":
+                        _handler_expr = ast.BinOp(
+                            left=ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr="_handler_prefix",
+                                ctx=ast.Load(),
+                            ),
+                            op=ast.Add(),
+                            right=ast.Constant(value=_evt.handler_name),
+                        )
+                        _hidden = ast.BinOp(
+                            left=ast.BinOp(
+                                left=ast.Constant(
+                                    value=(
+                                        '<input type="hidden" '
+                                        'name="__pywire_handler" value="'
+                                    )
+                                ),
+                                op=ast.Add(),
+                                right=ast.Call(
+                                    func=ast.Name(id="escape_html", ctx=ast.Load()),
+                                    args=[_handler_expr],
+                                    keywords=[],
+                                ),
+                            ),
+                            op=ast.Add(),
+                            right=ast.Constant(value='">'),
+                        )
+                        body.append(
+                            ast.Expr(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                        attr="append",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[_hidden],
+                                    keywords=[],
+                                )
+                            )
+                        )
 
             prev_child = None
             for child in node.children:

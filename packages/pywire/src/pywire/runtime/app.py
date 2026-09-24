@@ -480,6 +480,15 @@ class PyWire:
                     "/_pywire/file/{encoded:path}", self._handle_file, methods=["GET"]
                 )
             )
+            # Snapshot inspector: decode + pretty-print a client-held
+            # stateless snapshot for development.
+            routes.append(
+                Route(
+                    "/_pywire/debug/snapshot",
+                    self._handle_debug_snapshot,
+                    methods=["GET"],
+                )
+            )
             # Chrome DevTools automatic workspace folders (M-135+)
             routes.append(
                 Route(
@@ -811,6 +820,28 @@ class PyWire:
         except Exception as e:
             logger.error(f"Upload failed: {e}", exc_info=True)
             return JSONResponse({"error": str(e)}, status_code=500)
+
+    async def _handle_debug_snapshot(self, request: Request) -> Response:
+        """Decode and pretty-print a client-held snapshot (debug mode only).
+
+        The HMAC gate stays in front: a tampered blob is a 400, never a
+        decode. The signing secret is never echoed.
+        """
+        if not self._stateless_secret:
+            # Snapshots only exist in stateless mode.
+            return Response("Not Found", status_code=404)
+        blob = request.query_params.get("blob")
+        if not blob:
+            return Response("Missing blob", status_code=400)
+        from pywire.runtime.snapshot_codec import SnapshotError, decode_snapshot
+
+        try:
+            snap = decode_snapshot(blob, secret=self._stateless_secret)
+        except SnapshotError:
+            return Response("invalid snapshot", status_code=400)
+        return Response(
+            json.dumps(snap, indent=2, default=repr), media_type="application/json"
+        )
 
     async def _handle_source(self, request: Request) -> Response:
         """Serve source code for debugging. Requires both debug=True AND _is_dev_mode=True."""
@@ -1630,10 +1661,16 @@ class PyWire:
                 return JSONResponse({"error": str(e)}, status_code=500)
         elif (
             request.method == "POST"
-            and not self.interactive_server_mode
             and "X-PyWire-Event" not in request.headers
+            and (
+                not self.interactive_server_mode
+                or getattr(page, "__no_interactive__", False)
+            )
         ):
-            # Non-interactive mode: standard form POST → @submit handler
+            # Form POST → @submit handler. Non-interactive server mode routes
+            # every form POST here; in interactive mode only `!no_interactive`
+            # pages get here — the client skips wiring on them, so their forms
+            # submit natively (the no-JS floor).
             response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
             # Internal ASGI replay from WS handler — body-only, no client scripts
@@ -1732,18 +1769,30 @@ class PyWire:
         response renders as a body fragment (init=False) so the client can
         morph it in — same swap path as SPA link nav. Without the header,
         a full HTML document is returned.
+
+        Handler name source: the ``X-PyWire-Handler`` header (JS path), or
+        the ``__pywire_handler`` hidden input codegen renders into @submit
+        forms on ``!no_interactive`` pages (no-JS path — a native browser
+        POST cannot set headers). The header wins when both are present;
+        the hidden field is never passed on as handler data.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
         try:
             form_data = await request.form()
-            event_data: Dict[str, Any] = {str(k): v for k, v in form_data.multi_items()}
+            event_data: Dict[str, Any] = {
+                str(k): v for k, v in form_data.multi_items() if k != "__pywire_handler"
+            }
 
-            handler_name: Any = request.headers.get("x-pywire-handler")
+            handler_name: Any = request.headers.get("x-pywire-handler") or (
+                form_data.get("__pywire_handler")
+            )
             if not handler_name or not isinstance(handler_name, str):
                 return PlainTextResponse(
-                    "PyWire: form POST missing X-PyWire-Handler header. Add "
+                    "PyWire: form POST missing handler. Add "
                     "`@submit={handler_name}` to your <form>; the PyWire "
-                    "client sends the header automatically.",
+                    "client sends the X-PyWire-Handler header automatically, "
+                    "and `!no_interactive` pages render a `__pywire_handler` "
+                    "hidden input for no-JS submits.",
                     status_code=400,
                 )
 
