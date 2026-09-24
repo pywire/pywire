@@ -319,7 +319,7 @@ def dev(
 )
 @click.option(
     "--platform",
-    type=click.Choice(["cloudflare"]),
+    type=click.Choice(["cloudflare", "cloudflare-edge"]),
     default=None,
     help="Generate platform-specific build output.",
 )
@@ -388,7 +388,7 @@ def build(
 
     console.print(f"✅ Build complete ({', '.join(parts)})")
 
-    if platform == "cloudflare":
+    if platform in ("cloudflare", "cloudflare-edge"):
         import shutil
 
         from pywire.compiler.build_artifacts import generate_cf_bundle
@@ -398,6 +398,7 @@ def build(
             build_dir=Path(out_dir),
             cf_bundle_dir=cf_bundle_dir,
             app_import=app,
+            durable_objects=platform == "cloudflare",
         )
 
         # Copy static assets to .pywire/deploy/public/ for Cloudflare's
@@ -428,16 +429,34 @@ def build(
             user_static_dest = deploy_public / static_subdir
             shutil.copytree(user_static, user_static_dest)
 
-        # Regenerate pywire_do.py (contains app import path)
-        from pywire_cli.deploy import generate_cf_durable_object
+        if platform == "cloudflare":
+            # Regenerate pywire_do.py (contains app import path)
+            from pywire_cli.deploy import generate_cf_durable_object
 
-        do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
-        (Path.cwd() / "pywire_do.py").write_text(do_content)
+            do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
+            (Path.cwd() / "pywire_do.py").write_text(do_content)
 
-        console.print(
-            f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
-            f"and [cyan]pywire_do.py[/] for Cloudflare Workers"
-        )
+            console.print(
+                f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
+                f"and [cyan]pywire_do.py[/] for Cloudflare Workers"
+            )
+        else:
+            from pywire_cli.deploy import (
+                generate_cf_edge_entry,
+                generate_cf_edge_wrangler_toml,
+            )
+
+            (Path.cwd() / "entry.py").write_text(
+                generate_cf_edge_entry(Path.cwd(), app or "src.main:app")
+            )
+            (Path.cwd() / "wrangler.toml").write_text(
+                generate_cf_edge_wrangler_toml(Path.cwd(), Path.cwd().name)
+            )
+            console.print(
+                f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
+                f"[cyan]entry.py[/], and [cyan]wrangler.toml[/] for the Cloudflare "
+                "edge Worker (stateless, no Durable Objects)"
+            )
         console.print(
             "✅ Static assets → [cyan].pywire/deploy/public/[/] "
             "(served by Cloudflare edge CDN)"
@@ -612,7 +631,9 @@ def _print_skip_hint(
 @click.argument("app", required=False)
 @click.option(
     "--platform",
-    type=click.Choice(["render", "docker", "fly", "railway", "cloudflare"]),
+    type=click.Choice(
+        ["render", "docker", "fly", "railway", "cloudflare", "cloudflare-edge"]
+    ),
     default="docker",
     help="Deployment platform",
 )
@@ -677,7 +698,7 @@ def deploy(
     project_name = project_root.name
 
     # Cloudflare Workers requires a paid plan
-    if platform == "cloudflare":
+    if platform in ("cloudflare", "cloudflare-edge"):
         console.print(
             "\n[bold yellow]Note:[/] Cloudflare Python Workers requires a "
             "[bold]Workers Paid plan[/] ($5/month).\n"
@@ -688,7 +709,7 @@ def deploy(
         )
 
     # Cloudflare uses Durable Objects — workers/redis flags don't apply
-    if platform == "cloudflare" and (workers > 1 or redis):
+    if platform in ("cloudflare", "cloudflare-edge") and (workers > 1 or redis):
         console.print(
             "[bold red]Error:[/] [cyan]--workers[/] and [cyan]--redis[/] are not applicable "
             "to Cloudflare Workers.\n"
@@ -698,7 +719,7 @@ def deploy(
         raise SystemExit(1)
 
     # Warn about workers vs redis (not applicable to Cloudflare)
-    if platform != "cloudflare":
+    if platform not in ("cloudflare", "cloudflare-edge"):
         if workers > 1 and not redis:
             console.print(
                 "\n[bold yellow]⚠️  Warning:[/] Running multiple workers without Redis "
@@ -745,22 +766,38 @@ def deploy(
         files_to_write.append(
             ("Dockerfile", generate_dockerfile(project_root, workers=workers))
         )
-    elif platform == "cloudflare":
+    elif platform in ("cloudflare", "cloudflare-edge"):
         from pywire_cli.deploy import (
-            generate_wrangler_toml,
-            generate_cf_entry,
             generate_cf_durable_object,
+            generate_cf_edge_entry,
+            generate_cf_edge_wrangler_toml,
+            generate_cf_entry,
+            generate_wrangler_toml,
         )
 
-        files_to_write.append(
-            ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
-        )
-        files_to_write.append(
-            ("entry.py", generate_cf_entry(project_root, app_string=app))
-        )
-        files_to_write.append(
-            ("pywire_do.py", generate_cf_durable_object(project_root, app_string=app))
-        )
+        if platform == "cloudflare":
+            files_to_write.append(
+                ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
+            )
+            files_to_write.append(
+                ("entry.py", generate_cf_entry(project_root, app_string=app))
+            )
+            files_to_write.append(
+                (
+                    "pywire_do.py",
+                    generate_cf_durable_object(project_root, app_string=app),
+                )
+            )
+        else:
+            files_to_write.append(
+                (
+                    "wrangler.toml",
+                    generate_cf_edge_wrangler_toml(project_root, project_name),
+                )
+            )
+            files_to_write.append(
+                ("entry.py", generate_cf_edge_entry(project_root, app_string=app))
+            )
         # Exclude local .venv from CF bundle to avoid duplicate packages
         files_to_write.append(
             (
@@ -887,6 +924,26 @@ def deploy(
             "\n[bold]CI/CD:[/]\n"
             "  [cyan]uv sync && uv run pywire build --platform cloudflare "
             "&& uv run pywrangler deploy[/]"
+        )
+    elif platform == "cloudflare-edge":
+        console.print(
+            "\n[bold]Local development:[/]\n"
+            "  • [bold]Workers mode[/] (runs in local workerd — matches CF production):\n"
+            "      [cyan]uv run pywire build --platform cloudflare-edge[/]\n"
+            "      [cyan]npx wrangler dev[/]\n"
+            "\n[bold]Deploy to Cloudflare:[/]\n"
+            "  1. Build: [cyan]uv run pywire build --platform cloudflare-edge[/]\n"
+            "  2. Deploy: [cyan]npx wrangler deploy[/]\n"
+            "\n[bold]Generated files:[/]\n"
+            "  • [cyan]wrangler.toml[/] — Cloudflare config (plain Worker, no Durable Objects)\n"
+            "  • [cyan]entry.py[/] — stateless Worker entry (OneShotASGIAdapter)\n"
+            "\n[bold]Architecture:[/]\n"
+            "  Stateless one-shot requests — every event carries its snapshot.\n"
+            "  No Durable Objects and no per-event storage I/O. Requires\n"
+            "  [cyan]PyWire(stateless=True, secret_key=...)[/] in your app.\n"
+            "\n[bold]CI/CD:[/]\n"
+            "  [cyan]uv sync && uv run pywire build --platform cloudflare-edge "
+            "&& npx wrangler deploy[/]"
         )
 
 

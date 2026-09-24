@@ -1,0 +1,21 @@
+"""PyWire edge worker — stateless, no Durable Objects."""
+from urllib.parse import urlparse
+
+from workers import Response
+
+from pywire.adapters.oneshot import OneShotASGIAdapter
+from {{ app_module }} import {{ app_attr }}
+import _routes  # noqa: F401
+
+_adapter = OneShotASGIAdapter({{ app_attr }})
+
+
+async def on_fetch(request, env):
+    parsed = urlparse(request.url)
+    body = b""
+    if request.method in ("POST", "PUT", "PATCH"):
+        body = bytes((await request.arrayBuffer()).to_py())
+    headers = dict(request.headers)
+    status, resp_headers, resp_body = await _adapter.fetch(
+        request.method, parsed.path, headers, body, parsed.query or "")
+    return Response(resp_body, status=status, headers=dict(resp_headers))

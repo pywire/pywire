@@ -60,6 +60,21 @@ def generate_cf_entry(project_root: Path, app_string: str = "main:app") -> str:
     )
 
 
+def generate_cf_edge_wrangler_toml(project_root: Path, project_name: str) -> str:
+    """Generate wrangler.toml for the stateless Cloudflare edge Worker (no DOs)."""
+    return render_deploy_template(
+        "cloudflare_edge/wrangler.toml.j2", project_name=project_name
+    )
+
+
+def generate_cf_edge_entry(project_root: Path, app_string: str = "main:app") -> str:
+    """Generate entry.py for the stateless Cloudflare edge Worker."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "cloudflare_edge/entry.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
 def generate_cf_durable_object(project_root: Path, app_string: str = "main:app") -> str:
     """Generate pywire_do.py — the Durable Object class for PyWire sessions."""
     app_module, app_attr = _parse_app_string(app_string)
