@@ -94,10 +94,27 @@ Open DevTools (Network + Elements side by side) and walk down the page.
    server render disagrees. No error handling in app code (see `like()` in
    `src/pages/index.wire`).
 
-5. **SPA navigation.** Click **About** in the nav, then **Back home**.
-   Navigation is client-side (no full reload) but every page carries its own
-   snapshot — so the counter/list state you built up is **reset** when you
-   return. That's the v1 ceiling below, and it's visible here on purpose.
+5. **SPA navigation — state resets, but it is NOT a page reload.** Click
+   **About** in the nav, then **Back home**. Every page carries its own
+   snapshot, so the state you built up is **reset** on return — the v1
+   ceiling below, visible on purpose. A reset alone is indistinguishable
+   from a full reload, so here's how to *see* the difference:
+   - **Console marker (the definitive proof).** Before navigating, run
+     `window.__pwcheck = 1` in the console. Click About, then Back home — it's
+     still `1`. A real browser reload would have wiped it: the JS context
+     survives because the client only morphs the DOM.
+   - **Network.** The hop shows as a **fetch** of `/about` (Fetch/XHR filter),
+     *not* a document navigation — and note there is **no**
+     `/_pywire/stateless` POST: the fresh state rides *inside* the fetched
+     page's HTML, as an embedded snapshot.
+   - **Chrome UI.** The URL changes via `history.pushState`; the reload
+     button never spins, no white-flash navigation.
+
+   The browser's Back button behaves the same (popstate is wired). The point:
+   the only memory in stateless mode is the signed snapshot inside the page
+   you're looking at — returning re-GETs the page, which re-mints it from
+   initial frontmatter state. In the Durable-Object/WebSocket tier the
+   server-side session would still remember your counter.
 
 ## v1 ceilings
 
