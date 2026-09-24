@@ -14,9 +14,7 @@ pywire is a Python web framework for building interactive UIs without writing cl
 
 If you've used Svelte or SolidJS, you'll feel at home: signals are the primitive, the compiler is the runtime, and templates are HTML.
 
-<Aside type="note">
-  pywire is FOSS (Apache 2.0) and pre-1.0. The API will tighten before `v1`.
-</Aside>
+<Aside type="note">pywire is FOSS (Apache 2.0) and pre-1.0. The API will tighten before `v1`.</Aside>
 
 ## Why pywire
 
@@ -39,7 +37,7 @@ Define a component in `counter.wire`:
 count = wire(0)
 ---
 <p>Count: {count}</p>
-<button @click={count += 1}>
+<button @click={count.value += 1}>
     Add One
 </button>`}
   lang="pywire"
