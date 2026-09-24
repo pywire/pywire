@@ -8,9 +8,14 @@ A minimal PyWire app that showcases the "edge stateless" features:
    only that row's HTML.
 3. **Optimistic UI** — instant click feedback with automatic reconciliation,
    including auto-revert of wrong predictions.
+4. **`@poll` background jobs** — a fake "LLM generation" whose progress is
+   filled by an in-process `asyncio` task into a process-global store and read
+   back by a polled element every 400 ms. When the job completes, a
+   conditional render unmounts the polled element — which stops the polling.
 
 (`{$await}` is a stateful-tier feature — it does not build in stateless apps.
-A `@poll`-based background-work page arrives in a later task.)
+The stateless idiom for background work is `@poll` — see the `/poll` page
+and the "Poll — background jobs" section below.)
 
 ## Run it
 
@@ -67,6 +72,35 @@ Why *prediction*: the client does not know the server's decision. The
 modifier declares a guess — "render this as if the server already said
 yes" — and the arriving patch is the referee. Right guess: the patch is a
 visible no-op. Wrong guess: the patch silently strips the class.
+
+### Poll — background jobs without a WebSocket
+
+`@poll={handler}` (or `@poll.every-<ms>={handler}`) dispatches the handler on
+an interval through the exact same path as a click: one stateless POST per
+tick over HTTP, one event frame over WebSocket. For long-running work in
+stateless mode it replaces `{$await}` with an "external store + poll" shape
+(see `src/pages/poll.wire`):
+
+- **The progress lives in a process-global store** — the `Jobs` class
+  attribute dict — NOT in wires. A background task runs outside any request;
+  in stateless mode the wires it would mutate live in the client's snapshot,
+  not in server memory. (A top-level `JOBS = {}` in the frontmatter would not
+  work either: it compiles to a per-instance attribute that is rebuilt on
+  every POST. A class attribute compiles to module level — one dict for the
+  whole process.)
+- **The poll reads the store into wires** on every tick (`tick(job_id)`);
+  that is the whole channel from background work back to the page.
+- **The stop condition is a conditional render.** There is no `.while`
+  modifier: the polled element is wrapped in
+  `{$if status == 'running'} ... {/if}`. When the job flips `status`, the
+  element unmounts and the client clears its timer — polling stops because
+  the thing doing the polling is gone.
+
+When NOT to poll: per-token LLM streaming. Polling is for bounded waits where
+a coarse progress number every few hundred milliseconds is enough. True
+streaming wants server push — the stateful WebSocket tier today, SSE on the
+roadmap. (And mind the interval: every tick is a full snapshot round-trip,
+and `.every-<ms>` refuses sub-100 ms intervals at compile time for a reason.)
 
 ## Try it
 
@@ -128,6 +162,16 @@ Open DevTools (Network + Elements side by side) and walk down the page.
    initial frontmatter state. In the Durable-Object/WebSocket tier the
    server-side session would still remember your counter.
 
+6. **Background job — poll + global store.** Open **Background jobs (poll)**
+   in the nav and click **Start generation**. In Network, one
+   `POST /_pywire/stateless` per 400 ms tick appears — the same msgpack
+   round-trip as a click — while the progress text climbs 0 → 100%. When the
+   job completes, the polled element disappears from Elements **and the POSTs
+   stop dead**: unmounting the element cleared the timer. Watch closely and
+   you'll see the job's progress being *read* out of a module-level dict by
+   `tick()` (in `src/pages/poll.wire`) — the `asyncio` task filling that dict
+   touches no wires at all.
+
 ## v1 ceilings
 
 - **State resets on SPA nav.** Snapshots are per-page; navigating away and
@@ -136,10 +180,11 @@ Open DevTools (Network + Elements side by side) and walk down the page.
   dirty the loop region as a whole; the per-row patching is for *in-place*
   item mutations (like the toggle here).
 - **No server push.** Stateless mode mounts no WebSocket — updates only
-  happen in response to client events.
+  happen in response to client events. (`@poll` ticks are client events: the
+  client initiates every one of them.)
 - **No `{$await}`.** Background-work blocks are stateful-tier only; a
   stateless app using them fails at build time. The stateless idiom is
-  `@poll` against an external store/queue (demo page arrives in T29).
+  `@poll` against an external store/queue — see the `/poll` page.
 - **Snapshot size scales with page state.** Every POST carries the full
   snapshot and every response returns a fresh one. This demo's 300-row list
   makes the snapshot ~11.4 KB, so each event is an ~11.5 KB msgpack POST

@@ -1,0 +1,89 @@
+---
+import asyncio
+
+# Progress must live OUTSIDE the wires. In stateless mode the page's state
+# round-trips in the client's signed snapshot, so a background task cannot
+# mutate the wires of a request that was answered and forgotten. A frontmatter
+# class attribute compiles to module level: one dict for the whole process,
+# shared by every page instance and every background task. (A plain top-level
+# JOBS = {} would NOT work -- it compiles to a per-instance attribute that is
+# rebuilt on every POST.)
+class Jobs:
+    store = {}
+    seq = 0
+
+status = wire("idle")
+progress = wire(0)
+job_id = wire("")
+
+# Literal syntax samples live in frontmatter: .wire prose cannot contain raw
+# braces or a stray dollar sign -- the template parser would eat them.
+POLL_SYNTAX = "@poll.every-400={tick(job_id)}"
+STOP_SYNTAX = "{$if status == 'running'} ... {/if}"
+
+def start():
+    Jobs.seq += 1
+    jid = "job-" + str(Jobs.seq)
+    Jobs.store[jid] = 0
+    job_id.value = jid
+    progress.value = 0
+    status.value = "running"
+    asyncio.create_task(_run(jid))
+
+async def _run(jid):
+    # Stands in for a real LLM generation call. It writes ONLY to the global
+    # store -- it has no request, no wires, no snapshot to touch.
+    for pct in (20, 40, 60, 80, 100):
+        await asyncio.sleep(0.4)
+        Jobs.store[jid] = pct
+
+def tick(jid):
+    # Each poll tick READS the store into wires; that is the whole channel
+    # from background work back to the page.
+    progress.value = Jobs.store.get(jid, 0)
+    if progress.value >= 100:
+        status.value = "done"
+---
+<div>
+    <h1>Background jobs without a WebSocket</h1>
+    <p>The stateless idiom for bounded long-running work: kick off a task,
+    keep its progress in a process-global store, and let a polled element read
+    that store back every few hundred milliseconds.</p>
+
+    <section id="job">
+        <button id="start-btn" @click={start()}>Start generation</button>
+        <p>Status: <span id="job-status">{status}</span></p>
+
+        {$if status == 'running'}
+        <div id="job-running">
+            <p id="job-progress" @poll.every-400={tick(job_id)}>Generating&hellip; {progress}%</p>
+            <p>The line above is the poll: <code>{POLL_SYNTAX}</code>. Every
+            400&#8239;ms it dispatches one POST to the server, exactly like a
+            click &mdash; watch the Network tab.</p>
+        </div>
+        {/if}
+
+        {$if status == 'done'}
+        <div id="job-done">
+            <p>Done &mdash; {progress}%. The polled element has been removed
+            from the DOM, and its timer with it. There is no
+            <code>.while</code> modifier: the stop condition IS the
+            conditional render <code>{STOP_SYNTAX}</code>.</p>
+            <button id="run-again" @click={start()}>Run again</button>
+        </div>
+        {/if}
+    </section>
+
+    <section id="why">
+        <h2>Why the global store?</h2>
+        <p>Wires alone cannot work here. The background task runs outside any
+        request, and in stateless mode the wires it would mutate live in the
+        client's snapshot, not in server memory. The store is the shared
+        truth; the wires are just the page's last copy of it, refreshed on
+        every tick.</p>
+        <p>When NOT to poll: per-token LLM streaming. Polling is for bounded
+        waits where a coarse progress number every few hundred milliseconds is
+        enough. True streaming wants server push &mdash; the stateful
+        WebSocket tier today, SSE on the roadmap.</p>
+    </section>
+</div>

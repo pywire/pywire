@@ -135,5 +135,36 @@ def test_poll_arg_reaches_handler(tmp_path) -> None:
     assert page.seen.value == [1]
 
 
+def test_poll_wire_arg_delivers_value_not_wire(tmp_path) -> None:
+    """A bare wire name as a handler arg delivers its value, not the Wire.
+
+    Known names resolve server-side (never lifted to ``data-arg-*``), but the
+    handler must still receive plain data like every other arg path — a live
+    Wire silently breaks dict lookups/JSON (its hash is ``id()``).
+    """
+    fixture = dedent(
+        """\
+        ---
+        job_id = wire("job-1")
+        seen = wire("")
+
+        def tick(jid):
+            seen.value = jid
+        ---
+        <button @poll.every-400={tick(job_id)}>Tick</button>
+        """
+    )
+    f = tmp_path / "poll_wire_arg.wire"
+    f.write_text(fixture)
+    cls = PageLoader().load(f, use_cache=False)
+    page = cls(request=Request(_SCOPE), params={}, query={}, path={"main": True})
+    # Server-side resolution: dispatch needs no client-supplied args.
+    asyncio.run(page._dispatch_handler("_handler_0", {}))
+    assert isinstance(page.seen.value, str), (
+        f"handler received {type(page.seen.value).__name__}, expected str"
+    )
+    assert page.seen.value == "job-1"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__]))

@@ -946,6 +946,17 @@ class CodeGenerator:
                         or arg_str in dir(builtins)
                         or arg_str in ("self", "event")
                     ):
+                        if arg_str in known_vars:
+                            # Known vars resolve server-side (never lifted to
+                            # data-arg-*), but the handler must still receive
+                            # the VALUE like every other arg path — a live
+                            # Wire silently breaks dict keys/JSON (its hash
+                            # is id(), not the value's).
+                            call.args[i] = ast.Call(
+                                func=ast.Name(id="unwrap_wire", ctx=ast.Load()),
+                                args=[arg],
+                                keywords=[],
+                            )
                         continue
 
                     extracted_args.append(arg_str)
@@ -960,6 +971,8 @@ class CodeGenerator:
                 # arg0, arg1, ... from pre-pass must not be re-lifted
                 for i in range(32):
                     self.local_names.add(f"arg{i}")
+                # framework intrinsic injected by the pre-pass for wire args
+                self.local_names.add("unwrap_wire")
 
             def visit_Name(self, node: ast.Name) -> Any:
                 # 1. Locally defined or event - keep as is
