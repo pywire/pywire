@@ -1,8 +1,8 @@
-"""Pyodide ASGI adapter for running PyWire in browser/WASM environments.
+"""One-shot ASGI adapter for running PyWire in FaaS/WASM/browser environments.
 
-Provides a clean bridge between JavaScript/Pyodide and PyWire's ASGI interface.
-Used by the docs tutorial, Cloudflare Python Workers, and Claude.ai/chatbot
-Pyodide sandboxes.
+Provides a clean bridge between a one-shot caller (JS/Pyodide, Cloudflare
+Python Workers, any FaaS template) and PyWire's ASGI interface. This is the
+integration surface every FaaS deploy target consumes.
 
 This module is pure Python with no js/pyodide imports — caller code handles
 the JS interop layer.
@@ -16,8 +16,8 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 
-class PyodideASGIAdapter:
-    """Adapts a PyWire ASGI app for use in Pyodide/browser environments.
+class OneShotASGIAdapter:
+    """Adapts a PyWire ASGI app for one-shot (request/response) callers.
 
     Provides simple methods for HTTP requests and WebSocket connections
     without requiring knowledge of the ASGI protocol.
@@ -31,13 +31,13 @@ class PyodideASGIAdapter:
         self,
         method: str = "GET",
         path: str = "/",
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         body: bytes = b"",
         query_string: str = "",
-    ) -> Tuple[int, List[Tuple[str, str]], str]:
+    ) -> tuple[int, list[tuple[str, str]], bytes]:
         """Make an HTTP request to the ASGI app.
 
-        Returns (status_code, response_headers, body_text).
+        Returns (status_code, response_headers, body_bytes).
         """
         if headers is None:
             headers = {}
@@ -106,15 +106,9 @@ class PyodideASGIAdapter:
                 f"<pre>{tb}</pre>"
                 "</body></html>"
             )
-            return 500, [("content-type", "text/html")], error_html
+            return 500, [("content-type", "text/html")], error_html.encode("utf-8")
 
-        full_body = b"".join(body_parts)
-        try:
-            body_text = full_body.decode("utf-8")
-        except UnicodeDecodeError:
-            body_text = full_body.hex()
-
-        return status, response_headers, body_text
+        return status, response_headers, b"".join(body_parts)
 
     async def ws_connect(
         self,

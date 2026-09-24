@@ -4,11 +4,12 @@
 
 **Goal:** Make PyWire the fastest-practical server-driven framework at the edge: stateless snapshot round-tripping on any FaaS platform (Cloudflare Workers, AWS Lambda, Azure Functions, GCP), O(1) list updates via per-iteration region diffing, and declarative optimistic UI — so typical interactions feel instant and cost near-zero server resources.
 
-**Architecture:** A new "stateless mode" (`PyWire(stateless=True)`) where the serialized page snapshot (already produced by `session_serializer.snapshot_page_state`) is HMAC-signed, embedded in the initial HTML, and round-tripped on every event via `POST /_pywire/stateless`. The server restores → dispatches → renders dirty regions → re-snapshots (Livewire v3's model, but with msgpack + fine-grained regions). Two engine optimizations make the payloads small enough for that model to win: **keyed per-iteration `{$for}` regions** (LiveView's comprehension-diff idea — one toggled row ships ~200 B, not the whole loop) and **declarative optimistic UI** (client applies presentation-level predictions instantly; the server morphdom patch *is* the reconciler — wrong predictions self-revert). `{$await}` degrades to hold-open-until-budget inside the request. All FaaS targets ride one `OneShotASGIAdapter` (extracted from the existing Pyodide adapter). Durable-Object/WebSocket mode is untouched and remains the tier for server-push features.
+**Architecture:** A new "stateless mode" (`PyWire(stateless=True)`) where the serialized page snapshot (already produced by `session_serializer.snapshot_page_state`) is HMAC-signed, embedded in the initial HTML, and round-tripped on every event via `POST /_pywire/stateless`. The server restores → dispatches → renders dirty regions → re-snapshots (Livewire v3's model, but with msgpack + fine-grained regions). Two engine optimizations make the payloads small enough for that model to win: **keyed per-iteration `{$for}` regions** (LiveView's comprehension-diff idea — one toggled row ships ~200 B, not the whole loop) and **declarative optimistic UI** (client applies presentation-level predictions instantly; the server morphdom patch _is_ the reconciler — wrong predictions self-revert). `{$await}` degrades to hold-open-until-budget inside the request. All FaaS targets ride one `OneShotASGIAdapter` (extracted from the existing Pyodide adapter). Durable-Object/WebSocket mode is untouched and remains the tier for server-push features.
 
 **Tech Stack:** Python 3.11+ / Starlette / msgpack / stdlib `hmac`+`hashlib`+`base64` (no new deps); TypeScript client (existing transport + morphdom); Jinja2 deploy templates in `pywire-templates`; CLI wiring in `pywire-cli`.
 
 **Spec (inline — this plan is the spec):**
+
 1. Stateless event round-trip: `POST /_pywire/stateless` with msgpack `{snapshot, handler, data, path}` → response msgpack `{type:"update", regions, commands, meta, snapshot}`.
 2. Snapshot is HMAC-SHA256 signed; tampered/corrupt snapshots → HTTP 400, never a crash or state injection.
 3. Snapshot excludes `page.user` (re-resolved server-side per request) and any wire marked `.lock()`.
@@ -23,7 +24,7 @@
 
 - Monorepo rules from `AGENTS.md`: uv workspace, pnpm (never npm), `ty` not mypy, ruff format/check, conventional commits with scopes (`pywire`, `pywire-cli`, `pywire-templates`, `pywire-docs`).
 - Cross-package version floors: `pywire-cli`/`pywire-templates` start using new `pywire` runtime APIs (snapshot codec, one-shot adapter, keyed regions) → bump the dep floor in their `pyproject.toml` **and** `_FLOORS` in their `src/<package>/_compat.py` in the same commit (Task 24 owns the final bump; earlier tasks must not import new APIs from CLI/templates).
-- Transport parity: middleware/auth behave identically for the stateless POST and normal HTTP loads — the endpoint is mounted *inside* the Starlette app so the full middleware stack applies. Keyed-region rendering is transport-agnostic (same `render_update` output shape on WS, HTTP-session, and stateless).
+- Transport parity: middleware/auth behave identically for the stateless POST and normal HTTP loads — the endpoint is mounted _inside_ the Starlette app so the full middleware stack applies. Keyed-region rendering is transport-agnostic (same `render_update` output shape on WS, HTTP-session, and stateless).
 - No new runtime Python dependencies in `pywire` core (stdlib `hmac`/`hashlib`/`base64` only). No new npm deps in the client (morphdom already present).
 - Client TS changes require rebuild: `cd packages/pywire/src/pywire/client && pnpm install && pnpm build` (outputs into `pywire/static/`); commit built assets in the same commit.
 - Per-package checks: run `./scripts/check` (and `./scripts/test` for Python packages) from each touched package dir before committing. The pre-commit hook runs them anyway — never bypass.
@@ -47,21 +48,22 @@
 Execution method: **subagent-driven** (fresh implementer per task, fresh cross-family reviewer gate before the next task; whole-branch review at each phase end). Parent session (orchestrator) stays on `qwen/qwen3.8-max-0902`.
 
 Model tiers from `~/.pi/agent/models.json` + store pricing (in/out per Mtok):
+
 - **$** `xiaomi/mimo-v2.6-flash` (0.14/0.28), `z-ai/glm-5.3-flash` (0.15/0.5), `deepseek/deepseek-v4.1-flash` (0.15/0.6)
 - **$$** `xiaomi/mimo-v2.6-pro` (0.44/0.87), `deepseek/deepseek-v4-pro-0813` (0.5/1.5), `z-ai/glm-5.3` (0.84/2.64), `google/gemini-3.8-flash` (0.75/3.75)
 - **$$$** `qwen/qwen3.8-max-0902` (2/6), `moonshotai/kimi-k3` (3/15)
 - **$$$$** `anthropic/claude-opus-5.5` (4/20)
 - Avoid for this plan: `openai/gpt-6-astra*` (10/50 — no phase needs it over opus).
 
-| Phase | Complexity | Implementer | Reviewer | Est. cost |
-|---|---|---|---|---|
-| 0 — quick wins (T1–2) | **Low** — mechanical transforms, pinned by tests | `z-ai/glm-5.3-flash` | `xiaomi/mimo-v2.6-flash` | < $1 |
-| 1 — stateless core (T3–7) | **High** — security boundary, app.py refactor | `deepseek/deepseek-v4-pro-0813`; T5+T6 → `anthropic/claude-opus-5.5` | T3,4,7: `google/gemini-3.8-flash`; **T5,6: `claude-opus-5.5`** (short diffs, highest stakes) | $8–20 |
-| 2 — client transport (T8–9) | **Medium** — TS, fully spec'd interfaces | `z-ai/glm-5.3` | `google/gemini-3.8-flash` | $2–5 |
-| 3 — keyed {$for} regions (T10–13) | **Very high** — 5k-line codegen + runtime invalidation; riskiest phase | T10 spike: `qwen3.8-max-0902`; T11–13: `anthropic/claude-opus-5.5` (high thinking) | `qwen3.8-max-0902` (cross-family) | $20–50 |
-| 4 — optimistic UI (T14–17) | **Medium-high** — client + attrs codegen, e2e timing | `qwen3.8-max-0902`; T14 → `z-ai/glm-5.3` | `google/gemini-3.8-flash`; T17 → `qwen3.8-max-0902` | $5–12 |
-| 5 — validation gate (T18–20) | **Low-medium** to build, **judgment-heavy** to evaluate | `xiaomi/mimo-v2.6-pro` | Numbers reviewed by parent session; `claude-opus-5.5` only if gate marginally fails | $2–5 |
-| 6 — deploy targets + docs (T21–25) | **Low-medium** — pattern repeats after T20/T21 | `xiaomi/mimo-v2.6-pro`; T21 (AWS, first of pattern) → `z-ai/glm-5.3` | `google/gemini-3.8-flash` | $3–8 |
+| Phase                              | Complexity                                                             | Implementer                                                                        | Reviewer                                                                                     | Est. cost |
+| ---------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------- |
+| 0 — quick wins (T1–2)              | **Low** — mechanical transforms, pinned by tests                       | `z-ai/glm-5.3-flash`                                                               | `xiaomi/mimo-v2.6-flash`                                                                     | < $1      |
+| 1 — stateless core (T3–7)          | **High** — security boundary, app.py refactor                          | `deepseek/deepseek-v4-pro-0813`; T5+T6 → `anthropic/claude-opus-5.5`               | T3,4,7: `google/gemini-3.8-flash`; **T5,6: `claude-opus-5.5`** (short diffs, highest stakes) | $8–20     |
+| 2 — client transport (T8–9)        | **Medium** — TS, fully spec'd interfaces                               | `z-ai/glm-5.3`                                                                     | `google/gemini-3.8-flash`                                                                    | $2–5      |
+| 3 — keyed {$for} regions (T10–13)  | **Very high** — 5k-line codegen + runtime invalidation; riskiest phase | T10 spike: `qwen3.8-max-0902`; T11–13: `anthropic/claude-opus-5.5` (high thinking) | `qwen3.8-max-0902` (cross-family)                                                            | $20–50    |
+| 4 — optimistic UI (T14–17)         | **Medium-high** — client + attrs codegen, e2e timing                   | `qwen3.8-max-0902`; T14 → `z-ai/glm-5.3`                                           | `google/gemini-3.8-flash`; T17 → `qwen3.8-max-0902`                                          | $5–12     |
+| 5 — validation gate (T18–20)       | **Low-medium** to build, **judgment-heavy** to evaluate                | `xiaomi/mimo-v2.6-pro`                                                             | Numbers reviewed by parent session; `claude-opus-5.5` only if gate marginally fails          | $2–5      |
+| 6 — deploy targets + docs (T21–25) | **Low-medium** — pattern repeats after T20/T21                         | `xiaomi/mimo-v2.6-pro`; T21 (AWS, first of pattern) → `z-ai/glm-5.3`               | `google/gemini-3.8-flash`                                                                    | $3–8      |
 
 **Total est. $40–100.** Cost levers: (a) reviewer prompts get the diff only, not the codebase — reviews are cheap even on opus; (b) if Phase 3's spike (T10) shows item-level invalidation already works via nested proxies, T11–12 shrink substantially — reassess model tier after the spike rather than pre-committing opus for all of Phase 3; (c) batch-mode variants (`:batch`, half price) fit T21–25 if you're not waiting interactively.
 
@@ -72,13 +74,15 @@ Model tiers from `~/.pi/agent/models.json` + store pricing (in/out per Mtok):
 ### Task 1: Lazy log formatting on the wire read/write hot path
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/core/wire.py` (`_track_read`, `_notify_write`)
 - Modify: `packages/pywire/src/pywire/runtime/page.py` (`_register_wire_read`, `_invalidate_wire`)
 - Test: `packages/pywire/tests/test_wire_logging_lazy.py`
 
 **Interfaces:**
+
 - Consumes: nothing.
-- Produces: identical log record *content* (verified by test) with `%s`-style lazy args; no API change.
+- Produces: identical log record _content_ (verified by test) with `%s`-style lazy args; no API change.
 
 - [ ] **Step 1: Write the failing test** — asserts hot-path debug logs still render correctly AND use lazy args:
 
@@ -136,11 +140,13 @@ git commit -m "perf(pywire): lazy %-args for hot-path wire/page debug logs"
 ### Task 2: Throttled DO session persistence
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/runtime/cf_durable_object.py` (add `ThrottledPersister`)
 - Modify: `packages/pywire-templates/src/pywire_templates/deploy/pywire_do.py.j2` (use it)
 - Test: `packages/pywire/tests/test_cf_durable_object.py` (extend if exists, else create)
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `ThrottledPersister(interval: float = 2.0)` with `should_persist(now: float) -> bool` — True on first call, then at most once per `interval`; `force() -> bool` always True and resets the clock (used on close/hibernate).
 
@@ -215,11 +221,13 @@ git commit -m "perf(pywire): throttle DO session persistence to 1 write / 2s + o
 ### Task 3: Lockable wires (client-invisible state)
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/core/wire.py` (`WireBase.lock()`, `_locked` flag)
 - Modify: `packages/pywire/src/pywire/runtime/session_serializer.py` (skip locked in page and component snapshots)
 - Test: `packages/pywire/tests/test_wire_locked.py`
 
 **Interfaces:**
+
 - Consumes: `WireBase` internals.
 - Produces: `WireBase.lock() -> WireBase` (sets `_locked=True`, returns self, chainable off `wire(...)`); `WireBase._locked: bool` default False. `snapshot_page_state` omits locked wires from `attrs`/`wire_tags` and from `component_snapshots`.
 
@@ -282,10 +290,12 @@ git commit -m "feat(pywire): wire.lock() excludes state from client snapshots"
 ### Task 4: Signed snapshot codec
 
 **Files:**
+
 - Create: `packages/pywire/src/pywire/runtime/snapshot_codec.py`
 - Test: `packages/pywire/tests/test_snapshot_codec.py`
 
 **Interfaces:**
+
 - Consumes: `snapshot_page_state(page, warn_size=...)`, `restore_page_state(page, snapshot)` from `session_serializer`.
 - Produces:
   - `class SnapshotError(Exception)`
@@ -417,11 +427,13 @@ git commit -m "feat(pywire): HMAC-signed stateless session snapshot codec"
 ### Task 5: Compile-time handler allowlist
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/compiler/codegen/generator.py` (emit `__event_handlers__`)
 - Modify: `packages/pywire/src/pywire/runtime/page.py` (`_dispatch_handler` enforcement)
 - Test: `packages/pywire/tests/test_handler_allowlist.py`
 
 **Interfaces:**
+
 - Consumes: codegen's existing knowledge of frontmatter `FunctionDef`s and generated `_handle_bind_*` / `_handler_*` framework handlers.
 - Produces: compiled page/component classes carry `__event_handlers__: frozenset[str]` — every user `def` name from frontmatter plus every framework-generated bind/handler name templates can emit. `_dispatch_handler` raises `ValueError` for names outside the set (when the set exists). `BasePage.__event_handlers__ = None` (hand-rolled test pages keep current permissive behavior).
 
@@ -484,8 +496,9 @@ if allowed is not None and event_name not in allowed:
     raise ValueError(f"Handler '{event_name}' is not a registered event handler")
 ```
 
-  Keep the existing `startswith("_")` rejection after this check (framework `_handle_bind_`/`_handler_` names must be in the allowlist — verify codegen adds them; audit via full suite).
-  - `generator.py`: when building each page/component class body, collect a `frozenset` of (a) all frontmatter `FunctionDef`/`AsyncFunctionDef` names, (b) all `_handle_bind_*` names emitted by reactive-attribute codegen, (c) all `_handler_*` names emitted by event codegen; emit as `__event_handlers__`.
+Keep the existing `startswith("_")` rejection after this check (framework `_handle_bind_`/`_handler_` names must be in the allowlist — verify codegen adds them; audit via full suite).
+
+- `generator.py`: when building each page/component class body, collect a `frozenset` of (a) all frontmatter `FunctionDef`/`AsyncFunctionDef` names, (b) all `_handle_bind_*` names emitted by reactive-attribute codegen, (c) all `_handler_*` names emitted by event codegen; emit as `__event_handlers__`.
 
 - [ ] **Step 4: Run test + full core suite** (expect fallout where tests dispatch non-handler names; fix by using real handlers in fixtures, not by weakening the check):
 
@@ -504,12 +517,14 @@ git commit -m "feat(pywire)!: enforce compile-time event handler allowlist in di
 ### Task 6: Stateless config + POST endpoint + snapshot embedding
 
 **Files:**
+
 - Create: `packages/pywire/src/pywire/runtime/stateless_handler.py`
 - Modify: `packages/pywire/src/pywire/runtime/app.py` (config kwargs, route mount, snapshot embedding in `_handle_request`)
 - Create: `packages/pywire/tests/fixtures/stateless_app/` (fixture app: `pages/index.wire` below)
 - Test: `packages/pywire/tests/test_stateless_endpoint.py`
 
 **Interfaces:**
+
 - Consumes: `encode_snapshot`/`decode_snapshot`/`SnapshotError` (Task 4), `restore_page_state`, `resolve_page` (`pywire.runtime.page_resolver`), `build_update_payload` (`pywire.runtime.protocol`), app's HTTP user-resolution path.
 - Produces:
   - `PyWire(stateless: bool = False, secret_key: str | None = None, await_budget: float = 5.0)`; `stateless=True` without secret (param or `PYWIRE_SECRET_KEY` env) raises `RuntimeError` at construction. Attributes: `app.stateless`, `app._stateless_secret: bytes`, `app.await_budget`, `app.state.stateless`.
@@ -690,7 +705,7 @@ class StatelessHandler:
                         media_type="application/x-msgpack")
 ```
 
-  - Snapshot embedding: in `_handle_request`, after a successful `init=True` render and when `self.stateless`, inject the script tag before the last `</body>` (reuse `_find_tag_outside_raw_text` from `page.py`); `page.render` adds `"stateless": True` to the SPA meta dict when `request.app.state.stateless`.
+- Snapshot embedding: in `_handle_request`, after a successful `init=True` render and when `self.stateless`, inject the script tag before the last `</body>` (reuse `_find_tag_outside_raw_text` from `page.py`); `page.render` adds `"stateless": True` to the SPA meta dict when `request.app.state.stateless`.
 
 - [ ] **Step 4: Run tests**
 
@@ -707,11 +722,13 @@ git commit -m "feat(pywire): stateless client-held-state mode with signed snapsh
 ### Task 7: `{$await}` hold-open semantics test (Review Focus #4)
 
 **Files:**
+
 - Create: `packages/pywire/tests/fixtures/stateless_app/pages/slow.wire` + `fast_await.wire`
 - Test: `packages/pywire/tests/test_stateless_await.py`
 - Modify (only if the test exposes a bug): `packages/pywire/src/pywire/runtime/stateless_handler.py`
 
 **Interfaces:**
+
 - Consumes: Task 6 endpoint; `PyWire(await_budget=...)`.
 - Produces: pinned semantics — response arrives ≈ budget after handler return; `meta.pending_awaits` counts unfinished tasks; cancelled tasks never write to the response.
 
@@ -758,12 +775,14 @@ git commit -m "test(pywire): pin stateless await hold-open and cancellation sema
 ### Task 8: `StatelessTransport` (TS)
 
 **Files:**
+
 - Create: `packages/pywire/src/pywire/client/src/core/transports/stateless.ts`
 - Modify: `packages/pywire/src/pywire/client/src/core/transports/index.ts` (export)
 - Modify: `packages/pywire/src/pywire/client/src/core/app.ts` (selection when `meta.stateless`)
 - Test: `packages/pywire/src/pywire/client/src/core/transports/stateless.test.ts` (vitest)
 
 **Interfaces:**
+
 - Consumes: `BaseTransport` (`transports/base.ts`), `encode`/`decode` from `@msgpack/msgpack`, existing update-application path in `app.ts` (the transport only emits `ServerMessage`s shaped exactly like the WS `update` payload — `build_update_payload` output plus `snapshot`).
 - Produces: `class StatelessTransport extends BaseTransport`:
   - `constructor(baseUrl?: string)` — reads initial snapshot from the `#_pywire_snapshot` script tag.
@@ -790,10 +809,12 @@ git commit -m "feat(pywire): stateless client transport (snapshot round-trip ove
 ### Task 9: End-to-end playwright test (stateless app)
 
 **Files:**
+
 - Modify: `packages/pywire/tests/e2e/fixtures/stateless_app/` (add a second page for SPA nav)
 - Create: `packages/pywire/tests/e2e/test_stateless.py`
 
 **Interfaces:**
+
 - Consumes: everything from Phases 1–2; server started like existing e2e fixtures (`tests/e2e/conftest.py` — `pywire_cli.main` subprocess).
 
 - [ ] **Step 1: Write the e2e test:** load `/`, click the counter button, assert DOM updates; assert `performance.getEntriesByType('resource')` shows the event POSTed to `/_pywire/stateless`; assert `page.on('websocket')` NEVER fires; SPA-navigate to page 2 and back, assert counter state persisted via snapshots.
@@ -814,9 +835,11 @@ git commit -m "test(pywire): e2e coverage for stateless transport"
 ### Task 10: Spike — verify item-level invalidation granularity (decision gate for T11–12)
 
 **Files:**
+
 - Create: `scratch/adhoc/spike_keyed_regions.py` (+ `scratch/adhoc/out/keyed_regions_findings.md`) — throwaway, scratchpad-skill review before run
 
 **Interfaces:**
+
 - Consumes: existing runtime only.
 - Produces: a written findings file answering, with evidence: (a) when `items.value[i]['done']` is written, which `(wire_obj, field)` keys does `_invalidate_wire` see — nested item proxy or top-level list? (b) are nested proxies identity-stable across renders or recreated (churns subscription keys)? (c) if iteration render-context were set to `site#key` per item, would an item-field write dirty ONLY that item's region? (d) what does a structural write (`append`) dirty?
 
@@ -828,11 +851,13 @@ git commit -m "test(pywire): e2e coverage for stateless transport"
 ### Task 11: Codegen — keyed item regions for `{$for}`
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/compiler/codegen/template.py` (`{$for}` handling)
 - Modify: `packages/pywire/src/pywire/core/wire.py` (ONLY if T10 findings require proxy-identity stabilization)
 - Test: `packages/pywire/tests/test_keyed_for_codegen.py`
 
 **Interfaces:**
+
 - Consumes: T10 findings; existing region wrapper emission pattern (`display: contents` div) and `key=` expression support in `{$for}`.
 - Produces: for `{$for <vars> in <iter>, key=<expr>}`, compiled classes gain:
   - `__keyed_region_renderers__: dict[str, str]` mapping `site_id -> renderer method name`; the renderer is `def _pw_item_<site>(self, key) -> str` re-deriving the item from the loop source by key (index → `source[key]`; dict key → `source[key]`; arbitrary key expr → linear scan fallback) and rendering ONE iteration under render-context region id `f"{site_id}#{key}"`.
@@ -854,10 +879,12 @@ git commit -m "feat(pywire): keyed per-iteration region wrappers for {\$for} loo
 ### Task 12: Runtime — keyed region dispatch + invalidation
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/runtime/page.py` (`render_update`, `_invalidate_wire`, `BasePage.__init__` for `__keyed_region_renderers__` default)
 - Test: `packages/pywire/tests/test_keyed_regions_runtime.py`
 
 **Interfaces:**
+
 - Consumes: `__keyed_region_renderers__` + `_pw_item_<site>(key)` renderers (T11); existing `set_render_context(page, region_id)`.
 - Produces: `render_update` handles dirty region ids containing `#`: split `site_id, key = region_id.split("#", 1)`; dispatch via `__keyed_region_renderers__[site_id]` renderer bound with `key`, under render context `(page, region_id)`. Missing site, missing key (item deleted since dirtying), or renderer exception → existing full-render fallback (safe path, already implemented). Output-equality cache (`_region_output_cache`) keyed by the full `site#key` id. Whole-loop fallback: when the loop's base `site_id` is dirty, the whole-loop renderer runs as today and the response's single region patch covers all item wrappers (morphdom keys keep DOM churn minimal client-side).
 
@@ -875,11 +902,13 @@ git commit -m "feat(pywire): dispatch keyed item regions in render_update with s
 ### Task 13: Keyed-region e2e + payload acceptance test (Spec #6)
 
 **Files:**
+
 - Create: `packages/pywire/tests/e2e/fixtures/keyed_list_app/` (1000-row generated list page, toggle handler)
 - Create: `packages/pywire/tests/e2e/test_keyed_regions.py`
 - Create: `packages/pywire/tests/test_keyed_region_payload.py` (CI-safe in-process acceptance: no playwright)
 
 **Interfaces:**
+
 - Consumes: T11–12; either transport (assert on the stateless POST payload AND the WS payload — transport parity constraint).
 - Produces: pinned acceptance — single-item toggle on 1000 rows ships ≤ 1 KB total update payload; DOM mutations outside the toggled row == 0 (MutationObserver count); structural append still correct.
 
@@ -903,10 +932,12 @@ git commit -m "test(pywire): keyed region payload acceptance (5000-row toggle �
 ### Task 14: Codegen — `.optimistic` modifiers → data attributes
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/compiler/codegen/attributes/events.py` (+ `packages/pywire/src/pywire/compiler/attributes/events.py` parse side)
 - Test: `packages/pywire/tests/test_optimistic_modifiers.py`
 
 **Interfaces:**
+
 - Consumes: existing modifier pipeline (`@click.prevent`, `.debounce-500ms` parsing — hyphen-arg pattern at client `handler.ts:746`).
 - Produces: `@click.optimistic={h()}` compiles to the existing `data-on-click="h"` + `data-modifiers-click="optimistic"`; `@click.optimistic-class-done={h()}` adds token `optimistic-class-done` to `data-modifiers-click` (multiple allowed: `optimistic-class-done optimistic-class-dim`). No new attributes — modifiers ride the existing channel.
 
@@ -923,12 +954,14 @@ git commit -m "feat(pywire): .optimistic / .optimistic-class-* event modifier gr
 ### Task 15: Client — apply prediction, guard, morph-reconcile
 
 **Files:**
+
 - Modify: `packages/pywire/src/pywire/client/src/events/handler.ts` (modifier parse + prediction apply)
 - Modify: `packages/pywire/src/pywire/client/src/core/app.ts` or `dom-updater.ts` (clear pending on error responses)
 - Modify: `packages/pywire/src/pywire/client/src/core/dom-updater.ts` (ONLY if morphdom strips/guards need adjustment for `data-pw-pending`)
 - Test: `packages/pywire/src/pywire/client/src/events/handler.optimistic.test.ts` (vitest, jsdom)
 
 **Interfaces:**
+
 - Consumes: `data-modifiers-click` tokens (T14); existing dispatch path in `handler.ts` (where debounce/throttle are honored — prediction applies AFTER debounce resolves, immediately BEFORE `transport.send`).
 - Produces: on dispatch of an event whose modifiers include `optimistic`: set `data-pw-pending=""` on `event.currentTarget` (the element carrying `data-on-*`); for each `optimistic-class-X` token, `classList.add('X')` on the same element; if the element is a `button`/`input[type=submit]`, set `disabled` and remember it was us (`data-pw-pending-disabled`). Clearing: any received update message (regions or full) → remove all `data-pw-pending*` markers and restore `disabled` for guarded controls; error responses (`{type:'error'}`) → same clearing (never leave a control stuck disabled — Review Focus #8). Optimistic classes are NOT explicitly cleared — the morph is the reconciler; on error responses, explicitly remove classes added by the failed event's tokens (tracked in a per-dispatch list until the next update).
 
@@ -946,12 +979,14 @@ git commit -m "feat(pywire): optimistic prediction apply/guard with morph-reconc
 ### Task 16: Bind echo — inputs stay user-owned during round-trip
 
 **Files:**
+
 - Modify (only if tests expose gaps): `packages/pywire/src/pywire/client/src/core/dom-updater.ts` (focus/value guards — existing value-sync caveat near `dom-updater.ts:453`)
 - Test: `packages/pywire/src/pywire/client/src/core/dom-updater.bind.test.ts` (vitest)
 
 **Interfaces:**
+
 - Consumes: existing focus capture/restore in `applyUpdate`.
-- Produces: pinned behavior — a patch arriving while an input is focused and being typed into must not clobber the user's in-flight text or caret (browser-native optimism confirmed; server echo reconciles on blur/next patch). This is mostly a *characterization* task: write the tests first; only touch `dom-updater.ts` where a test fails.
+- Produces: pinned behavior — a patch arriving while an input is focused and being typed into must not clobber the user's in-flight text or caret (browser-native optimism confirmed; server echo reconciles on blur/next patch). This is mostly a _characterization_ task: write the tests first; only touch `dom-updater.ts` where a test fails.
 
 - [ ] **Step 1: Write the vitest:** focused input with user-typed value; `updateRegion` with server HTML containing the older value → assert focused input keeps user text + caret (if current code already guards this, test passes immediately — fine, it's now pinned).
 - [ ] **Step 2: Run; fix only failures.**
@@ -965,10 +1000,12 @@ git commit -m "test(pywire): pin bind-echo optimism — patches never clobber fo
 ### Task 17: Optimistic e2e under artificial latency (Review Focus #8)
 
 **Files:**
+
 - Modify: `packages/pywire/tests/e2e/fixtures/stateless_app/` (add `optimistic.wire` page: toggle button with `.optimistic-class-done` where the handler REJECTS every 2nd toggle via a counter — exercises wrong-prediction revert)
 - Create: `packages/pywire/tests/e2e/test_optimistic.py`
 
 **Interfaces:**
+
 - Consumes: Phases 2–4 (stateless transport makes latency injection trivial: `page.route("**/_pywire/stateless", ...)` delay 500 ms).
 - Produces: pinned timing/behavior — predicted class present < 50 ms after click while the request is in flight; button disabled in flight; on accepted toggle the class survives the patch (no flicker: assert the element node identity is stable through the morph, `isSameNode`); on rejected toggle the class is GONE after the patch; no double-submit (handler invocation count == 1 for a rapid double-click).
 
@@ -989,10 +1026,12 @@ git commit -m "test(pywire): optimistic UI e2e under 500ms latency incl. wrong-p
 ### Task 18: Native round-trip benchmark + CI perf smoke
 
 **Files:**
+
 - Create: `scratch/adhoc/bench_stateless.py` (throwaway; scratchpad review before run)
 - Create: `packages/pywire/tests/test_stateless_perf.py` (CI-safe loose bounds)
 
 **Interfaces:**
+
 - Consumes: full stateless path + keyed regions (Phases 1–3).
 - Produces: measured table — full stateless round-trip (decode+verify+resolve+instantiate+restore+event+render+re-snapshot+encode) for counter / 100-row / 1000-row / 5000-row-toggle fixtures, alongside WS-mode numbers from `scratch/adhoc/bench_engine.py` for the writeup. CI smoke bounds (catch 10× regressions, not noise): counter event round-trip < 50 ms server-side; snapshot < 500 B; 1000-row single toggle payload < 2 KB.
 
@@ -1008,11 +1047,13 @@ git commit -m "test(pywire): stateless round-trip perf smoke bounds"
 ### Task 19: One-shot ASGI adapter extraction
 
 **Files:**
+
 - Rename: `packages/pywire/src/pywire/adapters/pyodide.py` → `packages/pywire/src/pywire/adapters/oneshot.py`; class `PyodideASGIAdapter` → `OneShotASGIAdapter`; `fetch()` returns `(status, headers, body: bytes)` (binary-safe for msgpack)
 - Modify callers: `docs/public/shim.py` (regenerate `docs/dist/shim.py` via docs build); grep-audit for any other references (`grep -rn PyodideASGIAdapter --include='*.py' --include='*.md' --include='*.j2' packages docs examples`)
 - Test: `packages/pywire/tests/test_oneshot_adapter.py`
 
 **Interfaces:**
+
 - Produces: `OneShotASGIAdapter(app)` with `async fetch(method='GET', path='/', headers=None, body=b'', query_string='') -> tuple[int, list[tuple[str, str]], bytes]`. THE integration surface for every FaaS template.
 
 - [ ] **Step 1: Failing test:** stateless fixture app through `adapter.fetch("GET", "/")` → 200 + bytes body containing `_pywire_snapshot`; extract snapshot, POST `/_pywire/stateless` event through the adapter → 200 msgpack with `regions` and `snapshot`.
@@ -1031,6 +1072,7 @@ git commit -m "feat(pywire)!: generalize PyodideASGIAdapter to OneShotASGIAdapte
 ### Task 20: Cloudflare plain-Worker target + workerd measurement — GATE (Spec #9)
 
 **Files:**
+
 - Create: `packages/pywire-templates/src/pywire_templates/deploy/cloudflare_edge/entry.py.j2`, `wrangler.toml.j2`
 - Modify: `packages/pywire-cli/src/pywire_cli/main.py` (`cloudflare-edge` in build/deploy platform choices; generation branch mirroring the existing `cloudflare` branch at `main.py:391`/`main.py:748`)
 - Modify: `packages/pywire/src/pywire/compiler/build_artifacts.py` (`generate_cf_bundle(..., durable_objects: bool = True)`; edge bundle omits DO class + migrations)
@@ -1038,6 +1080,7 @@ git commit -m "feat(pywire)!: generalize PyodideASGIAdapter to OneShotASGIAdapte
 - Test: `packages/pywire-cli/tests/test_deploy_cloudflare_edge.py`
 
 **Interfaces:**
+
 - Consumes: `OneShotASGIAdapter` (T19), precompiled artifacts from `pywire build`.
 - Produces: `pywire build --platform cloudflare-edge` → `.pywire/deploy/` with `entry.py`, `wrangler.toml` (assets binding, NO `durable_objects`, `compatibility_flags = ["python_workers"]`); deployable via `npx wrangler dev` / `wrangler deploy`.
 
@@ -1086,11 +1129,13 @@ git commit -m "feat(pywire-cli): cloudflare-edge stateless worker deploy target"
 ### Task 21: AWS Lambda target
 
 **Files:**
+
 - Create: `packages/pywire-templates/src/pywire_templates/deploy/aws/handler.py.j2`, `requirements.txt.j2`, `README.md.j2`
 - Modify: `packages/pywire-cli/src/pywire_cli/main.py` (`aws-lambda` platform → `.pywire/deploy/aws/` with rendered handler, `requirements.txt`, vendored deps via `pip install -t .pywire/deploy/aws/package -r requirements.txt`, README with `aws lambda create-function --zip-file` one-liner + API GW HTTP API `$default`-route setup)
 - Test: `packages/pywire-cli/tests/test_deploy_aws.py`
 
 **Interfaces:**
+
 - Consumes: `OneShotASGIAdapter` (T19).
 - Produces: `handler(event, context) -> dict` (API GW HTTP API v2 payload; tolerates REST v1 `httpMethod`/`path`); `application/x-msgpack` responses returned base64 with `isBase64Encoded: True`.
 
@@ -1142,11 +1187,13 @@ git commit -m "feat(pywire-cli): aws-lambda stateless deploy target"
 ### Task 22: Azure Functions target
 
 **Files:**
+
 - Create: `packages/pywire-templates/src/pywire_templates/deploy/azure/function_app.py.j2`, `host.json.j2`, `requirements.txt.j2`, `README.md.j2`
 - Modify: `packages/pywire-cli/src/pywire_cli/main.py` (`azure-functions` platform → `.pywire/deploy/azure/`; README: `func start` local, `func azure functionapp publish` deploy)
 - Test: `packages/pywire-cli/tests/test_deploy_azure.py`
 
 **Interfaces:**
+
 - Consumes: `OneShotASGIAdapter`.
 - Produces: Azure Functions v2 programming-model app, catch-all route `{*path}` (GET/POST), anonymous auth level; `func.HttpRequest` → adapter conversion using only: `request.method`, `request.url`, `request.headers`, `request.get_body()`; returns `func.HttpResponse(body_bytes, status_code, headers=..., mimetype=...)` — binary-safe, no base64 needed.
 
@@ -1162,12 +1209,14 @@ git commit -m "feat(pywire-cli): azure-functions stateless deploy target"
 ### Task 23: GCP targets (Cloud Run + Cloud Functions)
 
 **Files:**
+
 - Create: `packages/pywire-templates/src/pywire_templates/deploy/gcp_functions/main.py.j2`, `requirements.txt.j2`, `README.md.j2`
 - Create: `packages/pywire-templates/src/pywire_templates/deploy/gcp_cloudrun/README.md.j2`, `cloudrun.yaml.j2`
 - Modify: `packages/pywire-cli/src/pywire_cli/main.py` (`gcp-functions`, `gcp-cloudrun` platforms)
 - Test: `packages/pywire-cli/tests/test_deploy_gcp.py`
 
 **Interfaces:**
+
 - `gcp-cloudrun` **reuses the existing docker output** (Cloud Run supports WebSockets → BOTH modes work; README documents `gcloud run deploy` with `--session-affinity` for WS mode, plain for stateless). No new runtime code.
 - `gcp-functions`: functions-framework Flask signature `def pywire(request)` — conversion: `request.method`, `request.path`, `dict(request.headers)`, `request.get_data()`, `request.query_string.decode()`; returns `(body_bytes, status, headers)` tuple (binary-safe).
 
@@ -1183,11 +1232,13 @@ git commit -m "feat(pywire-cli): gcp-cloudrun and gcp-functions deploy targets"
 ### Task 24: Build-time feature gating + version floors
 
 **Files:**
+
 - Modify: `packages/pywire-cli/src/pywire_cli/main.py` (`_require_stateless(app_instance, platform)` pre-build validation)
 - Modify: `packages/pywire-cli/pyproject.toml` + `packages/pywire-cli/src/pywire_cli/_compat.py`; same pair for `pywire-templates` — floors to the next `pywire` minor (AGENTS.md floor rule; single commit)
 - Test: `packages/pywire-cli/tests/test_stateless_gating.py`
 
 **Interfaces:**
+
 - Produces: for platforms `cloudflare-edge|aws-lambda|azure-functions|gcp-functions`, build imports the user app and fails fast with actionable messages when `app.state.pywire.stateless` is False (`"add PyWire(stateless=True, secret_key=...) — see docs edge guide"`) or the secret is unset (`"set PYWIRE_SECRET_KEY in your provider environment"`). `gcp-cloudrun` and `cloudflare` (DO) accept either mode.
 
 - [ ] **Step 1: Failing test** — build fixture app WITHOUT `stateless=True` for `aws-lambda` → non-zero exit + message contains `stateless=True`; with it → success.
@@ -1203,6 +1254,7 @@ git commit -m "feat(pywire-cli): fail-fast stateless config checks + cross-packa
 ### Task 25: Docs
 
 **Files:**
+
 - Modify: `docs/src/content/docs/**` — follow the `update-docs` skill (`.agents/skills/update-docs/SKILL.md`) for placement/nav
 - New pages: "Edge & serverless deployment" (model overview; tier table: stateless vs DO/container), "Stateless mode" (snapshots, `wire.lock()`, `await_budget`, security notes), "Optimistic UI" (`.optimistic` modifier grammar, reconciliation model, when NOT to use it), "Fast lists" (`key=` + keyed regions, structural-change fallback), per-provider quickstarts (CF edge, Lambda, Azure, GCP Run/Functions)
 
