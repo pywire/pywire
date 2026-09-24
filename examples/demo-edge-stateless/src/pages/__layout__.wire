@@ -19,7 +19,7 @@
     </style>
 </head>
 <body>
-    <nav><a href="/">Home</a><a href="/about">About</a></nav>
+    <nav><a href="/">Home</a><a href="/about">About</a><a href="/await">Await</a></nav>
     <main>
         {$render children}
     </main>

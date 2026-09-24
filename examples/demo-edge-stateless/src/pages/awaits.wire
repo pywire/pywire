@@ -1,0 +1,65 @@
+!path "/await"
+---
+import asyncio
+import random
+
+roll = wire(0)
+
+# A dependency you control: known to finish inside the 2 s budget.
+async def quick_api():
+    await asyncio.sleep(1.0)
+    return "quick-api answered (1 s, inside budget)"
+
+
+# A dependency you do not control: known to blow the budget.
+async def slow_api():
+    await asyncio.sleep(10.0)
+    return "slow-api answered (10 s — never arrives)"
+
+
+# A dependency of UNKNOWN duration: 0.5-6 s, re-rolled on every render.
+async def flaky_api(current_roll):
+    await asyncio.sleep(random.uniform(0.5, 6.0))
+    return f"flaky-api answered on roll {current_roll}"
+
+
+def reroll():
+    roll.value += 1
+
+# Braces are expression syntax in templates, so the literal string we want
+# to DISPLAY has to come from a constant rather than writing it inline.
+AWAIT = "{$await}"
+---
+<div>
+    <h1>Await blocks in stateless mode</h1>
+    <p>This app sets <code>PyWire(await_budget=2.0)</code>: a stateless request
+    holds open <em>at most</em> 2&#8202;s waiting for <code>{AWAIT}</code>
+    content. At the budget, still-pending tasks are <b>cancelled</b>, the
+    fallback text ships in their place, and the count appears in the
+    response's <code>meta.pending_awaits</code>. The cancelled result is
+    <b>lost</b> &mdash; no background job, no retry, no push later.</p>
+
+    <section>
+        <h2>Dependency inside the budget (1&#8202;s)</h2>
+        {$await quick_api()}waiting for quick_api&hellip; (fallback){$then v}<b>{v}</b>{/await}
+    </section>
+
+    <section>
+        <h2>Dependency beyond the budget (10&#8202;s)</h2>
+        {$await slow_api()}waiting for slow_api&hellip; (fallback you keep){$then v}<b>{v}</b>{/await}
+        <p>This can <em>never</em> complete here: the task is cancelled at        2&#8202;s, the fallback above is what ships, and the result is thrown
+        away &mdash; in stateless mode there is no server left running to
+        finish it and no socket to push it through. In the
+        Durable-Object/WebSocket tier the same await keeps running and the
+        result arrives when it is ready.</p>
+    </section>
+
+    <section>
+        <h2>Dependency of unknown duration (0.5&ndash;6&#8202;s)</h2>
+        <p>Roll {roll} <button @click={reroll()}>Re-roll</button> &mdash; each
+        click re-renders the page, which re-runs every await below. Sometimes
+        this fits the budget, sometimes it is cancelled: the budget is a bet
+        on a duration you do not control.</p>
+        {$await flaky_api(roll.value)}waiting for flaky_api&hellip; (fallback){$then v}<b>{v}</b>{/await}
+    </section>
+</div>

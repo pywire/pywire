@@ -18,7 +18,8 @@ async def slow_increment():
 def toggle(i):
     items.value[i]["done"] = not items.value[i]["done"]
 
-def like():
+async def like():
+    await asyncio.sleep(0.5)
     likes.value += 1
     # The server accepts every OTHER like. On a rejected one the predicted
     # `liked` class contradicts the server render and auto-reverts in the
@@ -56,11 +57,13 @@ def like():
 
     <section id="likes">
         <h2>4 &middot; Wrong prediction (auto-revert)</h2>
-        <p>Each click predicts <code>liked</code> instantly &mdash; but the server
-        refuses every second like. Watch the class pop on, then get reverted.</p>
+        <p>The handler takes 500&#8202;ms and the server refuses every second like.
+        Each click predicts <code>liked</code> instantly &mdash; on a refused click you
+        can watch it hold for the round-trip, then snap back when the server's
+        render disagrees.</p>
         <p>Server-accepted likes: {likes}</p>
         <button id="like" class={'liked' if liked else ''} @click.optimistic-class-liked={like()}>Like</button>
     </section>
 
-    <p><a href="/about" id="link-about">About this demo &rarr;</a></p>
+    <p><a href="/about" id="link-about">About this demo</a> &middot; <a href="/await">Await limitations &rarr;</a></p>
 </div>
