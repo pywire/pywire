@@ -177,6 +177,7 @@ def test_rapid_double_click_submits_once(
     # Handler invocation count is rendered in the page state.
     expect(page.locator("#calls")).to_have_text("1", timeout=5000)
     expect(page.locator("#toggle")).to_be_enabled()
+    page.wait_for_timeout(700)  # longer than the 500ms route delay
 
     posts = page.evaluate(
         "performance.getEntriesByType('resource')"
