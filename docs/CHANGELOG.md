@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.32](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.31...pywire-docs-v0.5.32) (2026-09-24)
+
+
+### Bug Fixes
+
+* **pywire-docs:** pin pyodide xbuildenv install to the release tarball URL ([#278](https://github.com/pywire/pywire/issues/278)) ([62025c0](https://github.com/pywire/pywire/commit/62025c03e71328ce716fdf7e8c98f30a771ee75e))
+* unblock required Release Floors Gate + first wrangler deploy ([#276](https://github.com/pywire/pywire/issues/276)) ([b0b3363](https://github.com/pywire/pywire/commit/b0b3363944a1c924f7aad62aecd293a0b54abfef))
+
 ## [0.5.29](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.28...pywire-docs-v0.5.29) (2026-05-04)
 
 
