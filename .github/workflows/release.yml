@@ -184,6 +184,9 @@ jobs:
     name: "Publish pywire to PyPI"
     needs: build-pywire
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -293,6 +296,9 @@ jobs:
     name: "Publish tree-sitter-pywire to PyPI"
     needs: [build-tree-sitter-pywire, build-tree-sitter-pywire-sdist, build-tree-sitter-pywire-wasm]
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -313,6 +319,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-parser--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -330,6 +339,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-auth--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -347,6 +359,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-cli--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -364,6 +379,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-templates--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -381,6 +399,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-language-server--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -398,6 +419,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.vscode-pywire--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -416,6 +440,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.create-pywire-app--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
