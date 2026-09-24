@@ -10,7 +10,7 @@ authors = [
     { name = "Reece Holmdahl", email = "reece@pywire.dev" },
 ]
 requires-python = ">=3.11"
-license = "MIT"
+license = "Apache-2.0"
 dependencies = [
     "pywire>=0.14.4",
     "starlette>=0.31",
