@@ -134,7 +134,6 @@ class PyWire:
         fallthrough_404: bool = False,
         stateless: bool = False,
         secret_key: Optional[str] = None,
-        await_budget: float = 5.0,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -309,7 +308,9 @@ class PyWire:
         # Stateless (client-held state) mode: signed snapshots replace the
         # server session; interactive transports (WS/long-poll) are not mounted.
         self.stateless = stateless
-        self.await_budget = max(0.0, float(await_budget))
+        from pywire.compiler.tier_gate import set_stateless_tier
+
+        set_stateless_tier(stateless)
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
         if stateless:

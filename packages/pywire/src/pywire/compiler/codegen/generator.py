@@ -23,6 +23,7 @@ from pywire.compiler.codegen.attributes.events import EventAttributeCodegen
 from pywire.compiler.codegen.directives.base import DirectiveCodegen
 from pywire.compiler.codegen.directives.path import PathDirectiveCodegen
 from pywire.compiler.codegen.template import TemplateCodegen
+from pywire.compiler.tier_gate import check_tier
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class CodeGenerator:
 
     def generate(self, parsed: ParsedPyWire) -> ast.Module:
         """Generate complete module AST."""
+        check_tier(parsed)
         self.file_path = parsed.file_path
         self._has_top_level_init = False
         self._collected_init_hooks: List[str] = []

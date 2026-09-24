@@ -65,5 +65,5 @@ async def like():
         <button id="like" class={'liked' if liked else ''} @click.optimistic-class-liked={like()}>Like</button>
     </section>
 
-    <p><a href="/about" id="link-about">About this demo</a> &middot; <a href="/await">Await limitations &rarr;</a></p>
+    <p><a href="/about" id="link-about">About this demo</a></p>
 </div>

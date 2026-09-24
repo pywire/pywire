@@ -107,7 +107,6 @@ def test_event_round_trip(client):
     msg = msgpack.unpackb(r.content, raw=False)
     assert msg["snapshot"] != blob
     assert any("1" in reg["html"] for reg in msg.get("regions", []))
-    assert msg["meta"]["pending_awaits"] == 0
 
 
 def test_tampered_snapshot_400(client):

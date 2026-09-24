@@ -7,7 +7,6 @@ dispatched through the standard ``handle_event`` path (which enforces the
 compile-time ``__event_handlers__`` allowlist), then re-snapshotted.
 """
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -77,13 +76,6 @@ class StatelessHandler:
         if page is None:
             return self._err(404, "no route")
 
-        captured: list = []
-
-        async def capture_update() -> None:
-            captured.append(await page.render_update(init=False))
-
-        page._on_update = capture_update
-        pending = 0
         try:
             # WS-connect parity: a discarded render registers wire→region
             # subscriptions; without it render_update cannot emit region diffs
@@ -110,14 +102,6 @@ class StatelessHandler:
             nav = self._take_navigation(page)
             if nav is not None:  # handler called navigate()
                 return nav
-
-            # {$await} hold-open: drain background tasks up to the budget
-            tasks = {t for t in page._background_tasks if not t.done()}
-            if tasks:
-                await asyncio.wait(tasks, timeout=self.app.await_budget)
-                pending = sum(1 for t in tasks if not t.done())
-                if captured:
-                    update = self._merge_updates(update, captured)
         except Exception:
             logger.exception("stateless: event failed")
             return self._err(500, "event failed")
@@ -132,7 +116,6 @@ class StatelessHandler:
             secret=self.app._stateless_secret,
             warn_size=self.app.session_warn_size,
         )
-        payload.setdefault("meta", {})["pending_awaits"] = pending
         return self._msg(payload)
 
     @staticmethod
@@ -163,20 +146,6 @@ class StatelessHandler:
             return None
         page._pending_navigation = None
         return StatelessHandler._msg({"type": "navigate", "path": nav})
-
-    @staticmethod
-    def _merge_updates(base: dict, extras: list) -> dict:
-        regions = {r["region"]: r["html"] for r in base.get("regions", [])}
-        commands = list(base.get("commands", []))
-        for upd in extras:
-            for r in upd.get("regions", []):
-                regions[r["region"]] = r["html"]
-            commands.extend(upd.get("commands", []))
-        merged = dict(base)
-        merged["regions"] = [{"region": k, "html": v} for k, v in regions.items()]
-        if commands:
-            merged["commands"] = commands
-        return merged
 
     @staticmethod
     def _msg(payload: dict) -> Response:

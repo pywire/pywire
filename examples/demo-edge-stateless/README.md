@@ -1,6 +1,6 @@
 # Edge Stateless Mode — guided demo
 
-A minimal PyWire app that showcases the four "edge stateless" features:
+A minimal PyWire app that showcases the "edge stateless" features:
 
 1. **Stateless mode** — page state travels with the client, no WebSocket, no
    server-side session. Runs on a plain request/response (FaaS/edge) worker.
@@ -8,8 +8,9 @@ A minimal PyWire app that showcases the four "edge stateless" features:
    only that row's HTML.
 3. **Optimistic UI** — instant click feedback with automatic reconciliation,
    including auto-revert of wrong predictions.
-4. **Stateless `{$await}`** — how budget-bounded awaits behave without
-   server memory (and where they stop working): `/await` in the demo.
+
+(`{$await}` is a stateful-tier feature — it does not build in stateless apps.
+A `@poll`-based background-work page arrives in a later task.)
 
 ## Run it
 
@@ -66,32 +67,6 @@ Why *prediction*: the client does not know the server's decision. The
 modifier declares a guess — "render this as if the server already said
 yes" — and the arriving patch is the referee. Right guess: the patch is a
 visible no-op. Wrong guess: the patch silently strips the class.
-
-### Await in stateless mode
-
-In the stateful (Durable-Object/WebSocket) tier, `{$await}` runs on the
-server for as long as it takes and pushes the result when it is ready. In
-stateless mode there is no long-lived server: the await runs *inside the
-request*. `PyWire(await_budget=N)` bounds how long — at the deadline,
-still-pending tasks are **cancelled** (their results are lost: no
-background job, no retry, nothing to push through) and the response ships
-the block's fallback text plus a count in `meta.pending_awaits`.
-
-Observed contract (all measured on this demo):
-
-- **Initial page loads don't run awaits at all** — the GET ships the
-  fallback texts instantly; await content only appears on event
-  re-renders.
-- **Event POSTs hold open up to the budget** — the 1 s dependency answers
-  inside it, the 10 s one never does, and an unknown one is a coin flip
-  per render.
-- **Every re-render re-runs its await blocks** — a slow dependency taxes
-  every interaction with the page, not just the load.
-
-Rules of thumb: keep `await_budget` below your platform's hard request
-timeout (Workers, Lambda and every API gateway has one), remember you pay
-FaaS wall-clock for held-open requests, and treat dependencies you cannot
-bound as stateful-tier features.
 
 ## Try it
 
@@ -153,25 +128,6 @@ Open DevTools (Network + Elements side by side) and walk down the page.
    initial frontmatter state. In the Durable-Object/WebSocket tier the
    server-side session would still remember your counter.
 
-6. **Stateless `{$await}` — bounded by budget, not by patience.** Open
-   **Await** in the nav. This app sets `PyWire(await_budget=2.0)` and the
-   page simulates three dependencies you don't control: 1 s (inside
-   budget), 10 s (beyond it), and 0.5–6 s (unknown). What you'll observe:
-   - The page loads instantly with all three *fallback* texts — the
-     initial GET does not run awaits; their content only appears on event
-     re-renders.
-   - Click **Re-roll**. The POST takes ≈ 2 s — exactly the budget. When it
-     lands: the 1 s block morphs to its answer, the random block is a
-     coin flip, and the 10 s block **never** answers — its task was
-     cancelled at the budget and the fallback you see is permanent for
-     that render. The result is lost; nothing finishes it later.
-   - Click Re-roll again and note the POST cost: every re-render re-runs
-     the awaits, so a slow dependency taxes *every* interaction.
-   - The count of abandoned await work rides in the response's msgpack
-     `meta.pending_awaits` (Network → the POST response body — binary
-     msgpack, a viewer extension helps). The client renders nothing from
-     it; it is telemetry for your code.
-
 ## v1 ceilings
 
 - **State resets on SPA nav.** Snapshots are per-page; navigating away and
@@ -181,10 +137,9 @@ Open DevTools (Network + Elements side by side) and walk down the page.
   item mutations (like the toggle here).
 - **No server push.** Stateless mode mounts no WebSocket — updates only
   happen in response to client events.
-- **Awaits are request-bounded.** `{$await}` content only arrives inside
-  a response that waited for it (≤ `await_budget`); anything slower is
-  cancelled and lost, and initial loads don't run awaits at all. No
-  background completion, no push — see `/await` in the demo.
+- **No `{$await}`.** Background-work blocks are stateful-tier only; a
+  stateless app using them fails at build time. The stateless idiom is
+  `@poll` against an external store/queue (demo page arrives in T29).
 - **Snapshot size scales with page state.** Every POST carries the full
   snapshot and every response returns a fresh one. This demo's 300-row list
   makes the snapshot ~11.4 KB, so each event is an ~11.5 KB msgpack POST
