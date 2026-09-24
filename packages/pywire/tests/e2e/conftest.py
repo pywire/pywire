@@ -183,3 +183,14 @@ def stateless_app_dir(tmp_path_factory):
 def stateless_server(stateless_app_dir):
     with _run_pywire_server(stateless_app_dir, _free_port()) as url:
         yield url
+
+
+@pytest.fixture(scope="session")
+def keyed_list_app_dir(tmp_path_factory):
+    return _copy_fixture_app(tmp_path_factory, "keyed_list_app")
+
+
+@pytest.fixture(scope="session")
+def keyed_list_server(keyed_list_app_dir):
+    with _run_pywire_server(keyed_list_app_dir, _free_port()) as url:
+        yield url
