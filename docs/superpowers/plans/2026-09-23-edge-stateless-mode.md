@@ -66,6 +66,7 @@ Model tiers from `~/.pi/agent/models.json` + store pricing (in/out per Mtok):
 | 6 — deploy targets + docs (T21–25) | **Low-medium** — pattern repeats after T20/T21                         | `xiaomi/mimo-v2.6-pro`; T21 (AWS, first of pattern) → `z-ai/glm-5.3`               | `google/gemini-3.8-flash`                                                                    | $3–8      |
 | 5A — tier rectification (T26–27)   | **Medium-high** — removes shipped machinery, gates tiers at build      | `qwen/qwen3.8-max-0902` (T26); `xiaomi/mimo-v2.6-pro` (T27)                        | `google/gemini-3.8-flash`                                                                    | $3–6      |
 | 5B — poll primitive (T28–29)       | **Medium** — grammar + client directive, e2e + demo                    | `deepseek/deepseek-v4-pro-0813` (T28); `xiaomi/mimo-v2.6-pro` (T29)                | `google/gemini-3.8-flash`                                                                    | $3–6      |
+| 5C — per-page tier spike (T30)     | **Spike only — findings gate, no committed design**                    | `qwen/qwen3.8-max-0902`                                                            | findings reviewed by parent session + human gate                                             | $1–3      |
 
 **Total est. $40–100.** Cost levers: (a) reviewer prompts get the diff only, not the codebase — reviews are cheap even on opus; (b) if Phase 3's spike (T10) shows item-level invalidation already works via nested proxies, T11–12 shrink substantially — reassess model tier after the spike rather than pre-committing opus for all of Phase 3; (c) batch-mode variants (`:batch`, half price) fit T21–25 if you're not waiting interactively.
 
@@ -1215,6 +1216,27 @@ git commit -m "feat(pywire): @poll directive — interval handler dispatch, kern
 git add packages/pywire examples/demo-edge-stateless
 git commit -m "test(pywire): @poll e2e both tiers + stateless demo poll page"
 ```
+
+---
+
+## Phase 5C — Per-page tier derivation (SPIKE — decision gate, NOT a committed design)
+
+> **Owner directive (2026-09-24):** investigate per-page tier derivation as a spike only. This is NOT a set design decision — findings go to a human gate, and no committed code ships from this phase without an explicit go.
+
+**The idea under test:** invert "app picks a tier" into needs-based derivation — the deployment declares a ceiling (WS available?), pages declare needs (derived: `{$await}` → push; a future `@room` → rooms; nothing → plain), the build validates needs ≤ ceiling, and the runtime swaps transport per page (client opens a WS when SPA-navigating into a stateful page, drops back to snapshot-POST on stateless pages). `stateless=True` survives as the explicit "ceiling: stateless-only" assertion for pure-FaaS deploys (never mount WS; fail the build if any page needs push).
+
+### Task 30: Spike — per-page tier derivation feasibility (decision gate)
+
+**Method:** scratch investigation + throwaway prototype, like T10. No committed code. Follow the scratchpad skill (`review.sh` approval before running scratch scripts).
+
+**Questions to answer (findings → `scratch/adhoc/out/per_page_tier_findings.md`):**
+
+- [ ] **Client transport swap:** can the client open a WS mid-session when SPA-navigating from a stateless page to a stateful page, and drop back to POST on the way out? What breaks: connection lifecycle, reconnect state machine, event queueing during the swap, per-page meta differences, hot-reload, auth re-handshake on WS connect? Prototype in scratch (fixture app with one stateless page + one stateful page, hacked meta).
+- [ ] **Needs derivation:** generalize T26's `{$await}` compile-time scan into a page-feature → minimum-tier map. What maps to what (await blocks, server-push hooks, rooms, nothing)? Is derivation purely syntactic, or are there dynamic cases (conditionally-used awaits, components shared across tiers)?
+- [ ] **Runtime semantics with both endpoint families mounted:** session state when entering a stateful page (fresh session? resume?), snapshot minting for stateless pages visited after stateful ones, `build_page` paths, auth/middleware parity on both transports (already an invariant — verify), dev-mode reload behavior.
+- [ ] **Recommendation:** ship as designed / ship a reduced form (e.g. build-time validation only, no runtime mixing) / don't ship. Include a cost estimate and kill-criteria.
+
+**Human gate:** STOP after findings — report to the orchestrator; do NOT design or write T31/T32 or any committed code.
 
 ---
 
