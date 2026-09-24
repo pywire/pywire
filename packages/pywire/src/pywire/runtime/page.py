@@ -149,6 +149,10 @@ class BasePage:
     # Compile-time allowlist of names ``_dispatch_handler`` may invoke. Set by
     # the .wire codegen; ``None`` (hand-rolled pages) keeps dispatch permissive.
     __event_handlers__: ClassVar[Optional[frozenset[str]]] = None
+    # Site id → ``_pw_item_<site>`` renderer for keyed ``{$for ... key=}``
+    # loops. Set by the .wire codegen; ``None`` (hand-rolled pages) means no
+    # keyed regions — dirty ``{site}#{key}`` ids fall back to a full render.
+    __keyed_region_renderers__: ClassVar[Optional[Dict[str, str]]] = None
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
         "params",
@@ -1579,6 +1583,17 @@ class BasePage:
                 # Safe to sort now as we know no None is present
                 for region_id in sorted(self._dirty_regions):
                     method_name = region_map.get(region_id)
+                    keyed_key: Optional[str] = None
+                    if not method_name and "#" in region_id:
+                        # Keyed per-iteration region ``{site}#{key}`` from
+                        # ``{$for ..., key=}``. Nested keyed loops (enclosing
+                        # locals) have no top-level renderer — the site won't
+                        # be in the map and we fall through to the full
+                        # re-render below, the same safe path dynamic
+                        # iteration regions take.
+                        site_id, keyed_key = region_id.split("#", 1)
+                        keyed_map = self.__keyed_region_renderers__ or {}
+                        method_name = keyed_map.get(site_id)
                     if not method_name:
                         # Dynamic regions (e.g. ``{$auth claims=[("tier",
                         # tier)]}`` inside ``{$for}``) carry an iteration
@@ -1599,7 +1614,13 @@ class BasePage:
                     if is_dynamic:
                         self._dynamic_render_depth += 1
                     try:
-                        if inspect.iscoroutinefunction(renderer):
+                        if keyed_key is not None:
+                            # ``_pw_item_<site>(self, _pw_key)`` — always async,
+                            # called positionally. A key that no longer exists
+                            # (item deleted since dirtying) raises inside the
+                            # renderer and hits the full-render fallback below.
+                            region_html = await renderer(keyed_key)
+                        elif inspect.iscoroutinefunction(renderer):
                             region_html = await renderer()
                         else:
                             region_html = renderer()
