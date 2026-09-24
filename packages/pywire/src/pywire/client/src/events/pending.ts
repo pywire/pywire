@@ -2,29 +2,29 @@
  * Optimistic prediction state (plan spec #7 / review focus #8).
  *
  * Predictions are presentation-only and applied SYNCHRONOUSLY on dispatch (see
- * handler.ts). `data-pw-pending` never exists in server HTML, so the arriving
- * morphdom patch strips it — that strip is the "request finished" signal, and
- * while it is present the control is guarded against double-submit.
+ * handler.ts). `data-pw-pending` never exists in server HTML, so the morphdom
+ * patch that covers an element strips its marker — that strip is the
+ * per-element "request finished" signal, and while it is present the control
+ * is guarded against double-submit.
  *
- * Reconciliation:
- * - Success (`clearPending`): the morph is the ONLY reconciler. Markers are
- *   cleared here as a safety net for elements outside the patched region, but
- *   predicted classes are left alone — the server HTML owns them.
- * - Error (`revertPending`): no morph arrives, so we must undo the classes we
- *   added and re-enable any control we disabled. A control is never left stuck.
+ * Tracking is PER ELEMENT (one shared list would let the first arriving
+ * response clobber the predictions of controls still in flight):
+ * - Success (`clearPending`, called after the morph): flush entries whose
+ *   marker is gone — the morph reconciled them and the server HTML owns their
+ *   classes. Entries still carrying a marker belong to requests whose response
+ *   has NOT arrived; they stay tracked and guarded.
+ * - Error (`revertPending`): revert entries still carrying a marker — in the
+ *   transports' queue models the error corresponds to the outstanding
+ *   requests. No morph arrives, so we undo the classes we added and re-enable
+ *   any control we disabled. A control is never left stuck.
  */
 
 const PENDING = 'data-pw-pending'
 const PENDING_DISABLED = 'data-pw-pending-disabled'
 const CLASS_PREFIX = 'optimistic-class-'
 
-interface Prediction {
-  el: HTMLElement
-  classes: string[]
-}
-
-/** Optimistic predictions applied since the last update/error. */
-let predictions: Prediction[] = []
+/** Predicted classes for every element still awaiting its response. */
+const predictions = new Map<HTMLElement, string[]>()
 
 /** True when modifiers request optimistic behavior (bare token or any class token). */
 export function isOptimistic(modifiers: string[]): boolean {
@@ -41,7 +41,8 @@ function isGuardable(el: HTMLElement): boolean {
 /**
  * Apply the optimistic prediction to `el`: mark it pending, add each predicted
  * class, and disable guarded controls (remembering it was us). Called
- * synchronously immediately before transport.send.
+ * synchronously immediately before transport.send (and before any async file
+ * upload, so the guard covers the upload too).
  */
 export function applyOptimistic(el: HTMLElement, modifiers: string[]): void {
   const classes = modifiers
@@ -57,29 +58,45 @@ export function applyOptimistic(el: HTMLElement, modifiers: string[]): void {
     ;(el as HTMLButtonElement).disabled = true
   }
 
-  predictions.push({ el, classes })
+  predictions.set(el, classes)
 }
 
-/** Remove pending markers and re-enable any control we disabled. */
-function clearMarkers(): void {
-  document.querySelectorAll(`[${PENDING}]`).forEach((el) => el.removeAttribute(PENDING))
-  document.querySelectorAll(`[${PENDING_DISABLED}]`).forEach((el) => {
+/** Undo one element's prediction: classes, marker, and the disable we added. */
+export function revertElement(el: HTMLElement): void {
+  const classes = predictions.get(el)
+  if (classes === undefined) return
+  for (const c of classes) el.classList.remove(c)
+  el.removeAttribute(PENDING)
+  if (el.hasAttribute(PENDING_DISABLED)) {
     el.removeAttribute(PENDING_DISABLED)
     ;(el as HTMLButtonElement).disabled = false
-  })
-}
-
-/** On a successful update: clear leftover markers, keep classes (morph owns them). */
-export function clearPending(): void {
-  clearMarkers()
-  predictions = []
-}
-
-/** On an error response: also revert predicted classes, then clear markers. */
-export function revertPending(): void {
-  for (const { el, classes } of predictions) {
-    for (const c of classes) el.classList.remove(c)
   }
-  clearMarkers()
-  predictions = []
+  predictions.delete(el)
+}
+
+/** True when the morph reconciled this element (or replaced it outright). */
+function reconciled(el: HTMLElement): boolean {
+  return !el.isConnected || !el.hasAttribute(PENDING)
+}
+
+/**
+ * On a successful update (after the morph has been applied): drop entries the
+ * morph reconciled; entries still marked are in-flight requests whose response
+ * hasn't arrived yet — leave them tracked and guarded.
+ */
+export function clearPending(): void {
+  for (const el of predictions.keys()) {
+    if (reconciled(el)) predictions.delete(el)
+  }
+}
+
+/**
+ * On an error response: revert every element still awaiting its response (no
+ * morph is coming for those), and drop already-reconciled entries.
+ */
+export function revertPending(): void {
+  for (const el of predictions.keys()) {
+    if (reconciled(el)) predictions.delete(el)
+    else revertElement(el)
+  }
 }

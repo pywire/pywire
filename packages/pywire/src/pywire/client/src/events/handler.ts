@@ -2,7 +2,7 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
-import { applyOptimistic, isOptimistic } from './pending'
+import { applyOptimistic, isOptimistic, revertElement } from './pending'
 
 // Type alias for backward compatibility
 type Application = PyWireApp
@@ -590,7 +590,22 @@ export class UnifiedEventHandler {
       })
 
       if (hasFileUploads) {
-        const uploadMap = await this.uploadFiles(uploadFormData, element)
+        // Apply the optimistic prediction (and its double-submit guard)
+        // synchronously, BEFORE the async upload starts — otherwise a slow
+        // upload leaves the control unguarded and a second click kicks off a
+        // second upload.
+        if (isOptimistic(modifiers)) {
+          applyOptimistic(element, modifiers)
+        }
+        let uploadMap: Record<string, UploadResult | UploadResult[]>
+        try {
+          uploadMap = await this.uploadFiles(uploadFormData, element)
+        } catch (err) {
+          // No server error event will arrive for a failed upload — undo the
+          // prediction here so the control is never left stuck.
+          revertElement(element)
+          throw err
+        }
         for (const [field, uploadValue] of Object.entries(uploadMap)) {
           data[field] = uploadValue
         }
@@ -607,8 +622,9 @@ export class UnifiedEventHandler {
       }
     }
 
-    // Apply the optimistic prediction synchronously, immediately before send.
-    if (isOptimistic(modifiers)) {
+    // Apply the optimistic prediction synchronously, immediately before send
+    // (the marker check skips re-applying when it was set before a file upload).
+    if (isOptimistic(modifiers) && !element.hasAttribute('data-pw-pending')) {
       applyOptimistic(element, modifiers)
     }
 
