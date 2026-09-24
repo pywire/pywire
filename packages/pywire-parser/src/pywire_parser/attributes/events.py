@@ -28,6 +28,17 @@ class EventAttributeParser(AttributeParser):
         event_type = parts[0]
         modifiers = [m for m in parts[1:] if m]
 
+        # `.optimistic-class-*` tokens must carry a non-empty name after the dash.
+        for modifier in modifiers:
+            if modifier.startswith("optimistic-class"):
+                name = modifier[len("optimistic-class") :]
+                if len(name) < 2 or not name.startswith("-"):
+                    raise PyWireSyntaxError(
+                        f"Optimistic class modifier '{modifier}' in '@{attr_name}' "
+                        "must be 'optimistic-class-<name>' with a non-empty name.",
+                        line=line,
+                    )
+
         # Strip brackets or quotes
         val = attr_value.strip()
         if val.startswith("{") and val.endswith("}"):
