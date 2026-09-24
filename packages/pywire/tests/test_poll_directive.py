@@ -33,6 +33,21 @@ FIXTURE = dedent(
     """
 )
 
+_ARG_FIXTURE = dedent(
+    """\
+    ---
+    items = wire([1, 2, 3])
+    seen = wire([])
+
+    def tick(idx):
+        seen.value = seen.value + [idx]
+    ---
+    <div $for={item in items}>
+        <button @poll.every-400={tick(item)}>Tick {item}</button>
+    </div>
+    """
+)
+
 _SCOPE = {
     "type": "http",
     "http_version": "1.1",
@@ -93,6 +108,31 @@ def test_poll_handler_is_allowlisted(tmp_path) -> None:
     assert "_handler_0" in allowed
     asyncio.run(page._dispatch_handler("_handler_0", {}))
     assert page.count.value == 1
+
+
+def test_poll_lifts_args_as_data_arg() -> None:
+    """@poll={tick(item)} inside $for emits data-arg-0 like @click does."""
+    parsed = PyWireParser().parse(_ARG_FIXTURE)
+    code = ast.unparse(CodeGenerator().generate(parsed))
+    assert "'data-arg-0'] =" in code
+    assert "'data-pw-poll'] =" in code
+    assert "'data-pw-poll-every'] = '400'" in code
+    # poll dispatch relies on __event_handlers__, not ref dispatch()
+    # interception — no _register_handler is (or should be) emitted.
+    assert "_register_handler" not in code
+
+
+def test_poll_arg_reaches_handler(tmp_path) -> None:
+    """The lifted arg is delivered to the poll handler on dispatch."""
+    f = tmp_path / "poll_arg.wire"
+    f.write_text(_ARG_FIXTURE)
+    cls = PageLoader().load(f, use_cache=False)
+    page = cls(request=Request(_SCOPE), params={}, query={}, path={"main": True})
+    allowed = type(page).__event_handlers__
+    assert allowed is not None and "_handler_0" in allowed
+    # Client lifts data-arg-0 into args.arg0 exactly as poll.ts getArgs does.
+    asyncio.run(page._dispatch_handler("_handler_0", {"args": {"arg0": 1}}))
+    assert page.seen.value == [1]
 
 
 if __name__ == "__main__":  # pragma: no cover

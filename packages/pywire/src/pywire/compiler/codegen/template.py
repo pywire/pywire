@@ -1955,6 +1955,57 @@ class TemplateCodegen:
             node.end_col_offset = template_node.column + 1  # type: ignore
         return node
 
+    def _emit_event_arg_attrs(
+        self,
+        attr: EventAttribute,
+        body: List[ast.stmt],
+        node: TemplateNode,
+        local_vars: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+    ) -> None:
+        """Emit ``data-arg-{i}`` attrs for an event handler's lifted args.
+
+        Shared by the single-handler event branch and the ``@poll`` branch so
+        ``@poll={tick(idx)}`` inside a ``$for`` lifts ``idx`` exactly like
+        ``@click={tick(idx)}`` does (the client lifts ``data-arg-*`` into the
+        dispatched args for both paths).
+        """
+        for i, arg_expr in enumerate(attr.args):
+            val = self._wrap_unwrap_wire(
+                cast(
+                    ast.expr,
+                    self._transform_expr(
+                        arg_expr,
+                        local_vars,
+                        known_globals,
+                        known_imports,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                    ),
+                )
+            )
+            body.append(
+                ast.Assign(
+                    targets=[
+                        ast.Subscript(
+                            value=ast.Name(id="attrs", ctx=ast.Load()),
+                            slice=ast.Constant(value=f"data-arg-{i}"),
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="json", ctx=ast.Load()),
+                            attr="dumps",
+                            ctx=ast.Load(),
+                        ),
+                        args=[val],
+                        keywords=[],
+                    ),
+                )
+            )
+
     # ---------------- Render region (snippet) codegen ----------------
 
     def _snippet_method_name(self, name: str, line: int, col: int) -> str:
@@ -4755,14 +4806,18 @@ class TemplateCodegen:
                             value=handler_value,
                         )
                     )
-                    every_ms = next(
-                        (
-                            int(m[len("every-") :])
-                            for m in attr.modifiers
-                            if m.startswith("every-")
-                        ),
-                        None,
-                    )
+                    every_ms = None
+                    for m in attr.modifiers:
+                        if m.startswith("every-"):
+                            # ponytail: the parser floor enforces every-<int>
+                            # (>=100ms); T24 bumps the floor so a stale parser
+                            # can't feed a non-int here. Guard int() so a
+                            # malformed value degrades to the default interval.
+                            try:
+                                every_ms = int(m[len("every-") :])
+                            except ValueError:
+                                every_ms = None
+                            break
                     if every_ms is not None:
                         body.append(
                             ast.Assign(
@@ -4776,6 +4831,12 @@ class TemplateCodegen:
                                 value=ast.Constant(value=str(every_ms)),
                             )
                         )
+
+                    # Lift args exactly like the single-handler event branch so
+                    # ``@poll={tick(idx)}`` in a ``$for`` delivers idx each tick.
+                    self._emit_event_arg_attrs(
+                        attr, body, node, local_vars, known_globals, known_imports
+                    )
                     continue
 
                 if len(attrs_list) == 1:
@@ -4840,42 +4901,10 @@ class TemplateCodegen:
                             )
                         )
 
-                    # Add args
-                    for i, arg_expr in enumerate(attr.args):
-                        val = self._wrap_unwrap_wire(
-                            cast(
-                                ast.expr,
-                                self._transform_expr(
-                                    arg_expr,
-                                    local_vars,
-                                    known_globals,
-                                    known_imports,
-                                    line_offset=node.line,
-                                    col_offset=node.column,
-                                ),
-                            )
-                        )
-                        dump_call = ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Name(id="json", ctx=ast.Load()),
-                                attr="dumps",
-                                ctx=ast.Load(),
-                            ),
-                            args=[val],
-                            keywords=[],
-                        )
-                        body.append(
-                            ast.Assign(
-                                targets=[
-                                    ast.Subscript(
-                                        value=ast.Name(id="attrs", ctx=ast.Load()),
-                                        slice=ast.Constant(value=f"data-arg-{i}"),
-                                        ctx=ast.Store(),
-                                    )
-                                ],
-                                value=dump_call,
-                            )
-                        )
+                    # Add args (lifted to data-arg-{i} on the client)
+                    self._emit_event_arg_attrs(
+                        attr, body, node, local_vars, known_globals, known_imports
+                    )
 
                     # Register handler on the ref for server-side dispatch interception
                     if ref_expr is not None:
