@@ -28,6 +28,18 @@ async def slow_thing():
 {$await slow_thing()}loading...{$then result}{result}{/await}
 """
 
+NESTED_AWAIT_PAGE = """---
+import asyncio
+
+async def slow_thing():
+    await asyncio.sleep(10)
+    return "done"
+
+rows = wire([1, 2])
+---
+{$for row in rows.value, key=row}<div>{$await slow_thing()}loading...{$then result}{result}{/await}</div>{/for}
+"""
+
 ASYNC_HANDLER_PAGE = """---
 count = wire(0)
 
@@ -72,6 +84,16 @@ def test_build_fails_for_await_page_in_stateless_app(pages_dir: Path, tmp_path: 
     assert "slow.wire" in msg
     assert "@poll" in msg
     assert "stateful" in msg.lower()
+
+
+def test_stateless_app_rejects_nested_await_page(pages_dir: Path, tmp_path: Path):
+    # {$await} buried inside a {$for} iteration body must still be caught:
+    # the gate walks the AST recursively.
+    (pages_dir / "nested.wire").write_text(NESTED_AWAIT_PAGE)
+    PyWire(pages_dir=str(pages_dir), stateless=True, secret_key=SECRET)
+    with pytest.raises(Exception) as excinfo:
+        build_project(pages_dir=pages_dir, out_dir=tmp_path / "build")
+    assert "nested.wire" in str(excinfo.value)
 
 
 def test_stateful_app_compiles_await_page(pages_dir: Path):
