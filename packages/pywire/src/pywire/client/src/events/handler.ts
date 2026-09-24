@@ -457,6 +457,12 @@ export class UnifiedEventHandler {
       if (!this.validateFileInputs(element)) {
         return
       }
+      // Apply the optimistic prediction (and its double-submit guard) before
+      // the async POST. httpFormSubmit reconciles it: every failure mode
+      // navigates away, success morphs + clearPending().
+      if (isOptimistic(modifiers)) {
+        applyOptimistic(element, modifiers)
+      }
       await this.app.httpFormSubmit(element, handler)
       return
     }

@@ -34,7 +34,7 @@ class EventAttributeParser(AttributeParser):
                 name = modifier[len("optimistic-class") :]
                 if len(name) < 2 or not name.startswith("-"):
                     raise PyWireSyntaxError(
-                        f"Optimistic class modifier '{modifier}' in '@{attr_name}' "
+                        f"Optimistic class modifier '{modifier}' in '{attr_name}' "
                         "must be 'optimistic-class-<name>' with a non-empty name.",
                         line=line,
                     )

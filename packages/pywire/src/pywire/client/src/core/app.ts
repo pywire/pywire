@@ -566,6 +566,8 @@ export class PyWireApp {
 
       const html = await response.text()
       this.updater.update(html)
+      // Flush optimistic predictions the morph reconciled (see handleMessage).
+      clearPending()
       this.eventHandler?.refreshListeners()
 
       document.dispatchEvent(
