@@ -2,6 +2,7 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
+import { applyOptimistic, isOptimistic } from './pending'
 
 // Type alias for backward compatibility
 type Application = PyWireApp
@@ -400,7 +401,7 @@ export class UnifiedEventHandler {
 
       const timer = window.setTimeout(() => {
         this.debouncers.delete(eventKey)
-        void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+        void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
       }, duration)
 
       this.debouncers.set(eventKey, timer)
@@ -413,7 +414,7 @@ export class UnifiedEventHandler {
 
       this.throttlers.set(eventKey, Date.now())
       // Execute immediately
-      void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+      void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
 
       window.setTimeout(() => {
         this.throttlers.delete(eventKey)
@@ -422,7 +423,7 @@ export class UnifiedEventHandler {
     }
 
     // Direct dispatch
-    void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+    void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
   }
 
   /**
@@ -432,9 +433,18 @@ export class UnifiedEventHandler {
     element: HTMLElement,
     eventType: string,
     handler: string,
+    modifiers: string[],
     e: Event,
     explicitArgs?: unknown[]
   ): Promise<void> {
+    // Double-submit guard: while an optimistic response is pending, the control
+    // carries `data-pw-pending`. Ignore re-dispatches until the next update or
+    // error clears it (see pending.ts).
+    if (element.hasAttribute('data-pw-pending')) {
+      this.debugLog('[Handler] Ignoring dispatch — element pending optimistic response')
+      return
+    }
+
     // Non-interactive mode: a form submit always goes through httpFormSubmit
     // (fetch + morph), regardless of any event-data field mask. The mask
     // controls what gets sent over a persistent channel via `sendEvent`;
@@ -595,6 +605,11 @@ export class UnifiedEventHandler {
         await this.app.httpFormSubmit(element, handler)
         return
       }
+    }
+
+    // Apply the optimistic prediction synchronously, immediately before send.
+    if (isOptimistic(modifiers)) {
+      applyOptimistic(element, modifiers)
     }
 
     this.app.sendEvent(handler, eventData)

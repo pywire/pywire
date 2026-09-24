@@ -12,6 +12,7 @@ import {
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
+import { clearPending, revertPending } from '../events/pending'
 import { RefManager } from './ref-manager'
 import { ReconnectOverlay } from './reconnect-overlay'
 import { logger } from './logger'
@@ -628,6 +629,11 @@ export class PyWireApp {
           this.loadSPAMetadata()
         }
 
+        // An update message is the "request finished" signal: the morph already
+        // reconciled in-region markers/classes, so just strip any leftover
+        // optimistic pending markers and re-enable guarded controls.
+        clearPending()
+
         // Per-update meta (sent by server `render_update`) — keeps
         // `pageInteractive` in sync after SPA nav, since SPA-nav responses
         // (regions or fragment) don't include the `_pywire_spa_meta`
@@ -674,11 +680,15 @@ export class PyWireApp {
 
       case 'error':
         logger.error('PyWire: Server error:', msg.error)
+        // No morph is coming — revert the optimistic prediction so a failed
+        // control is never left stuck disabled (review focus #8).
+        revertPending()
         break
 
       case 'error_trace':
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
+        revertPending()
         break
 
       case 'console':
