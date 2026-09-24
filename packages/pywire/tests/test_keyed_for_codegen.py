@@ -202,3 +202,85 @@ async def test_keyed_renderer_dict_items_fast_path(tmp_path):
     assert page._dirty_regions == {f"{site}#two"}
     out = await getattr(page, method)("two")
     assert out == f"{_wrapper(site, 'two')}<li>two=5</li></div>"
+
+
+# ---------------------------------------------------------------------------
+# Keyed region id safety: escaping + render-time key validation.
+# ---------------------------------------------------------------------------
+
+_ONE_ITEM_SRC = """
+---
+items = wire([{"id": KEY, "name": "a"}])
+---
+<ul>
+{$for item in items.value, key=item["id"]}
+    <li>{item["name"]}</li>
+{/for}
+</ul>
+"""
+
+
+def _src_with_key(key: str) -> str:
+    return _ONE_ITEM_SRC.replace("KEY", repr(key))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        'x" onmouseover="alert(1)',  # attribute-injection / stored XSS attempt
+        'a"b',  # raw quote breaks the client querySelector round-trip
+        "a\\b",  # backslash is the CSS escape char in selectors
+        "a b",  # whitespace
+        "a\tb",  # control character
+        "a\nb",
+    ],
+)
+async def test_hostile_keys_are_refused(tmp_path, bad_key):
+    """Keys that cannot round-trip through the client's
+    querySelector('[data-pw-region="<id>"]') raise ValueError at render."""
+    page = _make_page(tmp_path, _src_with_key(bad_key))
+    with pytest.raises(ValueError, match="unsafe key"):
+        await page._render_template()
+
+
+@pytest.mark.asyncio
+async def test_special_char_key_is_escaped_and_round_trips(tmp_path):
+    """A benign-but-special key is HTML-escaped in the attribute, and the
+    HTML parse round-trips it back to the raw site#key region id — the same
+    id the client selector matches and the server tracks regions under."""
+    from html.parser import HTMLParser
+
+    key = "a&b<c>"
+    page = _make_page(tmp_path, _src_with_key(key))
+    html = await page._render_template()
+    site = next(iter(page.__keyed_region_renderers__))
+    raw_rid = f"{site}#{key}"
+
+    # Escaped on the wire: no raw &, < or > inside the attribute value.
+    assert f'data-pw-region="{site}#a&amp;b&lt;c&gt;"' in html
+    assert f'data-pw-region="{raw_rid}"' not in html
+
+    # HTML attribute parsing un-escapes back to the raw region id.
+    parsed: list = []
+
+    class _Grab(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            parsed.extend(v for k, v in attrs if k == "data-pw-region")
+
+    _Grab().feed(html)
+    assert raw_rid in parsed
+
+    # Raw id is safe inside the client's quoted querySelector pattern
+    # (validation guarantees no quote/backslash/whitespace-control chars).
+    assert not any(c in raw_rid for c in '"\\')
+    assert all(not c.isspace() and ord(c) >= 32 for c in raw_rid)
+
+    # Server-side item rendering keys off the RAW id and still escapes.
+    renderer = getattr(page, f"_pw_item_{site}")
+    out = await renderer(key)
+    assert out == (
+        f'<div data-pw-region="{site}#a&amp;b&lt;c&gt;" '
+        f'style="display: contents;"><li>a</li></div>'
+    )
+    assert page._region_dependencies.get(raw_rid)

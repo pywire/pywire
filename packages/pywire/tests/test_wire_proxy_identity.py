@@ -183,3 +183,26 @@ def test_wirelist_type_preserved():
     w = wire([{"a": 1}])
     assert isinstance(w, WireList)
     assert w == [{"a": 1}]
+
+
+def test_list_iter_index_walk_tolerates_mutation():
+    """Pin WireList.__iter__ mutation-during-iteration semantics.
+
+    __iter__ is an index walk (not ``list.__iter__``) so it can yield the
+    stable per-slot child proxies that keyed ``{$for}`` regions depend on
+    for per-item invalidation. The trade-off: structural mutation during
+    iteration does not raise — the walker just follows indices, so a
+    ``remove`` of an already-yielded element shifts later elements left
+    and the element shifted into the walker's next slot is SKIPPED.
+    Renders never mutate their loop sources; this only matters for
+    hand-written handlers that iterate and mutate the same WireList.
+    """
+    w = wire([{"i": 0}, {"i": 1}, {"i": 2}])
+    seen = []
+    for item in w:
+        seen.append(item["i"])
+        if item["i"] == 0:
+            w.remove(item)  # no RuntimeError; [{"i": 1}] shifts to index 0
+    # Walker was at index 1 after the yield, so {"i": 1} is skipped.
+    assert seen == [0, 2]
+    assert unwrap_wire(w) == [{"i": 1}, {"i": 2}]

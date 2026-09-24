@@ -860,12 +860,22 @@ class TemplateCodegen:
         return tree.body
 
     def _keyed_wrapper_str(self, site_id: str, key_name: ast.expr) -> ast.JoinedStr:
-        """f'<div data-pw-region="{site}#<key>" style="display: contents;">'
-        — byte-identical to the existing region-wrapper emission."""
+        """f'<div data-pw-region="{site}#{escape_html(key)}" style="display:
+        contents;">' — the key is HTML-escaped so a hostile key cannot break
+        out of the attribute. HTML attribute parsing round-trips the escaped
+        value back to the raw ``site#key`` id, which is what the client sends
+        back and what server-side region matching uses."""
         return ast.JoinedStr(
             values=[
                 ast.Constant(value=f'<div data-pw-region="{site_id}#'),
-                ast.FormattedValue(value=key_name, conversion=-1),
+                ast.FormattedValue(
+                    value=ast.Call(
+                        func=ast.Name(id="escape_html", ctx=ast.Load()),
+                        args=[key_name],
+                        keywords=[],
+                    ),
+                    conversion=-1,
+                ),
                 ast.Constant(value='" style="display: contents;">'),
             ]
         )
@@ -923,6 +933,77 @@ class TemplateCodegen:
                 handlers=[],
                 orelse=[],
                 finalbody=[ast.Expr(value=call("reset_render_context", nm(tok0_n)))],
+            ),
+            # if any(_pw_ch in '"\\' or _pw_ch.isspace() or ord(_pw_ch) < 32
+            #        for _pw_ch in _pw_k): raise ValueError(...)
+            # Escaping keeps the attribute safe, but quotes/backslashes/
+            # whitespace-control chars still break the client's
+            # querySelector('[data-pw-region="<id>"]') — refuse them.
+            ast.If(
+                test=ast.Call(
+                    func=ast.Name(id="any", ctx=ast.Load()),
+                    args=[
+                        ast.GeneratorExp(
+                            elt=ast.BoolOp(
+                                op=ast.Or(),
+                                values=[
+                                    ast.Compare(
+                                        left=nm("_pw_ch"),
+                                        ops=[ast.In()],
+                                        comparators=[ast.Constant(value='"\\')],
+                                    ),
+                                    ast.Call(
+                                        func=ast.Attribute(
+                                            value=nm("_pw_ch"),
+                                            attr="isspace",
+                                            ctx=ast.Load(),
+                                        ),
+                                        args=[],
+                                        keywords=[],
+                                    ),
+                                    ast.Compare(
+                                        left=ast.Call(
+                                            func=ast.Name(id="ord", ctx=ast.Load()),
+                                            args=[nm("_pw_ch")],
+                                            keywords=[],
+                                        ),
+                                        ops=[ast.Lt()],
+                                        comparators=[ast.Constant(value=32)],
+                                    ),
+                                ],
+                            ),
+                            generators=[
+                                ast.comprehension(
+                                    target=nm("_pw_ch", True),
+                                    iter=nm(k_n),
+                                    ifs=[],
+                                    is_async=0,
+                                )
+                            ],
+                        )
+                    ],
+                    keywords=[],
+                ),
+                body=[
+                    ast.Raise(
+                        exc=call(
+                            "ValueError",
+                            ast.JoinedStr(
+                                values=[
+                                    ast.Constant(value="pywire: unsafe key '"),
+                                    ast.FormattedValue(value=nm(k_n), conversion=-1),
+                                    ast.Constant(
+                                        value=f"' in {{$for}} at line {node.line}: "
+                                        "quotes, backslashes and whitespace/control "
+                                        "characters are not allowed in key="
+                                    ),
+                                ]
+                            ),
+                        ),
+                        cause=None,
+                    )
+                ],
+                orelse=[],
             ),
             # _pw_rid = "<site>#" + _pw_k
             ast.Assign(
