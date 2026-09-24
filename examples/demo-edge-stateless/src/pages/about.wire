@@ -1,0 +1,9 @@
+---
+---
+<div>
+    <h1>About</h1>
+    <p>A second page for the SPA-navigation check: in stateless mode each page
+    carries its own HMAC-signed snapshot, so navigating here and back resets
+    the home page's state (a v1 ceiling &mdash; see README).</p>
+    <p><a href="/" id="link-home">&larr; Back home</a></p>
+</div>
