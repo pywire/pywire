@@ -4726,6 +4726,58 @@ class TemplateCodegen:
                     event_attrs_by_type[attr.event_type].append(attr)
 
             for event_type, attrs_list in event_attrs_by_type.items():
+                if event_type == "poll":
+                    # @poll is a kernel timer primitive, not a DOM event: emit
+                    # data-pw-poll (+ data-pw-poll-every for a non-default
+                    # interval) instead of data-on-poll, so the client schedules
+                    # an interval dispatch and never addEventListener's 'poll'.
+                    # The handler name is allowlisted by _process_handlers like
+                    # any event handler, so stateless POST and WS both accept it.
+                    attr = attrs_list[0]
+                    handler_value = ast.BinOp(
+                        left=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_handler_prefix",
+                            ctx=ast.Load(),
+                        ),
+                        op=ast.Add(),
+                        right=ast.Constant(value=attr.handler_name),
+                    )
+                    body.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="attrs", ctx=ast.Load()),
+                                    slice=ast.Constant(value="data-pw-poll"),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=handler_value,
+                        )
+                    )
+                    every_ms = next(
+                        (
+                            int(m[len("every-") :])
+                            for m in attr.modifiers
+                            if m.startswith("every-")
+                        ),
+                        None,
+                    )
+                    if every_ms is not None:
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(value="data-pw-poll-every"),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.Constant(value=str(every_ms)),
+                            )
+                        )
+                    continue
+
                 if len(attrs_list) == 1:
                     # Single handler
                     attr = attrs_list[0]

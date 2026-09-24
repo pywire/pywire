@@ -39,6 +39,33 @@ class EventAttributeParser(AttributeParser):
                         line=line,
                     )
 
+        # ``@poll`` is a kernel timer primitive, not a DOM event: its only
+        # modifier is ``.every-<ms>``, and sub-100ms intervals are a FaaS
+        # billing foot-gun.
+        if event_type == "poll":
+            for modifier in modifiers:
+                if not modifier.startswith("every-"):
+                    raise PyWireSyntaxError(
+                        f"Unknown @poll modifier '{modifier}' in '{attr_name}'. "
+                        "@poll only supports '.every-<ms>'.",
+                        line=line,
+                    )
+                raw = modifier[len("every-") :]
+                try:
+                    ms = int(raw)
+                except ValueError:
+                    raise PyWireSyntaxError(
+                        f"@poll interval '{modifier}' in '{attr_name}' must be "
+                        "'.every-<int>' with an integer millisecond value.",
+                        line=line,
+                    ) from None
+                if ms < 100:
+                    raise PyWireSyntaxError(
+                        f"@poll interval '{modifier}' in '{attr_name}' must be at "
+                        "least 100 ms (FaaS billing foot-gun).",
+                        line=line,
+                    )
+
         # Strip brackets or quotes
         val = attr_value.strip()
         if val.startswith("{") and val.endswith("}"):
