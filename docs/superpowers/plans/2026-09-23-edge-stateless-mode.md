@@ -1296,6 +1296,22 @@ git commit -m "test(pywire): @poll e2e both tiers + stateless demo poll page"
 
 Routing: author `xiaomi/mimo-v2.6-pro` → GLM 5.3 security re-review (auth diff — mandatory).
 
+### Task 32: Reduced per-page tier validation (gate decision 2026-09-24 — ACCEPTED)
+
+> **Owner decision at the T30 gate:** "reduced form is fine as well as long as auth works" + a full feature-granular capability writeup (delivered: `docs/superpowers/tier-capabilities.md` — its feature map is this task's spec). Full runtime mixing is REJECTED; tier crossing, if ever needed, = full page load via `data-pw-reload`.
+
+**Scope — build-time validation ONLY (no runtime changes, no per-page tier meta):**
+
+- Generalize `compiler/tier_gate.py` from the per-file `{$await}` scan into the feature → minimum-tier map of `docs/superpowers/tier-capabilities.md` §Build-time checks: `{$await}`, `push_state`, server-push hooks → needs push; `{$auth}` → BOTH tiers (post-T31); `@poll`, events, forms, uploads, keyed regions, optimistic UI, bind → plain.
+- Validate per PAGE over its transitive component closure: a shared `{$await}` component fails only the pages whose closure uses it, and the error names the page.
+- `PyWire(stateless=True)` = ceiling assertion: any page whose closure needs push → dev-compile / `pywire build` error naming the page, the offending feature, and a fix suggestion (`@poll`, conditional rendering, or a stateful deploy). Replaces the T26 per-file walk (delete it — no dual mechanism).
+- The map lives in ONE code location (the writeup documents it; the gate consumes it).
+- Honesty constraint (from spike C2/C3): pushes via imported helpers and dynamic calls are invisible to any static scan — the error text and writeup must say what the scan cannot see. Do not pretend completeness.
+
+**Tests:** `{$await}` app still rejected (regression); closure case (component with `{$await}` used by page A → error names A; page B builds clean); `{$auth}` page builds on stateless (post-T31); `push_state` in a handler body flagged (if statically visible); honesty case documented.
+
+Routing: author `qwen/qwen3.8-max-0902` (correctness) → reviewer `xiaomi/mimo-v2.6-pro` (cross-family). No secrets surface; security pass only if the gate grows a secrets check (T24 owns missing-secret).
+
 ---
 
 ## Phase 6 — Multi-provider deployment targets (gated on Task 20)
