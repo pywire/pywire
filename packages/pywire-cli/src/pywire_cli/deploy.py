@@ -85,6 +85,24 @@ def generate_aws_lambda_handler(
     )
 
 
+def generate_azure_function_app(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "azure/function_app.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def generate_gcp_functions_main(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "gcp_functions/main.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
 def generate_aws_lambda_requirements(project_root: Path) -> str:
     """Generate runtime requirements for the AWS Lambda package."""
     return render_deploy_template("aws/requirements.txt.j2")
