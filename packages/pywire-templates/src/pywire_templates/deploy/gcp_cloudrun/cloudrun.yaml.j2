@@ -1,0 +1,11 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: {{ project_name }}
+spec:
+  template:
+    spec:
+      containers:
+        - image: {{ image }}
+          ports:
+            - containerPort: 8000

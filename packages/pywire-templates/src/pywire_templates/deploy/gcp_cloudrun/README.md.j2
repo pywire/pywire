@@ -1,0 +1,9 @@
+# {{ project_name }} on Google Cloud Run
+
+Build the application, then deploy the generated Docker image:
+
+```sh
+gcloud run deploy {{ project_name }} --source . --region us-central1
+```
+
+For WebSocket/session-affinity mode add `--session-affinity`; stateless mode does not need it.
