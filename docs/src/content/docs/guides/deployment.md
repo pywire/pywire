@@ -3,7 +3,7 @@ title: Deployment
 description: Deploying your PyWire application to production.
 ---
 
-PyWire applications can be deployed anywhere that supports Python and ASGI (e.g., Render, Fly.io, Railway, DigitalOcean, or your own VPS).
+PyWire applications can be deployed as long-running ASGI services or as stateless FaaS/edge functions. See [Edge & serverless deployment](/guides/edge-serverless-deployment/) to choose a tier and [Provider quickstarts](/guides/stateless-provider-quickstarts/) for generated platform commands.
 
 ## `pywire deploy`
 
@@ -120,15 +120,17 @@ Use `--redis --workers 4` to generate configs pre-configured for multi-worker sc
 
 The command validates your project before generating configs. If `pyproject.toml` or `uv.lock` is missing, you'll see a warning.
 
-## Non-Interactive Server Mode
+## HTTP-only session mode
 
-For environments that can't maintain persistent WebSocket connections — serverless functions, edge workers, or deployments that need simple horizontal scaling — PyWire offers a non-interactive HTTP-only mode.
+For a long-running host that cannot maintain persistent WebSocket connections, PyWire can use HTTP-session transport. This is different from FaaS stateless mode: HTTP-session still stores page state in a session cookie plus the configured session store.
 
 ```python
 from pywire import PyWire
 
 app = PyWire(interactive_server_mode=False)
 ```
+
+Use this mode for a container/server without WebSocket support. For Lambda, Azure Functions, GCP Cloud Functions, or a plain Cloudflare Worker, use [`PyWire(stateless=True)`](/guides/stateless-mode/) instead; those targets are request-scoped and do not keep session state between invocations.
 
 ### How It Works
 
@@ -142,13 +144,14 @@ When `interactive_server_mode=False`:
 
 ### When to Use It
 
-| Scenario                                        | Mode                                     |
-| ----------------------------------------------- | ---------------------------------------- |
-| Traditional server deployment (VPS, containers) | `interactive_server_mode=True` (default) |
-| Serverless functions (AWS Lambda, Vercel)       | `interactive_server_mode=False`          |
-| Edge workers (Cloudflare Workers)               | `interactive_server_mode=False`          |
-| Horizontal scaling without Redis                | `interactive_server_mode=False`          |
-| Static/content sites with forms                 | `interactive_server_mode=False`          |
+| Scenario                                        | Mode                                      |
+| ----------------------------------------------- | ----------------------------------------- |
+| Traditional server deployment (VPS, containers) | `interactive_server_mode=True` (default)  |
+| Serverless functions (AWS Lambda, Azure, GCP)   | `stateless=True` (FaaS is request-scoped) |
+| Plain Cloudflare Worker                         | `stateless=True`                          |
+| Cloudflare Durable Objects                      | Default stateful WebSocket mode           |
+| Horizontal scaling without Redis                | `interactive_server_mode=False`           |
+| Static/content sites with forms                 | `interactive_server_mode=False`           |
 
 ### Session Configuration
 
