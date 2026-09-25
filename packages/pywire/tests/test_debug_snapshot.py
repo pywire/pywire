@@ -5,6 +5,7 @@ and pretty-prints the page state. The HMAC gate stays in front: a tampered
 blob is a 4xx, never a decode. The signing secret is never echoed.
 """
 
+import asyncio
 import base64
 from pathlib import Path
 
@@ -20,10 +21,15 @@ SECRET = "test-secret-key"
 _MSGPACK = {"Content-Type": "application/x-msgpack"}
 
 
-def _app(debug: bool) -> PyWire:
-    return PyWire(
+def _app(debug: bool, dev: bool = True) -> PyWire:
+    app = PyWire(
         pages_dir=str(FIXTURE_PAGES), stateless=True, secret_key=SECRET, debug=debug
     )
+    # dev_server.py flips this at startup; the inspector must be a no-op
+    # without it even when debug=True ('pywire run' exposure).
+    if dev:
+        app._is_dev_mode = True
+    return app
 
 
 def _blob(html: str) -> str:
@@ -63,6 +69,35 @@ def test_debug_off_404():
     with TestClient(_app(debug=False), raise_server_exceptions=False) as c:
         r = c.get("/_pywire/debug/snapshot", params={"blob": "AAAA"})
         assert r.status_code == 404
+
+
+def test_debug_on_prod_mode_404():
+    """debug=True outside dev mode must not expose the inspector — matches
+    the _is_dev_mode gate on _handle_source/_handle_file/_handle_devtools_json."""
+    with TestClient(_app(debug=True, dev=False), raise_server_exceptions=False) as c:
+        blob = _blob(c.get("/").text)
+        r = c.get("/_pywire/debug/snapshot", params={"blob": blob})
+        assert r.status_code == 404
+
+
+def test_oversized_blob_rejected_without_decode(monkeypatch):
+    """A multi-MB blob must be refused before base64/HMAC/msgpack decode.
+
+    Called directly on the handler: httpx caps query-string length, so a
+    4MB URL cannot go through TestClient.
+    """
+    from unittest.mock import MagicMock
+
+    from pywire.runtime.snapshot_codec import MAX_SNAPSHOT_LEN
+
+    mock = MagicMock(return_value={})
+    monkeypatch.setattr("pywire.runtime.snapshot_codec.decode_snapshot", mock)
+    app = _app(debug=True)
+    request = MagicMock()
+    request.query_params = {"blob": "A" * (MAX_SNAPSHOT_LEN + 1)}
+    r = asyncio.run(app._handle_debug_snapshot(request))
+    assert r.status_code == 413
+    mock.assert_not_called()
 
 
 def test_tampered_blob_4xx():

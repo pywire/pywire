@@ -736,9 +736,11 @@ class PyWire:
         """Handle file uploads."""
         logger.debug(f"Handling upload request for {request.url}")
         try:
-            # Check for upload token
+            # Check for upload token — fail closed on any token outside the
+            # ``secrets.token_urlsafe`` charset before it can reach a
+            # filesystem path (load/store/delete all join it into a filename).
             token = request.headers.get("X-Upload-Token")
-            if not token:
+            if not token or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
                 return JSONResponse(
                     {"error": "Invalid or expired upload token"}, status_code=403
                 )
@@ -827,13 +829,24 @@ class PyWire:
         The HMAC gate stays in front: a tampered blob is a 400, never a
         decode. The signing secret is never echoed.
         """
+        if not (self._is_dev_mode and self.debug):
+            # Same gate as _handle_source/_handle_file/_handle_devtools_json:
+            # no inspector outside dev mode, even with debug=True.
+            return Response("Not Found", status_code=404)
         if not self._stateless_secret:
             # Snapshots only exist in stateless mode.
             return Response("Not Found", status_code=404)
         blob = request.query_params.get("blob")
         if not blob:
             return Response("Missing blob", status_code=400)
-        from pywire.runtime.snapshot_codec import SnapshotError, decode_snapshot
+        from pywire.runtime.snapshot_codec import (
+            MAX_SNAPSHOT_LEN,
+            SnapshotError,
+            decode_snapshot,
+        )
+
+        if len(blob) > MAX_SNAPSHOT_LEN:
+            return Response("snapshot too large", status_code=413)
 
         try:
             snap = decode_snapshot(blob, secret=self._stateless_secret)
@@ -1648,6 +1661,20 @@ class PyWire:
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
+            # Auth guard BEFORE any dispatch — a forged handler name must
+            # never reach user code on a protected page (mirrors
+            # BasePage.render()'s short-circuit). The redirect reaches the
+            # client with SPA-nav semantics, matching the WS/stateless
+            # transports' navigate message.
+            if getattr(page.__class__, "__auth_required__", False):
+                from pywire.auth.guard import run_auth_guard
+
+                denied = await run_auth_guard(page)
+                if denied is not None:
+                    location = denied.headers.get("location")
+                    if location:
+                        page._pending_navigation = location
+                    return JSONResponse({"type": "navigate", "path": location or "/"})
             # Handle event
             try:
                 event_data = await request.json()
@@ -1777,6 +1804,18 @@ class PyWire:
         the hidden field is never passed on as handler data.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
+        # Auth guard BEFORE any dispatch — a forged handler name must never
+        # reach user code on a protected page (mirrors BasePage.render()'s
+        # short-circuit and its _pending_navigation mirror).
+        if getattr(page.__class__, "__auth_required__", False):
+            from pywire.auth.guard import run_auth_guard
+
+            denied = await run_auth_guard(page)
+            if denied is not None:
+                location = denied.headers.get("location")
+                if location:
+                    page._pending_navigation = location
+                return denied
         try:
             form_data = await request.form()
             event_data: Dict[str, Any] = {
@@ -1865,6 +1904,17 @@ class PyWire:
                     return PlainTextResponse(
                         f"PyWire: handler '{handler_name}' is not a registered "
                         "event handler",
+                        status_code=400,
+                    )
+                # Mirror BasePage._dispatch_handler: non-framework ``_``
+                # names are never invokable, even on permissive hand-rolled
+                # pages (allowlist None).
+                is_framework_handler = handler_name.startswith(
+                    "_handle_bind_"
+                ) or handler_name.startswith("_handler_")
+                if not is_framework_handler and handler_name.startswith("_"):
+                    return PlainTextResponse(
+                        f"PyWire: handler '{handler_name}' not allowed",
                         status_code=400,
                     )
                 if inspect.iscoroutinefunction(handler):

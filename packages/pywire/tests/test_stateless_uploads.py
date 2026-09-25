@@ -76,3 +76,25 @@ def test_upload_reaches_handler(client):
     assert r.status_code == 200
     msg = msgpack.unpackb(r.content, raw=False)
     assert any(upload_id in reg["html"] for reg in msg.get("regions", []))
+
+
+def test_traversal_upload_token_cannot_delete_outside_dir(client):
+    """X-Upload-Token path traversal must not delete ``*.json`` outside the
+    token dir (``_token_file_path`` joined the raw header value)."""
+    import json
+    import os
+
+    app = client.app
+    probe_name = f"pywire_traversal_probe_{os.getpid()}"
+    target = (app._upload_token_dir / ".." / ".." / f"{probe_name}.json").resolve()
+    target.write_text(json.dumps({"session_id": None, "issued_ts": 0.0}))
+    try:
+        up = client.post(
+            "/_pywire/upload",
+            files={"doc": ("x.txt", b"x", "text/plain")},
+            headers={"X-Upload-Token": f"../../{probe_name}"},
+        )
+        assert up.status_code == 403
+        assert target.exists(), "traversal token deleted a file outside the token dir"
+    finally:
+        target.unlink(missing_ok=True)

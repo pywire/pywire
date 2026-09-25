@@ -135,3 +135,69 @@ def test_form_post_component_dispatch_enforces_allowlist(monkeypatch):
     finally:
         sys.modules.pop("comp_child", None)
         shutil.rmtree(test_dir, ignore_errors=True)
+
+
+PRIVATE_PAGE = (
+    "---\n"
+    "def _private(data):\n"
+    "    open(PROBE, 'w').write('ran')\n"
+    "\n"
+    "def pub(data):\n"
+    "    pass\n"
+    "---\n"
+    "<p>hi</p>\n"
+    "<form method='post' @submit={pub}>\n"
+    "  <input name='q' />\n"
+    "</form>\n"
+)
+
+
+def test_form_post_rejects_underscore_page_handler(tmp_path):
+    """``_dispatch_handler`` refuses non-framework ``_`` names (page.py:767);
+    the form POST path must apply the same refusal — a user-defined
+    ``_private`` frontmatter def was invokable via forged handler name."""
+    probe = tmp_path / "probe"
+    app, test_dir = _make_app({"priv": PRIVATE_PAGE.replace("PROBE", repr(str(probe)))})
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        r = client.post("/priv", data={}, headers={"X-PyWire-Handler": "_private"})
+        assert r.status_code == 400
+        assert "not allowed" in r.text
+        assert not probe.exists(), "_private handler ran via X-PyWire-Handler"
+
+        r = client.post("/priv", data={"__pywire_handler": "_private"})
+        assert r.status_code == 400
+        assert "not allowed" in r.text
+        assert not probe.exists(), "_private handler ran via __pywire_handler"
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_form_post_rejects_underscore_on_hand_rolled_page(tmp_path):
+    """Hand-rolled pages (allowlist None) keep the underscore refusal too."""
+    touched = []
+
+    class HandPage(BasePage):
+        __route__ = "/handpriv"
+
+        async def _render_template(self):
+            return "<html><body><p>hand</p></body></html>"
+
+        def touch(self, data):
+            touched.append(dict(data))
+
+        def _sneaky(self, data):
+            touched.append("sneaky")
+
+    app, test_dir = _make_app({})
+    try:
+        app.router.add_route("/handpriv", HandPage)
+        client = TestClient(app, raise_server_exceptions=False)
+        r = client.post(
+            "/handpriv", data={"a": "1"}, headers={"X-PyWire-Handler": "_sneaky"}
+        )
+        assert r.status_code == 400
+        assert "not allowed" in r.text
+        assert touched == []
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)

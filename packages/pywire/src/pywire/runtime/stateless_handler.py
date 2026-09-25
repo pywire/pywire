@@ -18,6 +18,7 @@ from pywire.runtime.page_resolver import resolve_page
 from pywire.runtime.protocol import build_update_payload
 from pywire.runtime.session_serializer import restore_page_state
 from pywire.runtime.snapshot_codec import (
+    MAX_SNAPSHOT_LEN,
     SnapshotError,
     decode_snapshot,
     encode_snapshot,
@@ -53,10 +54,13 @@ class StatelessHandler:
                 raise ValueError("body is not a mapping")
         except Exception:
             return self._err(400, "malformed request body")
+        snap_blob = data.get("snapshot", "")
+        # Ceiling before decode — an oversized blob must be a cheap reject,
+        # not a base64/HMAC/msgpack burn.
+        if isinstance(snap_blob, str) and len(snap_blob) > MAX_SNAPSHOT_LEN:
+            return self._err(413, "snapshot too large")
         try:
-            snapshot = decode_snapshot(
-                data.get("snapshot", ""), secret=self.app._stateless_secret
-            )
+            snapshot = decode_snapshot(snap_blob, secret=self.app._stateless_secret)
         except SnapshotError as exc:
             logger.warning("stateless: rejected snapshot: %s", exc)
             return self._err(400, "invalid snapshot")

@@ -203,3 +203,17 @@ def test_stateless_embedding_preserves_set_cookie():
 def test_malformed_body_400(client):
     r = client.post("/_pywire/stateless", content=b"not msgpack", headers=_MSGPACK)
     assert r.status_code == 400
+
+
+def test_oversized_snapshot_rejected_without_decode(client, monkeypatch):
+    """Oversized snapshot fields are refused before any base64/HMAC/msgpack
+    work — otherwise a huge blob is a CPU/memory DoS vector."""
+    from unittest.mock import MagicMock
+
+    from pywire.runtime.snapshot_codec import MAX_SNAPSHOT_LEN
+
+    mock = MagicMock(return_value={})
+    monkeypatch.setattr("pywire.runtime.stateless_handler.decode_snapshot", mock)
+    r = _post(client, "A" * (MAX_SNAPSHOT_LEN + 1))
+    assert r.status_code == 413
+    mock.assert_not_called()

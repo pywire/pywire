@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 _SIG_LEN = 32  # SHA-256
 
+# Ceiling on client-held snapshot blobs (base64 text) before any decode
+# work — an oversized blob must be a cheap reject, not a decode burn.
+MAX_SNAPSHOT_LEN = 4 * 1024 * 1024
+
 
 class SnapshotError(Exception):
     """Raised when a client snapshot is corrupt, tampered, or foreign."""
