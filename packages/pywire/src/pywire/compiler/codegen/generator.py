@@ -23,6 +23,7 @@ from pywire.compiler.codegen.attributes.events import EventAttributeCodegen
 from pywire.compiler.codegen.directives.base import DirectiveCodegen
 from pywire.compiler.codegen.directives.path import PathDirectiveCodegen
 from pywire.compiler.codegen.template import TemplateCodegen
+from pywire.compiler.tier_gate import check_tier
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class CodeGenerator:
 
     def generate(self, parsed: ParsedPyWire) -> ast.Module:
         """Generate complete module AST."""
+        check_tier(parsed)
         self.file_path = parsed.file_path
         self._has_top_level_init = False
         self._collected_init_hooks: List[str] = []
@@ -58,6 +60,8 @@ class CodeGenerator:
         self._collected_derived_hooks: List[str] = []
         self._collected_effect_hooks: List[str] = []
         self._collected_exposed_methods: List[str] = []
+        # Bare user-def names the template wires as event handlers
+        self._wired_handler_names: Set[str] = set()
         self._wire_vars_from_decorators: Set[str] = set()
         self._collected_props: Optional[PropsDirective] = None
         module_body = []
@@ -182,6 +186,7 @@ class CodeGenerator:
                     ast.alias(name="unwrap_wire", asname=None),
                     ast.alias(name="set_render_context", asname=None),
                     ast.alias(name="reset_render_context", asname=None),
+                    ast.alias(name="suspend_render_context", asname=None),
                 ],
                 level=0,
             ),
@@ -510,14 +515,53 @@ class CodeGenerator:
         # Generate auth metadata (only when !auth directive present)
         class_body.extend(self._generate_auth_metadata(parsed))
 
-        # Generate __allowed_handlers__ for security (prevents arbitrary method invocation)
-
         # Transform user Python code to class methods (Must run before __init__ to set flags)
         route_params = self._extract_route_params(parsed)
         all_globals = set(known_methods.keys()).union(known_vars).union(route_params)
         user_code_stmts: List[ast.stmt] = []
         if parsed.python_ast:
             user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
+
+        # Compile-time dispatch allowlist: frontmatter defs + generated
+        # ``_handler_N`` wrappers, minus framework-invoked defs (lifecycle
+        # hooks, @derived/@effect, @expose - reached via ComponentRef, never by
+        # client name) unless the template wires one directly as a handler.
+        # Anything else is refused by ``BasePage._dispatch_handler``.
+        # Must run after _transform_user_code, which collects the hooks.
+        framework_invoked = {
+            *self._collected_init_hooks,
+            *self._collected_mount_hooks,
+            *self._collected_unmount_hooks,
+            *self._collected_before_load_hooks,
+            *self._collected_before_update_hooks,
+            *self._collected_after_update_hooks,
+            *self._collected_error_hooks,
+            *self._collected_derived_hooks,
+            *self._collected_effect_hooks,
+            *self._collected_exposed_methods,
+        }
+        event_handlers = (
+            (set(known_methods) - framework_invoked)
+            | self._wired_handler_names
+            | {h.name for h in handlers}
+        )
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="__event_handlers__", ctx=ast.Store())],
+                value=ast.Call(
+                    func=ast.Name(id="frozenset", ctx=ast.Load()),
+                    args=[
+                        ast.Tuple(
+                            elts=[
+                                ast.Constant(value=n) for n in sorted(event_handlers)
+                            ],
+                            ctx=ast.Load(),
+                        )
+                    ],
+                    keywords=[],
+                ),
+            )
+        )
 
         # Track exposed methods
         initial_exposed = ast.Assign(
@@ -854,6 +898,7 @@ class CodeGenerator:
                                     e,
                                 )
                         else:
+                            self._wired_handler_names.add(attr.handler_name)
                             # User-defined method — analyze its source for field mask
                             source = user_handler_sources.get(attr.handler_name)
                             if source is not None:
@@ -901,6 +946,17 @@ class CodeGenerator:
                         or arg_str in dir(builtins)
                         or arg_str in ("self", "event")
                     ):
+                        if arg_str in known_vars:
+                            # Known vars resolve server-side (never lifted to
+                            # data-arg-*), but the handler must still receive
+                            # the VALUE like every other arg path — a live
+                            # Wire silently breaks dict keys/JSON (its hash
+                            # is id(), not the value's).
+                            call.args[i] = ast.Call(
+                                func=ast.Name(id="unwrap_wire", ctx=ast.Load()),
+                                args=[arg],
+                                keywords=[],
+                            )
                         continue
 
                     extracted_args.append(arg_str)
@@ -915,6 +971,8 @@ class CodeGenerator:
                 # arg0, arg1, ... from pre-pass must not be re-lifted
                 for i in range(32):
                     self.local_names.add(f"arg{i}")
+                # framework intrinsic injected by the pre-pass for wire args
+                self.local_names.add("unwrap_wire")
 
             def visit_Name(self, node: ast.Name) -> Any:
                 # 1. Locally defined or event - keep as is
@@ -1623,6 +1681,11 @@ class CodeGenerator:
         """Generate _render_template method."""
         if component_map is None:
             component_map = {}
+        # `!no_interactive` pages need the no-JS form floor: the template
+        # codegen drops a `__pywire_handler` hidden input into @submit forms.
+        self.template_codegen.no_interactive = (
+            parsed.get_directive_by_type(NoInteractiveDirective) is not None
+        )
         # Check for layout
         layout_directive = parsed.get_directive_by_type(LayoutDirective)
         if layout_directive:
@@ -1945,5 +2008,19 @@ class CodeGenerator:
                         ),
                     )
                 )
+
+        keyed = self.template_codegen.keyed_region_renderers
+        if keyed:
+            binding_funcs.append(
+                ast.Assign(
+                    targets=[
+                        ast.Name(id="__keyed_region_renderers__", ctx=ast.Store())
+                    ],
+                    value=ast.Dict(
+                        keys=[ast.Constant(value=k) for k in keyed],
+                        values=[ast.Constant(value=v) for v in keyed.values()],
+                    ),
+                )
+            )
 
         return render_func, binding_funcs

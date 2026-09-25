@@ -13,7 +13,10 @@ from pyodide.ffi import to_js
 from {{ app_module }} import {{ app_attr }}
 import _routes  # noqa: F401 — registers routes as a side effect
 import msgpack
+import time
+
 from pywire.runtime.session_serializer import snapshot_page_state, restore_page_state
+from pywire.runtime.cf_durable_object import ThrottledPersister
 from pywire.runtime.protocol import build_update_payload
 from pywire.runtime.page_resolver import resolve_page
 
@@ -50,6 +53,7 @@ class PyWireSessionDO(DurableObject):
         super().__init__(state, env)
         self.ctx = state
         self.page = None
+        self._persister = ThrottledPersister(2.0)
 
     async def on_fetch(self, request):
         upgrade = (request.headers.get("Upgrade") or "").lower()
@@ -121,7 +125,8 @@ class PyWireSessionDO(DurableObject):
             "session_restored": session_restored,
         })
         await self.page._run_hooks(self.page.MOUNT_HOOKS)
-        await self._persist_state()
+        if self._persister.should_persist(time.monotonic()):
+            await self._persist_state()
 
     async def _handle_event(self, ws, msg):
         handler_name = msg.get("handler")
@@ -149,7 +154,8 @@ class PyWireSessionDO(DurableObject):
 
         _send_update(ws, update)
         await self.page._run_hooks(self.page.AFTER_UPDATE_HOOKS)
-        await self._persist_state()
+        if self._persister.should_persist(time.monotonic()):
+            await self._persist_state()
 
     async def _handle_relocate(self, ws, msg):
         path = msg.get("path", "/")
@@ -168,7 +174,8 @@ class PyWireSessionDO(DurableObject):
         html = response.body.decode("utf-8") if isinstance(response.body, bytes) else response.body
         _send(ws, {"type": "update", "html": html})
         await self.page._run_hooks(self.page.MOUNT_HOOKS)
-        await self._persist_state()
+        if self._persister.should_persist(time.monotonic()):
+            await self._persist_state()
 
     async def _persist_state(self):
         if not self.page:

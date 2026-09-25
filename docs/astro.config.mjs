@@ -133,7 +133,18 @@ export default defineConfig({
             { label: 'Editor Setup', slug: 'guides/editor-setup' },
             { label: 'CLI Reference', slug: 'guides/cli' },
             { label: 'Deployment', slug: 'guides/deployment' },
+            { label: 'Edge & Serverless', slug: 'guides/edge-serverless-deployment' },
+            { label: 'Provider Quickstarts', slug: 'guides/stateless-provider-quickstarts' },
             { label: 'Horizontal Scaling', slug: 'guides/scaling' },
+          ],
+        },
+        {
+          label: 'Stateless Patterns',
+          items: [
+            { label: 'Stateless Mode', slug: 'guides/stateless-mode' },
+            { label: 'Optimistic UI & Fast Lists', slug: 'guides/stateless-interactions' },
+            { label: 'Long-running Actions', slug: 'guides/long-running-actions' },
+            { label: 'Tier Feature Matrix', slug: 'guides/tier-capabilities' },
           ],
         },
         {

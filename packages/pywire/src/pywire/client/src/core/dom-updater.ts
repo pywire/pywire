@@ -228,6 +228,10 @@ export class DOMUpdater {
       // and the new one was extracted out before morphdom ran.
       if (script.id === '_pywire_spa_meta') continue
 
+      // Leave the stateless-mode snapshot blob in place — it's text/plain
+      // data, not JavaScript. Executing it would throw a SyntaxError.
+      if (script.id === '_pywire_snapshot') continue
+
       // Check if this script is inside a data-pw-permanent element
       const inPermanent = !!script.closest('[data-pw-permanent]')
       extracted.push({ script, inPermanent })

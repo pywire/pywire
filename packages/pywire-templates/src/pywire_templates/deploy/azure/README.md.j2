@@ -1,0 +1,41 @@
+# {{ function_name }} on Azure Functions
+
+The generated directory is the complete uploadable function package:
+
+- `function_app.py` — HTTP entry point
+- `_routes.py` and `_pywire_build/` — compiled PyWire routes
+- your application source (e.g. `src/` or `main.py`) — copied in by `pywire build`
+- `host.json` and `local.settings.json` — Python v2 host configuration
+- `requirements.txt` — runtime dependencies
+
+From the project root, install the Azure Functions Core Tools and run locally:
+
+```sh
+cd .pywire/deploy/azure
+python -m pip install -r requirements.txt
+func start
+```
+
+`local.settings.json` enables worker indexing and ships with `PYWIRE_SECRET_KEY`
+empty — PyWire refuses to boot without one. Generate a secret (keep it out of
+source control and shell history) and put it in `local.settings.json` for local
+runs:
+
+```sh
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Before deploying, generate a fresh secret and set it as the Azure Function
+application's `PYWIRE_SECRET_KEY` application setting (portal → Application
+settings, or `az functionapp config appsettings set`).
+
+Package and upload the **contents** of this directory (not the directory
+itself) — that includes the application source copied in above:
+
+```sh
+zip -r function.zip . -x local.settings.json -x function.zip -x '*__pycache__*'
+func azure functionapp publish {{ function_name }} --zip-path function.zip
+```
+
+Do not upload `local.settings.json` as a runtime configuration file; configure
+`PYWIRE_SECRET_KEY` in Azure application settings instead.

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Edge Stateless Demo</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+        nav a { margin-right: 1rem; }
+        section { border-top: 1px solid #ddd; margin-top: 1.5rem; padding-top: .5rem; }
+        button { cursor: pointer; padding: .4rem .9rem; }
+        /* Predicted classes: applied by the client on click, reconciled by the
+           next server patch. .dim only ever exists client-side (the server
+           never renders it); .done / .liked mirror real server state. */
+        button.dim { opacity: .4; }
+        li.done .name { text-decoration: line-through; color: #888; }
+        button.done { background: #2a7; color: #fff; }
+        button.liked { background: #e43; color: #fff; }
+    </style>
+</head>
+<body>
+    <nav><a href="/">Home</a><a href="/about">About</a><a href="/poll">Poll</a></nav>
+    <main>
+        {$render children}
+    </main>
+</body>
+</html>

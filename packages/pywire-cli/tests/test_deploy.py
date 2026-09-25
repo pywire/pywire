@@ -283,6 +283,19 @@ class TestDeployCommand:
             assert result.exit_code == 0, result.output
             assert "railway link" in result.output
 
+    def test_deploy_rejects_platforms_without_generation_branch(self) -> None:
+        """deploy must only accept platforms it actually generates files for.
+
+        azure-functions / gcp-functions / gcp-cloudrun are `pywire build`
+        targets (their READMEs route to func/gcloud) — accepting them here
+        silently writes nothing and reports success.
+        """
+        runner = CliRunner()
+        for platform in ("azure-functions", "gcp-functions", "gcp-cloudrun"):
+            result = runner.invoke(cli, ["deploy", "--platform", platform])
+            assert result.exit_code != 0, result.output
+            assert f"'{platform}' is not one of" in " ".join(result.output.split())
+
     @patch("pywire.compiler.build.build_project")
     def test_railway_prompts_when_dockerfile_exists(
         self, mock_build: MagicMock

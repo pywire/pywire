@@ -132,6 +132,8 @@ class PyWire:
         reconnect_overlay: bool = True,
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
+        stateless: bool = False,
+        secret_key: Optional[str] = None,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -303,14 +305,43 @@ class PyWire:
         self.ws_ping_interval = max(0, int(ws_ping_interval))
         self.ws_ping_timeout = max(1, int(ws_ping_timeout))
 
+        # Stateless (client-held state) mode: signed snapshots replace the
+        # server session; interactive transports (WS/long-poll) are not mounted.
+        self.stateless = stateless
+        from pywire.compiler.tier_gate import set_stateless_tier
+
+        set_stateless_tier(stateless)
+        self._stateless_secret: bytes = b""
+        self.stateless_handler: Optional[Any] = None
+        if stateless:
+            secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
+            if not secret:
+                raise RuntimeError(
+                    "PyWire(stateless=True) requires secret_key= or the "
+                    "PYWIRE_SECRET_KEY env var — it signs client-held session "
+                    "snapshots"
+                )
+            self._stateless_secret = secret.encode("utf-8")
+
+            from pywire.runtime.stateless_handler import StatelessHandler
+
+            self.stateless_handler = StatelessHandler(self)
+
         # Transport handlers — only instantiate when interactive mode is on
         if self.interactive_server_mode:
             self.ws_handler = WebSocketHandler(self)
             self.http_handler = HTTPTransportHandler(self)
 
-            from pywire.runtime.webtransport_handler import WebTransportHandler
+            if self.stateless:
+                # WebTransport bypasses the Starlette router entirely, so
+                # unmounting routes is not enough — never create the handler
+                # in stateless mode. The __call__ gate falls through to
+                # Starlette on web_transport_handler is None.
+                self.web_transport_handler = None  # type: ignore[assignment]
+            else:
+                from pywire.runtime.webtransport_handler import WebTransportHandler
 
-            self.web_transport_handler = WebTransportHandler(self)
+                self.web_transport_handler = WebTransportHandler(self)
         else:
             self.ws_handler = None  # type: ignore[assignment]
             self.http_handler = None  # type: ignore[assignment]
@@ -354,7 +385,7 @@ class PyWire:
             ),
         ]
 
-        if self.interactive_server_mode:
+        if self.interactive_server_mode and not self.stateless:
             assert self.ws_handler is not None
             assert self.http_handler is not None
             # WebSocket transport
@@ -374,6 +405,16 @@ class PyWire:
                 Route(
                     "/_pywire/event",
                     self.http_handler.handle_event,
+                    methods=["POST"],
+                )
+            )
+
+        if self.stateless:
+            assert self.stateless_handler is not None
+            routes.append(
+                Route(
+                    "/_pywire/stateless",
+                    self.stateless_handler.handle_event,
                     methods=["POST"],
                 )
             )
@@ -439,6 +480,15 @@ class PyWire:
                     "/_pywire/file/{encoded:path}", self._handle_file, methods=["GET"]
                 )
             )
+            # Snapshot inspector: decode + pretty-print a client-held
+            # stateless snapshot for development.
+            routes.append(
+                Route(
+                    "/_pywire/debug/snapshot",
+                    self._handle_debug_snapshot,
+                    methods=["GET"],
+                )
+            )
             # Chrome DevTools automatic workspace folders (M-135+)
             routes.append(
                 Route(
@@ -480,6 +530,7 @@ class PyWire:
         self.app.state.debug = self.debug
         self.app.state.pywire = self
         self.app.state.interactive_server_mode = self.interactive_server_mode
+        self.app.state.stateless = self.stateless
 
         # Add Middleware to set request context for shell API
         from starlette.middleware.base import BaseHTTPMiddleware
@@ -685,9 +736,11 @@ class PyWire:
         """Handle file uploads."""
         logger.debug(f"Handling upload request for {request.url}")
         try:
-            # Check for upload token
+            # Check for upload token — fail closed on any token outside the
+            # ``secrets.token_urlsafe`` charset before it can reach a
+            # filesystem path (load/store/delete all join it into a filename).
             token = request.headers.get("X-Upload-Token")
-            if not token:
+            if not token or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
                 return JSONResponse(
                     {"error": "Invalid or expired upload token"}, status_code=403
                 )
@@ -769,6 +822,39 @@ class PyWire:
         except Exception as e:
             logger.error(f"Upload failed: {e}", exc_info=True)
             return JSONResponse({"error": str(e)}, status_code=500)
+
+    async def _handle_debug_snapshot(self, request: Request) -> Response:
+        """Decode and pretty-print a client-held snapshot (debug mode only).
+
+        The HMAC gate stays in front: a tampered blob is a 400, never a
+        decode. The signing secret is never echoed.
+        """
+        if not (self._is_dev_mode and self.debug):
+            # Same gate as _handle_source/_handle_file/_handle_devtools_json:
+            # no inspector outside dev mode, even with debug=True.
+            return Response("Not Found", status_code=404)
+        if not self._stateless_secret:
+            # Snapshots only exist in stateless mode.
+            return Response("Not Found", status_code=404)
+        blob = request.query_params.get("blob")
+        if not blob:
+            return Response("Missing blob", status_code=400)
+        from pywire.runtime.snapshot_codec import (
+            MAX_SNAPSHOT_LEN,
+            SnapshotError,
+            decode_snapshot,
+        )
+
+        if len(blob) > MAX_SNAPSHOT_LEN:
+            return Response("snapshot too large", status_code=413)
+
+        try:
+            snap = decode_snapshot(blob, secret=self._stateless_secret)
+        except SnapshotError:
+            return Response("invalid snapshot", status_code=400)
+        return Response(
+            json.dumps(snap, indent=2, default=repr), media_type="application/json"
+        )
 
     async def _handle_source(self, request: Request) -> Response:
         """Serve source code for debugging. Requires both debug=True AND _is_dev_mode=True."""
@@ -1472,6 +1558,39 @@ class PyWire:
         )
         return HTMLResponse(html_content, status_code=500)
 
+    def _instantiate_page(
+        self,
+        page_class: Any,
+        request: Request,
+        params: Dict[str, str],
+        variant_name: Optional[str],
+    ) -> Any:
+        """Build query/path/url context and instantiate a page class."""
+        query = dict(request.query_params)
+
+        path_info: Dict[str, bool] = {}
+        routes = getattr(page_class, "__routes__", {})
+        if routes:
+            for name in routes.keys():
+                path_info[name] = name == variant_name
+        elif hasattr(page_class, "__route__"):
+            path_info["main"] = True
+
+        from pywire.runtime.router import URLHelper
+
+        url_helper = None
+        if routes:
+            url_helper = URLHelper(cast(dict[str, str], routes))
+
+        return page_class(request, params, query, path=path_info, url=url_helper)
+
+    def _resolve_user_for_request(self, request: Request) -> Any:
+        """Resolve page.user from the request (middleware/session scope).
+
+        Identity is NEVER taken from a client-held snapshot.
+        """
+        return self.get_user(request)
+
     async def _handle_request(self, request: Request) -> Response:
         """Handle HTTP request.
 
@@ -1501,31 +1620,10 @@ class PyWire:
                 # Render 404/error page
                 # Note: We pass original request so URL is preserved?
                 # Yes, user checking request.url on 404 page might want to know what failed.
-
-                # Construct params/query
-                query = dict(request.query_params)
-
-                # Path info
-                path_info = {}
-                routes = getattr(page_class, "__routes__", {})
-                if routes:
-                    for name in routes.keys():
-                        path_info[name] = name == variant_name
-                elif hasattr(page_class, "__route__"):
-                    path_info["main"] = True
-
-                from pywire.runtime.router import URLHelper
-
-                url_helper = None
-                url_helper = None
-                routes = getattr(page_class, "__routes__", None)
-                if routes:
-                    url_helper = URLHelper(cast(dict[str, str], routes))
-
                 try:
                     page = cast(
                         ErrorBasePage,
-                        page_class(request, {}, query, path=path_info, url=url_helper),
+                        self._instantiate_page(page_class, request, {}, variant_name),
                     )
                     page.error_code = 404
                     page.error_message = f"The path '{path}' could not be found."
@@ -1543,34 +1641,12 @@ class PyWire:
             return HTMLResponse("404 Not Found", status_code=404)
 
         page_class, params, variant_name = match
-        # ... (params, query, path_info, url_helper construction)
-        # Build query params
-        query = dict(request.query_params)
-
-        # Build path info dict
-        path_info = {}
-        routes = getattr(page_class, "__routes__", {})
-        if routes:
-            for name in routes.keys():
-                path_info[name] = name == variant_name
-        elif hasattr(page_class, "__route__"):
-            path_info["main"] = True
-
-        # Build URL helper
-        from pywire.runtime.router import URLHelper
-
-        url_helper = None
-        routes = getattr(page_class, "__routes__", None)
-        if routes:
-            url_helper = URLHelper(cast(dict[str, str], routes))
-
-        # Instantiate page
-        page = page_class(request, params, query, path=path_info, url=url_helper)
+        page = self._instantiate_page(page_class, request, params, variant_name)
 
         # Populate page.user from scope so the auth guard, templates, and
         # @before_load hooks all see the same principal AuthMiddleware wrote.
         # Mirrors http_transport.py and websocket.py.
-        resolved_user = self.get_user(request)
+        resolved_user = self._resolve_user_for_request(request)
         if resolved_user is not None:
             page.user = resolved_user
 
@@ -1585,6 +1661,20 @@ class PyWire:
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
+            # Auth guard BEFORE any dispatch — a forged handler name must
+            # never reach user code on a protected page (mirrors
+            # BasePage.render()'s short-circuit). The redirect reaches the
+            # client with SPA-nav semantics, matching the WS/stateless
+            # transports' navigate message.
+            if getattr(page.__class__, "__auth_required__", False):
+                from pywire.auth.guard import run_auth_guard
+
+                denied = await run_auth_guard(page)
+                if denied is not None:
+                    location = denied.headers.get("location")
+                    if location:
+                        page._pending_navigation = location
+                    return JSONResponse({"type": "navigate", "path": location or "/"})
             # Handle event
             try:
                 event_data = await request.json()
@@ -1598,10 +1688,16 @@ class PyWire:
                 return JSONResponse({"error": str(e)}, status_code=500)
         elif (
             request.method == "POST"
-            and not self.interactive_server_mode
             and "X-PyWire-Event" not in request.headers
+            and (
+                not self.interactive_server_mode
+                or getattr(page, "__no_interactive__", False)
+            )
         ):
-            # Non-interactive mode: standard form POST → @submit handler
+            # Form POST → @submit handler. Non-interactive server mode routes
+            # every form POST here; in interactive mode only `!no_interactive`
+            # pages get here — the client skips wiring on them, so their forms
+            # submit natively (the no-JS floor).
             response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
             # Internal ASGI replay from WS handler — body-only, no client scripts
@@ -1609,6 +1705,36 @@ class PyWire:
         else:
             # Normal render
             response = await page.render()
+
+        # Stateless mode: embed the signed client-held snapshot in full-page
+        # renders. Locked wires are excluded by the codec; identity is never
+        # in the snapshot (re-resolved from the request on every POST).
+        if (
+            self.stateless
+            and not is_internal_relocate
+            and isinstance(response, Response)
+            and response.media_type == "text/html"
+        ):
+            from pywire.runtime.page import _find_tag_outside_raw_text
+            from pywire.runtime.snapshot_codec import encode_snapshot
+
+            body = cast(bytes, response.body).decode("utf-8")
+            blob = encode_snapshot(
+                page,
+                secret=self._stateless_secret,
+                warn_size=self.session_warn_size,
+            )
+            tag = f'<script id="_pywire_snapshot" type="text/plain">{blob}</script>'
+            idx = _find_tag_outside_raw_text(body, "</body>", from_end=True)
+            if idx >= 0:
+                body = body[:idx] + tag + body[idx:]
+            else:
+                body += tag
+            # Mutate in place — page.render() already applied pending cookies
+            # (Set-Cookie) and status to this response; rebuilding it would
+            # silently drop them.
+            response.body = body.encode("utf-8")
+            response.headers["content-length"] = str(len(response.body))
 
         # In non-interactive mode, persist session state after handling
         if not self.interactive_server_mode and session_id:
@@ -1650,7 +1776,10 @@ class PyWire:
                     body = parts[0] + injection_str + "</body>" + parts[1]
                 else:
                     body += injection_str
-                response = Response(body, media_type="text/html")
+                # Mutate in place — same reason as the snapshot embedding
+                # above: a rebuilt Response would drop cookies/status.
+                response.body = body.encode("utf-8")
+                response.headers["content-length"] = str(len(response.body))
 
         return response
 
@@ -1667,18 +1796,42 @@ class PyWire:
         response renders as a body fragment (init=False) so the client can
         morph it in — same swap path as SPA link nav. Without the header,
         a full HTML document is returned.
+
+        Handler name source: the ``X-PyWire-Handler`` header (JS path), or
+        the ``__pywire_handler`` hidden input codegen renders into @submit
+        forms on ``!no_interactive`` pages (no-JS path — a native browser
+        POST cannot set headers). The header wins when both are present;
+        the hidden field is never passed on as handler data.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
+        # Auth guard BEFORE any dispatch — a forged handler name must never
+        # reach user code on a protected page (mirrors BasePage.render()'s
+        # short-circuit and its _pending_navigation mirror).
+        if getattr(page.__class__, "__auth_required__", False):
+            from pywire.auth.guard import run_auth_guard
+
+            denied = await run_auth_guard(page)
+            if denied is not None:
+                location = denied.headers.get("location")
+                if location:
+                    page._pending_navigation = location
+                return denied
         try:
             form_data = await request.form()
-            event_data: Dict[str, Any] = {str(k): v for k, v in form_data.multi_items()}
+            event_data: Dict[str, Any] = {
+                str(k): v for k, v in form_data.multi_items() if k != "__pywire_handler"
+            }
 
-            handler_name: Any = request.headers.get("x-pywire-handler")
+            handler_name: Any = request.headers.get("x-pywire-handler") or (
+                form_data.get("__pywire_handler")
+            )
             if not handler_name or not isinstance(handler_name, str):
                 return PlainTextResponse(
-                    "PyWire: form POST missing X-PyWire-Handler header. Add "
+                    "PyWire: form POST missing handler. Add "
                     "`@submit={handler_name}` to your <form>; the PyWire "
-                    "client sends the header automatically.",
+                    "client sends the X-PyWire-Handler header automatically, "
+                    "and `!no_interactive` pages render a `__pywire_handler` "
+                    "hidden input for no-JS submits.",
                     status_code=400,
                 )
 
@@ -1701,6 +1854,29 @@ class PyWire:
                 if component is None:
                     return PlainTextResponse(
                         f"PyWire: component '{comp_key}' not found",
+                        status_code=400,
+                    )
+
+                # Enforce the component's compile-time allowlist exactly like
+                # the page-level branch below — a client must not be able to
+                # invoke arbitrary component methods (e.g. "render") via the
+                # X-PyWire-Handler header.
+                comp_allowed = component.__class__.__event_handlers__
+                if comp_allowed is not None and remainder not in comp_allowed:
+                    return PlainTextResponse(
+                        f"PyWire: handler '{remainder}' is not a registered "
+                        "event handler",
+                        status_code=400,
+                    )
+                # Mirror BasePage._dispatch_handler: non-framework ``_``
+                # names are never invokable, even on permissive hand-rolled
+                # components (allowlist None).
+                is_framework_handler = remainder.startswith(
+                    "_handle_bind_"
+                ) or remainder.startswith("_handler_")
+                if not is_framework_handler and remainder.startswith("_"):
+                    return PlainTextResponse(
+                        f"PyWire: handler '{remainder}' not allowed",
                         status_code=400,
                     )
 
@@ -1727,6 +1903,29 @@ class PyWire:
                 if handler is None or not callable(handler):
                     return PlainTextResponse(
                         f"PyWire: handler '{handler_name}' not found on page",
+                        status_code=400,
+                    )
+                # Enforce the compile-time handler allowlist exactly like
+                # BasePage._dispatch_handler — a client must not be able to
+                # invoke arbitrary page methods (e.g. "render") via the
+                # X-PyWire-Handler header. Hand-rolled pages (allowlist
+                # None) keep the permissive behavior.
+                allowed = page.__class__.__event_handlers__
+                if allowed is not None and handler_name not in allowed:
+                    return PlainTextResponse(
+                        f"PyWire: handler '{handler_name}' is not a registered "
+                        "event handler",
+                        status_code=400,
+                    )
+                # Mirror BasePage._dispatch_handler: non-framework ``_``
+                # names are never invokable, even on permissive hand-rolled
+                # pages (allowlist None).
+                is_framework_handler = handler_name.startswith(
+                    "_handle_bind_"
+                ) or handler_name.startswith("_handler_")
+                if not is_framework_handler and handler_name.startswith("_"):
+                    return PlainTextResponse(
+                        f"PyWire: handler '{handler_name}' not allowed",
                         status_code=400,
                     )
                 if inspect.iscoroutinefunction(handler):

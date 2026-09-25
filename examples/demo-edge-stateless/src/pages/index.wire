@@ -1,0 +1,69 @@
+---
+import asyncio
+
+count = wire(0)
+likes = wire(0)
+liked = wire(False)
+# Comprehension var is `k`, not `i`: leaked vars become page attributes and
+# would collide with toggle()'s argument name in generated dispatch code.
+items = wire([{"id": str(k), "name": "item-" + str(k), "done": False} for k in range(300)])
+
+def increment():
+    count.value += 1
+
+async def slow_increment():
+    await asyncio.sleep(0.5)
+    count.value += 1
+
+def toggle(i):
+    items.value[i]["done"] = not items.value[i]["done"]
+
+async def like():
+    await asyncio.sleep(0.5)
+    likes.value += 1
+    # The server accepts every OTHER like. On a rejected one the predicted
+    # `liked` class contradicts the server render and auto-reverts in the
+    # browser — no error handling needed anywhere.
+    liked.value = likes.value % 2 == 1
+---
+<div>
+    <h1>Edge Stateless Mode</h1>
+    <p>Every event below is one ~300&#8239;B msgpack <code>POST /_pywire/stateless</code>. No WebSocket.</p>
+
+    <section id="counter">
+        <h2>1 &middot; Optimistic counter</h2>
+        <p>Count: {count}</p>
+        <button id="inc" class="btn" @click.optimistic.optimistic-class-dim={increment()}>Increment</button>
+    </section>
+
+    <section id="slow">
+        <h2>2 &middot; Slow action (500&#8239;ms) &mdash; spam-click it</h2>
+        <p>The button dims instantly (predicted), stays dimmed ~500&#8239;ms while
+        <code>await asyncio.sleep(0.5)</code> runs, then reconciles. Spam-clicking
+        sends ONE POST total &mdash; the double-submit guard drops the rest.</p>
+        <button id="slow-btn" class="btn" @click.optimistic.optimistic-class-dim={slow_increment()}>Slow increment</button>
+    </section>
+
+    <section id="list">
+        <h2>3 &middot; Keyed list &mdash; 300 rows</h2>
+        <p>Each row is its own keyed region (<code>key=item["id"]</code>). Toggling
+        one row ships ONLY that row's HTML.</p>
+        <ul id="rows">
+        {$for idx, item in enumerate(items.value), key=item["id"]}
+            <li class={'done' if item['done'] else ''}><span class="name">{item["name"]}</span> <button class={'tgl done' if item['done'] else 'tgl'} @click.optimistic.optimistic-class-done={toggle(idx)}>toggle</button></li>
+        {/for}
+        </ul>
+    </section>
+
+    <section id="likes">
+        <h2>4 &middot; Wrong prediction (auto-revert)</h2>
+        <p>The handler takes 500&#8202;ms and the server refuses every second like.
+        Each click predicts <code>liked</code> instantly &mdash; on a refused click you
+        can watch it hold for the round-trip, then snap back when the server's
+        render disagrees.</p>
+        <p>Server-accepted likes: {likes}</p>
+        <button id="like" class={'liked' if liked else ''} @click.optimistic-class-liked={like()}>Like</button>
+    </section>
+
+    <p><a href="/about" id="link-about">About this demo</a> &middot; <a href="/poll" id="link-poll">Background jobs (poll) &rarr;</a></p>
+</div>

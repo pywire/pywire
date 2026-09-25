@@ -79,9 +79,16 @@ class TemplateCodegen:
         self.interpolation_parser = BraceInterpolationParser()
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
+        # Set per page by the generator: `!no_interactive` pages get the no-JS
+        # form floor (a `__pywire_handler` hidden input inside @submit forms).
+        self.no_interactive = False
         self._region_counter = 0
         self._region_id_prefix = ""
         self.region_renderers: Dict[str, str] = {}
+        # Site id -> single-item renderer method name for keyed ``{$for}``
+        # loops. ``render_update`` dispatches dirty ``{site}#{key}`` region
+        # ids through this map.
+        self.keyed_region_renderers: Dict[str, str] = {}
         # Region IDs whose codegen happened under `{$dynamic}`. These regions
         # are force-marked dirty in `render_update` so the bypass kwarg on
         # inner `_invoke_render`/`_invoke_component` calls actually executes.
@@ -159,6 +166,7 @@ class TemplateCodegen:
         self.has_file_inputs = False
         self._region_counter = 0
         self.region_renderers = {}
+        self.keyed_region_renderers = {}
         self.dynamic_regions = set()
         self._region_codegen_stack = []
         self._wire_vars = set()
@@ -717,6 +725,498 @@ class TemplateCodegen:
         self._region_counter += 1
         suffix = f"r{self._region_counter}"
         return f"{self._region_id_prefix}{suffix}" if self._region_id_prefix else suffix
+
+    # ---------------- Keyed {$for} item regions ----------------
+
+    def _keyed_derivation_strategy(
+        self, iterable_str: str, key_str: str, loop_vars_str: str
+    ) -> Tuple[str, Optional[str]]:
+        """Pick how ``_pw_item_<site>`` re-derives loop vars from a key.
+
+        Returns ``("index", src)`` for ``enumerate(SRC)`` keyed by the index
+        var (re-derive via ``SRC[int(key)]``), ``("dict", src)`` for
+        ``SRC.items()`` keyed by the key var (re-derive via ``SRC[key]``),
+        else ``("scan", None)`` (linear scan matching ``str(key_expr)``).
+        """
+        try:
+            it = ast.parse(iterable_str, mode="eval").body
+            tgt = ast.parse(loop_vars_str, mode="eval").body
+        except SyntaxError:
+            return ("scan", None)
+        names: Optional[List[str]] = None
+        if isinstance(tgt, ast.Tuple) and all(
+            isinstance(e, ast.Name) for e in tgt.elts
+        ):
+            names = [cast(ast.Name, e).id for e in tgt.elts]
+        two_plain_vars = names is not None and len(names) == 2
+        keyed_by_first_var = two_plain_vars and key_str == (names or [""])[0]
+        if (
+            keyed_by_first_var
+            and isinstance(it, ast.Call)
+            and isinstance(it.func, ast.Name)
+            and it.func.id == "enumerate"
+            and len(it.args) == 1
+            and not it.keywords
+        ):
+            return ("index", ast.unparse(it.args[0]))
+        if (
+            keyed_by_first_var
+            and isinstance(it, ast.Call)
+            and isinstance(it.func, ast.Attribute)
+            and it.func.attr == "items"
+            and not it.args
+            and not it.keywords
+        ):
+            return ("dict", ast.unparse(it.func.value))
+        return ("scan", None)
+
+    def _keyed_derivation_stmts(
+        self,
+        site_id: str,
+        for_attr: ForAttribute,
+        new_locals: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        wire_vars: Set[str],
+        node: TemplateNode,
+    ) -> List[ast.stmt]:
+        """Statements that bind the loop vars for the item matching the
+        ``_pw_key`` argument, evaluated with the render context SUSPENDED
+        so re-derivation reads don't subscribe the item region to the
+        top-level container (that would re-dirty every sibling region on
+        any item write)."""
+        loop_vars_str = for_attr.loop_vars.strip()
+        key_str = (for_attr.key or "").strip()
+        iterable_str = for_attr.iterable.strip()
+        strategy, src_str = self._keyed_derivation_strategy(
+            iterable_str, key_str, loop_vars_str
+        )
+        not_found = (
+            f'raise ValueError("pywire: keyed $for region {site_id}: '
+            'no item with key \'" + str(_pw_key) + "\'")\n'
+        )
+        if strategy == "index":
+            idx_v, item_v = [v.strip() for v in loop_vars_str.split(",")]
+            tmpl = (
+                "_pw_tok0 = suspend_render_context()\n"
+                "try:\n"
+                f"    _pw_src = {src_str}\n"
+                f"    {idx_v} = int(_pw_key)\n"
+                f"    {item_v} = _pw_src[{idx_v}]\n"
+                "finally:\n"
+                "    reset_render_context(_pw_tok0)\n"
+            )
+        elif strategy == "dict":
+            k_v, v_v = [v.strip() for v in loop_vars_str.split(",")]
+            tmpl = (
+                "_pw_tok0 = suspend_render_context()\n"
+                "try:\n"
+                f"    _pw_src = {src_str}\n"
+                "    if _pw_key in _pw_src:\n"
+                f"        {k_v} = _pw_key\n"
+                f"        {v_v} = _pw_src[_pw_key]\n"
+                "    else:\n"
+                "        _pw_found = False\n"
+                f"        for {k_v}, {v_v} in _pw_src.items():\n"
+                f"            if str({k_v}) == _pw_key:\n"
+                "                _pw_found = True\n"
+                "                break\n"
+                "        if not _pw_found:\n"
+                f"            {not_found}"
+                "finally:\n"
+                "    reset_render_context(_pw_tok0)\n"
+            )
+        else:
+            tmpl = (
+                "_pw_tok0 = suspend_render_context()\n"
+                "try:\n"
+                "    _pw_found = False\n"
+                f"    async for {loop_vars_str} in ensure_async_iterator({iterable_str}):\n"
+                f"        if str({key_str}) == _pw_key:\n"
+                "            _pw_found = True\n"
+                "            break\n"
+                "    if not _pw_found:\n"
+                f"        {not_found}"
+                "finally:\n"
+                "    reset_render_context(_pw_tok0)\n"
+            )
+        derive_locals = set(new_locals) | {
+            "_pw_key",
+            "_pw_tok0",
+            "_pw_found",
+            "_pw_src",
+            "suspend_render_context",
+            "reset_render_context",
+            "ensure_async_iterator",
+        }
+        tree = self._transform_expr(
+            tmpl,
+            derive_locals,
+            known_globals,
+            known_imports,
+            line_offset=node.line,
+            col_offset=node.column,
+            mode="exec",
+            wire_vars=wire_vars,
+        )
+        assert isinstance(tree, ast.Module)
+        return tree.body
+
+    def _keyed_wrapper_str(self, site_id: str, key_name: ast.expr) -> ast.JoinedStr:
+        """f'<div data-pw-region="{site}#{escape_html(key)}" style="display:
+        contents;">' — the key is HTML-escaped so a hostile key cannot break
+        out of the attribute. HTML attribute parsing round-trips the escaped
+        value back to the raw ``site#key`` id, which is what the client sends
+        back and what server-side region matching uses."""
+        return ast.JoinedStr(
+            values=[
+                ast.Constant(value=f'<div data-pw-region="{site_id}#'),
+                ast.FormattedValue(
+                    value=ast.Call(
+                        func=ast.Name(id="escape_html", ctx=ast.Load()),
+                        args=[key_name],
+                        keywords=[],
+                    ),
+                    conversion=-1,
+                ),
+                ast.Constant(value='" style="display: contents;">'),
+            ]
+        )
+
+    def _wrap_keyed_iterations(
+        self,
+        item_body: List[ast.stmt],
+        for_attr: ForAttribute,
+        site_id: str,
+        seen_var: str,
+        new_locals: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        wire_vars: Set[str],
+        node: TemplateNode,
+        parts_var: str,
+    ) -> List[ast.stmt]:
+        """Per-iteration statements for a keyed ``{$for}``: compute the
+        region key untracked, guard duplicates, emit the wrapper div and
+        render the body under the ``{site}#{key}`` render context."""
+        k_n = f"_pw_k_{site_id}"
+        rid_n = f"_pw_rid_{site_id}"
+        tok_n = f"_pw_tok_{site_id}"
+        tok0_n = f"_pw_tok0_{site_id}"
+
+        def nm(ident: str, store: bool = False) -> ast.Name:
+            return ast.Name(id=ident, ctx=ast.Store() if store else ast.Load())
+
+        def call(ident: str, *args: ast.expr) -> ast.Call:
+            return ast.Call(func=nm(ident), args=list(args), keywords=[])
+
+        key_expr = cast(
+            ast.expr,
+            self._transform_expr(
+                for_attr.key or "",
+                set(new_locals),
+                known_globals,
+                known_imports,
+                line_offset=node.line,
+                col_offset=node.column,
+                cached=False,
+                wire_vars=wire_vars,
+            ),
+        )
+
+        parts_append = ast.Attribute(value=nm(parts_var), attr="append", ctx=ast.Load())
+        stmts: List[ast.stmt] = [
+            # _pw_tok0 = suspend_render_context()
+            ast.Assign(
+                targets=[nm(tok0_n, True)], value=call("suspend_render_context")
+            ),
+            # try: _pw_k = str(<key expr>) finally: reset_render_context(_pw_tok0)
+            ast.Try(
+                body=[ast.Assign(targets=[nm(k_n, True)], value=call("str", key_expr))],
+                handlers=[],
+                orelse=[],
+                finalbody=[ast.Expr(value=call("reset_render_context", nm(tok0_n)))],
+            ),
+            # if any(_pw_ch in '"\\' or _pw_ch.isspace() or ord(_pw_ch) < 32
+            #        for _pw_ch in _pw_k): raise ValueError(...)
+            # Escaping keeps the attribute safe, but quotes/backslashes/
+            # whitespace-control chars still break the client's
+            # querySelector('[data-pw-region="<id>"]') — refuse them.
+            ast.If(
+                test=ast.Call(
+                    func=ast.Name(id="any", ctx=ast.Load()),
+                    args=[
+                        ast.GeneratorExp(
+                            elt=ast.BoolOp(
+                                op=ast.Or(),
+                                values=[
+                                    ast.Compare(
+                                        left=nm("_pw_ch"),
+                                        ops=[ast.In()],
+                                        comparators=[ast.Constant(value='"\\')],
+                                    ),
+                                    ast.Call(
+                                        func=ast.Attribute(
+                                            value=nm("_pw_ch"),
+                                            attr="isspace",
+                                            ctx=ast.Load(),
+                                        ),
+                                        args=[],
+                                        keywords=[],
+                                    ),
+                                    ast.Compare(
+                                        left=ast.Call(
+                                            func=ast.Name(id="ord", ctx=ast.Load()),
+                                            args=[nm("_pw_ch")],
+                                            keywords=[],
+                                        ),
+                                        ops=[ast.Lt()],
+                                        comparators=[ast.Constant(value=32)],
+                                    ),
+                                ],
+                            ),
+                            generators=[
+                                ast.comprehension(
+                                    target=nm("_pw_ch", True),
+                                    iter=nm(k_n),
+                                    ifs=[],
+                                    is_async=0,
+                                )
+                            ],
+                        )
+                    ],
+                    keywords=[],
+                ),
+                body=[
+                    ast.Raise(
+                        exc=call(
+                            "ValueError",
+                            ast.JoinedStr(
+                                values=[
+                                    ast.Constant(value="pywire: unsafe key '"),
+                                    ast.FormattedValue(value=nm(k_n), conversion=-1),
+                                    ast.Constant(
+                                        value=f"' in {{$for}} at line {node.line}: "
+                                        "quotes, backslashes and whitespace/control "
+                                        "characters are not allowed in key="
+                                    ),
+                                ]
+                            ),
+                        ),
+                        cause=None,
+                    )
+                ],
+                orelse=[],
+            ),
+            # _pw_rid = "<site>#" + _pw_k
+            ast.Assign(
+                targets=[nm(rid_n, True)],
+                value=ast.BinOp(
+                    left=ast.Constant(value=f"{site_id}#"),
+                    op=ast.Add(),
+                    right=nm(k_n),
+                ),
+            ),
+            # if _pw_rid in _pw_seen: raise ValueError(...)
+            ast.If(
+                test=ast.Compare(
+                    left=nm(rid_n), ops=[ast.In()], comparators=[nm(seen_var)]
+                ),
+                body=[
+                    ast.Raise(
+                        exc=call(
+                            "ValueError",
+                            ast.JoinedStr(
+                                values=[
+                                    ast.Constant(value="pywire: duplicate key '"),
+                                    ast.FormattedValue(value=nm(k_n), conversion=-1),
+                                    ast.Constant(
+                                        value=f"' in {{$for}} at line {node.line}"
+                                    ),
+                                ]
+                            ),
+                        ),
+                        cause=None,
+                    )
+                ],
+                orelse=[],
+            ),
+            # _pw_seen.add(_pw_rid)
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(value=nm(seen_var), attr="add", ctx=ast.Load()),
+                    args=[nm(rid_n)],
+                    keywords=[],
+                )
+            ),
+            # parts.append(f'<div data-pw-region="{site}#{key}" ...>')
+            ast.Expr(
+                value=ast.Call(
+                    func=parts_append,
+                    args=[self._keyed_wrapper_str(site_id, nm(k_n))],
+                    keywords=[],
+                )
+            ),
+            # self._begin_region_render(_pw_rid)
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("self"), attr="_begin_region_render", ctx=ast.Load()
+                    ),
+                    args=[nm(rid_n)],
+                    keywords=[],
+                )
+            ),
+            # _pw_tok = set_render_context(self, _pw_rid)
+            ast.Assign(
+                targets=[nm(tok_n, True)],
+                value=call("set_render_context", nm("self"), nm(rid_n)),
+            ),
+            # try: <body> finally: reset_render_context(_pw_tok)
+            ast.Try(
+                body=item_body if item_body else [ast.Pass()],
+                handlers=[],
+                orelse=[],
+                finalbody=[ast.Expr(value=call("reset_render_context", nm(tok_n)))],
+            ),
+            # parts.append('</div>')
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm(parts_var), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Constant(value="</div>")],
+                    keywords=[],
+                )
+            ),
+        ]
+        for s in stmts:
+            self._set_line(s, node)
+        return stmts
+
+    def _generate_keyed_item_renderer(
+        self,
+        site_id: str,
+        for_attr: ForAttribute,
+        item_body: List[ast.stmt],
+        new_locals: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+        wire_vars: Set[str],
+        node: TemplateNode,
+    ) -> ast.AsyncFunctionDef:
+        """``async def _pw_item_<site>(self, _pw_key) -> str`` — renders ONE
+        iteration under the ``{site}#{key}`` render context, re-deriving the
+        loop vars from the loop source by key."""
+        method_name = f"_pw_item_{site_id}"
+        rid_n = f"_pw_rid_{site_id}"
+        tok_n = f"_pw_tok_{site_id}"
+
+        def nm(ident: str, store: bool = False) -> ast.Name:
+            return ast.Name(id=ident, ctx=ast.Store() if store else ast.Load())
+
+        def call(ident: str, *args: ast.expr) -> ast.Call:
+            return ast.Call(func=nm(ident), args=list(args), keywords=[])
+
+        body: List[ast.stmt] = [
+            ast.Assign(
+                targets=[nm("parts", True)],
+                value=ast.List(elts=[], ctx=ast.Load()),
+            ),
+            ast.Import(names=[ast.alias(name="json", asname=None)]),
+            ast.ImportFrom(
+                module="pywire.runtime.helpers",
+                names=[ast.alias(name="ensure_async_iterator", asname=None)],
+                level=0,
+            ),
+            ast.ImportFrom(
+                module="pywire.runtime.escape",
+                names=[ast.alias(name="escape_html", asname=None)],
+                level=0,
+            ),
+        ]
+        body += self._keyed_derivation_stmts(
+            site_id,
+            for_attr,
+            new_locals,
+            known_globals,
+            known_imports,
+            wire_vars,
+            node,
+        )
+        tail: List[ast.stmt] = [
+            ast.Assign(
+                targets=[nm(rid_n, True)],
+                value=ast.BinOp(
+                    left=ast.Constant(value=f"{site_id}#"),
+                    op=ast.Add(),
+                    right=nm("_pw_key"),
+                ),
+            ),
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("self"), attr="_begin_region_render", ctx=ast.Load()
+                    ),
+                    args=[nm(rid_n)],
+                    keywords=[],
+                )
+            ),
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("parts"), attr="append", ctx=ast.Load()
+                    ),
+                    args=[self._keyed_wrapper_str(site_id, nm("_pw_key"))],
+                    keywords=[],
+                )
+            ),
+            ast.Assign(
+                targets=[nm(tok_n, True)],
+                value=call("set_render_context", nm("self"), nm(rid_n)),
+            ),
+            ast.Try(
+                body=item_body if item_body else [ast.Pass()],
+                handlers=[],
+                orelse=[],
+                finalbody=[ast.Expr(value=call("reset_render_context", nm(tok_n)))],
+            ),
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=nm("parts"), attr="append", ctx=ast.Load()
+                    ),
+                    args=[ast.Constant(value="</div>")],
+                    keywords=[],
+                )
+            ),
+            ast.Return(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Constant(value=""), attr="join", ctx=ast.Load()
+                    ),
+                    args=[nm("parts")],
+                    keywords=[],
+                )
+            ),
+        ]
+        for s in tail:
+            self._set_line(s, node)
+        body += tail
+        return ast.AsyncFunctionDef(
+            name=method_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self"), ast.arg(arg="_pw_key")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=body,
+            decorator_list=[],
+            returns=ast.Name(id="str", ctx=ast.Load()),
+        )
 
     def _node_is_dynamic(
         self, node: TemplateNode, known_globals: Optional[Set[str]] = None
@@ -1455,6 +1955,57 @@ class TemplateCodegen:
             node.end_col_offset = template_node.column + 1  # type: ignore
         return node
 
+    def _emit_event_arg_attrs(
+        self,
+        attr: EventAttribute,
+        body: List[ast.stmt],
+        node: TemplateNode,
+        local_vars: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+    ) -> None:
+        """Emit ``data-arg-{i}`` attrs for an event handler's lifted args.
+
+        Shared by the single-handler event branch and the ``@poll`` branch so
+        ``@poll={tick(idx)}`` inside a ``$for`` lifts ``idx`` exactly like
+        ``@click={tick(idx)}`` does (the client lifts ``data-arg-*`` into the
+        dispatched args for both paths).
+        """
+        for i, arg_expr in enumerate(attr.args):
+            val = self._wrap_unwrap_wire(
+                cast(
+                    ast.expr,
+                    self._transform_expr(
+                        arg_expr,
+                        local_vars,
+                        known_globals,
+                        known_imports,
+                        line_offset=node.line,
+                        col_offset=node.column,
+                    ),
+                )
+            )
+            body.append(
+                ast.Assign(
+                    targets=[
+                        ast.Subscript(
+                            value=ast.Name(id="attrs", ctx=ast.Load()),
+                            slice=ast.Constant(value=f"data-arg-{i}"),
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="json", ctx=ast.Load()),
+                            attr="dumps",
+                            ctx=ast.Load(),
+                        ),
+                        args=[val],
+                        keywords=[],
+                    ),
+                )
+            )
+
     # ---------------- Render region (snippet) codegen ----------------
 
     def _snippet_method_name(self, name: str, line: int, col: int) -> str:
@@ -1946,6 +2497,35 @@ class TemplateCodegen:
                     wire_vars=wire_vars,
                 )
 
+            # Keyed loops ({$for ..., key=<expr>}) wrap every iteration in
+            # a <div data-pw-region="{site}#{key}"> rendered under the
+            # per-item render context. Keyless loops are untouched.
+            keyed_site_id: Optional[str] = None
+            keyed_item_body = for_body
+            if for_attr.key:
+                keyed_site_id = self._next_region_id()
+                seen_var = f"_pw_seen_{keyed_site_id}"
+                seen_init = ast.Assign(
+                    targets=[ast.Name(id=seen_var, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[]
+                    ),
+                )
+                self._set_line(seen_init, node)
+                body.append(seen_init)
+                for_body = self._wrap_keyed_iterations(
+                    for_body,
+                    for_attr,
+                    keyed_site_id,
+                    seen_var,
+                    new_locals,
+                    known_globals,
+                    known_imports,
+                    wire_vars,
+                    node,
+                    parts_var,
+                )
+
             # Wrap iterable in ensure_async_iterator
             wrapped_iterable = ast.Call(
                 func=ast.Name(id="ensure_async_iterator", ctx=ast.Load()),
@@ -1999,6 +2579,25 @@ class TemplateCodegen:
                 # Tag with line number
                 self._set_line(for_stmt, node)
                 body.append(for_stmt)
+
+            # Single-item renderer for partial updates — only when the
+            # loop source/key can be re-derived from `self` alone (no
+            # enclosing locals). Otherwise the wrappers still render, but
+            # dirty ``{site}#{key}`` ids fall back to a full re-render.
+            if keyed_site_id is not None and not local_vars:
+                self.keyed_region_renderers[keyed_site_id] = f"_pw_item_{keyed_site_id}"
+                self.auxiliary_functions.append(
+                    self._generate_keyed_item_renderer(
+                        keyed_site_id,
+                        for_attr,
+                        keyed_item_body,
+                        new_locals,
+                        known_globals,
+                        known_imports,
+                        wire_vars,
+                        node,
+                    )
+                )
             return
 
         # 2. Handle $if
@@ -2637,6 +3236,28 @@ class TemplateCodegen:
                             ],
                             keywords=[],
                         )
+                    ),
+                    # No push channel (stateless one-shot responses): the
+                    # verdict must land in THIS render — await the task
+                    # inline instead of letting push_state() deliver it.
+                    ast.If(
+                        test=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr="_auth_inline",
+                                ctx=ast.Load(),
+                            ),
+                            args=[],
+                            keywords=[],
+                        ),
+                        body=[
+                            ast.Expr(
+                                value=ast.Await(
+                                    value=ast.Name(id="_auth_task", ctx=ast.Load())
+                                )
+                            )
+                        ],
+                        orelse=[],
                     ),
                 ],
                 orelse=[],
@@ -4178,6 +4799,68 @@ class TemplateCodegen:
                     event_attrs_by_type[attr.event_type].append(attr)
 
             for event_type, attrs_list in event_attrs_by_type.items():
+                if event_type == "poll":
+                    # @poll is a kernel timer primitive, not a DOM event: emit
+                    # data-pw-poll (+ data-pw-poll-every for a non-default
+                    # interval) instead of data-on-poll, so the client schedules
+                    # an interval dispatch and never addEventListener's 'poll'.
+                    # The handler name is allowlisted by _process_handlers like
+                    # any event handler, so stateless POST and WS both accept it.
+                    attr = attrs_list[0]
+                    handler_value = ast.BinOp(
+                        left=ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="_handler_prefix",
+                            ctx=ast.Load(),
+                        ),
+                        op=ast.Add(),
+                        right=ast.Constant(value=attr.handler_name),
+                    )
+                    body.append(
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="attrs", ctx=ast.Load()),
+                                    slice=ast.Constant(value="data-pw-poll"),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=handler_value,
+                        )
+                    )
+                    every_ms = None
+                    for m in attr.modifiers:
+                        if m.startswith("every-"):
+                            # ponytail: the parser floor enforces every-<int>
+                            # (>=100ms); T24 bumps the floor so a stale parser
+                            # can't feed a non-int here. Guard int() so a
+                            # malformed value degrades to the default interval.
+                            try:
+                                every_ms = int(m[len("every-") :])
+                            except ValueError:
+                                every_ms = None
+                            break
+                    if every_ms is not None:
+                        body.append(
+                            ast.Assign(
+                                targets=[
+                                    ast.Subscript(
+                                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                                        slice=ast.Constant(value="data-pw-poll-every"),
+                                        ctx=ast.Store(),
+                                    )
+                                ],
+                                value=ast.Constant(value=str(every_ms)),
+                            )
+                        )
+
+                    # Lift args exactly like the single-handler event branch so
+                    # ``@poll={tick(idx)}`` in a ``$for`` delivers idx each tick.
+                    self._emit_event_arg_attrs(
+                        attr, body, node, local_vars, known_globals, known_imports
+                    )
+                    continue
+
                 if len(attrs_list) == 1:
                     # Single handler
                     attr = attrs_list[0]
@@ -4240,42 +4923,10 @@ class TemplateCodegen:
                             )
                         )
 
-                    # Add args
-                    for i, arg_expr in enumerate(attr.args):
-                        val = self._wrap_unwrap_wire(
-                            cast(
-                                ast.expr,
-                                self._transform_expr(
-                                    arg_expr,
-                                    local_vars,
-                                    known_globals,
-                                    known_imports,
-                                    line_offset=node.line,
-                                    col_offset=node.column,
-                                ),
-                            )
-                        )
-                        dump_call = ast.Call(
-                            func=ast.Attribute(
-                                value=ast.Name(id="json", ctx=ast.Load()),
-                                attr="dumps",
-                                ctx=ast.Load(),
-                            ),
-                            args=[val],
-                            keywords=[],
-                        )
-                        body.append(
-                            ast.Assign(
-                                targets=[
-                                    ast.Subscript(
-                                        value=ast.Name(id="attrs", ctx=ast.Load()),
-                                        slice=ast.Constant(value=f"data-arg-{i}"),
-                                        ctx=ast.Store(),
-                                    )
-                                ],
-                                value=dump_call,
-                            )
-                        )
+                    # Add args (lifted to data-arg-{i} on the client)
+                    self._emit_event_arg_attrs(
+                        attr, body, node, local_vars, known_globals, known_imports
+                    )
 
                     # Register handler on the ref for server-side dispatch interception
                     if ref_expr is not None:
@@ -4772,6 +5423,14 @@ class TemplateCodegen:
                 )
                 body.append(check)
 
+            # Upload kernel: a plain `<input type="file">` marks the page as
+            # needing an upload token (`__has_uploads__`) — otherwise the
+            # client can never authenticate its POST to `/_pywire/upload`.
+            if node.tag.lower() == "input":
+                _input_type = node.attributes.get("type")
+                if isinstance(_input_type, str) and _input_type.lower() == "file":
+                    self.has_file_inputs = True
+
             # Generate opening tag
             # header_parts = [] ...
             # parts.append(f"<{tag}{''.join(header_parts)}>")
@@ -4877,6 +5536,54 @@ class TemplateCodegen:
                     )
                 )
             )
+
+            # No-JS floor: `!no_interactive` pages skip client wiring, so the
+            # browser's native form POST is the only submit path. Carry the
+            # @submit handler name in a hidden input — `_handle_form_post`
+            # falls back to it when the X-PyWire-Handler header is absent.
+            if node.tag.lower() == "form" and self.no_interactive:
+                for _evt in node.special_attributes:
+                    if isinstance(_evt, EventAttribute) and _evt.event_type == "submit":
+                        _handler_expr = ast.BinOp(
+                            left=ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr="_handler_prefix",
+                                ctx=ast.Load(),
+                            ),
+                            op=ast.Add(),
+                            right=ast.Constant(value=_evt.handler_name),
+                        )
+                        _hidden = ast.BinOp(
+                            left=ast.BinOp(
+                                left=ast.Constant(
+                                    value=(
+                                        '<input type="hidden" '
+                                        'name="__pywire_handler" value="'
+                                    )
+                                ),
+                                op=ast.Add(),
+                                right=ast.Call(
+                                    func=ast.Name(id="escape_html", ctx=ast.Load()),
+                                    args=[_handler_expr],
+                                    keywords=[],
+                                ),
+                            ),
+                            op=ast.Add(),
+                            right=ast.Constant(value='">'),
+                        )
+                        body.append(
+                            ast.Expr(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                        attr="append",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[_hidden],
+                                    keywords=[],
+                                )
+                            )
+                        )
 
             prev_child = None
             for child in node.children:

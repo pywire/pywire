@@ -2,6 +2,7 @@ import { Transport, ServerMessage } from './transports'
 import { WebTransportTransport } from './transports/webtransport'
 import { WebSocketTransport } from './transports/websocket'
 import { HTTPTransport } from './transports/http'
+import { StatelessTransport } from './transports/stateless'
 import { logger } from './logger'
 
 export interface TransportConfig {
@@ -36,9 +37,18 @@ export class TransportManager {
   private statusHandlers: ((connected: boolean) => void)[] = []
   private giveUpHandlers: (() => void)[] = []
   private maxReconnectAttempts: number | null = null
+  private stateless = false
 
   constructor(config: Partial<TransportConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
+  }
+
+  /**
+   * Pin selection to StatelessTransport (client-held state mode) — the
+   * WS/WebTransport/HTTP endpoints are not mounted on stateless servers.
+   */
+  useStatelessTransport(): void {
+    this.stateless = true
   }
 
   /**
@@ -87,6 +97,12 @@ export class TransportManager {
    * Get transport classes in priority order based on config and browser support.
    */
   private getTransportPriority(): (new (...args: unknown[]) => Transport)[] {
+    // Stateless mode branches FIRST — before the WS/WebTransport/HTTP
+    // fallback order, none of which exist on a stateless server.
+    if (this.stateless) {
+      return [StatelessTransport as unknown as new (...args: unknown[]) => Transport]
+    }
+
     const transports: (new (...args: unknown[]) => Transport)[] = []
 
     // WebTransport - only if supported and enabled

@@ -47,8 +47,15 @@ app = PyWire(
     # Return bare 404 for unmatched paths when mounted in a host framework
     # (default: False). See the Framework Integration guide.
     fallthrough_404=False,
+
+    # Use signed client-carried snapshots instead of server-held sessions.
+    # See the Stateless mode guide before deploying.
+    stateless=True,
+    secret_key="a-strong-secret-from-your-secret-manager",
 )
 ```
+
+For stateless FaaS and edge deployments, see the [Stateless mode guide](/guides/stateless-mode/) before choosing `stateless=True` and `secret_key`.
 
 ### Middleware
 

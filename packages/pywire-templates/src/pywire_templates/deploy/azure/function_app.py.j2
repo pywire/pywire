@@ -1,0 +1,18 @@
+"""Azure Functions HTTP entry point for a stateless PyWire app."""
+import asyncio
+from urllib.parse import urlparse
+import azure.functions as func
+from pywire.adapters.oneshot import OneShotASGIAdapter
+from {{ app_module }} import {{ app_attr }} as _pywire_app
+import _routes  # noqa: F401
+
+function_app = func.FunctionApp()
+_adapter = OneShotASGIAdapter(_pywire_app)
+
+@function_app.route(route="{*path}", methods=["GET", "POST"], auth_level=func.HttpAuthLevel.ANONYMOUS)
+def pywire(request: func.HttpRequest) -> func.HttpResponse:
+    parsed = urlparse(request.url)
+    status, headers, body = asyncio.run(_adapter.fetch(
+        request.method, parsed.path, dict(request.headers), request.get_body(), parsed.query
+    ))
+    return func.HttpResponse(body, status_code=status, headers=dict(headers), mimetype=dict(headers).get("content-type"))

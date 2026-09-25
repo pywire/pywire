@@ -34,6 +34,16 @@ def reset_render_context(token: Any) -> None:
     _render_context.reset(token)
 
 
+def suspend_render_context() -> Any:
+    """Detach the render context so reads are not registered against any
+    region (per-item key derivation in keyed ``{$for}`` renderers must not
+    subscribe the item region to the top-level container).
+
+    Returns a token for ``reset_render_context``.
+    """
+    return _render_context.set(None)
+
+
 def _is_mutable(val: Any) -> bool:
     """Check if a value is a mutable container we should proxy."""
     return isinstance(val, (list, dict, set)) and not isinstance(val, WireBase)
@@ -67,6 +77,7 @@ class WireBase:
         self._parent = parent
         self._field = field
         self._frozen = False
+        self._locked = False
         # Per-wire write counter. Bumped on every `_notify_write`. Used
         # by component-level memoization to invalidate only when wires
         # this specific component reads have been written.
@@ -171,8 +182,15 @@ class WireBase:
         return unsubscribe
 
     def freeze(self) -> None:
-        """Make the wire read-only."""
+        """Make the wire read-only. Container subclasses propagate to
+        child proxies already stored in their slots."""
         self._frozen = True
+
+    def lock(self) -> "WireBase":
+        """Exclude this wire from client-visible session snapshots.
+        The attr must be re-derivable by frontmatter on every instantiation."""
+        self._locked = True
+        return self
 
     def _check_frozen(self):
         if self._frozen:
@@ -306,13 +324,39 @@ class WireList(WireBase, list, Generic[T]):
         WireBase.__init__(self, parent, field)
         list.__init__(self, items)
 
+    def _proxy_slot(self, index: int) -> Any:
+        """Return the stable child proxy for the element at ``index``.
+
+        The proxy is stored in the list slot itself, so every later read
+        (indexing, iteration) returns the SAME object — per-item
+        invalidation keys depend on that identity. Not tracking: callers
+        decide whether the read registers.
+        """
+        val = list.__getitem__(self, index)
+        if isinstance(val, WireBase):
+            return val
+        if not _is_mutable(val):
+            return val
+        proxy = _create_proxy(val, parent=self, field=str(index))
+        if self._frozen:
+            proxy.freeze()
+        list.__setitem__(self, index, proxy)
+        return proxy
+
     def __getitem__(self, index):
         self._track_read()
-        val = super().__getitem__(index)
+        if isinstance(index, int):
+            n = list.__len__(self)
+            i = index if index >= 0 else index + n
+            if 0 <= i < n:
+                return self._proxy_slot(i)
+            return list.__getitem__(self, index)  # raise IndexError
+        val = list.__getitem__(self, index)
         if _is_mutable(val):
-            proxy = _create_proxy(val, parent=self)
-            self[index] = proxy  # Eagerly replace with proxy for consistency
-            return proxy
+            # Slice read: detached proxy over the slice copy. The old
+            # eager write-back aliased copies into the source slots and
+            # notified a write on every slice read; don't store it.
+            return _create_proxy(val, parent=self)
         return val
 
     def __setitem__(self, index, value):
@@ -366,7 +410,18 @@ class WireList(WireBase, list, Generic[T]):
 
     def __iter__(self):
         self._track_read()
-        return super().__iter__()
+        i = 0
+        while i < list.__len__(self):
+            # Yield stable child proxies so reads/writes on loop items
+            # track per item instead of only via the top-level list.
+            yield self._proxy_slot(i)
+            i += 1
+
+    def freeze(self) -> None:
+        super().freeze()
+        for v in list.__iter__(self):
+            if isinstance(v, WireBase):
+                v.freeze()
 
     def __contains__(self, item):
         self._track_read()
@@ -443,16 +498,29 @@ class WireDict(WireBase, dict, Generic[K, V]):
         WireBase.__init__(self, parent, field)
         dict.__init__(self, items)
 
+    def _proxy_entry(self, key: Any) -> Any:
+        """Stable child proxy for ``key``, stored in the dict slot itself
+        (see ``WireList._proxy_slot``). Not tracking."""
+        val = dict.__getitem__(self, key)
+        if isinstance(val, WireBase):
+            return val
+        if not _is_mutable(val):
+            return val
+        proxy = _create_proxy(val, parent=self, field=str(key))
+        if self._frozen:
+            proxy.freeze()
+        dict.__setitem__(self, key, proxy)
+        return proxy
+
     def __getitem__(self, key):
         self._track_read()
-        val = super().__getitem__(key)
-        if _is_mutable(val):
-            proxy = _create_proxy(
-                val, parent=self, field=key if isinstance(key, str) else None
-            )
-            self[key] = proxy
-            return proxy
-        return val
+        return self._proxy_entry(key)  # raises KeyError if absent
+
+    def get(self, key, default=None):
+        self._track_read()
+        if dict.__contains__(self, key):
+            return self._proxy_entry(key)
+        return default
 
     def __setitem__(self, key, value):
         self._check_frozen()
@@ -475,11 +543,11 @@ class WireDict(WireBase, dict, Generic[K, V]):
 
     def values(self):
         self._track_read()
-        return super().values()
+        return {k: self._proxy_entry(k) for k in dict.keys(self)}.values()
 
     def items(self):
         self._track_read()
-        return super().items()
+        return {k: self._proxy_entry(k) for k in dict.keys(self)}.items()
 
     def __delitem__(self, key):
         self._check_frozen()
@@ -511,6 +579,12 @@ class WireDict(WireBase, dict, Generic[K, V]):
         self._check_frozen()
         super().clear()
         self._notify_write()
+
+    def freeze(self) -> None:
+        super().freeze()
+        for v in dict.values(self):
+            if isinstance(v, WireBase):
+                v.freeze()
 
     def pop(self, key, default=None):
         self._check_frozen()
@@ -787,7 +861,12 @@ def unwrap_wire(val: Any) -> Any:
         return unwrap_wire(val.value)
 
     if isinstance(val, WireBase):
-        val = val.value
+        if isinstance(val, (list, dict, set)):
+            # Container wires return themselves from ``.value``; peek()
+            # gives the raw slot contents for the recursion below.
+            val = val.peek()
+        else:
+            val = val.value
 
     if type(val) is dict:
         return {k: unwrap_wire(v) for k, v in val.items()}

@@ -22,6 +22,54 @@ from pywire_cli.config import config_command
 
 console = Console()
 
+
+def _install_aws_dependencies(requirements: Path, target: Path) -> None:
+    """Install x86_64 Lambda dependencies, preferring uv when it is on PATH."""
+    import shutil
+    import subprocess
+
+    uv = shutil.which("uv")
+    if uv:
+        subprocess.run(
+            [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                "-r",
+                str(requirements),
+                "--target",
+                str(target),
+                "--python-platform",
+                "x86_64-manylinux2014",
+                "--python-version",
+                "3.12",
+            ],
+            check=True,
+        )
+    else:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(requirements),
+                "-t",
+                str(target),
+                "--platform",
+                "manylinux2014_x86_64",
+                "--only-binary",
+                ":all:",
+                "--python-version",
+                "3.12",
+            ],
+            check=True,
+        )
+
+
 # Astro-like styling configuration (Cyan Theme)
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.STYLE_HELPTEXT_FIRST = True
@@ -122,6 +170,37 @@ def import_app(app_str: str) -> Any:
     return app
 
 
+# Pure-FaaS platforms serve one-shot requests with no durable state — only
+# stateless mode works there. cloudflare (Durable Objects) and gcp-cloudrun
+# (long-running container) accept either mode.
+_STATELESS_PLATFORMS = frozenset(
+    {"cloudflare-edge", "aws-lambda", "azure-functions", "gcp-functions"}
+)
+
+
+def _fail_missing_secret(platform: str) -> None:
+    console.print(
+        f"[bold red]Error:[/] [cyan]{platform}[/] needs the stateless snapshot "
+        "signing secret — set PYWIRE_SECRET_KEY in your provider environment."
+    )
+    sys.exit(1)
+
+
+def _require_stateless(app_instance: Any, platform: Optional[str]) -> None:
+    """Fail fast when a pure-FaaS build target isn't configured stateless."""
+    if platform not in _STATELESS_PLATFORMS:
+        return
+    if not getattr(app_instance, "stateless", False):
+        console.print(
+            f"[bold red]Error:[/] [cyan]{platform}[/] is pure-FaaS and requires "
+            "stateless mode — add PyWire(stateless=True, secret_key=...) — "
+            "see the docs edge guide."
+        )
+        sys.exit(1)
+    if not getattr(app_instance, "_stateless_secret", b""):
+        _fail_missing_secret(str(platform))
+
+
 def _discover_app_str() -> str:
     """Try to discover the app string automatically."""
     cwd = Path(os.getcwd())
@@ -163,6 +242,30 @@ def _discover_app_str() -> str:
     raise click.UsageError(
         "Could not auto-discover app. Please provide 'APP' argument (e.g. 'main:app')."
     )
+
+
+def _copy_app_source(app_import: str, target: Path) -> None:
+    """Copy the app's source package/module into a deploy dir.
+
+    The generated FaaS entrypoints do ``from <app_module> import <app_attr>``,
+    so a deploy dir shipped without the app source cannot boot. Copies the
+    top-level package directory (e.g. ``src/``) or the root-level module file
+    (e.g. ``main.py``). Installed-package apps are left to requirements.txt.
+    """
+    import shutil
+
+    top = app_import.split(":", 1)[0].split(".")[0]
+    pkg_dir = Path.cwd() / top
+    module_file = Path.cwd() / f"{top}.py"
+    if pkg_dir.is_dir():
+        shutil.copytree(
+            pkg_dir,
+            target / top,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+    elif module_file.is_file():
+        shutil.copy2(module_file, target / module_file.name)
 
 
 # Workaround: rich-click wraps tables in Panels which default to expand=True.
@@ -319,7 +422,16 @@ def dev(
 )
 @click.option(
     "--platform",
-    type=click.Choice(["cloudflare"]),
+    type=click.Choice(
+        [
+            "cloudflare",
+            "cloudflare-edge",
+            "aws-lambda",
+            "azure-functions",
+            "gcp-functions",
+            "gcp-cloudrun",
+        ]
+    ),
     default=None,
     help="Generate platform-specific build output.",
 )
@@ -331,12 +443,21 @@ def build(
     platform: Optional[str],
 ) -> None:
     """Build the application for production."""
-    if not app:
-        app = _discover_app_str()
+    try:
+        if not app:
+            app = _discover_app_str()
 
-    console.print(f"🔨 Building [cyan]{app}[/]...")
+        console.print(f"🔨 Building [cyan]{app}[/]...")
 
-    app_instance = import_app(app)
+        app_instance = import_app(app)
+    except RuntimeError as exc:
+        # PyWire(stateless=True) raises at construction when the signing
+        # secret is missing — turn it into deploy-target guidance. (Both
+        # discovery and import_app execute the app module.)
+        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
+            _fail_missing_secret(platform)
+        raise
+    _require_stateless(app_instance, platform)
 
     if pages_dir:
         resolved_pages_dir = Path(pages_dir)
@@ -388,7 +509,119 @@ def build(
 
     console.print(f"✅ Build complete ({', '.join(parts)})")
 
-    if platform == "cloudflare":
+    if platform == "aws-lambda":
+        from pywire_cli.deploy import (
+            generate_aws_lambda_handler,
+            generate_aws_lambda_readme,
+            generate_aws_lambda_requirements,
+        )
+
+        aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
+        aws_dir.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=aws_dir / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
+        (aws_dir / "handler.py").write_text(
+            generate_aws_lambda_handler(Path.cwd(), app or "src.main:app")
+        )
+        (aws_dir / "requirements.txt").write_text(
+            generate_aws_lambda_requirements(Path.cwd())
+        )
+        (aws_dir / "README.md").write_text(
+            generate_aws_lambda_readme(Path.cwd(), Path.cwd().name)
+        )
+        _install_aws_dependencies(aws_dir / "requirements.txt", aws_dir / "package")
+        console.print("✅ Generated [cyan].pywire/deploy/aws/[/] for AWS Lambda")
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. [cyan]cd .pywire/deploy/aws[/]\n"
+            "  2. Follow [cyan]README.md[/] to package and deploy to AWS Lambda"
+        )
+    elif platform == "azure-functions":
+        from pywire_cli.deploy import generate_azure_function_app
+        from pywire_templates import render_deploy_template
+
+        target = Path.cwd() / ".pywire" / "deploy" / "azure"
+        target.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=target / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
+        _copy_app_source(app or "src.main:app", target)
+        (target / "function_app.py").write_text(
+            generate_azure_function_app(Path.cwd(), app or "src.main:app")
+        )
+        for name in (
+            "host.json",
+            "local.settings.json",
+            "requirements.txt",
+        ):
+            (target / name).write_text(render_deploy_template(f"azure/{name}.j2"))
+        (target / "README.md").write_text(
+            render_deploy_template("azure/README.md.j2", function_name=Path.cwd().name)
+        )
+        console.print("✅ Generated [cyan].pywire/deploy/azure/[/] for Azure Functions")
+    elif platform == "gcp-functions":
+        from pywire_cli.deploy import generate_gcp_functions_main
+        from pywire_templates import render_deploy_template
+
+        if (app or "src.main:app").split(":", 1)[0].split(".")[0] == "main":
+            console.print(
+                "[yellow]⚠ gcp-functions reserves main.py for its entrypoint — "
+                "rename your app module (or use src/); the generated entrypoint "
+                "will shadow it.[/]"
+            )
+        target = Path.cwd() / ".pywire" / "deploy" / "gcp_functions"
+        target.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=target / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
+        _copy_app_source(app or "src.main:app", target)
+        (target / "main.py").write_text(
+            generate_gcp_functions_main(Path.cwd(), app or "src.main:app")
+        )
+        (target / "requirements.txt").write_text(
+            render_deploy_template("gcp_functions/requirements.txt.j2")
+        )
+        (target / "README.md").write_text(
+            render_deploy_template(
+                "gcp_functions/README.md.j2", project_name=Path.cwd().name
+            )
+        )
+        console.print(
+            "✅ Generated [cyan].pywire/deploy/gcp_functions/[/] for Google Cloud Functions"
+        )
+    elif platform == "gcp-cloudrun":
+        from pywire_cli.deploy import generate_dockerfile
+        from pywire_templates import render_deploy_template
+
+        project_name = Path.cwd().name
+        target = Path.cwd() / ".pywire" / "deploy" / "gcp_cloudrun"
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "Dockerfile").write_text(generate_dockerfile(Path.cwd(), workers=1))
+        (target / "README.md").write_text(
+            render_deploy_template(
+                "gcp_cloudrun/README.md.j2", project_name=project_name
+            )
+        )
+        console.print(
+            "✅ Generated [cyan].pywire/deploy/gcp_cloudrun/[/] for Google Cloud Run"
+        )
+    elif platform in ("cloudflare", "cloudflare-edge"):
         import shutil
 
         from pywire.compiler.build_artifacts import generate_cf_bundle
@@ -398,6 +631,7 @@ def build(
             build_dir=Path(out_dir),
             cf_bundle_dir=cf_bundle_dir,
             app_import=app,
+            durable_objects=platform == "cloudflare",
         )
 
         # Copy static assets to .pywire/deploy/public/ for Cloudflare's
@@ -428,16 +662,34 @@ def build(
             user_static_dest = deploy_public / static_subdir
             shutil.copytree(user_static, user_static_dest)
 
-        # Regenerate pywire_do.py (contains app import path)
-        from pywire_cli.deploy import generate_cf_durable_object
+        if platform == "cloudflare":
+            # Regenerate pywire_do.py (contains app import path)
+            from pywire_cli.deploy import generate_cf_durable_object
 
-        do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
-        (Path.cwd() / "pywire_do.py").write_text(do_content)
+            do_content = generate_cf_durable_object(Path.cwd(), app or "src.main:app")
+            (Path.cwd() / "pywire_do.py").write_text(do_content)
 
-        console.print(
-            f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
-            f"and [cyan]pywire_do.py[/] for Cloudflare Workers"
-        )
+            console.print(
+                f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
+                f"and [cyan]pywire_do.py[/] for Cloudflare Workers"
+            )
+        else:
+            from pywire_cli.deploy import (
+                generate_cf_edge_entry,
+                generate_cf_edge_wrangler_toml,
+            )
+
+            (Path.cwd() / "entry.py").write_text(
+                generate_cf_edge_entry(Path.cwd(), app or "src.main:app")
+            )
+            (Path.cwd() / "wrangler.toml").write_text(
+                generate_cf_edge_wrangler_toml(Path.cwd(), Path.cwd().name)
+            )
+            console.print(
+                f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
+                f"[cyan]entry.py[/], and [cyan]wrangler.toml[/] for the Cloudflare "
+                "edge Worker (stateless, no Durable Objects)"
+            )
         console.print(
             "✅ Static assets → [cyan].pywire/deploy/public/[/] "
             "(served by Cloudflare edge CDN)"
@@ -612,7 +864,17 @@ def _print_skip_hint(
 @click.argument("app", required=False)
 @click.option(
     "--platform",
-    type=click.Choice(["render", "docker", "fly", "railway", "cloudflare"]),
+    type=click.Choice(
+        [
+            "render",
+            "docker",
+            "fly",
+            "railway",
+            "cloudflare",
+            "cloudflare-edge",
+            "aws-lambda",
+        ]
+    ),
     default="docker",
     help="Deployment platform",
 )
@@ -653,12 +915,19 @@ def deploy(
     out_path = Path(out_dir)
 
     # Auto-discover and verify app
-    if not app:
-        app = _discover_app_str()
-    console.print(f"📦 Preparing deploy config for [cyan]{app}[/]...")
+    try:
+        if not app:
+            app = _discover_app_str()
+        console.print(f"📦 Preparing deploy config for [cyan]{app}[/]...")
 
-    # Pre-compile
-    app_instance = import_app(app)
+        # Pre-compile
+        app_instance = import_app(app)
+    except RuntimeError as exc:
+        # Same RuntimeError translation as `build` (missing stateless secret).
+        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
+            _fail_missing_secret(platform)
+        raise
+    _require_stateless(app_instance, platform)
 
     pages_dir = Path(getattr(app_instance, "pages_dir", "pages"))
 
@@ -677,7 +946,7 @@ def deploy(
     project_name = project_root.name
 
     # Cloudflare Workers requires a paid plan
-    if platform == "cloudflare":
+    if platform in ("cloudflare", "cloudflare-edge"):
         console.print(
             "\n[bold yellow]Note:[/] Cloudflare Python Workers requires a "
             "[bold]Workers Paid plan[/] ($5/month).\n"
@@ -687,18 +956,17 @@ def deploy(
             "https://dash.cloudflare.com/workers/plans[/link]\n"
         )
 
-    # Cloudflare uses Durable Objects — workers/redis flags don't apply
-    if platform == "cloudflare" and (workers > 1 or redis):
+    # Cloudflare platforms take no worker/redis configuration
+    if platform in ("cloudflare", "cloudflare-edge") and (workers > 1 or redis):
         console.print(
             "[bold red]Error:[/] [cyan]--workers[/] and [cyan]--redis[/] are not applicable "
-            "to Cloudflare Workers.\n"
-            "  Cloudflare uses Durable Objects for session state — no Redis or worker "
-            "processes needed."
+            "to Cloudflare platforms.\n"
+            "  Cloudflare platforms take no worker/Redis configuration."
         )
         raise SystemExit(1)
 
     # Warn about workers vs redis (not applicable to Cloudflare)
-    if platform != "cloudflare":
+    if platform not in ("cloudflare", "cloudflare-edge", "aws-lambda"):
         if workers > 1 and not redis:
             console.print(
                 "\n[bold yellow]⚠️  Warning:[/] Running multiple workers without Redis "
@@ -745,22 +1013,66 @@ def deploy(
         files_to_write.append(
             ("Dockerfile", generate_dockerfile(project_root, workers=workers))
         )
-    elif platform == "cloudflare":
+    elif platform == "aws-lambda":
         from pywire_cli.deploy import (
-            generate_wrangler_toml,
-            generate_cf_entry,
-            generate_cf_durable_object,
+            generate_aws_lambda_handler,
+            generate_aws_lambda_readme,
+            generate_aws_lambda_requirements,
         )
 
-        files_to_write.append(
-            ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
+        aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
+        aws_dir.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(".pywire/build"),
+            cf_bundle_dir=aws_dir / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
         )
-        files_to_write.append(
-            ("entry.py", generate_cf_entry(project_root, app_string=app))
+        (aws_dir / "handler.py").write_text(
+            generate_aws_lambda_handler(project_root, app or "src.main:app")
         )
-        files_to_write.append(
-            ("pywire_do.py", generate_cf_durable_object(project_root, app_string=app))
+        (aws_dir / "requirements.txt").write_text(
+            generate_aws_lambda_requirements(project_root)
         )
+        (aws_dir / "README.md").write_text(
+            generate_aws_lambda_readme(project_root, project_name)
+        )
+        _install_aws_dependencies(aws_dir / "requirements.txt", aws_dir / "package")
+        console.print("✅ Generated [cyan].pywire/deploy/aws/[/] for AWS Lambda")
+    elif platform in ("cloudflare", "cloudflare-edge"):
+        from pywire_cli.deploy import (
+            generate_cf_durable_object,
+            generate_cf_edge_entry,
+            generate_cf_edge_wrangler_toml,
+            generate_cf_entry,
+            generate_wrangler_toml,
+        )
+
+        if platform == "cloudflare":
+            files_to_write.append(
+                ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
+            )
+            files_to_write.append(
+                ("entry.py", generate_cf_entry(project_root, app_string=app))
+            )
+            files_to_write.append(
+                (
+                    "pywire_do.py",
+                    generate_cf_durable_object(project_root, app_string=app),
+                )
+            )
+        else:
+            files_to_write.append(
+                (
+                    "wrangler.toml",
+                    generate_cf_edge_wrangler_toml(project_root, project_name),
+                )
+            )
+            files_to_write.append(
+                ("entry.py", generate_cf_edge_entry(project_root, app_string=app))
+            )
         # Exclude local .venv from CF bundle to avoid duplicate packages
         files_to_write.append(
             (
@@ -790,7 +1102,13 @@ def deploy(
         "  PyWire auto-detects it for shared session state (no code changes needed)."
     )
 
-    if platform == "docker":
+    if platform == "aws-lambda":
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. [cyan]cd .pywire/deploy/aws[/]\n"
+            "  2. Follow [cyan]README.md[/] to package and deploy to AWS Lambda"
+        )
+    elif platform == "docker":
         console.print(
             "\n[bold]Next steps:[/]\n"
             f"  1. [cyan]docker build -t {project_name} .[/]\n"
@@ -887,6 +1205,27 @@ def deploy(
             "\n[bold]CI/CD:[/]\n"
             "  [cyan]uv sync && uv run pywire build --platform cloudflare "
             "&& uv run pywrangler deploy[/]"
+        )
+    elif platform == "cloudflare-edge":
+        console.print(
+            "\n[bold]Local development:[/]\n"
+            "  • [bold]Workers mode[/] (runs in local workerd — matches CF production):\n"
+            "      [cyan]uv run pywire build --platform cloudflare-edge[/]\n"
+            "      [cyan]npx wrangler dev[/]\n"
+            "\n[bold]Deploy to Cloudflare:[/]\n"
+            "  1. Build: [cyan]uv run pywire build --platform cloudflare-edge[/]\n"
+            "  2. Deploy: [cyan]npx wrangler deploy[/]\n"
+            "  3. Set the boot secret: [cyan]npx wrangler secret put PYWIRE_SECRET_KEY[/]\n"
+            "\n[bold]Generated files:[/]\n"
+            "  • [cyan]wrangler.toml[/] — Cloudflare config (plain Worker, no Durable Objects)\n"
+            "  • [cyan]entry.py[/] — stateless Worker entry (OneShotASGIAdapter)\n"
+            "\n[bold]Architecture:[/]\n"
+            "  Stateless one-shot requests — every event carries its snapshot.\n"
+            "  No Durable Objects and no per-event storage I/O. Requires\n"
+            "  [cyan]PyWire(stateless=True, secret_key=...)[/] in your app.\n"
+            "\n[bold]CI/CD:[/]\n"
+            "  [cyan]uv sync && uv run pywire build --platform cloudflare-edge "
+            "&& npx wrangler deploy[/]"
         )
 
 

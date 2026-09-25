@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DOMUpdater } from './dom-updater'
+import { logger } from './logger'
 import morphdom from 'morphdom'
 
 vi.mock('morphdom', () => ({
@@ -205,6 +206,25 @@ describe('DOMUpdater', () => {
 
     expect((window as Window & { permScriptRan?: boolean }).permScriptRan).toBe(false)
     delete (window as Window & { permScriptRan?: boolean }).permScriptRan
+  })
+
+  it('should not execute the _pywire_snapshot data blob during morphs', () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {})
+
+    updater.update(
+      '<div><script id="_pywire_snapshot" type="text/plain">{"state":"blob"}</script></div>'
+    )
+
+    // Snapshot blob is data, not JS: never eval'd, no console error
+    ;(window as Window & { snapshotRan?: boolean }).snapshotRan = false
+    updater.update(
+      '<div><script id="_pywire_snapshot" type="text/plain">window.snapshotRan = true</script></div>'
+    )
+
+    expect((window as Window & { snapshotRan?: boolean }).snapshotRan).toBe(false)
+    expect(errorSpy).not.toHaveBeenCalled()
+    delete (window as Window & { snapshotRan?: boolean }).snapshotRan
+    errorSpy.mockRestore()
   })
 
   it('should skip duplicate external scripts already in head', () => {

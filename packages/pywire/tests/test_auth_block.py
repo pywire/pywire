@@ -233,6 +233,39 @@ async def test_authorizing_body_shows_on_first_render_before_task_completes():
 
 
 @pytest.mark.asyncio
+async def test_stateful_push_delivers_resolved_view():
+    """Stateful tier parity pin: first render shows the authorizing body,
+    the resolved verdict arrives later via ``push_state`` (not inline)."""
+    cls = _compile(
+        '<div>{$auth policy="AdminOnly"}<span>pending-ui</span>{$then ok}<p>done</p>{/auth}</div>'
+    )
+    ctx = AuthContext(
+        principal=_admin_principal(True),
+        engine=_engine_with_admin_policy(),
+        channel=MemoryAuthChannel(),
+    )
+    tok = set_auth_context(ctx)
+    try:
+        page = cls(request=None, params={}, query={}, path={}, url=None)
+        page.user = _admin_principal(True)
+        pushed = []
+
+        async def _on_update():
+            pushed.append(await page._render_template())
+
+        page._on_update = _on_update
+        first = await page._render_template()
+        assert "pending-ui" in first
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert pushed, "push_state never fired after {$auth} resolved"
+        assert "done" in pushed[-1]
+        assert "pending-ui" not in pushed[-1]
+    finally:
+        reset_auth_context(tok)
+
+
+@pytest.mark.asyncio
 async def test_anonymous_with_no_args_denies():
     cls = _compile("<div>{$auth}<p>in</p>{$else}<p>out</p>{/auth}</div>")
     anon = ClaimsPrincipal(is_authenticated=False)

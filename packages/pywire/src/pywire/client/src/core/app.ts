@@ -12,6 +12,8 @@ import {
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
+import { clearPending, revertPending } from '../events/pending'
+import { clearPollInFlight } from '../events/poll'
 import { RefManager } from './ref-manager'
 import { ReconnectOverlay } from './reconnect-overlay'
 import { logger } from './logger'
@@ -257,6 +259,12 @@ export class PyWireApp {
         }
         if (meta.page_interactive !== undefined) {
           this.config.pageInteractive = !!meta.page_interactive
+        }
+        // Stateless (client-held state) mode: branch to the fetch-based
+        // transport BEFORE the WS/WebTransport/HTTP fallback order —
+        // stateless servers mount none of those endpoints.
+        if (meta.stateless) {
+          this.transport.useStatelessTransport()
         }
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
@@ -559,6 +567,9 @@ export class PyWireApp {
 
       const html = await response.text()
       this.updater.update(html)
+      // Flush optimistic predictions the morph reconciled (see handleMessage).
+      clearPending()
+      clearPollInFlight()
       this.eventHandler?.refreshListeners()
 
       document.dispatchEvent(
@@ -622,6 +633,14 @@ export class PyWireApp {
           this.loadSPAMetadata()
         }
 
+        // An update message is the "request finished" signal: the morph already
+        // reconciled in-region markers/classes, so just strip any leftover
+        // optimistic pending markers and re-enable guarded controls.
+        clearPending()
+        // Same signal for @poll: a response arrived (even an empty one), so
+        // clear the per-element in-flight overlap guard.
+        clearPollInFlight()
+
         // Per-update meta (sent by server `render_update`) — keeps
         // `pageInteractive` in sync after SPA nav, since SPA-nav responses
         // (regions or fragment) don't include the `_pywire_spa_meta`
@@ -668,11 +687,19 @@ export class PyWireApp {
 
       case 'error':
         logger.error('PyWire: Server error:', msg.error)
+        // No morph is coming — revert the optimistic prediction so a failed
+        // control is never left stuck disabled (review focus #8).
+        revertPending()
+        // A poll dispatch that errored is no longer in flight — let the next
+        // tick retry.
+        clearPollInFlight()
         break
 
       case 'error_trace':
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
+        revertPending()
+        clearPollInFlight()
         break
 
       case 'console':

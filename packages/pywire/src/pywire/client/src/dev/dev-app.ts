@@ -1,6 +1,7 @@
 import { PyWireApp } from '../core/app'
 import { ServerMessage } from '../core/transports'
 import { logger } from '../core/logger'
+import { revertPending } from '../events/pending'
 import { StatusOverlay } from './status-overlay'
 import { ErrorTraceHandler } from './error-trace'
 
@@ -51,6 +52,9 @@ export class PyWireDevApp extends PyWireApp {
         if (msg.trace) {
           await this.errorHandler.handle(msg.error || 'Unknown Error', msg.trace)
         }
+        // This case returns without reaching core handleMessage, so revert the
+        // optimistic prediction here too — never leave a control stuck disabled.
+        revertPending()
         return
 
       case 'console':

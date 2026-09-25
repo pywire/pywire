@@ -2,6 +2,8 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
+import { applyOptimistic, isOptimistic, revertElement } from './pending'
+import { schedulePolls } from './poll'
 
 // Type alias for backward compatibility
 type Application = PyWireApp
@@ -75,6 +77,9 @@ export class UnifiedEventHandler {
     })
 
     this.attachListeners(Array.from(eventTypes))
+    // @poll timers ride the same lifecycle: (re)schedule newly mounted
+    // poll elements and clear timers for unmounted / region-replaced ones.
+    schedulePolls(this.app)
   }
 
   /**
@@ -400,7 +405,7 @@ export class UnifiedEventHandler {
 
       const timer = window.setTimeout(() => {
         this.debouncers.delete(eventKey)
-        void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+        void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
       }, duration)
 
       this.debouncers.set(eventKey, timer)
@@ -413,7 +418,7 @@ export class UnifiedEventHandler {
 
       this.throttlers.set(eventKey, Date.now())
       // Execute immediately
-      void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+      void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
 
       window.setTimeout(() => {
         this.throttlers.delete(eventKey)
@@ -422,7 +427,7 @@ export class UnifiedEventHandler {
     }
 
     // Direct dispatch
-    void this.dispatchEvent(element, eventType, handlerName, e, explicitArgs)
+    void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
   }
 
   /**
@@ -432,9 +437,18 @@ export class UnifiedEventHandler {
     element: HTMLElement,
     eventType: string,
     handler: string,
+    modifiers: string[],
     e: Event,
     explicitArgs?: unknown[]
   ): Promise<void> {
+    // Double-submit guard: while an optimistic response is pending, the control
+    // carries `data-pw-pending`. Ignore re-dispatches until the next update or
+    // error clears it (see pending.ts).
+    if (element.hasAttribute('data-pw-pending')) {
+      this.debugLog('[Handler] Ignoring dispatch — element pending optimistic response')
+      return
+    }
+
     // Non-interactive mode: a form submit always goes through httpFormSubmit
     // (fetch + morph), regardless of any event-data field mask. The mask
     // controls what gets sent over a persistent channel via `sendEvent`;
@@ -446,6 +460,12 @@ export class UnifiedEventHandler {
     ) {
       if (!this.validateFileInputs(element)) {
         return
+      }
+      // Apply the optimistic prediction (and its double-submit guard) before
+      // the async POST. httpFormSubmit reconciles it: every failure mode
+      // navigates away, success morphs + clearPending().
+      if (isOptimistic(modifiers)) {
+        applyOptimistic(element, modifiers)
       }
       await this.app.httpFormSubmit(element, handler)
       return
@@ -580,7 +600,22 @@ export class UnifiedEventHandler {
       })
 
       if (hasFileUploads) {
-        const uploadMap = await this.uploadFiles(uploadFormData, element)
+        // Apply the optimistic prediction (and its double-submit guard)
+        // synchronously, BEFORE the async upload starts — otherwise a slow
+        // upload leaves the control unguarded and a second click kicks off a
+        // second upload.
+        if (isOptimistic(modifiers)) {
+          applyOptimistic(element, modifiers)
+        }
+        let uploadMap: Record<string, UploadResult | UploadResult[]>
+        try {
+          uploadMap = await this.uploadFiles(uploadFormData, element)
+        } catch (err) {
+          // No server error event will arrive for a failed upload — undo the
+          // prediction here so the control is never left stuck.
+          revertElement(element)
+          throw err
+        }
         for (const [field, uploadValue] of Object.entries(uploadMap)) {
           data[field] = uploadValue
         }
@@ -595,6 +630,12 @@ export class UnifiedEventHandler {
         await this.app.httpFormSubmit(element, handler)
         return
       }
+    }
+
+    // Apply the optimistic prediction synchronously, immediately before send
+    // (the marker check skips re-applying when it was set before a file upload).
+    if (isOptimistic(modifiers) && !element.hasAttribute('data-pw-pending')) {
+      applyOptimistic(element, modifiers)
     }
 
     this.app.sendEvent(handler, eventData)

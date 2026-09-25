@@ -1,0 +1,13 @@
+---
+calls = wire(0)
+done = wire(False)
+
+def toggle():
+    calls.value += 1
+    # Accept every odd-numbered call, reject every even one: a rejected call
+    # leaves the server state contradicting the `.optimistic-class-done`
+    # prediction, exercising the auto-revert path.
+    done.value = calls.value % 2 == 1
+---
+<p id="calls">{calls}</p>
+<button id="toggle" class={'done' if done else ''} @click.optimistic-class-done={toggle()}>Toggle</button>

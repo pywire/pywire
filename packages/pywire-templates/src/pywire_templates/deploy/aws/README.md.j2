@@ -1,0 +1,46 @@
+# Deploying {{ project_name }} to AWS Lambda
+
+This directory is a stateless PyWire Lambda deployment. It requires
+`PyWire(stateless=True, secret_key=...)` and the `PYWIRE_SECRET_KEY` environment
+variable in Lambda.
+
+The build vendors dependencies into `package/`. It targets Lambda's x86_64
+runtime and Python 3.12; for an arm64 Lambda, rebuild the package with the target
+flags changed to that architecture.
+
+From the project root, copy in the application source, then enter this deployment
+directory and create the zip:
+
+```sh
+cp -R src .pywire/deploy/aws/src
+cd .pywire/deploy/aws
+zip -r function.zip handler.py _routes.py _pywire_build package src
+```
+
+For a root-level app (`main:app`) instead of the `src/` layout, copy the module
+file instead (`cp main.py .pywire/deploy/aws/`) and add `main.py` to the zip in
+place of `src`.
+
+Create an API Gateway HTTP API, a Lambda integration, and a catch-all route:
+
+```sh
+function_arn=$(aws lambda create-function --function-name {{ function_name }} --runtime python3.12 --handler handler.handler --role arn:aws:iam::YOUR_ACCOUNT_ID:role/lambda-execution-role --zip-file fileb://function.zip --query FunctionArn --output text)
+api_id=$(aws apigatewayv2 create-api --api-name {{ function_name }} --protocol-type HTTP --query ApiId --output text)
+integration_id=$(aws apigatewayv2 create-integration --api-id "$api_id" --integration-type AWS_PROXY --integration-uri "$function_arn" --query IntegrationId --output text)
+aws apigatewayv2 create-route --api-id "$api_id" --route-key '$default' --target "integrations/$integration_id"
+aws apigatewayv2 create-stage --api-id "$api_id" --stage-name '$default'
+```
+
+Generate the snapshot signing secret and hold it in the shell — never paste a
+secret literal into a command line, shell history, or this directory:
+
+```sh
+export PYWIRE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
+Set it as the function's environment variable (or use the Lambda console →
+Configuration → Environment variables):
+
+```sh
+aws lambda update-function-configuration --function-name {{ function_name }} --environment "Variables={PYWIRE_SECRET_KEY=$PYWIRE_SECRET_KEY}"
+```
