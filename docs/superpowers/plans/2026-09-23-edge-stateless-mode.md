@@ -52,6 +52,7 @@ Execution method: **subagent-driven** (fresh implementer per task, cross-family 
 | Seat | Model(s) | ID(s) | $/M | Flags |
 |---|---|---|---|---|
 | Orchestrator (default) | MiMo V2.6 Pro | `xiaomi/mimo-v2.6-pro` | 0.43/0.87 | top open-weight, no reliability flag |
+| **Free workhorse — FAVOR for non-precision work** | Space Bunny Alpha | `stealth/space-bunny-alpha` | **0/0 (free)** | qwen3.8-max-equivalent, ~100 tps, 1M ctx, reasoning+tools+multimodal. Default author for scaffold/docs/config/volume/simple tasks + low-stakes general review (cross-family permitting). NOT for security, precision-critical codegen, phase-end, or final review. |
 | Primary coding (large/complex) | rotate MiMo V2.6 Pro · Qwen3.8 Max · GLM 5.3 | `xiaomi/mimo-v2.6-pro` · `qwen/qwen3.8-max-0902` · `z-ai/glm-5.3` | 0.43/0.87 · 2.00/6.00 · 1.40/4.40 | GLM coding output gets MORE review scrutiny (reliability flag) |
 | Long-horizon multi-file | Kimi K2.6 | `moonshotai/kimi-k2.6` | 0.95/4.00 | steadier than K3 |
 | Small/cheap coding + long-context | DeepSeek V4.1 Flash · MiMo V2.6 Flash · GLM-5.3-Flash | `deepseek/deepseek-v4.1-flash` · `xiaomi/mimo-v2.6-flash` · `z-ai/glm-5.3-flash` | 0.30/1.20 · 0.14/0.28 · 0.04/0.60 | route by language/task fit |
@@ -88,9 +89,9 @@ The per-phase tables below are a **historical as-run record** (phases 0–5B): t
 > | Phase 5B phase-end | T28 deepseek-v4-pro (hist) + T29 mimo | `z-ai/glm-5.3` | folded into retro pass | cross-family from both authors |
 > | **Retroactive security review** (NEW, mandatory) | — | — | `z-ai/glm-5.3` | T27 snapshot inspector (external debug endpoint + HMAC), T28 poll allowlist dispatch-auth, Phase 1 stateless codec HMAC — all shipped without the now-mandatory GLM pass; schedule before merge |
 > | T30 (5C spike) | `xiaomi/mimo-v2.6-pro` | human gate (findings, not committed code) | n/a | investigation + scratch prototype |
-> | T21–23 (deploy targets) | `deepseek/deepseek-v4.1-flash` or `xiaomi/mimo-v2.6-flash` (scaffold/config) | cross-family (`qwen3.8-max` / `glm-5.3`) | GLM pass if templates touch secrets/env | pattern repeats after T20 |
+> | T21–23 (deploy targets) | `stealth/space-bunny-alpha` (FREE workhorse — scaffold/config) | cross-family known-family (`qwen3.8-max` / `glm-5.3`) | GLM pass if templates touch secrets/env | pattern repeats after T20 |
 > | T24 (gating + floors) | `qwen/qwen3.8-max-0902` (correctness) | cross-family (`z-ai/glm-5.3`) | **yes** — missing-secret build check = secrets surface | |
-> | T25 (docs) | `qwen/qwen3.8-flash` or `deepseek-v4.1-flash` (docs glue) | cross-family light | no | |
+> | T25 (docs) | `stealth/space-bunny-alpha` (FREE — docs glue) | cross-family light | no | |
 > | Final whole-branch review | — | `qwen/qwen3.8-max-0902` + `z-ai/glm-5.3` | **yes** — full-branch GLM security (stateless core is the trust boundary) | strongest cross-family + security |
 >
 > **Compliance flags (completed work):**
@@ -101,7 +102,7 @@ The per-phase tables below are a **historical as-run record** (phases 0–5B): t
 | 5B — poll primitive (T28–29)       | **Medium** — grammar + client directive, e2e + demo                    | `deepseek/deepseek-v4-pro-0813` (T28); `xiaomi/mimo-v2.6-pro` (T29)                | `xiaomi/mimo-v2.6-pro` (task); `qwen/qwen3.8-max-0902` (phase-end)                           | $3–6      |
 | 5C — per-page tier spike (T30)     | **Spike only — findings gate, no committed design**                    | `qwen/qwen3.8-max-0902`                                                            | findings reviewed by parent session + human gate                                             | $1–3      |
 
-**Forward cost (remaining work): ~$8–20** — T29 review + 5B phase-end + retroactive security pass + T30 spike + Phase 6 + final whole-branch review, driven mainly by the GLM 5.3 security passes and the final review. Cost levers: (a) reviewer prompts get the diff only, not the codebase; (b) `:batch` variants (`z-ai/glm-5.3:batch` $0.45/$2.00, deepseek batch) halve non-interactive Phase 6 work; (c) small/cheap tier (DeepSeek V4.1 Flash, MiMo Flash, GLM-Flash) for scaffold/docs, escalating per the 2-attempt rule. Historical phases 0–5B spend is sunk.
+**Forward cost (remaining work): ~$3–10** — the free Space Bunny workhorse authors T21–23 + T25 (scaffold/docs) at $0, so spend concentrates in the GLM 5.3 security passes, the T30 spike (MiMo Pro, judgment at a decision gate), and the final whole-branch review. Cost levers: (a) reviewer prompts get the diff only, not the codebase; (b) `:batch` variants (`z-ai/glm-5.3:batch` $0.45/$2.00) halve non-interactive security/review work; (c) favor `stealth/space-bunny-alpha` (free) for any non-precision authoring, escalating per the 2-attempt rule. Historical phases 0–5B spend is sunk.
 
 ---
 
