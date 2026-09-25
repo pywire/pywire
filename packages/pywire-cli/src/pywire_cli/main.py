@@ -24,7 +24,7 @@ console = Console()
 
 
 def _install_aws_dependencies(requirements: Path, target: Path) -> None:
-    """Install Lambda dependencies, using uv when the project venv has no pip."""
+    """Install x86_64 Lambda dependencies, preferring uv when it is on PATH."""
     import shutil
     import subprocess
 
@@ -41,6 +41,10 @@ def _install_aws_dependencies(requirements: Path, target: Path) -> None:
                 str(requirements),
                 "--target",
                 str(target),
+                "--python-platform",
+                "x86_64-manylinux2014",
+                "--python-version",
+                "3.12",
             ],
             check=True,
         )
@@ -55,6 +59,12 @@ def _install_aws_dependencies(requirements: Path, target: Path) -> None:
                 str(requirements),
                 "-t",
                 str(target),
+                "--platform",
+                "manylinux2014_x86_64",
+                "--only-binary",
+                ":all:",
+                "--python-version",
+                "3.12",
             ],
             check=True,
         )
@@ -463,6 +473,11 @@ def build(
         )
         _install_aws_dependencies(aws_dir / "requirements.txt", aws_dir / "package")
         console.print("✅ Generated [cyan].pywire/deploy/aws/[/] for AWS Lambda")
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. [cyan]cd .pywire/deploy/aws[/]\n"
+            "  2. Follow [cyan]README.md[/] to package and deploy to AWS Lambda"
+        )
     elif platform == "azure-functions":
         from pywire_cli.deploy import generate_azure_function_app
         from pywire_templates import render_deploy_template
@@ -930,6 +945,7 @@ def deploy(
             generate_aws_lambda_readme(project_root, project_name)
         )
         _install_aws_dependencies(aws_dir / "requirements.txt", aws_dir / "package")
+        console.print("✅ Generated [cyan].pywire/deploy/aws/[/] for AWS Lambda")
     elif platform in ("cloudflare", "cloudflare-edge"):
         from pywire_cli.deploy import (
             generate_cf_durable_object,
@@ -991,7 +1007,13 @@ def deploy(
         "  PyWire auto-detects it for shared session state (no code changes needed)."
     )
 
-    if platform == "docker":
+    if platform == "aws-lambda":
+        console.print(
+            "\n[bold]Next steps:[/]\n"
+            "  1. [cyan]cd .pywire/deploy/aws[/]\n"
+            "  2. Follow [cyan]README.md[/] to package and deploy to AWS Lambda"
+        )
+    elif platform == "docker":
         console.print(
             "\n[bold]Next steps:[/]\n"
             f"  1. [cyan]docker build -t {project_name} .[/]\n"

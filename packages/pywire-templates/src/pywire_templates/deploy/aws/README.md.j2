@@ -4,17 +4,17 @@ This directory is a stateless PyWire Lambda deployment. It requires
 `PyWire(stateless=True, secret_key=...)` and the `PYWIRE_SECRET_KEY` environment
 variable in Lambda.
 
-Install the dependencies into the Lambda package directory:
+The build vendors dependencies into `package/`. It targets Lambda's x86_64
+runtime and Python 3.12; for an arm64 Lambda, rebuild the package with the target
+flags changed to that architecture.
+
+From the project root, copy in the application source, then enter this deployment
+directory and create the zip:
 
 ```sh
-python -m pip install -r .pywire/deploy/aws/requirements.txt -t .pywire/deploy/aws/package
-```
-
-Zip `handler.py`, the compiled `.pywire/build` files, application source, and
-`package/`, then create the function:
-
-```sh
-zip -r function.zip handler.py .pywire/build src package
+cp -R src .pywire/deploy/aws/src
+cd .pywire/deploy/aws
+zip -r function.zip handler.py _routes.py _pywire_build package src
 ```
 
 Create an API Gateway HTTP API, a Lambda integration, and a catch-all route:
