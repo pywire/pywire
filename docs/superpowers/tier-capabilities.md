@@ -1,9 +1,9 @@
 # PyWire tiers: stateless vs stateful — feature capability matrix
 
-**Status:** observed reality as of `7bc1265` (2026-09-24), verified against tests and spike
-probes — not aspiration. Every row cites evidence. `{$auth}` stateless support is landing as
+**Status:** observed reality as of Task 32 (2026-09-24), verified against tests and spike
+probes — not aspiration. Every row cites evidence. `{$auth}` stateless support landed as
 Task 31 (owner mandate); its row reflects T31's behavior and is pinned by T31's tests.
-Build enforcement of this matrix: §Build-time checks (Task 32, accepted at the T30 gate).
+Build enforcement of this matrix: §Build-time checks (Task 32, landed).
 
 ## The tiers
 
@@ -32,7 +32,7 @@ Legend: ✅ works · ⚠️ works with a stated floor · ❌ rejected or non-fun
 | `show=` | ✅ | ✅ | Class/attr toggle, render-time. |
 | `{$for}` + `key=` | ✅ | ✅ | Keyed per-iteration regions (Phase 3): one row mutation ships one region, structural change falls back to full loop. Transport-agnostic — same `render_update` shape on WS, HTTP-session and stateless. Tests: keyed-region suite (T12), Spec #6 payloads. |
 | `{$try}` / `{$except}` / `{$finally}` | ✅ | ✅ | Render-time error display. |
-| `{$await}` + `then` / `catch` | ✅ | ❌ | Needs a push channel: holds the response open / pushes the resolved view. **Compile error on stateless** (Task 26 gate, `compiler/tier_gate.py`; `tests/test_tier_gating.py`). Use `@poll` + a task/store, or deploy stateful. |
+| `{$await}` + `then` / `catch` | ✅ | ❌ | Needs a push channel: holds the response open / pushes the resolved view. **Compile error on stateless** (per-page closure gate, `compiler/tier_gate.py`; `tests/test_tier_gating.py`). Use `@poll` + a task/store, or deploy stateful. |
 | `{$auth}` region | ✅ | ✅ *(T31)* | Stateful: renders `pending`, pushes `allowed`/`denied` on resolution. Stateless **pre-T31: broken** — `push_state()` no-ops without `_on_update`, region stuck on PENDING forever (spike probe A-P6). T31: resolves inline in the same request; **verdicts are never snapshotted** — every request re-evaluates (revocation bites the next request). |
 | `{$dynamic}` | ✅ | ✅ | Forces region dirty every update; render-time. |
 | `snippet=` / `render=` | ✅ | ✅ | Template composition; render-time. |
@@ -101,16 +101,23 @@ dev-compile and `pywire build`.
 | `@poll`, `@event`, forms, uploads, `bind:`, `.optimistic`, keyed `{$for}`, all render-time directives | plain | ✅ builds |
 | nothing | plain | ✅ builds |
 
-### How it works (today → Task 32)
+### How it works (landed — Task 32)
 
-- **Today (Task 26):** a recursive AST walk rejects `{$await}` per file at compile time —
-  dev render and `pywire build` both fail with an actionable error (names the page, points at
-  `@poll`/stateful). `tests/test_tier_gating.py`, including the nested `{$for}`→`{$await}` case.
-- **Task 32 (accepted 2026-09-24):** the walk generalizes into the map above and runs
-  **per page over its transitive component closure** — a shared component with `{$await}`
-  fails only the pages that actually use it, and the error names that page. `PyWire(stateless=True)`
-  becomes the ceiling assertion ("fail the build if any page needs push"). The per-file walk
-  is replaced, not layered.
+- The walk generalizes into the map above and runs **per page over its transitive component
+  closure** (frontmatter `.wire` imports + layout directives, resolved statically): a shared
+  component with `{$await}` fails only the pages that actually use it, and the error names
+  that page and the component chain. `PyWire(stateless=True)` is the ceiling assertion
+  ("fail the build if any page needs push"). The Task 26 per-file walk was replaced, not
+  layered — `check_tier()` is called from codegen on every compile (dev render and
+  `pywire build`), with the compiled file as closure root. `tests/test_tier_gating.py` pins
+  the regression, closure, `{$auth}`, and `push_state` cases.
+- `push_state()` is matched **by call name** anywhere in the frontmatter (`push_state(...)` or
+  `self.push_state(...)`) — the "statically visible" case. Helper-wrapped pushes are missed
+  (below).
+- **Framework built-in components (`pywire/components/*.wire`) are exempt from the gate.**
+  They ship with the framework and are pinned by this matrix: `FileInput` calls
+  `push_state()` for in-request upload progress, yet uploads are a plain-tier feature —
+  the call no-ops safely on stateless.
 
 ### What the check cannot see (stated, not pretended)
 
