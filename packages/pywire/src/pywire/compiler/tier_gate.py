@@ -16,14 +16,21 @@ it joins ``PUSH_FEATURES`` below.
 ``PyWire(stateless=True)`` is the ceiling assertion. Every compile path
 (dev loader, ``pywire build``) funnels through :func:`check_tier`, which
 validates the compiled file over its **transitive component closure**
-(frontmatter ``.wire`` imports + layout directives). A shared component
-with a push feature therefore fails only the pages whose closure
-actually uses it, and the error names the page and the chain.
+(frontmatter ``.wire`` imports — including the package form ``from
+components import SlowPanel`` — literal ``load_component()`` /
+``load_layout()`` string references, and layout directives). A shared
+component with a push feature therefore fails only the pages whose
+closure actually uses it, and the error names the page and the chain.
 
 The scan is syntactic and cannot see everything (stated, not pretended):
 push triggered inside imported Python helpers or via dynamic dispatch
-(``getattr``, computed handler names) is invisible to it. ``create_task()``
-alone is deliberately NOT a signal — it is the stateless ``@poll`` pattern.
+(``getattr``, computed handler names) is invisible to it, as are
+component references it cannot resolve statically (non-literal
+``load_component()`` paths, installed third-party component packages).
+A missed component surfaces when that component itself compiles — the
+error then names the component instead of the page. ``create_task()``
+alone is deliberately NOT a signal — it is the stateless ``@poll``
+pattern.
 
 Framework built-in components (``pywire/components/*.wire``) are exempt:
 they ship with the framework and are pinned by the capability matrix —
@@ -33,7 +40,7 @@ statelessly (uploads are a plain-tier feature).
 
 import ast
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from pywire.compiler.ast_nodes import (
     AwaitAttribute,
@@ -152,12 +159,16 @@ def _error_message(chain: List[str], feature: str) -> str:
         f"{where}. Use @poll for background work, render the slow part "
         "conditionally, or run the stateful tier (remove "
         "stateless=True). This gate is a static scan: push triggered "
-        "via imported helpers or dynamic dispatch is invisible to it."
+        "via imported helpers, dynamic dispatch, or component references "
+        "it cannot resolve statically is invisible here — a missed "
+        "component fails when that component itself compiles, naming the "
+        "component instead of the page. create_task() alone is not a "
+        "tier signal: background work without push is fine on stateless."
     )
 
 
 def _wire_deps(parsed: ParsedPyWire) -> List[Path]:
-    """Statically resolvable .wire dependencies: layouts + component imports."""
+    """Statically resolvable .wire dependencies: layouts + component refs."""
     base = Path(parsed.file_path).resolve().parent
     deps: List[Path] = []
 
@@ -169,42 +180,92 @@ def _wire_deps(parsed: ParsedPyWire) -> List[Path]:
     if parsed.python_ast:
         for node in parsed.python_ast.body:
             if isinstance(node, ast.ImportFrom) and node.module:
-                resolved = _resolve_wire_module(node.module, node.level, base)
-                if resolved:
-                    deps.append(resolved)
+                deps.extend(
+                    _resolve_wire_module(
+                        node.module,
+                        node.level,
+                        base,
+                        [alias.name for alias in node.names],
+                    )
+                )
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    resolved = _resolve_wire_module(alias.name, 0, base)
-                    if resolved:
-                        deps.append(resolved)
+                    deps.extend(_resolve_wire_module(alias.name, 0, base))
+        deps.extend(_loader_call_deps(parsed.python_ast, base))
 
     return [dep.resolve() for dep in deps if dep.is_file()]
 
 
-def _resolve_wire_module(module: str, level: int, base_dir: Path) -> Optional[Path]:
-    """Resolve a frontmatter import to a .wire file, if one exists.
+def _loader_call_deps(module: ast.Module, base: Path) -> List[Path]:
+    """Literal ``load_component()`` / ``load_layout()`` references.
+
+    Both are injected frontmatter globals (``runtime/loader.py``) taking a
+    path relative to the importing file — or to an explicit ``base_path``
+    file's directory, matching ``PageLoader.load_layout``. Non-literal
+    paths are dynamic and not guessed here; the error text documents that
+    a missed component surfaces at its own compile time.
+    """
+    deps: List[Path] = []
+    for node in ast.walk(module):
+        if (
+            not isinstance(node, ast.Call)
+            or not isinstance(node.func, ast.Name)
+            or node.func.id not in ("load_component", "load_layout")
+            or not node.args
+            or not isinstance(node.args[0], ast.Constant)
+            or not isinstance(node.args[0].value, str)
+        ):
+            continue
+        path = Path(node.args[0].value)
+        if not path.is_absolute():
+            anchor = base
+            if (
+                len(node.args) > 1
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                anchor = Path(node.args[1].value).parent
+            path = anchor / path
+        deps.append(path)
+    return deps
+
+
+def _resolve_wire_module(
+    module: str, level: int, base_dir: Path, submodules: Sequence[str] = ()
+) -> List[Path]:
+    """Resolve a frontmatter import to .wire files, if any exist.
 
     Mirrors Python import semantics closely enough for the gate: relative
     imports anchor at the importing file's directory; absolute module paths
     (``components.SlowPanel``) are probed against the base directory and its
-    ancestors. Imports of real Python packages (``pywire.*`` etc.) resolve to
-    nothing here and are skipped — the framework's built-in components are
-    loaded at runtime and are exempt anyway.
+    ancestors. ``submodules`` covers the package form ``from components
+    import SlowPanel``, which the runtime resolves to
+    ``components/SlowPanel.wire`` via ``PyWireFinder`` submodule lookup —
+    so ``<module>/<name>.wire`` is probed alongside ``<module>.wire``.
+    Imports of real Python packages (``pywire.*`` etc.) resolve to nothing
+    here — the framework's built-in components are exempt anyway. Installed
+    third-party component packages cannot be resolved statically; they are
+    documented in the error text and the writeup.
     """
     if module.split(".")[0] == "pywire":
-        return None
-    rel = module.replace(".", "/") + ".wire"
+        return []
+    rel = module.replace(".", "/")
+    candidates = [rel + ".wire"] + [f"{rel}/{name}.wire" for name in submodules]
     start = base_dir
     for _ in range(max(level - 1, 0)):
         start = start.parent
-    current = start
-    while True:
-        candidate = current / rel
-        if candidate.is_file():
-            return candidate
-        if current == current.parent:
-            return None
-        current = current.parent
+    found: List[Path] = []
+    for candidate in candidates:
+        current = start
+        while True:
+            path = current / candidate
+            if path.is_file():
+                found.append(path)
+                break
+            if current == current.parent:
+                break
+            current = current.parent
+    return found
 
 
 def _is_builtin_component(path) -> bool:

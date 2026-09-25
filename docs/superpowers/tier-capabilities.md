@@ -104,20 +104,26 @@ dev-compile and `pywire build`.
 ### How it works (landed — Task 32)
 
 - The walk generalizes into the map above and runs **per page over its transitive component
-  closure** (frontmatter `.wire` imports + layout directives, resolved statically): a shared
+  closure**, resolved statically from three reference forms: frontmatter `.wire` imports
+  (including the package form `from components import SlowPanel`, which probes
+  `components/SlowPanel.wire` exactly like the runtime's `PyWireFinder` submodule lookup),
+  literal `load_component("path.wire", __file__)` / `load_layout(...)` string references, and
+  layout directives. A shared
   component with `{$await}` fails only the pages that actually use it, and the error names
   that page and the component chain. `PyWire(stateless=True)` is the ceiling assertion
   ("fail the build if any page needs push"). The Task 26 per-file walk was replaced, not
   layered — `check_tier()` is called from codegen on every compile (dev render and
   `pywire build`), with the compiled file as closure root. `tests/test_tier_gating.py` pins
-  the regression, closure, `{$auth}`, and `push_state` cases.
+  the regression, closure (all three reference forms), `{$auth}`, and `push_state` cases.
 - `push_state()` is matched **by call name** anywhere in the frontmatter (`push_state(...)` or
   `self.push_state(...)`) — the "statically visible" case. Helper-wrapped pushes are missed
   (below).
-- **Framework built-in components (`pywire/components/*.wire`) are exempt from the gate.**
-  They ship with the framework and are pinned by this matrix: `FileInput` calls
-  `push_state()` for in-request upload progress, yet uploads are a plain-tier feature —
-  the call no-ops safely on stateless.
+- **Framework code is exempt, in two ways:** files under `pywire/components/*.wire` are
+  skipped as closure members (they ship with the framework and are pinned by this matrix:
+  `FileInput` calls `push_state()` for in-request upload progress, yet uploads are a
+  plain-tier feature — the call no-ops safely on stateless); and **all `pywire.*` frontmatter
+  imports are dropped from the closure walk entirely** — they are framework modules, not app
+  dependencies.
 
 ### What the check cannot see (stated, not pretended)
 
@@ -125,6 +131,15 @@ Static analysis is syntactic. Per the T30 spike (probes C2/C3):
 
 - A push triggered inside an **imported helper** is invisible to the page's scan.
 - **Dynamic dispatch** (`getattr`, computed handler names) defeats any allowlist/scan.
+- `push_state()` inside **template event expressions** — the call-name match walks the
+  frontmatter AST only.
+- **Closure-resolution limits:** `load_component()` / `load_layout()` with non-literal
+  (computed) paths, and components from **installed third-party packages** (resolved outside
+  the app tree at runtime; not statically probeable) do not join the page's closure.
+- **Attribution fallback for those misses:** a dynamic/indirect component reference that the
+  closure cannot see surfaces when the component itself compiles (dev render or build of a
+  page whose runtime import reaches it) — the error then names the **component**, not the
+  page. Orphan components are never compiled as roots, so they never fail spuriously.
 - `create_task()` alone is **not** a tier signal — the flagship stateless pattern
   (`@poll` + background task) uses it. Tier-needing is about *push*, not *background work*.
 

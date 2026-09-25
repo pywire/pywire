@@ -80,6 +80,18 @@ async def run():
 <p id="p">{progress}</p><button @click={run()}>go</button>
 """
 
+PAGE_LOAD_COMPONENT = """---
+SlowPanel = load_component("../components/SlowPanel.wire", __file__)
+---
+<h1>A</h1><SlowPanel />
+"""
+
+PAGE_PACKAGE_IMPORT = """---
+from components import SlowPanel
+---
+<h1>A</h1><SlowPanel />
+"""
+
 AUTH_PAGE = """<p>{$auth claims=[("role", "admin")]}PENDING-VIEW{$then ok}RESOLVED-{ok}{/auth}</p>
 """
 
@@ -157,6 +169,36 @@ def test_build_error_names_page_for_component_closure(tmp_path: Path):
     assert "@poll" in msg
     # Honesty: the error must state what the static scan cannot see.
     assert "imported helpers" in msg
+    assert "create_task" in msg
+
+
+def test_build_error_names_page_for_load_component_closure(tmp_path: Path):
+    # load_component() is a first-class injected frontmatter mechanism
+    # (runtime/loader.py); a literal string reference must join the closure.
+    pages = _closure_project(tmp_path, with_page_a=False)
+    (pages / "a.wire").write_text(PAGE_LOAD_COMPONENT)
+    PyWire(pages_dir=str(pages), stateless=True, secret_key=SECRET)
+    with pytest.raises(Exception) as excinfo:
+        build_project(pages_dir=pages, out_dir=tmp_path / "build")
+    msg = str(excinfo.value)
+    assert "a.wire" in msg
+    assert "SlowPanel.wire" in msg
+    assert "@poll" in msg
+
+
+def test_build_error_names_page_for_package_form_import(tmp_path: Path):
+    # `from components import SlowPanel` resolves at runtime via PyWireFinder
+    # submodule lookup (components/SlowPanel.wire); the closure must probe
+    # the same path, not just components.wire.
+    pages = _closure_project(tmp_path, with_page_a=False)
+    (pages / "a.wire").write_text(PAGE_PACKAGE_IMPORT)
+    PyWire(pages_dir=str(pages), stateless=True, secret_key=SECRET)
+    with pytest.raises(Exception) as excinfo:
+        build_project(pages_dir=pages, out_dir=tmp_path / "build")
+    msg = str(excinfo.value)
+    assert "a.wire" in msg
+    assert "SlowPanel.wire" in msg
+    assert "@poll" in msg
 
 
 def test_unused_await_component_builds_clean(tmp_path: Path):
