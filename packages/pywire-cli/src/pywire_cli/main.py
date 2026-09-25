@@ -524,20 +524,41 @@ def build(
 
         target = Path.cwd() / ".pywire" / "deploy" / "azure"
         target.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=target / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
         (target / "function_app.py").write_text(
             generate_azure_function_app(Path.cwd(), app or "src.main:app")
         )
-        for name in ("host.json", "requirements.txt"):
+        for name in (
+            "host.json",
+            "local.settings.json",
+            "requirements.txt",
+        ):
             (target / name).write_text(render_deploy_template(f"azure/{name}.j2"))
         (target / "README.md").write_text(
             render_deploy_template("azure/README.md.j2", function_name=Path.cwd().name)
         )
+        console.print("✅ Generated [cyan].pywire/deploy/azure/[/] for Azure Functions")
     elif platform == "gcp-functions":
         from pywire_cli.deploy import generate_gcp_functions_main
         from pywire_templates import render_deploy_template
 
         target = Path.cwd() / ".pywire" / "deploy" / "gcp_functions"
         target.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=target / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
         (target / "main.py").write_text(
             generate_gcp_functions_main(Path.cwd(), app or "src.main:app")
         )
@@ -549,6 +570,9 @@ def build(
                 "gcp_functions/README.md.j2", project_name=Path.cwd().name
             )
         )
+        console.print(
+            "✅ Generated [cyan].pywire/deploy/gcp_functions/[/] for Google Cloud Functions"
+        )
     elif platform == "gcp-cloudrun":
         from pywire_cli.deploy import generate_dockerfile
         from pywire_templates import render_deploy_template
@@ -557,17 +581,13 @@ def build(
         target = Path.cwd() / ".pywire" / "deploy" / "gcp_cloudrun"
         target.mkdir(parents=True, exist_ok=True)
         (target / "Dockerfile").write_text(generate_dockerfile(Path.cwd(), workers=1))
-        (target / "cloudrun.yaml").write_text(
-            render_deploy_template(
-                "gcp_cloudrun/cloudrun.yaml.j2",
-                project_name=project_name,
-                image="us-docker.pkg.dev/pywire/app",
-            )
-        )
         (target / "README.md").write_text(
             render_deploy_template(
                 "gcp_cloudrun/README.md.j2", project_name=project_name
             )
+        )
+        console.print(
+            "✅ Generated [cyan].pywire/deploy/gcp_cloudrun/[/] for Google Cloud Run"
         )
     elif platform in ("cloudflare", "cloudflare-edge"):
         import shutil
@@ -821,9 +841,6 @@ def _print_skip_hint(
             "cloudflare",
             "cloudflare-edge",
             "aws-lambda",
-            "azure-functions",
-            "gcp-functions",
-            "gcp-cloudrun",
         ]
     ),
     default="docker",

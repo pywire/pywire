@@ -1,10 +1,10 @@
 """Google Cloud Functions entry point for a stateless PyWire app."""
 import asyncio
 from pywire.adapters.oneshot import OneShotASGIAdapter
-from {{ app_module }} import {{ app_attr }}
+from {{ app_module }} import {{ app_attr }} as _pywire_app
 import _routes  # noqa: F401
 
-_adapter = OneShotASGIAdapter({{ app_attr }})
+_adapter = OneShotASGIAdapter(_pywire_app)
 
 def pywire(request):
     status, headers, body = asyncio.run(_adapter.fetch(

@@ -3,11 +3,11 @@ import asyncio
 from urllib.parse import urlparse
 import azure.functions as func
 from pywire.adapters.oneshot import OneShotASGIAdapter
-from {{ app_module }} import {{ app_attr }}
+from {{ app_module }} import {{ app_attr }} as _pywire_app
 import _routes  # noqa: F401
 
 function_app = func.FunctionApp()
-_adapter = OneShotASGIAdapter({{ app_attr }})
+_adapter = OneShotASGIAdapter(_pywire_app)
 
 @function_app.route(route="{*path}", methods=["GET", "POST"], auth_level=func.HttpAuthLevel.ANONYMOUS)
 def pywire(request: func.HttpRequest) -> func.HttpResponse:

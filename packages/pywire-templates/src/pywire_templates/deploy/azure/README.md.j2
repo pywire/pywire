@@ -1,4 +1,34 @@
 # {{ function_name }} on Azure Functions
 
-Local: `func start`
-Deploy: `func azure functionapp publish {{ function_name }}`
+The generated directory contains the complete uploadable function package:
+
+- `function_app.py` — HTTP entry point
+- `_routes.py` and `_pywire_build/` — compiled PyWire routes
+- `host.json` and `local.settings.json` — Python v2 host configuration
+- `requirements.txt` — runtime dependencies
+
+From the project root, install the Azure Functions Core Tools and run locally:
+
+```sh
+cd .pywire/deploy/azure
+python -m pip install -r requirements.txt
+func start
+```
+
+`local.settings.json` contains a development-only secret and enables worker
+indexing. Before deploying, generate a strong secret and set it as the Azure
+Function application's `PYWIRE_SECRET_KEY` application setting:
+
+```sh
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Package and upload the **contents** of this directory (not the directory itself):
+
+```sh
+zip -r function.zip function_app.py _routes.py _pywire_build host.json requirements.txt
+func azure functionapp publish {{ function_name }} --zip-path function.zip
+```
+
+Do not upload `local.settings.json` as a runtime configuration file; configure
+`PYWIRE_SECRET_KEY` in Azure application settings instead.

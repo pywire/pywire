@@ -4,9 +4,13 @@ import re
 import sys
 import types
 from pathlib import Path
+
+from click.testing import CliRunner
 import jinja2
 import msgpack
 from pywire import PyWire
+
+from pywire_cli.main import cli
 
 TEMPLATES = (
     Path(__file__).parents[2] / "pywire-templates/src/pywire_templates/deploy/azure"
@@ -79,8 +83,41 @@ def test_azure_function_app_round_trips_stateless_snapshot(tmp_path: Path) -> No
         {"path": "/", "handler": "increment", "data": {}, "snapshot": match.group(1)}
     )
     post = handler(HttpRequest("POST", "https://example.test/_pywire/stateless", event))
+    assert isinstance(post.body, bytes)
+    assert post.headers.get("content-type") == "application/x-msgpack"
     assert post.status_code == 200 and "regions" in msgpack.unpackb(
         post.body, raw=False
     )
-    for name in (mod.__name__, "azure", "azure.functions"):
+    for name in (mod.__name__, "azure", "azure.functions", "_routes"):
         sys.modules.pop(name, None)
+
+
+def test_azure_build_generates_deployable_artifact_set() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        root = Path.cwd()
+        pages = root / "pages"
+        pages.mkdir()
+        (pages / "index.wire").write_text("<p>hello</p>\n")
+        (root / "azure_build_app.py").write_text(
+            "from pywire import PyWire\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+        )
+        (root / "pyproject.toml").write_text("[project]\nname='test'\n")
+        result = runner.invoke(
+            cli,
+            ["build", "azure_build_app:app", "--platform", "azure-functions"],
+        )
+        target = root / ".pywire" / "deploy" / "azure"
+
+        assert result.exit_code == 0, result.output
+        assert (target / "_routes.py").is_file()
+        assert (target / "_pywire_build").is_dir()
+        for name in (
+            "function_app.py",
+            "host.json",
+            "local.settings.json",
+            "requirements.txt",
+            "README.md",
+        ):
+            assert (target / name).is_file()

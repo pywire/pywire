@@ -1,9 +1,13 @@
 # {{ project_name }} on Google Cloud Run
 
-Build the application, then deploy the generated Docker image:
+The generated Dockerfile uses the project root as its build context. From the
+project root, copy it into place and deploy:
 
 ```sh
-gcloud run deploy {{ project_name }} --source . --region us-central1
+cp .pywire/deploy/gcp_cloudrun/Dockerfile ./Dockerfile
+gcloud run deploy {{ project_name }} \
+  --source . \
+  --region us-central1
 ```
 
 For WebSocket/session-affinity mode add `--session-affinity`; stateless mode does not need it.
