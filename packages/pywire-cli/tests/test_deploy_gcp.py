@@ -208,6 +208,29 @@ def test_gcp_functions_build_produces_self_contained_deploy_dir(
     assert round_trip["post_regions"]
 
 
+def test_gcp_functions_build_warns_when_app_module_is_main() -> None:
+    """functions-framework reserves main.py for the entrypoint.
+
+    The build copies the app's root-level main.py into the deploy dir, then the
+    generated entrypoint write clobbers it and `from main import app`
+    self-imports the entrypoint — warn so the artifact isn't silently broken.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _make_app(Path.cwd(), module_name="main", stateless=True)
+        sys.modules.pop("main", None)
+        result = runner.invoke(
+            cli, ["build", "main:app", "--platform", "gcp-functions"]
+        )
+        sys.modules.pop("main", None)
+        assert result.exit_code == 0, result.output
+        assert (
+            "gcp-functions reserves main.py for its entrypoint — rename your app "
+            "module (or use src/); the generated entrypoint will shadow it."
+            in " ".join(result.output.split())
+        )
+
+
 def test_gcp_cloudrun_build_generates_docker_artifacts() -> None:
     runner = CliRunner()
     with runner.isolated_filesystem():

@@ -1,10 +1,11 @@
 # {{ project_name }} on Google Cloud Functions
 
 The generated directory contains the complete function source: `main.py`,
-`_routes.py`, `_pywire_build/`, your application source (e.g. `src/` or
-`main.py`), and `requirements.txt`. `--source` uploads this directory as-is —
-no copy step is needed. Deploy from the project root, changing only the GCP
-project, region, and runtime if needed:
+`_routes.py`, `_pywire_build/`, your application source (e.g. `src/`), and
+`requirements.txt`. `--source` uploads this directory as-is — no copy step is
+needed. A root-level `main:app` app must be renamed (or use the `src/` layout)
+because the entrypoint is `main.py`. Deploy from the project root, changing
+only the GCP project, region, and runtime if needed:
 
 ```sh
 gcloud functions deploy {{ project_name }} \

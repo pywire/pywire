@@ -574,6 +574,12 @@ def build(
         from pywire_cli.deploy import generate_gcp_functions_main
         from pywire_templates import render_deploy_template
 
+        if (app or "src.main:app").split(":", 1)[0].split(".")[0] == "main":
+            console.print(
+                "[yellow]⚠ gcp-functions reserves main.py for its entrypoint — "
+                "rename your app module (or use src/); the generated entrypoint "
+                "will shadow it.[/]"
+            )
         target = Path.cwd() / ".pywire" / "deploy" / "gcp_functions"
         target.mkdir(parents=True, exist_ok=True)
         from pywire.compiler.build_artifacts import generate_cf_bundle
