@@ -18,7 +18,7 @@ status = wire("queued")
 
 `start_export` writes a job record and starts background work; `refresh_job` reads that record into ordinary page state. Handlers receive **unwrapped values**, not live Wire objects.
 
-The element is a conditional-render stop rule: when the handler reaches a terminal state, render the element conditionally so it unmounts. PyWire has no `.while` condition in v1. The timer rescans after morphs and removes unmounted elements. Use an explicit interval (for example `.every-500ms` or `.every-2000ms`); the default is 1000 ms.
+The element is a conditional-render stop rule: when the handler reaches a terminal state, render the element conditionally so it unmounts. PyWire has no `.while` condition in v1. The timer rescans after morphs and removes unmounted elements. Use an explicit interval (for example `.every-500` or `.every-2000`); the default is 1000 ms.
 
 The overlap guard is **best effort in v1**: a poll element skips a tick while its request is in flight, but any response clears the in-flight flags globally. Do not treat this as a distributed scheduling guarantee. Protect the job with an idempotent store operation.
 
@@ -30,7 +30,7 @@ The overlap guard is **best effort in v1**: a poll element skips a tick while it
 | GCP             | Trigger or enqueue a Cloud Task          | Firestore document keyed by job ID | Firestore query by job ID  |
 | Local/container | `create_task()` and a local queue/worker | PostgreSQL jobs table              | PostgreSQL query by job ID |
 
-For example, the handler shape is the same everywhere:
+For example, the handler shape is the same everywhere (frontmatter elided):
 
 ```python
 def start_export():

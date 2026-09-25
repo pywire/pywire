@@ -29,7 +29,7 @@ Snapshot size grows with the number of public wires and their values. Do not cop
 ---
 page_size = wire(50).lock()
 page_number = wire(0)
-rows = wire([])
+rows = wire([]).lock()
 user_id = wire(None)  # replaced from resolved request identity
 
 def load_rows():
@@ -41,7 +41,7 @@ load_rows()
 ---
 ```
 
-`page_size.lock()` is omitted from snapshots. Frontmatter recreates and reloads it each request, so bulk data and credentials are not carried O(n) in every round-trip. Put only small interaction state—filters, selection, pagination—in public wires. The list itself is an O(1) region update, but the snapshot is only small if you do not duplicate the collection there.
+Locked wires such as `page_size` and `rows` are skipped by the snapshot encoder. Frontmatter recreates them and rebuilds the current request's bulk data and credentials from the store, so neither is carried O(n) in every round-trip. Put only small interaction state—filters, selection, pagination—in public wires. The list itself is an O(1) region update, but the snapshot is only small if you do not duplicate the collection there.
 
 The value of `.lock()` is that it is client-invisible, not encrypted. Locked values can still exist in process memory during the request; do not put a value there that the frontmatter cannot reconstruct safely.
 

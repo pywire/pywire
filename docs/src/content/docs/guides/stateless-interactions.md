@@ -27,7 +27,7 @@ Give every loop a stable, unique key:
 
 ```pywire
 <ul>
-    <li $for={item in items, key=item.id}>
+    <li $for={item in items} $key={item.id}>
         {item.name}
         <button @click={toggle_item(item.id)}>{item.done}</button>
     </li>
@@ -42,4 +42,4 @@ Keys must be stable and unique. Duplicate or churning keys cannot safely identif
 
 Append, remove, reorder, or fully reassign the collection falls back to a whole-loop render. This is intentional v1 behavior, not a per-row incremental update. For interactions that repeatedly insert or reorder, expect the larger payload until structural keyed regions ship.
 
-`key=` still improves identity tracking on stateful transports too; the same `render_update` shape is used by WebSocket, HTTP-session, and stateless transports.
+`$key` still improves identity tracking on stateful transports too; the same `render_update` shape is used by WebSocket, HTTP-session, and stateless transports.
