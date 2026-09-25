@@ -17,6 +17,10 @@ cd .pywire/deploy/aws
 zip -r function.zip handler.py _routes.py _pywire_build package src
 ```
 
+For a root-level app (`main:app`) instead of the `src/` layout, copy the module
+file instead (`cp main.py .pywire/deploy/aws/`) and add `main.py` to the zip in
+place of `src`.
+
 Create an API Gateway HTTP API, a Lambda integration, and a catch-all route:
 
 ```sh
@@ -25,4 +29,18 @@ api_id=$(aws apigatewayv2 create-api --api-name {{ function_name }} --protocol-t
 integration_id=$(aws apigatewayv2 create-integration --api-id "$api_id" --integration-type AWS_PROXY --integration-uri "$function_arn" --query IntegrationId --output text)
 aws apigatewayv2 create-route --api-id "$api_id" --route-key '$default' --target "integrations/$integration_id"
 aws apigatewayv2 create-stage --api-id "$api_id" --stage-name '$default'
+```
+
+Generate the snapshot signing secret and hold it in the shell — never paste a
+secret literal into a command line, shell history, or this directory:
+
+```sh
+export PYWIRE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
+Set it as the function's environment variable (or use the Lambda console →
+Configuration → Environment variables):
+
+```sh
+aws lambda update-function-configuration --function-name {{ function_name }} --environment "Variables={PYWIRE_SECRET_KEY=$PYWIRE_SECRET_KEY}"
 ```

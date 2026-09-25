@@ -11,3 +11,22 @@ gcloud run deploy {{ project_name }} \
 ```
 
 For WebSocket/session-affinity mode add `--session-affinity`; stateless mode does not need it.
+
+## PYWIRE_SECRET_KEY
+
+Stateless mode (`PyWire(stateless=True)`) signs client-held snapshots and needs
+`PYWIRE_SECRET_KEY` in the service environment. Without it the container fails
+to boot with `RuntimeError: PyWire(stateless=True) requires secret_key= or the
+PYWIRE_SECRET_KEY env var`. Generate one at deploy time and pass it in the same
+command (never commit it):
+
+```sh
+gcloud run deploy {{ project_name }} \
+  --source . \
+  --region us-central1 \
+  --set-env-vars PYWIRE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
+For production prefer Secret Manager — store the value as a secret version,
+then pass `--set-secrets PYWIRE_SECRET_KEY=NAME:latest` instead. Session-based
+mode (no `stateless=True`) does not need the variable.

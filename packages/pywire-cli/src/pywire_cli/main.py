@@ -244,6 +244,30 @@ def _discover_app_str() -> str:
     )
 
 
+def _copy_app_source(app_import: str, target: Path) -> None:
+    """Copy the app's source package/module into a deploy dir.
+
+    The generated FaaS entrypoints do ``from <app_module> import <app_attr>``,
+    so a deploy dir shipped without the app source cannot boot. Copies the
+    top-level package directory (e.g. ``src/``) or the root-level module file
+    (e.g. ``main.py``). Installed-package apps are left to requirements.txt.
+    """
+    import shutil
+
+    top = app_import.split(":", 1)[0].split(".")[0]
+    pkg_dir = Path.cwd() / top
+    module_file = Path.cwd() / f"{top}.py"
+    if pkg_dir.is_dir():
+        shutil.copytree(
+            pkg_dir,
+            target / top,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+    elif module_file.is_file():
+        shutil.copy2(module_file, target / module_file.name)
+
+
 # Workaround: rich-click wraps tables in Panels which default to expand=True.
 # We monkeypatch Panel to default expand=False to allow natural resizing.
 original_panel_init = rich.panel.Panel.__init__
@@ -532,6 +556,7 @@ def build(
             app_import=app,
             durable_objects=False,
         )
+        _copy_app_source(app or "src.main:app", target)
         (target / "function_app.py").write_text(
             generate_azure_function_app(Path.cwd(), app or "src.main:app")
         )
@@ -559,6 +584,7 @@ def build(
             app_import=app,
             durable_objects=False,
         )
+        _copy_app_source(app or "src.main:app", target)
         (target / "main.py").write_text(
             generate_gcp_functions_main(Path.cwd(), app or "src.main:app")
         )
@@ -883,12 +909,19 @@ def deploy(
     out_path = Path(out_dir)
 
     # Auto-discover and verify app
-    if not app:
-        app = _discover_app_str()
-    console.print(f"📦 Preparing deploy config for [cyan]{app}[/]...")
+    try:
+        if not app:
+            app = _discover_app_str()
+        console.print(f"📦 Preparing deploy config for [cyan]{app}[/]...")
 
-    # Pre-compile
-    app_instance = import_app(app)
+        # Pre-compile
+        app_instance = import_app(app)
+    except RuntimeError as exc:
+        # Same RuntimeError translation as `build` (missing stateless secret).
+        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
+            _fail_missing_secret(platform)
+        raise
+    _require_stateless(app_instance, platform)
 
     pages_dir = Path(getattr(app_instance, "pages_dir", "pages"))
 
@@ -1177,6 +1210,7 @@ def deploy(
             "\n[bold]Deploy to Cloudflare:[/]\n"
             "  1. Build: [cyan]uv run pywire build --platform cloudflare-edge[/]\n"
             "  2. Deploy: [cyan]npx wrangler deploy[/]\n"
+            "  3. Set the boot secret: [cyan]npx wrangler secret put PYWIRE_SECRET_KEY[/]\n"
             "\n[bold]Generated files:[/]\n"
             "  • [cyan]wrangler.toml[/] — Cloudflare config (plain Worker, no Durable Objects)\n"
             "  • [cyan]entry.py[/] — stateless Worker entry (OneShotASGIAdapter)\n"

@@ -117,3 +117,19 @@ def test_build_dual_mode_platforms_accept_stateful_app(platform: str) -> None:
             mock_build.return_value = _build_summary()
             result = runner.invoke(cli, ["build", "--platform", platform])
     assert result.exit_code == 0, result.output
+
+
+def test_deploy_faas_rejects_stateful_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`pywire deploy` must hit the same pure-FaaS stateless gate as `build`."""
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret")
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _write_app(stateless=False)
+        with (
+            patch("pywire.compiler.build.build_project") as mock_build,
+            patch("pywire_cli.main._install_aws_dependencies"),
+        ):
+            mock_build.return_value = _build_summary()
+            result = runner.invoke(cli, ["deploy", "--platform", "aws-lambda"])
+    assert result.exit_code != 0
+    assert "stateless=True" in _norm(result.output)

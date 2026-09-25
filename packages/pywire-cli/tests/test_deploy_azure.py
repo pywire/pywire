@@ -1,6 +1,9 @@
 """Azure Functions stateless deploy template tests."""
 
+import json
 import re
+import shutil
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -121,3 +124,146 @@ def test_azure_build_generates_deployable_artifact_set() -> None:
             "README.md",
         ):
             assert (target / name).is_file()
+        settings = json.loads((target / "local.settings.json").read_text())
+        assert (
+            settings["Values"]["PYWIRE_SECRET_KEY"] == ""
+        )  # never ship a known secret
+        assert settings["Values"]["AzureWebJobsFeatureFlags"] == "EnableWorkerIndexing"
+
+
+_AZURE_FUNCTIONS_STUB = '''\
+"""Minimal azure.functions stub for the isolated-entrypoint test."""
+
+
+class FunctionApp:
+    def route(self, **kwargs):
+        return lambda fn: fn
+
+
+class HttpAuthLevel:
+    ANONYMOUS = "anonymous"
+
+
+class HttpRequest:
+    pass
+
+
+class HttpResponse:
+    def __init__(self, body, status_code=None, headers=None, mimetype=None):
+        self.body = body
+        self.status_code = status_code
+        self.headers = headers
+        self.mimetype = mimetype
+'''
+
+
+_ISOLATED_AZURE_DRIVER = '''\
+"""Boot the generated function_app.py from an isolated deploy-dir copy.
+
+sys.path holds ONLY the deploy-dir copy, the azure.functions stub dir, and
+whatever the interpreter already had for installed deps (stdlib +
+site-packages) — the build root is excluded, so the app source can only
+resolve from inside the deploy dir.
+"""
+import json
+import os
+import re
+import sys
+
+import msgpack
+
+deploy, stubs, guard = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path[:] = [deploy, stubs] + [
+    p for p in sys.path if p and p != guard and not p.startswith(guard + os.sep)
+]
+
+import function_app  # generated entrypoint — imports app source + _routes
+
+
+class Request:
+    def __init__(self, method, url, body=b""):
+        self.method, self.url, self._body = method, url, body
+
+    @property
+    def headers(self):
+        return {"content-type": "application/x-msgpack"}
+
+    def get_body(self):
+        return self._body
+
+
+handler = function_app.pywire
+get = handler(Request("GET", "https://example.test/"))
+text = get.body.decode() if isinstance(get.body, bytes) else get.body
+match = re.search(r'_pywire_snapshot" type="text/plain">(.*?)</script>', text)
+snapshot = match.group(1) if match else ""
+post = handler(
+    Request(
+        "POST",
+        "https://example.test/_pywire/stateless",
+        msgpack.packb(
+            {"path": "/", "handler": "increment", "data": {}, "snapshot": snapshot}
+        ),
+    )
+)
+print(
+    json.dumps(
+        {
+            "get_status": get.status_code,
+            "has_snapshot": bool(match),
+            "post_status": post.status_code,
+            "post_content_type": (post.headers or {}).get("content-type"),
+            "post_regions": "regions" in msgpack.unpackb(post.body, raw=False),
+        }
+    )
+)
+'''
+
+
+def test_azure_build_produces_self_contained_deploy_dir(tmp_path: Path) -> None:
+    """Execute the generated entrypoint from an isolated copy of the deploy dir.
+
+    File-existence asserts can't catch a missing app package — the generated
+    `function_app.py` does `from <app_module> import app`, so the deploy dir
+    must carry the app source and boot with only its own contents importable.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        root = Path.cwd()
+        pages = root / "pages"
+        pages.mkdir()
+        (pages / "index.wire").write_text(
+            "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment()}>+</button>\n"
+        )
+        (root / "azure_isolated_app.py").write_text(
+            "from pywire import PyWire\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+        )
+        (root / "pyproject.toml").write_text("[project]\nname='test'\n")
+        result = runner.invoke(
+            cli,
+            ["build", "azure_isolated_app:app", "--platform", "azure-functions"],
+        )
+        assert result.exit_code == 0, result.output
+        deploy_copy = tmp_path / "deploy"
+        shutil.copytree(root / ".pywire" / "deploy" / "azure", deploy_copy)
+
+    stubs = tmp_path / "stubs"
+    (stubs / "azure").mkdir(parents=True)
+    (stubs / "azure" / "__init__.py").write_text("")
+    (stubs / "azure" / "functions.py").write_text(_AZURE_FUNCTIONS_STUB)
+    driver = tmp_path / "driver.py"
+    driver.write_text(_ISOLATED_AZURE_DRIVER)
+
+    proc = subprocess.run(
+        [sys.executable, str(driver), str(deploy_copy), str(stubs), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, f"entrypoint failed to boot:\n{proc.stderr}"
+    round_trip = json.loads(proc.stdout)
+    assert round_trip["get_status"] == 200 and round_trip["has_snapshot"]
+    assert round_trip["post_status"] == 200
+    assert round_trip["post_content_type"] == "application/x-msgpack"
+    assert round_trip["post_regions"]
