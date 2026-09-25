@@ -45,15 +45,30 @@
 
 ## Execution & Model Budget
 
-Execution method: **subagent-driven** (fresh implementer per task, fresh cross-family reviewer gate before the next task; whole-branch review at each phase end). Parent session (orchestrator) stays on `qwen/qwen3.8-max-0902`.
+Execution method: **subagent-driven** (fresh implementer per task, cross-family reviewer gate before the next task, whole-branch review at each phase end). Model selection for every subagent seat is governed by the **`model-routing` skill** (`.agents/skills/model-routing/SKILL.md` + `references/fleet.md`) and AGENTS.md's "Model routing" section — those are the source of truth; this block is a plan-local summary. The orchestrator seat maps to **MiMo V2.6 Pro** per protocol (the active pi session should match it; escalation → Kimi K3 [validated-only] — the Opus path is BANNED, see below).
 
-Model tiers from `~/.pi/agent/models.json` + store pricing (in/out per Mtok):
+**Fleet (OpenRouter IDs, in/out per Mtok, queried 2026-09-24):**
 
-- **$** `xiaomi/mimo-v2.6-flash` (0.14/0.28), `z-ai/glm-5.3-flash` (0.15/0.5), `deepseek/deepseek-v4.1-flash` (0.15/0.6)
-- **$$** `xiaomi/mimo-v2.6-pro` (0.44/0.87), `deepseek/deepseek-v4-pro-0813` (0.5/1.5), `z-ai/glm-5.3` (0.84/2.64), `google/gemini-3.8-flash` (0.75/3.75)
-- **$$$** `qwen/qwen3.8-max-0902` (2/6), `moonshotai/kimi-k3` (3/15)
-- **$$$$** `anthropic/claude-opus-5.5` (4/20)
-- Avoid for this plan: `openai/gpt-6-astra*` (10/50 — no phase needs it over opus).
+| Seat | Model(s) | ID(s) | $/M | Flags |
+|---|---|---|---|---|
+| Orchestrator (default) | MiMo V2.6 Pro | `xiaomi/mimo-v2.6-pro` | 0.43/0.87 | top open-weight, no reliability flag |
+| Primary coding (large/complex) | rotate MiMo V2.6 Pro · Qwen3.8 Max · GLM 5.3 | `xiaomi/mimo-v2.6-pro` · `qwen/qwen3.8-max-0902` · `z-ai/glm-5.3` | 0.43/0.87 · 2.00/6.00 · 1.40/4.40 | GLM coding output gets MORE review scrutiny (reliability flag) |
+| Long-horizon multi-file | Kimi K2.6 | `moonshotai/kimi-k2.6` | 0.95/4.00 | steadier than K3 |
+| Small/cheap coding + long-context | DeepSeek V4.1 Flash · MiMo V2.6 Flash · GLM-5.3-Flash | `deepseek/deepseek-v4.1-flash` · `xiaomi/mimo-v2.6-flash` · `z-ai/glm-5.3-flash` | 0.30/1.20 · 0.14/0.28 · 0.04/0.60 | route by language/task fit |
+| Review (general) | cross-family from author — MANDATORY | — | — | never same family as author |
+| Security review | GLM 5.3 | `z-ai/glm-5.3` | 1.40/4.40 | mandatory on auth/secrets/input-validation/external-surface diffs |
+
+**Excluded / banned:** `deepseek/deepseek-v4-pro*` (EXCLUDED by fleet policy — scores below its own V4.1 Flash; used by T3/T4/T28 before this policy → historical, not re-run). All frontier-lab models (Anthropic/OpenAI/Google) — includes `gemini` (cut 2026-09-24) and `claude-opus-5.5`. **Opus conflict:** the fleet skill keeps Opus 5.5 as a complexity-gated escalation for the orchestrator/security seats, but the owner's standing directive ("no more opus ever", 2026-09) supersedes it per the superpowers precedence rule (user instructions > skills). The gate's Opus option is therefore DISABLED; escalation routes to the next-best fleet model, and any security item that outgrows GLM 5.3 becomes a human decision point, not an auto-Opus call. → **owner to confirm.**
+
+**Hard constraints (from the skill, enforced at every dispatch):**
+1. Reviewer family ≠ author family (cross-family review, mandatory).
+2. Any diff touching auth/secrets/input-validation/an external surface gets a **mandatory GLM 5.3 security pass** (+ a second independent reviewer if GLM authored it).
+3. Complexity gate (orchestrator/security seats): Opus escalation disabled (above); in-fleet, a high-effort × security-critical item gets GLM 5.3 + human escalation.
+4. Escalation rule: flash/small-tier output that fails review or exceeds a 2-attempt budget escalates one tier up — not a third identical retry.
+5. Shadow validation: GLM 5.3 and Kimi K3 carry "falls apart on real work" flags — their committed CODE gets extra scrutiny; neither gets unattended orchestrator authority until validated against MiMo Pro.
+6. Provenance: each work item logs `work_item_id, tier, author_model, reviewer_model, context_tokens, gate_count, escalated, escalation_reason, outcome, rework_count` to the SDD ledger.
+
+The per-phase tables below are a **historical as-run record** (phases 0–5B): the models shown are what actually ran, including now-banned `opus` (phases 1/3/5), now-excluded `deepseek-v4-pro` (T3/4/28), and now-cut `gemini` (reviews). Kept for provenance, NOT forward routing — remaining work routes per the block after the table.
 
 | Phase                              | Complexity                                                             | Implementer                                                                        | Reviewer                                                                                     | Est. cost |
 | ---------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------- |
@@ -65,12 +80,28 @@ Model tiers from `~/.pi/agent/models.json` + store pricing (in/out per Mtok):
 | 5 — validation gate (T18–20)       | **Low-medium** to build, **judgment-heavy** to evaluate                | `xiaomi/mimo-v2.6-pro`                                                             | Numbers reviewed by parent session; `claude-opus-5.5` only if gate marginally fails          | $2–5      |
 | 6 — deploy targets + docs (T21–25) | **Low-medium** — pattern repeats after T20/T21                         | `xiaomi/mimo-v2.6-pro`; T21 (AWS, first of pattern) → `z-ai/glm-5.3`               | `xiaomi/mimo-v2.6-pro` (task); `qwen/qwen3.8-max-0902` (phase-end)                           | $3–8      |
 
-> **Review-model policy (owner directive 2026-09-24):** gemini cut from review slots. Task reviews → `xiaomi/mimo-v2.6-pro` (cheapest viable: $0.43/$0.87 per M vs deepseek-v4-pro $0.86/$1.71, glm-5.3 $1.40/$4.40, qwen3.8-max $2/$6). Phase-end integration reviews → `qwen/qwen3.8-max-0902` (judgment-heavy, cross-file). Orchestrator re-verifies load-bearing reviewer claims regardless of model — evidence: gemini-3.8-flash fabricated file paths in two Phase 5A reviews while reaching correct verdicts.
+> **FORWARD ROUTING (remaining work, per the model-routing skill).** Reviewer is always cross-family from author. Historical rows above are as-run and do not change.
+>
+> | Item | Author | General reviewer | Security pass | Notes |
+> |---|---|---|---|---|
+> | T29 review (pending) | `xiaomi/mimo-v2.6-pro` | `qwen/qwen3.8-max-0902` | not triggered (wire-arg semantics, not auth/secrets) | reviewer must scrutinize the framework-wide `generator.py` `unwrap_wire` arg change |
+> | Phase 5B phase-end | T28 deepseek-v4-pro (hist) + T29 mimo | `z-ai/glm-5.3` | folded into retro pass | cross-family from both authors |
+> | **Retroactive security review** (NEW, mandatory) | — | — | `z-ai/glm-5.3` | T27 snapshot inspector (external debug endpoint + HMAC), T28 poll allowlist dispatch-auth, Phase 1 stateless codec HMAC — all shipped without the now-mandatory GLM pass; schedule before merge |
+> | T30 (5C spike) | `xiaomi/mimo-v2.6-pro` | human gate (findings, not committed code) | n/a | investigation + scratch prototype |
+> | T21–23 (deploy targets) | `deepseek/deepseek-v4.1-flash` or `xiaomi/mimo-v2.6-flash` (scaffold/config) | cross-family (`qwen3.8-max` / `glm-5.3`) | GLM pass if templates touch secrets/env | pattern repeats after T20 |
+> | T24 (gating + floors) | `qwen/qwen3.8-max-0902` (correctness) | cross-family (`z-ai/glm-5.3`) | **yes** — missing-secret build check = secrets surface | |
+> | T25 (docs) | `qwen/qwen3.8-flash` or `deepseek-v4.1-flash` (docs glue) | cross-family light | no | |
+> | Final whole-branch review | — | `qwen/qwen3.8-max-0902` + `z-ai/glm-5.3` | **yes** — full-branch GLM security (stateless core is the trust boundary) | strongest cross-family + security |
+>
+> **Compliance flags (completed work):**
+> - **T28 used `deepseek/deepseek-v4-pro-0813`** — now fleet-EXCLUDED. Historical deviation (predates policy); work is orchestrator-verified, will NOT re-run. Logged in the provenance ledger.
+> - **T27's debug snapshot inspector shipped without the mandatory GLM 5.3 security pass** — it handles HMAC-signed blobs on an external-facing debug endpoint. Real gap; the retroactive security review above closes it before merge.
+> - Phases 1/3/5 used `claude-opus-5.5` before the owner's permanent ban; T3/T4 + phase 5A/5B task reviews used `gemini` (now cut). Historical; not re-run.
 | 5A — tier rectification (T26–27)   | **Medium-high** — removes shipped machinery, gates tiers at build      | `qwen/qwen3.8-max-0902` (T26); `xiaomi/mimo-v2.6-pro` (T27)                        | `google/gemini-3.8-flash`                                                                    | $3–6      |
 | 5B — poll primitive (T28–29)       | **Medium** — grammar + client directive, e2e + demo                    | `deepseek/deepseek-v4-pro-0813` (T28); `xiaomi/mimo-v2.6-pro` (T29)                | `xiaomi/mimo-v2.6-pro` (task); `qwen/qwen3.8-max-0902` (phase-end)                           | $3–6      |
 | 5C — per-page tier spike (T30)     | **Spike only — findings gate, no committed design**                    | `qwen/qwen3.8-max-0902`                                                            | findings reviewed by parent session + human gate                                             | $1–3      |
 
-**Total est. $40–100.** Cost levers: (a) reviewer prompts get the diff only, not the codebase — reviews are cheap even on opus; (b) if Phase 3's spike (T10) shows item-level invalidation already works via nested proxies, T11–12 shrink substantially — reassess model tier after the spike rather than pre-committing opus for all of Phase 3; (c) batch-mode variants (`:batch`, half price) fit T21–25 if you're not waiting interactively.
+**Forward cost (remaining work): ~$8–20** — T29 review + 5B phase-end + retroactive security pass + T30 spike + Phase 6 + final whole-branch review, driven mainly by the GLM 5.3 security passes and the final review. Cost levers: (a) reviewer prompts get the diff only, not the codebase; (b) `:batch` variants (`z-ai/glm-5.3:batch` $0.45/$2.00, deepseek batch) halve non-interactive Phase 6 work; (c) small/cheap tier (DeepSeek V4.1 Flash, MiMo Flash, GLM-Flash) for scaffold/docs, escalating per the 2-attempt rule. Historical phases 0–5B spend is sunk.
 
 ---
 
