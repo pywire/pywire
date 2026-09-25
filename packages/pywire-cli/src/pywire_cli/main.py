@@ -956,13 +956,12 @@ def deploy(
             "https://dash.cloudflare.com/workers/plans[/link]\n"
         )
 
-    # Cloudflare uses Durable Objects — workers/redis flags don't apply
+    # Cloudflare platforms take no worker/redis configuration
     if platform in ("cloudflare", "cloudflare-edge") and (workers > 1 or redis):
         console.print(
             "[bold red]Error:[/] [cyan]--workers[/] and [cyan]--redis[/] are not applicable "
-            "to Cloudflare Workers.\n"
-            "  Cloudflare uses Durable Objects for session state — no Redis or worker "
-            "processes needed."
+            "to Cloudflare platforms.\n"
+            "  Cloudflare platforms take no worker/Redis configuration."
         )
         raise SystemExit(1)
 

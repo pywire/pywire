@@ -18,6 +18,7 @@ Stateless mode replaces server-held page sessions with a signed client-carried s
 - Handler dispatch uses a compile-time allowlist.
 - Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. Never auto-generate or commit it.
 - Snapshot integrity is not authorization. A bearer of a valid snapshot can replay its non-identity page state; authorization must still be enforced in handlers and request-derived identity.
+- The snapshot's `path` field is unsigned: a valid snapshot can be transplanted to another route (cross-page). Impact is bounded — identity is stripped and re-resolved per request, and page guards re-run on every request. (Known accepted gap.)
 
 `{$auth}` works in stateless mode, but **verdicts are never snapshotted**. Each request re-evaluates the policy, so revocation takes effect on the next request.
 

@@ -232,3 +232,16 @@ def test_oversized_snapshot_rejected_without_decode(client, monkeypatch):
     r = _post(client, "A" * (MAX_SNAPSHOT_LEN + 1))
     assert r.status_code == 413
     mock.assert_not_called()
+
+
+def test_oversized_declared_content_length_rejected_before_body(client):
+    """A declared Content-Length over the snapshot cap is refused before the
+    body is read — defense in depth alongside the per-blob ceiling."""
+    from pywire.runtime.snapshot_codec import MAX_SNAPSHOT_LEN
+
+    r = client.post(
+        "/_pywire/stateless",
+        content=b"x",
+        headers={**_MSGPACK, "Content-Length": str(MAX_SNAPSHOT_LEN + 2049)},
+    )
+    assert r.status_code == 413

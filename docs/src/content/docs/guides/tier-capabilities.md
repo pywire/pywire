@@ -35,7 +35,7 @@ Ordinary events, render-time directives, forms, uploads, auth resolution, `wire.
 
 For a page and its statically resolvable component closure, `pywire build` rejects `{$await}` and directly visible `push_state()` calls when `stateless=True`. The same check runs during dev compilation.
 
-The gate is syntactic. It cannot see calls hidden in imported helpers, dynamic dispatch, `push_state()` in template expressions, computed component paths, or installed third-party components. A resolvable component that violates the tier fails when that component compiles and names itself rather than the page. `create_task()` is deliberately not scanned.
+The gate is syntactic. It cannot see calls hidden in imported helpers, dynamic dispatch, `push_state()` in template expressions, computed component paths, or installed third-party components. A resolvable component that violates the tier fails when that component compiles and names itself rather than the page. `create_task()` is deliberately not scanned. Framework built-in components are exempt from the push scan — `FileInput` calls `push_state()` for in-request progress and works statelessly, which is why uploads work on the stateless tier.
 
 ## No-JS floor
 

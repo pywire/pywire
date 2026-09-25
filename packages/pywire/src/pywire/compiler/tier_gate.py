@@ -1,6 +1,8 @@
 """Deployment-tier gating: the feature -> minimum-tier map, enforced per page.
 
-The map lives here and nowhere else (documented in
+The map lives here and nowhere else (documented in the public
+tier-capabilities guide: ``docs/src/content/docs/guides/tier-capabilities.md``,
+served at ``/guides/tier-capabilities/``; full internal writeup in
 ``docs/superpowers/tier-capabilities.md`` §Build-time checks):
 
 * ``{$await}`` blocks -> **push** (rejected on stateless)

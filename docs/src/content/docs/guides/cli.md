@@ -68,6 +68,7 @@ pywire build [APP] [OPTIONS]
 - `--optimize`: Compile bytecode with optimization (python `-O`).
 - `--out-dir TEXT`: Output directory (default: `.pywire/build`).
 - `--pages-dir TEXT`: Override pages directory.
+- `--platform {cloudflare,cloudflare-edge,aws-lambda,azure-functions,gcp-functions,gcp-cloudrun}`: Generate platform-specific build output (default: none — generic Python bytecode). See [Provider quickstarts](/guides/stateless-provider-quickstarts/).
 
 ## `pywire check`
 
@@ -106,7 +107,7 @@ The command builds your project, validates the setup, and generates platform-spe
 
 **Options:**
 
-- `--platform {docker,render,fly}`: Target platform (default: `docker`).
+- `--platform {docker,render,fly,railway,cloudflare,cloudflare-edge,aws-lambda}`: Target platform (default: `docker`). See [Provider quickstarts](/guides/stateless-provider-quickstarts/) for the stateless platforms.
 - `--out-dir PATH`: Output directory for generated files (default: `.`).
 
 **Examples:**

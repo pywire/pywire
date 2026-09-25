@@ -48,6 +48,11 @@ class StatelessHandler:
         return page
 
     async def handle_event(self, request: Request) -> Response:
+        # Defense in depth: a declared length over the snapshot cap cannot
+        # hold a valid request — reject before buffering the body at all.
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_SNAPSHOT_LEN + 2048:
+            return self._err(413, "request body too large")
         try:
             data = msgpack.unpackb(await request.body(), raw=False)
             if not isinstance(data, dict):
