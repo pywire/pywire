@@ -22,6 +22,44 @@ from pywire_cli.config import config_command
 
 console = Console()
 
+
+def _install_aws_dependencies(requirements: Path, target: Path) -> None:
+    """Install Lambda dependencies, using uv when the project venv has no pip."""
+    import shutil
+    import subprocess
+
+    uv = shutil.which("uv")
+    if uv:
+        subprocess.run(
+            [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                "-r",
+                str(requirements),
+                "--target",
+                str(target),
+            ],
+            check=True,
+        )
+    else:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(requirements),
+                "-t",
+                str(target),
+            ],
+            check=True,
+        )
+
+
 # Astro-like styling configuration (Cyan Theme)
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.STYLE_HELPTEXT_FIRST = True
@@ -319,7 +357,7 @@ def dev(
 )
 @click.option(
     "--platform",
-    type=click.Choice(["cloudflare", "cloudflare-edge"]),
+    type=click.Choice(["cloudflare", "cloudflare-edge", "aws-lambda"]),
     default=None,
     help="Generate platform-specific build output.",
 )
@@ -388,7 +426,35 @@ def build(
 
     console.print(f"✅ Build complete ({', '.join(parts)})")
 
-    if platform in ("cloudflare", "cloudflare-edge"):
+    if platform == "aws-lambda":
+        from pywire_cli.deploy import (
+            generate_aws_lambda_handler,
+            generate_aws_lambda_readme,
+            generate_aws_lambda_requirements,
+        )
+
+        aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
+        aws_dir.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(out_dir),
+            cf_bundle_dir=aws_dir / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
+        (aws_dir / "handler.py").write_text(
+            generate_aws_lambda_handler(Path.cwd(), app or "src.main:app")
+        )
+        (aws_dir / "requirements.txt").write_text(
+            generate_aws_lambda_requirements(Path.cwd())
+        )
+        (aws_dir / "README.md").write_text(
+            generate_aws_lambda_readme(Path.cwd(), Path.cwd().name)
+        )
+        _install_aws_dependencies(aws_dir / "requirements.txt", aws_dir / "package")
+        console.print("✅ Generated [cyan].pywire/deploy/aws/[/] for AWS Lambda")
+    elif platform in ("cloudflare", "cloudflare-edge"):
         import shutil
 
         from pywire.compiler.build_artifacts import generate_cf_bundle
@@ -632,7 +698,15 @@ def _print_skip_hint(
 @click.option(
     "--platform",
     type=click.Choice(
-        ["render", "docker", "fly", "railway", "cloudflare", "cloudflare-edge"]
+        [
+            "render",
+            "docker",
+            "fly",
+            "railway",
+            "cloudflare",
+            "cloudflare-edge",
+            "aws-lambda",
+        ]
     ),
     default="docker",
     help="Deployment platform",
@@ -719,7 +793,7 @@ def deploy(
         raise SystemExit(1)
 
     # Warn about workers vs redis (not applicable to Cloudflare)
-    if platform not in ("cloudflare", "cloudflare-edge"):
+    if platform not in ("cloudflare", "cloudflare-edge", "aws-lambda"):
         if workers > 1 and not redis:
             console.print(
                 "\n[bold yellow]⚠️  Warning:[/] Running multiple workers without Redis "
@@ -766,6 +840,33 @@ def deploy(
         files_to_write.append(
             ("Dockerfile", generate_dockerfile(project_root, workers=workers))
         )
+    elif platform == "aws-lambda":
+        from pywire_cli.deploy import (
+            generate_aws_lambda_handler,
+            generate_aws_lambda_readme,
+            generate_aws_lambda_requirements,
+        )
+
+        aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
+        aws_dir.mkdir(parents=True, exist_ok=True)
+        from pywire.compiler.build_artifacts import generate_cf_bundle
+
+        generate_cf_bundle(
+            build_dir=Path(".pywire/build"),
+            cf_bundle_dir=aws_dir / "_pywire_build",
+            app_import=app,
+            durable_objects=False,
+        )
+        (aws_dir / "handler.py").write_text(
+            generate_aws_lambda_handler(project_root, app or "src.main:app")
+        )
+        (aws_dir / "requirements.txt").write_text(
+            generate_aws_lambda_requirements(project_root)
+        )
+        (aws_dir / "README.md").write_text(
+            generate_aws_lambda_readme(project_root, project_name)
+        )
+        _install_aws_dependencies(aws_dir / "requirements.txt", aws_dir / "package")
     elif platform in ("cloudflare", "cloudflare-edge"):
         from pywire_cli.deploy import (
             generate_cf_durable_object,

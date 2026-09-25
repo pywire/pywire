@@ -75,6 +75,28 @@ def generate_cf_edge_entry(project_root: Path, app_string: str = "main:app") -> 
     )
 
 
+def generate_aws_lambda_handler(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    """Generate handler.py for the stateless AWS Lambda target."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "aws/handler.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def generate_aws_lambda_requirements(project_root: Path) -> str:
+    """Generate runtime requirements for the AWS Lambda package."""
+    return render_deploy_template("aws/requirements.txt.j2")
+
+
+def generate_aws_lambda_readme(project_root: Path, project_name: str) -> str:
+    """Generate AWS Lambda deployment instructions."""
+    return render_deploy_template(
+        "aws/README.md.j2", project_name=project_name, function_name=project_name
+    )
+
+
 def generate_cf_durable_object(project_root: Path, app_string: str = "main:app") -> str:
     """Generate pywire_do.py — the Durable Object class for PyWire sessions."""
     app_module, app_attr = _parse_app_string(app_string)

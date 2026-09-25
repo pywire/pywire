@@ -1,0 +1,32 @@
+"""AWS Lambda handler for a stateless PyWire application."""
+import asyncio
+import base64
+
+from pywire.adapters.oneshot import OneShotASGIAdapter
+from {{ app_module }} import {{ app_attr }}
+import _routes  # noqa: F401
+
+_adapter = OneShotASGIAdapter({{ app_attr }})
+
+
+def handler(event, context):
+    http = event.get("requestContext", {}).get("http", {})
+    method = http.get("method") or event.get("httpMethod", "GET")
+    path = event.get("rawPath") or event.get("path", "/")
+    query = event.get("rawQueryString") or ""
+    headers = event.get("headers") or {}
+    raw_body = event.get("body") or ""
+    body = base64.b64decode(raw_body) if event.get("isBase64Encoded") else raw_body.encode()
+    status, resp_headers, resp_body = asyncio.run(
+        _adapter.fetch(method, path, dict(headers), body, query)
+    )
+    response_headers = dict(resp_headers)
+    binary = response_headers.get("content-type", "").startswith(
+        "application/x-msgpack"
+    )
+    return {
+        "statusCode": status,
+        "headers": response_headers,
+        "body": base64.b64encode(resp_body).decode() if binary else resp_body.decode(),
+        "isBase64Encoded": binary,
+    }
