@@ -1274,6 +1274,28 @@ git commit -m "test(pywire): @poll e2e both tiers + stateless demo poll page"
 
 **Human gate:** STOP after findings — report to the orchestrator; do NOT design or write T31/T32 or any committed code.
 
+### Task 31: Stateless `{$auth}` resolution (owner mandate 2026-09-24 — bug fix, NOT tier-derivation scope)
+
+> **Owner directive:** "we need auth to work statelessly." The T30 spike proved `{$auth}` never resolves on the stateless tier: `_resolve_auth` completes via `push_state()`, which no-ops without `_on_update` (never set in the one-shot stateless cycle), and `_auth_states` is never snapshotted — the region renders PENDING forever. This task makes `{$auth}` WORK on stateless. The reduced-form vs full-mixing question from T30 REMAINS at the human gate; this task does not answer it.
+
+**Required behavior:**
+
+- `{$auth}` on a stateless page resolves within the same request — the response carries the final `allowed`/`denied` view (no pending flash; one-shot responses cannot push). Verdict semantics identical to stateful.
+- **Auth verdicts are NEVER serialized into snapshots** — every request re-evaluates. A snapshot must not cache "allowed": permission revocation takes effect on the next stateless request. (Security invariant — pinned by test.)
+- Stateful tier unchanged: pending view + async `push_state` push stays as-is (existing tests green untouched).
+- Page-level `!auth` guard unchanged (verified working on all three transports: T30 A-P8 + security pass).
+
+**Approach (implementer may adjust with evidence):** resolve inline when no push channel exists (`self._on_update is None`) — await in-flight `_resolve_auth` work before emitting the response in no-push contexts and re-render the affected regions into the same payload.
+
+**Tests (RED-first):** stateless render returns the resolved view (allowed + denied) — RED today = PENDING in the payload; revocation visible on the next stateless request (pins the no-caching invariant); stateful pending→push path unchanged; no-JS form re-render path.
+
+**Also in this round (security-review remediation, GLM re-review 2026-09-24):**
+
+- `_comp:` branch of `_handle_form_post` lacks the underscore refusal (app.py:~1848) — 4-line mirror of page.py:767 (exploit probe: `scratch/review_comp_underscore.py`).
+- Non-str `snapshot` in a stateless POST → 500 instead of 400 (stateless_handler.py:~61) — type-check before decode.
+
+Routing: author `xiaomi/mimo-v2.6-pro` → GLM 5.3 security re-review (auth diff — mandatory).
+
 ---
 
 ## Phase 6 — Multi-provider deployment targets (gated on Task 20)
