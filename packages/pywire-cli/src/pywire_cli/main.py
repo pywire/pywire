@@ -170,6 +170,37 @@ def import_app(app_str: str) -> Any:
     return app
 
 
+# Pure-FaaS platforms serve one-shot requests with no durable state — only
+# stateless mode works there. cloudflare (Durable Objects) and gcp-cloudrun
+# (long-running container) accept either mode.
+_STATELESS_PLATFORMS = frozenset(
+    {"cloudflare-edge", "aws-lambda", "azure-functions", "gcp-functions"}
+)
+
+
+def _fail_missing_secret(platform: str) -> None:
+    console.print(
+        f"[bold red]Error:[/] [cyan]{platform}[/] needs the stateless snapshot "
+        "signing secret — set PYWIRE_SECRET_KEY in your provider environment."
+    )
+    sys.exit(1)
+
+
+def _require_stateless(app_instance: Any, platform: Optional[str]) -> None:
+    """Fail fast when a pure-FaaS build target isn't configured stateless."""
+    if platform not in _STATELESS_PLATFORMS:
+        return
+    if not getattr(app_instance, "stateless", False):
+        console.print(
+            f"[bold red]Error:[/] [cyan]{platform}[/] is pure-FaaS and requires "
+            "stateless mode — add PyWire(stateless=True, secret_key=...) — "
+            "see the docs edge guide."
+        )
+        sys.exit(1)
+    if not getattr(app_instance, "_stateless_secret", b""):
+        _fail_missing_secret(str(platform))
+
+
 def _discover_app_str() -> str:
     """Try to discover the app string automatically."""
     cwd = Path(os.getcwd())
@@ -388,12 +419,21 @@ def build(
     platform: Optional[str],
 ) -> None:
     """Build the application for production."""
-    if not app:
-        app = _discover_app_str()
+    try:
+        if not app:
+            app = _discover_app_str()
 
-    console.print(f"🔨 Building [cyan]{app}[/]...")
+        console.print(f"🔨 Building [cyan]{app}[/]...")
 
-    app_instance = import_app(app)
+        app_instance = import_app(app)
+    except RuntimeError as exc:
+        # PyWire(stateless=True) raises at construction when the signing
+        # secret is missing — turn it into deploy-target guidance. (Both
+        # discovery and import_app execute the app module.)
+        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
+            _fail_missing_secret(platform)
+        raise
+    _require_stateless(app_instance, platform)
 
     if pages_dir:
         resolved_pages_dir = Path(pages_dir)
