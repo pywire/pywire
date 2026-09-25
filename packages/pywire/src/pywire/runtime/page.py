@@ -1775,6 +1775,25 @@ class BasePage:
             # push_state might fail if connection closed
             pass
 
+    def _auth_inline(self) -> bool:
+        """Must ``{$auth}`` resolve inline instead of fire-and-forget?
+
+        True on the stateless tier: a one-shot response has no push
+        channel, so a verdict delivered "later" would never arrive — the
+        region must resolve before the render emits. Stateful renders keep
+        the pending view + ``push_state`` flow exactly as before.
+        """
+        page: Optional["BasePage"] = self
+        while page is not None:
+            request = getattr(page, "request", None)
+            if request is not None:
+                try:
+                    return bool(request.app.state.stateless)
+                except (AttributeError, KeyError):
+                    return False
+            page = getattr(page, "_parent_page", None)
+        return False
+
     async def _resolve_auth(
         self,
         region_id: str,

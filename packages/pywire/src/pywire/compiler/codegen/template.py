@@ -3237,6 +3237,28 @@ class TemplateCodegen:
                             keywords=[],
                         )
                     ),
+                    # No push channel (stateless one-shot responses): the
+                    # verdict must land in THIS render — await the task
+                    # inline instead of letting push_state() deliver it.
+                    ast.If(
+                        test=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr="_auth_inline",
+                                ctx=ast.Load(),
+                            ),
+                            args=[],
+                            keywords=[],
+                        ),
+                        body=[
+                            ast.Expr(
+                                value=ast.Await(
+                                    value=ast.Name(id="_auth_task", ctx=ast.Load())
+                                )
+                            )
+                        ],
+                        orelse=[],
+                    ),
                 ],
                 orelse=[],
             )
