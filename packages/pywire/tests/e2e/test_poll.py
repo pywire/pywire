@@ -46,8 +46,9 @@ def test_poll_ticks_as_stateless_posts_and_stops(
     expect(polled).to_have_attribute("data-pw-poll-every", "200")
     assert polled.get_attribute("data-pw-poll") is not None
 
-    # Ticks advance the rendered counter up to the stop condition.
-    expect(page.locator("#count")).to_have_text("0")
+    # Ticks advance the rendered counter up to the stop condition. The
+    # initial "0" is not asserted: it races the first 200ms tick on slow CI,
+    # and the transition is covered by "5" + the POST count below.
     expect(page.locator("#count")).to_have_text("5", timeout=10_000)
 
     # Ticks arrived as repeated stateless POSTs (one per dispatch).
@@ -70,8 +71,8 @@ def test_poll_ticks_as_stateless_posts_and_stops(
 def test_poll_same_behavior_over_websocket(page: Page, pywire_server: str):
     page.goto(f"{pywire_server}/poll")
 
-    # Identical DOM outcomes on the stateful tier: counter advances…
-    expect(page.locator("#count")).to_have_text("0")
+    # Identical DOM outcomes on the stateful tier: counter reaches 5 and
+    # stops (initial "0" omitted — same race as above).
     expect(page.locator("#count")).to_have_text("5", timeout=10_000)
 
     # …and stops identically via conditional-render unmount.
