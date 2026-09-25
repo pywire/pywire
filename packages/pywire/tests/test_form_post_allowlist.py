@@ -137,6 +137,63 @@ def test_form_post_component_dispatch_enforces_allowlist(monkeypatch):
         shutil.rmtree(test_dir, ignore_errors=True)
 
 
+COMP_PRIVATE_CHILD = (
+    "---\n"
+    "n = wire(0)\n"
+    "\n"
+    "def _private(data):\n"
+    "    open(PROBE, 'w').write('ran')\n"
+    "\n"
+    "def _sneaky(data):\n"
+    "    open(PROBE, 'w').write('ran')\n"
+    "\n"
+    "def bump(data):\n"
+    "    n.value += 1\n"
+    "---\n"
+    "<button @click={bump}>{n}</button>\n"
+)
+
+
+def test_form_post_rejects_underscore_component_handler(tmp_path, monkeypatch):
+    """The ``_comp:`` branch must mirror ``_dispatch_handler``'s underscore
+    refusal (page.py:767) — ``_comp:<key>:_private`` was invokable via a
+    forged handler name even though interactive dispatch refuses it."""
+    probe = tmp_path / "cprobe"
+    test_dir = tempfile.mkdtemp()
+    pages_dir = Path(test_dir) / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "comp_child.wire").write_text(
+        COMP_PRIVATE_CHILD.replace("PROBE", repr(str(probe)))
+    )
+    (pages_dir / "comppost.wire").write_text(COMP_PARENT)
+    monkeypatch.syspath_prepend(str(pages_dir))
+    try:
+        app = PyWire(pages_dir=str(pages_dir), interactive_server_mode=False)
+        client = TestClient(app, raise_server_exceptions=False)
+        html = client.get("/comppost").text
+        key = re.search(r'_comp:([^:"]+):bump', html).group(1)
+
+        for name in ("_private", "_sneaky"):
+            r = client.post(
+                "/comppost",
+                data={},
+                headers={"X-PyWire-Handler": f"_comp:{key}:{name}"},
+            )
+            assert r.status_code == 400
+            assert "not allowed" in r.text
+            assert not probe.exists(), f"{name} ran via forged component handler"
+
+        # ... and the legit component handler keeps working.
+        r = client.post(
+            "/comppost", data={}, headers={"X-PyWire-Handler": f"_comp:{key}:bump"}
+        )
+        assert r.status_code == 200
+        assert ">1<" in r.text
+    finally:
+        sys.modules.pop("comp_child", None)
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
 PRIVATE_PAGE = (
     "---\n"
     "def _private(data):\n"

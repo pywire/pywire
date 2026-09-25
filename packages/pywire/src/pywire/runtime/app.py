@@ -1868,6 +1868,17 @@ class PyWire:
                         "event handler",
                         status_code=400,
                     )
+                # Mirror BasePage._dispatch_handler: non-framework ``_``
+                # names are never invokable, even on permissive hand-rolled
+                # components (allowlist None).
+                is_framework_handler = remainder.startswith(
+                    "_handle_bind_"
+                ) or remainder.startswith("_handler_")
+                if not is_framework_handler and remainder.startswith("_"):
+                    return PlainTextResponse(
+                        f"PyWire: handler '{remainder}' not allowed",
+                        status_code=400,
+                    )
 
                 # Populate the component's form ref (if any) so
                 # ``form_ref.data`` returns the POSTed fields — the

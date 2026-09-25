@@ -147,6 +147,21 @@ def test_non_dict_event_data_400(client):
     assert _error(r) == "invalid data"
 
 
+@pytest.mark.parametrize("snap", [42, ["x"], {"a": 1}, None])
+def test_non_str_snapshot_400(client, snap):
+    # Forged non-str snapshot must be a clean 400 before decode
+    # (blob.encode("ascii") raised AttributeError -> 500), not a crash.
+    r = client.post(
+        "/_pywire/stateless",
+        content=msgpack.packb(
+            {"path": "/", "handler": "", "data": {}, "snapshot": snap}
+        ),
+        headers=_MSGPACK,
+    )
+    assert r.status_code == 400
+    assert _error(r) == "invalid snapshot"
+
+
 def test_non_ascii_path_resolves_cleanly(client):
     # Deterministic outcome: router patterns are ASCII, so "/caf\u00e9" matches
     # no route and resolve_page returns None *before* the raw_path

@@ -55,9 +55,11 @@ class StatelessHandler:
         except Exception:
             return self._err(400, "malformed request body")
         snap_blob = data.get("snapshot", "")
+        if not isinstance(snap_blob, str):
+            return self._err(400, "invalid snapshot")
         # Ceiling before decode — an oversized blob must be a cheap reject,
         # not a base64/HMAC/msgpack burn.
-        if isinstance(snap_blob, str) and len(snap_blob) > MAX_SNAPSHOT_LEN:
+        if len(snap_blob) > MAX_SNAPSHOT_LEN:
             return self._err(413, "snapshot too large")
         try:
             snapshot = decode_snapshot(snap_blob, secret=self.app._stateless_secret)
