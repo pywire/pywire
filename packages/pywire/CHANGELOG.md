@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/pywire/pywire/compare/pywire-v0.14.5...pywire-v0.15.0) (2026-09-27)
+
+
+### Features
+
+* **create-pywire-app-npm:** npx create-pywire-app launcher ([#317](https://github.com/pywire/pywire/issues/317)) ([c735fd8](https://github.com/pywire/pywire/commit/c735fd8ae9dfb8fe256423b9d3a6a6aee52d15aa))
+
 ## [0.14.5](https://github.com/pywire/pywire/compare/pywire-v0.14.4...pywire-v0.14.5) (2026-09-27)
 
 
