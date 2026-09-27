@@ -197,6 +197,11 @@ def _find_available_port(host: str, port: int, max_attempts: int = 100) -> int:
             except OSError:
                 continue
 
+    if max_attempts == 1:
+        raise click.UsageError(
+            f"Port {port} is already in use on {host}. Stop the process using it "
+            "or pass a different --port."
+        )
     raise click.UsageError(
         f"Could not find an available port starting from {port} after {max_attempts} attempts."
     )
@@ -258,6 +263,10 @@ def dev(
     else:
         use_tui = tui
 
+    # An explicit --port is a request for that port: fail if it's busy
+    # instead of silently moving to the next one.
+    explicit_port = port is not None
+
     # Resolve port: CLI flag > settings.toml > default (3000)
     if port is None:
         saved_port = get_setting("port")
@@ -274,7 +283,7 @@ def dev(
 
     # Find available port
     original_port = port
-    port = _find_available_port(host, port)
+    port = _find_available_port(host, port, max_attempts=1 if explicit_port else 100)
 
     if not use_tui:
         asyncio.run(
