@@ -10,5 +10,5 @@
   "packages/prettier-plugin-pywire": "0.3.0",
   "packages/create-pywire-app": "0.13.0",
   "docs": "0.6.0",
-  "packages/create-pywire-app-npm": "0.0.0"
+  "packages/create-pywire-app-npm": "0.1.0"
 }
