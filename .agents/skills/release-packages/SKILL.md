@@ -52,7 +52,7 @@ Order: `python3 scripts/monorepo_graph.py release-order <components...>` (topolo
 - **docs before pywire.** When pywire releases, `sync-docs-release` closes the open `pywire-docs` release PR and cuts a *patch* docs release instead, losing a minor bump. Merging the docs PR first keeps its version.
 - `(order-free)` units can go anywhere; keep them first so they finish while nothing depends on them.
 
-For `create-pywire-app-npm`, check that the name exists on npm (`curl -s https://registry.npmjs.org/create-pywire-app`). If it 404s, stop: npm trusted publishing needs a first manual publish by the maintainer.
+**First publishes are held.** If a package has never been released by CI (its `.release-please-manifest.json` entry is `0.0.0`, or no `<component>-v*` tag exists), its registry setup must be confirmed first: the name claimed (a manual first publish by the maintainer) and trusted publishing configured for this repo, `release.yml` and the `release` environment. Trusted-publisher config isn't publicly visible, so only the user can confirm it. Until they do, list that PR as held with this reason and leave it unmerged. A request to "release all" is not that confirmation.
 
 Show the plan before merging: one line per PR (`#N component old → new`), pulled-in packages with the reason, and the expected floor-bump follow-ups (section 4). For a dry run, this is the whole answer.
 
