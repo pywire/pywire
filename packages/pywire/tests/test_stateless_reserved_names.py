@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import zlib
 
 import msgpack
 import pytest
@@ -35,9 +36,9 @@ def _client(tmp_path, source: str) -> TestClient:
 
 
 def _sign(snapshot: dict) -> str:
-    raw = msgpack.packb(snapshot)
-    sig = hmac.new(SECRET.encode(), raw, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(sig + raw).decode("ascii")
+    body = zlib.compress(msgpack.packb(snapshot))
+    sig = hmac.new(SECRET.encode(), body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(sig + body).decode("ascii")
 
 
 @pytest.mark.parametrize("name", ["query", "params", "request"])

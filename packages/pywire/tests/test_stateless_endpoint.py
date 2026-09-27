@@ -1,6 +1,7 @@
 """Stateless (client-held state) mode: config, snapshot embedding, POST endpoint."""
 
 import base64
+import zlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -118,9 +119,8 @@ def test_tampered_snapshot_400(client):
 
 
 def test_user_never_restored_from_client(client):
-    snap = msgpack.unpackb(
-        base64.urlsafe_b64decode(_blob(client.get("/").text))[32:], raw=False
-    )
+    body = base64.urlsafe_b64decode(_blob(client.get("/").text))[32:]
+    snap = msgpack.unpackb(zlib.decompress(body), raw=False)
     assert "user" not in snap
 
 

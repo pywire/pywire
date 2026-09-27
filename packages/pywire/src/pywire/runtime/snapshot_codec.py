@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import zlib
 
 import msgpack
 
@@ -16,6 +17,12 @@ _SIG_LEN = 32  # SHA-256
 # Ceiling on client-held snapshot blobs (base64 text) before any decode
 # work — an oversized blob must be a cheap reject, not a decode burn.
 MAX_SNAPSHOT_LEN = 4 * 1024 * 1024
+# Ceiling on the inflated msgpack payload. The blob is authenticated before
+# it is inflated, so this only bounds what our own server signed.
+MAX_SNAPSHOT_RAW_LEN = 64 * 1024 * 1024
+# The snapshot travels on every event in both directions, so size beats the
+# last bit of speed: level 6 shrinks list state about 10x.
+_ZLIB_LEVEL = 6
 
 
 class SnapshotError(Exception):
@@ -23,12 +30,23 @@ class SnapshotError(Exception):
 
 
 def encode_snapshot(page, *, secret: bytes, warn_size: int = 0) -> str:
-    snap = snapshot_page_state(page, warn_size=warn_size)
+    """base64(HMAC-SHA256(body) + body), body = zlib(msgpack(snapshot))."""
+    snap = snapshot_page_state(page)
     # Never trust the client with identity — re-resolved per request.
     snap.pop("user", None)
     raw = msgpack.packb(snap)
-    sig = hmac.new(secret, raw, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(sig + raw).decode("ascii")
+    if warn_size > 0 and len(raw) > warn_size:
+        logger.warning(
+            "Stateless snapshot for %s is %d bytes before compression "
+            "(threshold: %d). It travels with every event; consider moving "
+            "large data out of page attributes.",
+            type(page).__qualname__,
+            len(raw),
+            warn_size,
+        )
+    body = zlib.compress(raw, _ZLIB_LEVEL)
+    sig = hmac.new(secret, body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(sig + body).decode("ascii")
 
 
 def decode_snapshot(blob: str, *, secret: bytes) -> dict:
@@ -38,10 +56,17 @@ def decode_snapshot(blob: str, *, secret: bytes) -> dict:
         raise SnapshotError("malformed snapshot encoding") from exc
     if len(data) <= _SIG_LEN:
         raise SnapshotError("snapshot too short")
-    sig, raw = data[:_SIG_LEN], data[_SIG_LEN:]
-    expected = hmac.new(secret, raw, hashlib.sha256).digest()
+    sig, body = data[:_SIG_LEN], data[_SIG_LEN:]
+    expected = hmac.new(secret, body, hashlib.sha256).digest()
     if not hmac.compare_digest(sig, expected):
         raise SnapshotError("snapshot signature mismatch")
+    try:
+        inflater = zlib.decompressobj()
+        raw = inflater.decompress(body, MAX_SNAPSHOT_RAW_LEN)
+        if inflater.unconsumed_tail or not inflater.eof:
+            raise SnapshotError("snapshot payload too large or truncated")
+    except zlib.error as exc:
+        raise SnapshotError("snapshot payload corrupt") from exc
     try:
         snap = msgpack.unpackb(raw, raw=False)
     except Exception as exc:
