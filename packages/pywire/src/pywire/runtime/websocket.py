@@ -14,7 +14,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
-from pywire.runtime.session_serializer import restore_page_state, snapshot_page_state
+from pywire.runtime.session_serializer import restore_page_state
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -235,8 +235,11 @@ class WebSocketHandler:
         self.active_connections.discard(websocket)
         self.connection_pages.pop(websocket, None)
         self._connection_in_error.discard(websocket)
-        # Keep session in store (TTL handles cleanup) — enables reconnect
-        self.session_ids.pop(websocket, None)
+        # Keep session in store (TTL handles cleanup) — enables reconnect.
+        # Write state the throttle is still holding so a reconnect sees it.
+        session_id = self.session_ids.pop(websocket, None)
+        if session_id:
+            self.app.session_persister.flush(session_id)
         self._connection_cookies.pop(websocket, None)
         self._connection_httponly.pop(websocket, None)
         self._connection_reconciled.discard(websocket)
@@ -440,6 +443,7 @@ class WebSocketHandler:
             if client_session_id:
                 # Attempt to restore session state from store
                 try:
+                    await self.app.session_persister.settle(client_session_id)
                     snapshot = await self.app.session_store.get(client_session_id)
                     if snapshot:
                         restore_page_state(page, snapshot)
@@ -598,7 +602,7 @@ class WebSocketHandler:
             # Persist session state after event
             session_id = self.session_ids.get(websocket)
             if session_id:
-                self._persist_session(session_id, page)
+                self.app.session_persister.schedule(session_id, page)
 
         except Exception as e:
             logger.exception("Error handling event")
@@ -765,7 +769,7 @@ class WebSocketHandler:
                 # Persist session state
                 session_id = self.session_ids.get(websocket)
                 if session_id:
-                    self._persist_session(session_id, new_page)
+                    self.app.session_persister.schedule(session_id, new_page)
 
         except Exception as e:
             # If relocation fails, force a full reload so the browser
@@ -983,20 +987,6 @@ class WebSocketHandler:
                 if "key" in args:
                     # Tombstone — see `_get_merged_cookies`.
                     virtual[args["key"]] = None  # type: ignore[assignment]
-
-    def _persist_session(self, session_id: str, page: BasePage) -> None:
-        """Schedule non-blocking session persistence."""
-        asyncio.create_task(self._do_persist_session(session_id, page))
-
-    async def _do_persist_session(self, session_id: str, page: BasePage) -> None:
-        """Persist page state to the session store (background)."""
-        try:
-            snapshot = snapshot_page_state(page, warn_size=self.app.session_warn_size)
-            await self.app.session_store.set(
-                session_id, snapshot, ttl=self.app.session_ttl
-            )
-        except Exception:
-            logger.warning("Failed to persist session %s", session_id, exc_info=True)
 
     async def broadcast_shutdown(self) -> None:
         """Notify all connected clients the server is shutting down.

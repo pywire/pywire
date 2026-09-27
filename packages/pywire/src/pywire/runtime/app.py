@@ -126,6 +126,7 @@ class PyWire:
         session_store: Optional[Any] = None,
         session_ttl: Optional[int] = None,
         session_warn_size: int = 256 * 1024,  # 256 KB
+        session_persist_interval: float = 1.0,
         ws_ping_interval: int = 25,
         ws_ping_timeout: int = 10,
         reconnect_max_attempts: int = 10,
@@ -282,6 +283,11 @@ class PyWire:
             else int(os.environ.get("SESSION_TTL", "1800"))
         )
         self.session_warn_size = session_warn_size
+        # Live transports write page state at most this often per session.
+        self.session_persist_interval = max(0.0, float(session_persist_interval))
+        from pywire.runtime.session_persist import SessionPersister
+
+        self.session_persister = SessionPersister(self)
         if session_store is not None:
             self.session_store = session_store
         else:
@@ -464,6 +470,7 @@ class PyWire:
                 await connect()
             yield
             # Shutdown
+            await self.session_persister.drain()
             close = getattr(self.session_store, "close", None)
             if callable(close):
                 await close()
