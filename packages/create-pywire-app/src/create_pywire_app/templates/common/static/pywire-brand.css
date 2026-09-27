@@ -2,6 +2,29 @@
    Mirrors the design tokens used on pywire.dev and the docs site so every
    scaffolded app starts on-brand. Edit freely; this file is yours. */
 
+/* Atkinson Hyperlegible Next, self-hosted from ./fonts (SIL OFL, see fonts/OFL.txt). */
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/AtkinsonHyperlegibleNext-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/AtkinsonHyperlegibleNext-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/AtkinsonHyperlegibleNext-Bold.woff2') format('woff2');
+}
+
 :root {
   color-scheme: light dark;
 
