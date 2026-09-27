@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.1...pywire-cli-v0.3.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* **ci:** serialize docs deploys, stop pushing to release PRs, bump pywire floors ([#312](https://github.com/pywire/pywire/issues/312)) ([b6a0ac2](https://github.com/pywire/pywire/commit/b6a0ac2c76b78db92b476f6fe99da793d9c12bca))
+
 ## [0.3.1](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.0...pywire-cli-v0.3.1) (2026-09-27)
 
 
