@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire"
-version = "0.14.4"
+version = "0.14.5"
 authors = [
     { name="Reece Holmdahl", email="reece@pywire.dev" },
 ]
