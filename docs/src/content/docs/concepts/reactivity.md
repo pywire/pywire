@@ -216,4 +216,4 @@ State defined in a `.wire` file is **scoped to the component instance**.
 To share state between components or users, you should use standard Python patterns:
 
 - **Global Variables**: Define `wire()` objects in a separate `.py` module and import them. This creates global, singleton state shared by _all_ users (be careful!).
-- **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables during the `on_before_load()` lifecycle hook.
+- **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables in an `@init` lifecycle hook.

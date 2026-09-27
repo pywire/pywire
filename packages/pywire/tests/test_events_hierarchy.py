@@ -211,3 +211,29 @@ if __name__ == "__main__":
     test_form_event_value_single_field()
     test_form_event_value_multiple_fields()
     print("All EventData hierarchy tests PASSED!")
+
+
+def test_submit_event_reads_form_fields_like_a_dict():
+    # Regression for #291: docs use data["name"]; unknown attributes return
+    # None, so data.get(...) used to fail with "'NoneType' object is not callable".
+    from pywire.runtime.events import create_event_data
+
+    data = create_event_data(
+        {"type": "submit", "formData": {"name": "Ada", "type": "admin"}}
+    )
+    assert data["name"] == "Ada"
+    assert data.get("name") == "Ada"
+    assert data.get("missing", "fallback") == "fallback"
+    assert "name" in data and "missing" not in data
+    # A form field named like an event field wins over the event field.
+    assert data["type"] == "admin"
+    assert data.type == "submit"
+    assert data.form_data == {"name": "Ada", "type": "admin"}
+
+
+def test_event_get_falls_back_to_default():
+    from pywire.runtime.events import create_event_data
+
+    data = create_event_data({"type": "click", "clientX": 3})
+    assert data.get("client_x") == 3
+    assert data.get("nope", 1) == 1

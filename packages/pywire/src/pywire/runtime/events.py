@@ -28,6 +28,10 @@ class EventData:
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
+    def get(self, key: str, default: Any = None) -> Any:
+        value = getattr(self, key)
+        return default if value is None else value
+
 
 class UIEventData(EventData):
     """Shared modifier keys (mirrors JS UIEvent)."""
@@ -83,6 +87,21 @@ class FormEventData(EventData):
     def __init__(self, raw: Dict[str, Any]):
         super().__init__(raw)
         self.form_data: Dict[str, Any] = raw.get("formData", {})
+
+    # A submit handler reads its form like a dict: `data["name"]`,
+    # `data.get("name")`, `"name" in data`. Form fields win over event fields.
+    def __getitem__(self, key: str) -> Any:
+        if key in self.form_data:
+            return self.form_data[key]
+        return super().__getitem__(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in self.form_data:
+            return self.form_data[key]
+        return super().get(key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.form_data
 
     @property
     def value(self) -> Any:

@@ -39,6 +39,21 @@ def _is_mutable(val: Any) -> bool:
     return isinstance(val, (list, dict, set)) and not isinstance(val, WireBase)
 
 
+def _plain(val: Any) -> Any:
+    """Deep copy of a (possibly nested) wire container as plain Python."""
+    if isinstance(val, WireNamespace):
+        return {k: _plain(v) for k, v in val._data.items()}
+    if isinstance(val, dict):
+        return {k: _plain(v) for k, v in dict.items(val)}
+    if isinstance(val, list):
+        return [_plain(v) for v in list.__iter__(val)]
+    if isinstance(val, set):
+        return set(set.__iter__(val))
+    if isinstance(val, WirePrimitive):
+        return val.peek()
+    return val
+
+
 def _create_proxy(
     val: Any, parent: Optional["WireBase"] = None, field: Optional[str] = None
 ) -> "WireBase":
@@ -183,7 +198,10 @@ class WireBase:
 
     def __str__(self):
         if hasattr(self, "value"):
-            return str(self.value)
+            value = self.value  # tracks the read
+            # Containers return themselves from .value; str() of that would
+            # recurse forever, so render a plain snapshot instead.
+            return str(_plain(self) if value is self else value)
         return super().__str__()
 
 
@@ -311,7 +329,10 @@ class WireList(WireBase, list, Generic[T]):
         val = super().__getitem__(index)
         if _is_mutable(val):
             proxy = _create_proxy(val, parent=self)
-            self[index] = proxy  # Eagerly replace with proxy for consistency
+            # Store the proxy itself. `self[index] = proxy` compared equal to
+            # the plain value and skipped the write, so nested mutations went
+            # to a throwaway copy.
+            list.__setitem__(self, index, proxy)
             return proxy
         return val
 
@@ -450,7 +471,7 @@ class WireDict(WireBase, dict, Generic[K, V]):
             proxy = _create_proxy(
                 val, parent=self, field=key if isinstance(key, str) else None
             )
-            self[key] = proxy
+            dict.__setitem__(self, key, proxy)  # see WireList.__getitem__
             return proxy
         return val
 

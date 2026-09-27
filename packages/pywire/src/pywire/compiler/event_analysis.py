@@ -55,6 +55,7 @@ class _EventFieldVisitor(ast.NodeVisitor):
         self.fields: Set[str] = set()
         self.needs_full_event = False
         self._event_names = {"event", "event_data"}
+        self._seen_handler = False
 
     def visit_Assign(self, node: ast.Assign) -> None:
         # Track aliases: `e = event` adds 'e' to _event_names
@@ -78,6 +79,9 @@ class _EventFieldVisitor(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> None:
         # event.key, event_data.client_x, etc.
         if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
+            if node.attr == "get":
+                # event.get(name): a dynamic lookup, send everything
+                self.needs_full_event = True
             snake = node.attr
             camel = SNAKE_TO_CAMEL.get(snake, snake)
             self.fields.add(camel)
@@ -92,6 +96,8 @@ class _EventFieldVisitor(ast.NodeVisitor):
                 snake = node.slice.value
                 camel = SNAKE_TO_CAMEL.get(snake, snake)
                 self.fields.add(camel)
+                # Submit handlers subscript form fields: data["title"].
+                self.fields.add("formData")
             else:
                 # event[some_var] — dynamic, can't determine field
                 self.needs_full_event = True
@@ -107,6 +113,17 @@ class _EventFieldVisitor(ast.NodeVisitor):
                 self.needs_full_event = True
         self.generic_visit(node)
 
+    def visit_Compare(self, node: ast.Compare) -> None:
+        # "title" in event: a form-field membership test
+        for op, right in zip(node.ops, node.comparators):
+            if (
+                isinstance(op, (ast.In, ast.NotIn))
+                and isinstance(right, ast.Name)
+                and right.id in self._event_names
+            ):
+                self.fields.add("formData")
+        self.generic_visit(node)
+
     def visit_Starred(self, node: ast.Starred) -> None:
         # **event or *event
         if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
@@ -114,13 +131,34 @@ class _EventFieldVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_handler(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_handler(node)
+
+    def _visit_handler(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         # Check if handler has **kwargs
         if node.args.kwarg:
             self.needs_full_event = True
+        if not self._seen_handler:
+            # The runtime passes the event to the first required parameter
+            # whatever it is called (see BasePage dispatch), so `def
+            # handle(data)` reads the event through `data`.
+            self._seen_handler = True
+            event_param = _first_required_param(node.args)
+            if event_param:
+                self._event_names.add(event_param)
         self.generic_visit(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        # Same check for async handlers
-        if node.args.kwarg:
-            self.needs_full_event = True
-        self.generic_visit(node)
+
+def _first_required_param(args: ast.arguments) -> Optional[str]:
+    positional = [*args.posonlyargs, *args.args]
+    if positional and positional[0].arg == "self":
+        positional = positional[1:]
+    required = positional[: len(positional) - len(args.defaults)]
+    if required:
+        return required[0].arg
+    for arg, default in zip(args.kwonlyargs, args.kw_defaults):
+        if default is None:
+            return arg.arg
+    return None
