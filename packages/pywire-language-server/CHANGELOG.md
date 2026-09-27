@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.5](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.4...pywire-language-server-v0.7.5) (2026-09-27)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump pywire floor to 0.15.0 ([#334](https://github.com/pywire/pywire/issues/334)) ([042f103](https://github.com/pywire/pywire/commit/042f103a34b20a168e31a1068345eadcd7a64f2e))
+* **pywire-language-server:** keep ty diagnostics and find the bundled ty ([#322](https://github.com/pywire/pywire/issues/322)) ([8c59806](https://github.com/pywire/pywire/commit/8c59806b5d910910a98de27b4fe2a02c461fc059))
+
 ## [0.7.4](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.3...pywire-language-server-v0.7.4) (2026-09-27)
 
 
