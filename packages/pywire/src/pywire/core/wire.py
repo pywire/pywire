@@ -49,6 +49,21 @@ def _is_mutable(val: Any) -> bool:
     return isinstance(val, (list, dict, set)) and not isinstance(val, WireBase)
 
 
+def _plain(val: Any) -> Any:
+    """Deep copy of a (possibly nested) wire container as plain Python."""
+    if isinstance(val, WireNamespace):
+        return {k: _plain(v) for k, v in val._data.items()}
+    if isinstance(val, dict):
+        return {k: _plain(v) for k, v in dict.items(val)}
+    if isinstance(val, list):
+        return [_plain(v) for v in list.__iter__(val)]
+    if isinstance(val, set):
+        return set(set.__iter__(val))
+    if isinstance(val, WirePrimitive):
+        return val.peek()
+    return val
+
+
 def _create_proxy(
     val: Any, parent: Optional["WireBase"] = None, field: Optional[str] = None
 ) -> "WireBase":
@@ -201,7 +216,10 @@ class WireBase:
 
     def __str__(self):
         if hasattr(self, "value"):
-            return str(self.value)
+            value = self.value  # tracks the read
+            # Containers return themselves from .value; str() of that would
+            # recurse forever, so render a plain snapshot instead.
+            return str(_plain(self) if value is self else value)
         return super().__str__()
 
 

@@ -15,6 +15,7 @@ from pywire.compiler.ast_nodes import (
     ParsedPyWire,
     PathDirective,
     PropsDirective,
+    ReactiveAttribute,
     SpecialAttribute,
     TemplateNode,
 )
@@ -24,6 +25,25 @@ from pywire.compiler.codegen.directives.base import DirectiveCodegen
 from pywire.compiler.codegen.directives.path import PathDirectiveCodegen
 from pywire.compiler.codegen.template import TemplateCodegen
 from pywire.compiler.tier_gate import check_tier
+
+# BasePage attributes the runtime assigns per request (see runtime/page.py).
+RESERVED_PAGE_NAMES = frozenset({"request", "params", "query", "path", "url"})
+
+# HTML boolean attributes. `$checked={x}` is not a directive: it used to render
+# literally and break DOM diffing, while plain `checked={x}` already toggles.
+BOOLEAN_HTML_ATTRS = frozenset(
+    {
+        "checked",
+        "disabled",
+        "readonly",
+        "required",
+        "selected",
+        "hidden",
+        "open",
+        "multiple",
+        "autofocus",
+    }
+)
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +138,8 @@ class CodeGenerator:
         # Extract props from @props decorator
         self._collected_props = self._extract_props_from_ast(parsed.python_ast)
 
+        self._check_reserved_names(parsed.python_ast)
+        self._check_dollar_boolean_attrs(parsed.template)
         known_methods, known_vars, async_methods = self._collect_global_names(
             parsed.python_ast
         )
@@ -712,6 +734,64 @@ class CodeGenerator:
         cls_def.col_offset = 0
         return cls_def
 
+    def _check_dollar_boolean_attrs(self, nodes: List[TemplateNode]) -> None:
+        """Reject `$checked` / `$disabled` etc. with a pointer to the plain form."""
+        from pywire.compiler.exceptions import PyWireSyntaxError
+
+        for node in nodes:
+            names = [(name, node.line, node.column) for name in node.attributes]
+            names += [
+                (attr.name, attr.line, attr.column)
+                for attr in node.special_attributes
+                if isinstance(attr, ReactiveAttribute)
+            ]
+            for name, line, column in names:
+                if name.startswith("$") and name[1:].lower() in BOOLEAN_HTML_ATTRS:
+                    plain = name[1:]
+                    raise PyWireSyntaxError(
+                        f"'{name}' is not a pywire directive. Boolean attributes "
+                        f"take an expression directly: {plain}={{expr}} adds or "
+                        f"removes '{plain}'.",
+                        file_path=self.file_path,
+                        line=line,
+                        column=column,
+                    )
+            self._check_dollar_boolean_attrs(node.children)
+
+    def _check_reserved_names(self, python_ast: Optional[ast.Module]) -> None:
+        """Reject frontmatter names that shadow BasePage request attributes.
+
+        The runtime assigns these on the page instance (``self.query`` etc.),
+        so a same-named wire or function is silently replaced and the next
+        render crashes far from the cause.
+        """
+        if not python_ast:
+            return
+
+        from pywire.compiler.exceptions import PyWireSyntaxError
+
+        for node in python_ast.body:
+            targets: List[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                targets = [node.target]
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                targets = [ast.Name(id=node.name)]
+                ast.copy_location(targets[0], node)
+
+            names = [n for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)]
+            for name in names:
+                if name.id in RESERVED_PAGE_NAMES:
+                    raise PyWireSyntaxError(
+                        f"'{name.id}' is a reserved page attribute: the runtime "
+                        f"sets it from the current request, which would "
+                        f"overwrite this definition. Rename it.",
+                        file_path=self.file_path,
+                        line=node.lineno,
+                        column=node.col_offset,
+                    )
+
     def _collect_global_names(
         self, python_ast: Optional[ast.Module]
     ) -> Tuple[Dict[str, int], Set[str], Set[str]]:
@@ -738,6 +818,15 @@ class CodeGenerator:
             # First pass: Collect method names (shallow)
             for node in python_ast.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    # @derived turns the function into a Derived value, not a
+                    # method: templates must read it, never auto-call it.
+                    if any(
+                        isinstance(dec, ast.Name) and dec.id == "derived"
+                        for dec in node.decorator_list
+                    ):
+                        variables.add(node.name)
+                        continue
+
                     # Count non-self arguments
                     arg_count = len(node.args.args)
                     if arg_count > 0 and node.args.args[0].arg == "self":
@@ -763,6 +852,19 @@ class CodeGenerator:
                 def visit_ClassDef(self, node: ast.ClassDef) -> None:
                     # Do not recurse into classes
                     pass
+
+                def visit_Lambda(self, node: ast.Lambda) -> None:
+                    # Lambda params are local to the lambda
+                    pass
+
+                def _visit_comprehension(self, node: ast.expr) -> None:
+                    # Comprehension targets are local to the comprehension (#280)
+                    pass
+
+                visit_ListComp = _visit_comprehension
+                visit_SetComp = _visit_comprehension
+                visit_DictComp = _visit_comprehension
+                visit_GeneratorExp = _visit_comprehension
 
                 def visit_Name(self, node: ast.Name) -> None:
                     if isinstance(node.ctx, ast.Store):
@@ -1541,6 +1643,18 @@ class CodeGenerator:
             def visit_ClassDef(self, node: ast.ClassDef) -> None:
                 pass
 
+            def visit_Lambda(self, node: ast.Lambda) -> None:
+                pass
+
+            def _visit_comprehension(self, node: ast.expr) -> None:
+                # Comprehension targets are local to the comprehension (#280)
+                pass
+
+            visit_ListComp = _visit_comprehension
+            visit_SetComp = _visit_comprehension
+            visit_DictComp = _visit_comprehension
+            visit_GeneratorExp = _visit_comprehension
+
             def visit_Name(self, node: ast.Name) -> None:
                 # If name is being stored (assigned to), collect it
                 if isinstance(node.ctx, ast.Store):
@@ -1599,6 +1713,19 @@ class CodeGenerator:
                 new_body.append(stmt)
 
         node.body = new_body
+
+        # Parameters are locals: a handler's `i` must not read a page-level
+        # `self.i` (#280).
+        params = node.args
+        global_vars -= {
+            a.arg
+            for a in [
+                *params.posonlyargs,
+                *params.args,
+                *params.kwonlyargs,
+                *filter(None, [params.vararg, params.kwarg]),
+            ]
+        }
 
         # 3. Transform variable access
         if global_vars:

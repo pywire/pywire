@@ -1,5 +1,7 @@
 """Tests for the event field static analyzer."""
 
+import pytest
+
 from pywire.compiler.event_analysis import analyze_event_fields
 
 
@@ -199,7 +201,8 @@ def handle(event):
     val = event['key']
 """
     result = analyze_event_fields(source)
-    assert result == {"key"}
+    # String subscripts may be form fields (data["title"]), so formData rides along.
+    assert result == {"key", "formData"}
 
 
 def test_event_subscript_dynamic_returns_none():
@@ -220,7 +223,7 @@ def handle(event):
     x = event['client_x']
 """
     result = analyze_event_fields(source)
-    assert result == {"clientX"}
+    assert result == {"clientX", "formData"}
 
 
 def test_reassigned_event_tracked():
@@ -334,3 +337,96 @@ def test_codegen_empty_field_mask():
     codegen = EventAttributeCodegen()
     html = codegen.generate_html(attr)
     assert 'data-pw-fields-click=""' in html
+
+
+# Regression for #291: the runtime hands the event to the handler's first
+# required parameter whatever its name, so the analyzer must too.
+
+
+def test_submit_handler_any_param_name_reads_form_data():
+    source = """
+def handle_submit(data):
+    message.value = f"Welcome, {data['name']}!"
+"""
+    result = analyze_event_fields(source)
+    assert result is not None and "formData" in result
+
+
+def test_submit_handler_form_data_attribute_with_custom_name():
+    source = """
+def add(e):
+    title = e.form_data.get("title")
+"""
+    assert analyze_event_fields(source) == {"formData"}
+
+
+def test_event_get_sends_everything():
+    source = """
+def add(data):
+    title = data.get("title")
+"""
+    assert analyze_event_fields(source) is None
+
+
+def test_membership_test_needs_form_data():
+    source = """
+def add(data):
+    if "title" in data:
+        pass
+"""
+    assert analyze_event_fields(source) == {"formData"}
+
+
+def test_param_with_default_is_not_the_event():
+    source = """
+def handle(event, label="x"):
+    print(label.upper())
+"""
+    assert analyze_event_fields(source) == set()
+
+
+def test_self_param_is_skipped():
+    source = """
+def handle(self, data):
+    x = data.client_x
+"""
+    assert analyze_event_fields(source) == {"clientX"}
+
+
+@pytest.mark.asyncio
+async def test_docs_form_example_sends_form_data(tmp_path):
+    """The guides/forms.md example (``def handle_submit(data)``) must not
+    render an empty submit field mask."""
+    from unittest.mock import MagicMock
+
+    from pywire.runtime.loader import PageLoader
+
+    page_file = tmp_path / "page.wire"
+    page_file.write_text(
+        """---
+message = wire("")
+
+def handle_submit(data):
+    message.value = f"Welcome, {data['name']}!"
+---
+<form @submit.prevent={handle_submit}>
+    <input name="name" type="text" />
+</form>
+<p>{message}</p>
+"""
+    )
+    page_class = PageLoader().load(page_file)
+    request = MagicMock()
+    request.app.state.webtransport_cert_hash = None
+    request.app.state.enable_pjax = False
+    request.app.state.interactive_server_mode = True
+    page = page_class(request, {}, {}, {}, None)
+    html = await page._render_template()
+
+    assert 'data-pw-fields-submit=""' not in html
+    assert "formData" in html
+
+    await page.handle_event(
+        "handle_submit", {"type": "submit", "formData": {"name": "Ada"}}
+    )
+    assert page.message.value == "Welcome, Ada!"

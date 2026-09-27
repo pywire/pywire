@@ -212,3 +212,76 @@ def test_write_in_derived_raises():
 
     with pytest.raises(ReactivityError):
         _ = bad.value
+
+
+def test_derived_unwraps_like_wire():
+    # Regression for #293: Derived only proxied str/format/bool, so the docs'
+    # own `len(pending_todos)` raised and `==` was silently False.
+    todos = wire([{"done": False}, {"done": True}, {"done": False}])
+
+    @derived
+    def pending():
+        return [t for t in todos.value if not t["done"]]
+
+    @derived
+    def total():
+        return len(todos.value)
+
+    assert len(pending) == 2
+    assert [t["done"] for t in pending] == [False, False]
+    assert pending[0] == {"done": False}
+    assert {"done": False} in pending
+    assert total == 3
+    assert total != 4
+    assert total > 2 and total >= 3 and total < 4 and total <= 3
+    assert total + 1 == 4 and 1 + total == 4
+    assert total - 1 == 2 and 10 - total == 7
+    assert total * 2 == 6 and 2 * total == 6
+    assert total / 2 == 1.5 and 6 / total == 2
+    assert total // 2 == 1 and 7 // total == 2
+    assert total % 2 == 1 and 7 % total == 1
+    assert -total == -3
+    assert int(total) == 3 and float(total) == 3.0
+
+
+def test_derived_identity_semantics_for_reactive_nodes():
+    count = wire(1)
+
+    @derived
+    def a():
+        return count.value
+
+    @derived
+    def b():
+        return count.value
+
+    # Two deriveds with equal values are still distinct nodes, so sets of
+    # dependencies/subscribers keep both.
+    assert a == 1 and b == 1
+    assert a != b
+    assert len({a, b}) == 2
+    assert a != count
+
+
+def test_nested_container_mutation_persists():
+    # Found in the bug sweep: WireList/WireDict built a proxy for a nested
+    # container, but `self[i] = proxy` compared equal and skipped the store,
+    # so `rows[1]["done"] = True` mutated a throwaway copy.
+    rows = wire([{"done": False}, {"done": False}])
+    rows[1]["done"] = True
+    assert rows[1]["done"] is True
+
+    tree = wire({"a": {"n": 1}, "tags": [1]})
+    tree["a"]["n"] = 2
+    tree["tags"].append(2)
+    assert tree["a"]["n"] == 2
+    assert tree["tags"] == [1, 2]
+
+
+def test_container_wire_str_is_plain():
+    # str() of a container wire recursed forever (value returns self).
+    rows = wire([{"done": False}])
+    rows[0]["done"] = True
+    assert str(rows) == "[{'done': True}]"
+    assert str(wire({"a": [1]})) == "{'a': [1]}"
+    assert str(wire({1})) == "{1}"

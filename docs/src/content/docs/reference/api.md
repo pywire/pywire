@@ -250,37 +250,39 @@ app = PyWire(pages_dir="src/pages", debug=True)
 
 ---
 
-These are optional methods you can define in your component's script block. They are called automatically by the framework at specific points in the component lifecycle.
+Lifecycle hooks are functions in the frontmatter marked with a decorator. The decorators are available in every `.wire` file without an import. Hooks can be `def` or `async def`.
 
-### `on_before_load`
+| Decorator        | Runs                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `@before_load`   | Pages only. Once per page load, before any `@init` hook and before the first render.   |
+| `@init`          | Once per page load, before the first render. The place to fetch data.                  |
+| `@mount`         | After the first render has been delivered to the browser.                              |
+| `@before_update` | Before each re-render. Return `False` to skip that update (the handler still ran).     |
+| `@after_update`  | After each re-render has been sent to the browser.                                     |
+| `@unmount`       | When a component is removed from the render tree.                                      |
+| `@error`         | When a handler or render raises. Receives the exception; return `True` to suppress it. |
 
-**Description:** Runs **once** before the component is first rendered. This is the ideal place to load data, check authentication, or initialize `wire` variables based on URL parameters.
+Top-level frontmatter statements run once, when the page instance is created, before any hook.
 
-**Example:**
-
-```py
+```pywire
+---
 # pages/users/[id].wire
-user_id = wire(None)
-user_data = wire({})
+user = wire({})
 
-def on_before_load():
-    user_id.value = params.get("id")
-    user_data.value = db.get_user(user_id)
-```
+@init
+async def load_user():
+    user.value = await db.get_user(params.id)
 
-### `on_load`
+@before_update
+def only_when_loaded():
+    return bool(user.value)
 
-**Description:** Runs **once** during page initialization, after `on_before_load`. Use this for setup that depends on the initial render state.
-
-### `on_after_render`
-
-**Description:** Runs **after every render** (including the initial render and subsequent reactive updates). Use this for post-render side effects like sending analytics events or manipulating refs.
-
-```py
-render_count = wire(0)
-
-def on_after_render():
-    render_count.value += 1
+@error
+def handle_error(exc):
+    print(f"user page failed: {exc}")
+    return False  # don't suppress: the error page renders
+---
+<h1>{user.value.get("name", "Unknown user")}</h1>
 ```
 
 ## Page Context Properties
