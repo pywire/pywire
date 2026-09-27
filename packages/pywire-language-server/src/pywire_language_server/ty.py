@@ -81,14 +81,18 @@ class TyClient:
     def _find_ty_executable(self) -> Optional[str]:
         import shutil
 
-        # 1. PATH
-        path_exe = shutil.which("ty")
-        if path_exe:
-            return path_exe
+        # 1. The ty installed alongside this server (a declared dependency). Its bin
+        #    directory is only on PATH when an editor or `uv run` puts it there, so a
+        #    `uv tool install`ed or pipx server would otherwise run without ty.
+        try:
+            from ty import find_ty_bin
 
-        # 2. Check for bundled binary? (Implement later if needed)
+            return find_ty_bin()
+        except (ImportError, FileNotFoundError):
+            pass
 
-        return None
+        # 2. PATH
+        return shutil.which("ty")
 
     def stop(self):
         self.running = False
