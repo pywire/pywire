@@ -49,8 +49,9 @@ class Derived:
         if self._dirty:
             # Cleanup old deps
             for dep in list(self.dependencies):
-                if hasattr(dep, "_subscribers"):
-                    dep._subscribers.discard(self)
+                subscribers = getattr(dep, "_subscribers", None)
+                if subscribers is not None:
+                    subscribers.discard(self)
             self.dependencies.clear()
 
             self._computing = True
@@ -243,8 +244,9 @@ class Effect:
 
         # Cleanup old deps
         for dep in list(self.dependencies):
-            if hasattr(dep, "_subscribers"):
-                dep._subscribers.discard(self)
+            subscribers = getattr(dep, "_subscribers", None)
+            if subscribers is not None:
+                subscribers.discard(self)
         self.dependencies.clear()
 
         _TRACKING_STACK.append(self)
@@ -256,8 +258,9 @@ class Effect:
     def dispose(self) -> None:
         self._disposed = True
         for dep in list(self.dependencies):
-            if hasattr(dep, "_subscribers"):
-                dep._subscribers.discard(self)
+            subscribers = getattr(dep, "_subscribers", None)
+            if subscribers is not None:
+                subscribers.discard(self)
         self.dependencies.clear()
 
 

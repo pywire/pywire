@@ -13,6 +13,7 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
+    FrozenSet,
     Iterable,
     List,
     Optional,
@@ -261,7 +262,11 @@ class BasePage:
 
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
-        self._wire_subscribers: Dict[Tuple[Any, str], Set[str]] = defaultdict(set)
+        # (wire, field) -> regions that read it. Values are frozensets shared
+        # through _region_sets: every row of a list read by one region maps
+        # to the same {region} object instead of a set per row.
+        self._wire_subscribers: Dict[Tuple[Any, str], FrozenSet[str]] = {}
+        self._region_sets: Dict[FrozenSet[str], FrozenSet[str]] = {}
         self._region_dependencies: Dict[str, Set[Tuple[Any, str]]] = defaultdict(set)
         self._dirty_regions: Set[str] = set()
 
@@ -1362,6 +1367,7 @@ class BasePage:
 
     def _clear_wire_tracking(self) -> None:
         self._wire_subscribers.clear()
+        self._region_sets.clear()
         self._region_dependencies.clear()
         self._dirty_regions.clear()
         # Also drop the output-equality cache so the next full render emits
@@ -1388,9 +1394,12 @@ class BasePage:
             for dep in deps:
                 regions = self._wire_subscribers.get(dep)
                 if regions and region_id in regions:
-                    regions.discard(region_id)
-                    if not regions:
-                        self._wire_subscribers.pop(dep, None)
+                    if len(regions) == 1:
+                        del self._wire_subscribers[dep]
+                    else:
+                        self._wire_subscribers[dep] = self._shared_regions(
+                            regions - {region_id}
+                        )
         self._region_dependencies[region_id] = set()
 
     def _render_expr(self, static_id: str, compute_func: Callable[[], Any]) -> Any:
@@ -1441,7 +1450,11 @@ class BasePage:
 
     def _register_wire_read(self, wire_obj: Any, field: str, region_id: str) -> None:
         key = (wire_obj, field)
-        self._wire_subscribers[key].add(region_id)
+        regions = self._wire_subscribers.get(key)
+        if regions is None:
+            self._wire_subscribers[key] = self._shared_regions(frozenset((region_id,)))
+        elif region_id not in regions:
+            self._wire_subscribers[key] = self._shared_regions(regions | {region_id})
         self._region_dependencies[region_id].add(key)
 
         logger.debug(
@@ -1454,6 +1467,9 @@ class BasePage:
 
         if self._capturing_deps:
             self._captured_deps.add(key)
+
+    def _shared_regions(self, regions: FrozenSet[str]) -> FrozenSet[str]:
+        return self._region_sets.setdefault(regions, regions)
 
     def _invalidate_wire(self, wire_obj: Any, field: str) -> None:
         # Bump the global wire-write counter. Components snapshot this on

@@ -12,7 +12,7 @@ from typing import (
     overload,
     TYPE_CHECKING,
 )
-from weakref import WeakSet
+from weakref import ReferenceType, WeakSet, ref
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +83,16 @@ class WireBase:
     def __init__(
         self, parent: Optional["WireBase"] = None, field: Optional[str] = None
     ):
-        self._pages = WeakSet()
-        self._subscribers = WeakSet()  # Derived/Effect subscribers
+        # Pages that read this wire. List pages hold one proxy per row, so
+        # keep this small: None, then a weakref to the one page (the usual
+        # case), and a WeakSet only once a second page reads it.
+        self._pages: Optional[ReferenceType | WeakSet] = None
+        # Derived/Effect subscribers, created on first subscription.
+        self._subscribers: Optional[WeakSet] = None
         # Strong refs to Effects created via .subscribe() — without these,
         # the Effect is only tracked in the WeakSet of subscribers and
         # gets garbage-collected before the next write.
-        self._subscription_effects: list = []
+        self._subscription_effects: Optional[list] = None
         self._parent = parent
         self._field = field
         self._frozen = False
@@ -106,7 +110,7 @@ class WireBase:
         ctx = _render_context.get()
         if ctx:
             page, region_id = ctx
-            self._pages.add(page)
+            self._add_page(page)
             logger.debug(
                 "WIRE-TRACK: wire=%s registered page=%s region=%s field=%s",
                 id(self),
@@ -123,8 +127,34 @@ class WireBase:
 
         if _TRACKING_STACK:
             subscriber = _TRACKING_STACK[-1]
+            if self._subscribers is None:
+                self._subscribers = WeakSet()
             self._subscribers.add(subscriber)
             subscriber.dependencies.add(self)
+
+    def _add_page(self, page: Any) -> None:
+        pages = self._pages
+        if pages is None:
+            self._pages = ref(page)
+        elif isinstance(pages, ReferenceType):
+            current = pages()
+            if current is page:
+                return
+            if current is None:
+                self._pages = ref(page)
+            else:
+                self._pages = WeakSet((current, page))
+        else:
+            pages.add(page)
+
+    def _live_pages(self) -> list:
+        pages = self._pages
+        if pages is None:
+            return []
+        if isinstance(pages, ReferenceType):
+            page = pages()
+            return [] if page is None else [page]
+        return list(pages)
 
     def _notify_write(self, field: str = "value") -> None:
         from pywire.core.signals import (
@@ -149,17 +179,17 @@ class WireBase:
         if self._parent:
             self._parent._notify_write(self._field or "value")
 
-        start_batch()
-        try:
-            # Notify signal subscribers
-            subscribers = list(self._subscribers)
-            for sub in subscribers:
-                sub.execute()
-        finally:
-            end_batch()
+        if self._subscribers:
+            start_batch()
+            try:
+                # Notify signal subscribers
+                for sub in list(self._subscribers):
+                    sub.execute()
+            finally:
+                end_batch()
 
         # Notify connected pages for re-render
-        for page in list(self._pages):
+        for page in self._live_pages():
             logger.debug(
                 "WIRE-NOTIFY: wire=%s notifying page=%s field=%s",
                 id(self),
@@ -185,12 +215,15 @@ class WireBase:
         # `value` is defined on every concrete subclass; the base class
         # leaves it abstract so getattr keeps both pyright and ty quiet.
         eff = Effect(lambda: callback(getattr(self, "value")))
+        if self._subscription_effects is None:
+            self._subscription_effects = []
         self._subscription_effects.append(eff)
 
         def unsubscribe() -> None:
             eff.dispose()
             try:
-                self._subscription_effects.remove(eff)
+                if self._subscription_effects is not None:
+                    self._subscription_effects.remove(eff)
             except ValueError:
                 pass
 
@@ -485,7 +518,9 @@ class WireList(WireBase, list, Generic[T]):
         return self
 
     def peek(self):
-        return list(self)
+        # Plain copy: no read tracking, no row proxies, no aliasing of live
+        # state into session snapshots.
+        return _plain(self)
 
     @property
     def value(self):
@@ -642,7 +677,7 @@ class WireDict(WireBase, dict, Generic[K, V]):
         return super().__ne__(other)
 
     def peek(self):
-        return dict(self)
+        return _plain(self)
 
     @property
     def value(self):
@@ -765,7 +800,7 @@ class WireSet(WireBase, set, Generic[T]):
         return super().__ne__(other)
 
     def peek(self):
-        return set(self)
+        return _plain(self)
 
     @property
     def value(self):
@@ -881,7 +916,9 @@ def unwrap_wire(val: Any) -> Any:
     if isinstance(val, WireBase):
         if isinstance(val, (list, dict, set)):
             # Container wires return themselves from ``.value``; peek()
-            # gives the raw slot contents for the recursion below.
+            # gives plain contents for the recursion below. peek() doesn't
+            # track, and unwrapping is a read, so register it here.
+            val._track_read()
             val = val.peek()
         else:
             val = val.value
