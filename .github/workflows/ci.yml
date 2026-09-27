@@ -311,12 +311,13 @@ jobs:
         run: cd docs && ./scripts/check
 
   # "Release Floors Gate" is a required status check, but its real evaluation
-  # lives in release.yml (push to main) and only posts on release-please PRs,
-  # which never trigger pull_request workflows. Regular PRs get a pass-through
-  # success here so the required check resolves; floors on feature PRs are
-  # governed by the AGENTS.md release protocol.
+  # lives in release.yml (push to main) and only posts on release-please PRs.
+  # Regular PRs get a pass-through success here so the required check
+  # resolves; floors on feature PRs are governed by the AGENTS.md release
+  # protocol. Release-please PRs also run this workflow (they are pushed with
+  # RELEASE_PAT), so skip them: a pass-through here would overwrite a red gate.
   floors-gate:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-latest
     permissions:
       statuses: write
