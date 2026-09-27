@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.32](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.31...pywire-docs-v0.5.32) (2026-09-27)
+
+
+### Bug Fixes
+
+* **docs:** keep /docs base on in-content links ([#302](https://github.com/pywire/pywire/issues/302)) ([b5559dd](https://github.com/pywire/pywire/commit/b5559dd59d7b9701e7442c7c8abc8574fba0c8f6))
+* **pywire-docs:** pin pyodide xbuildenv install to the release tarball URL ([#278](https://github.com/pywire/pywire/issues/278)) ([62025c0](https://github.com/pywire/pywire/commit/62025c03e71328ce716fdf7e8c98f30a771ee75e))
+* **pywire-docs:** stop light flash on page transitions in dark mode ([#309](https://github.com/pywire/pywire/issues/309)) ([ce8665e](https://github.com/pywire/pywire/commit/ce8665e19429afa96bb1074b5f59963724692fb7))
+* **pywire:** compiler and reactivity bugs that break docs examples ([#304](https://github.com/pywire/pywire/issues/304)) ([caf4551](https://github.com/pywire/pywire/commit/caf4551c5104bbc123ebdd3946e0da63399c69ed))
+* unblock required Release Floors Gate + first wrangler deploy ([#276](https://github.com/pywire/pywire/issues/276)) ([b0b3363](https://github.com/pywire/pywire/commit/b0b3363944a1c924f7aad62aecd293a0b54abfef))
+
 ## [0.5.29](https://github.com/pywire/pywire/compare/pywire-docs-v0.5.28...pywire-docs-v0.5.29) (2026-05-04)
 
 
