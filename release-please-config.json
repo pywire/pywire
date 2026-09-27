@@ -56,7 +56,8 @@
     },
     "packages/create-pywire-app-npm": {
       "release-type": "node",
-      "component": "create-pywire-app-npm"
+      "component": "create-pywire-app-npm",
+      "initial-version": "0.1.0"
     }
   }
 }
