@@ -92,4 +92,6 @@ Release ordering:
 2. Merge release PRs upstream-first — `release-order` prints the order; the `Release Floors Gate` status check enforces it.
 3. If the gate is red, the blocker is upstream: an unmerged release PR or a failed publish job — fix that, not the gate.
 
+To cut releases ("release all", "release pywire-cli"), follow the `release-packages` skill: it merges the open release PRs in this order and waits on CI, the Release run and publish approval between merges.
+
 CI (`.github/workflows/ci.yml`) path-filters jobs per package; `check-ci` verifies the fan-outs match the graph.
