@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running checks for create-pywire-app (npm)..."
+
+echo "-> Syntax check..."
+node --check bin/create-pywire-app.js
+
+echo "-> Testing..."
+node --test 'tests/*.test.mjs'
+
+echo "-> Package contents..."
+npm pack --dry-run --json 2>/dev/null | node -e '
+const [pack] = JSON.parse(require("fs").readFileSync(0, "utf8"))
+const files = pack.files.map((f) => f.path).sort()
+const want = ["LICENSE", "README.md", "bin/create-pywire-app.js", "package.json"]
+if (JSON.stringify(files) !== JSON.stringify(want)) {
+  console.error("unexpected package contents:", files)
+  process.exit(1)
+}
+console.log("ok:", files.join(", "))
+'

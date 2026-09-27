@@ -28,6 +28,7 @@ jobs:
       prettier: ${{ steps.filter.outputs.prettier }}
       treesitter: ${{ steps.filter.outputs.treesitter }}
       create-app: ${{ steps.filter.outputs.create-app }}
+      create-app-npm: ${{ steps.filter.outputs.create-app-npm }}
       examples: ${{ steps.filter.outputs.examples }}
       pywire-docs: ${{ steps.filter.outputs.pywire-docs }}
     steps:
@@ -67,6 +68,8 @@ jobs:
               - 'packages/tree-sitter-pywire/**'
             create-app:
               - 'packages/create-pywire-app/**'
+            create-app-npm:
+              - 'packages/create-pywire-app-npm/**'
             examples:
               - 'examples/**'
             pywire-docs:
@@ -256,6 +259,20 @@ jobs:
           enable-cache: true
       - name: Run Checks
         run: cd packages/create-pywire-app && ./scripts/check
+
+  # npm launcher for create-pywire-app: tests + package contents
+  check-create-app-npm:
+    name: "Check Create PyWire App (npm)"
+    needs: changes
+    if: needs.changes.outputs.create-app-npm == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Run Checks
+        run: cd packages/create-pywire-app-npm && ./scripts/check
 
   # Examples: verify demos still compile + pass smoke tests against pywire.
   check-examples:
