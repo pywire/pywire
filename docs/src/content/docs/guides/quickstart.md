@@ -24,7 +24,7 @@ npx create-pywire-app
 **With neither**, the install script sets up uv and then launches the wizard:
 
 ```sh
-curl -fsSL https://pywire.dev/install.sh | sh
+curl -fsSL https://pywire.dev/install | sh
 ```
 
 On Windows, use PowerShell instead:

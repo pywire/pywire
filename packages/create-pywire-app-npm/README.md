@@ -14,6 +14,6 @@ through [uv](https://docs.astral.sh/uv/), and installs uv first if it's missing.
 Arguments pass straight through, e.g. `npx create-pywire-app my-app --yes --template blog`.
 
 Already have uv? `uvx create-pywire-app` does the same thing without Node.js.
-No uv and no Node.js? `curl -fsSL https://pywire.dev/install.sh | sh`.
+No uv and no Node.js? `curl -fsSL https://pywire.dev/install | sh`.
 
 See the [quickstart](https://pywire.dev/docs/guides/quickstart/) for what comes next.

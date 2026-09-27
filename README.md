@@ -37,7 +37,7 @@ Pick whichever tool you already have. All three launch the same wizard:
 ```sh
 uvx create-pywire-app                              # uv (recommended)
 npx create-pywire-app                              # Node.js, installs uv if missing
-curl -fsSL https://pywire.dev/install.sh | sh      # neither: installs uv, then the wizard
+curl -fsSL https://pywire.dev/install | sh         # neither: installs uv, then the wizard
 ```
 
 Then start the dev server:

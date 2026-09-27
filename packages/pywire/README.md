@@ -15,7 +15,7 @@ uvx create-pywire-app
 npx create-pywire-app
 
 # Neither: installs uv, then launches the wizard
-curl -fsSL https://pywire.dev/install.sh | sh
+curl -fsSL https://pywire.dev/install | sh
 ```
 
 On Windows (PowerShell): `irm https://pywire.dev/install.ps1 | iex`
