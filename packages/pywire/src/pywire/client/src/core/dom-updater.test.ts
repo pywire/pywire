@@ -80,6 +80,104 @@ describe('DOMUpdater', () => {
     expect(toEl.value).toBe('server-new')
   })
 
+  describe('server-driven value/checked (#296)', () => {
+    type Hook = (fromEl: HTMLElement, toEl: HTMLElement) => boolean
+    const getHook = (): Hook => {
+      updater.update('<html><body><div id="app"></div></body></html>')
+      const hook = vi.mocked(morphdom).mock.calls[0][2]?.onBeforeElUpdated
+      if (!hook) throw new Error('Hook not found')
+      return hook as Hook
+    }
+    const input = (html: string) => {
+      const t = document.createElement('template')
+      t.innerHTML = html
+      return t.content.firstElementChild as HTMLInputElement
+    }
+
+    it('lets the server clear a focused input', () => {
+      const hook = getHook()
+      const fromEl = input('<input value="hello">')
+      fromEl.value = 'hello'
+      vi.spyOn(document, 'activeElement', 'get').mockReturnValue(fromEl)
+      const toEl = input('<input value="">')
+
+      hook(fromEl, toEl)
+
+      expect(toEl.value).toBe('')
+    })
+
+    it('keeps typed text when the server did not change the value', () => {
+      const hook = getHook()
+      const fromEl = input('<input value="">')
+      fromEl.value = 'typed but unbound'
+      const toEl = input('<input value="">')
+
+      hook(fromEl, toEl)
+
+      expect(toEl.value).toBe('typed but unbound')
+    })
+
+    it('applies a changed server value to an unfocused input', () => {
+      const hook = getHook()
+      const fromEl = input('<input value="ab">')
+      fromEl.value = 'ab'
+      vi.spyOn(document, 'activeElement', 'get').mockReturnValue(document.body)
+      const toEl = input('<input value="abc">')
+
+      hook(fromEl, toEl)
+
+      expect(toEl.value).toBe('abc')
+    })
+
+    it('unchecks a reused checkbox when the server removes checked', () => {
+      const hook = getHook()
+      const fromEl = input('<input type="checkbox" checked>')
+      const toEl = input('<input type="checkbox">')
+
+      hook(fromEl, toEl)
+
+      expect(toEl.checked).toBe(false)
+    })
+
+    it('keeps a user toggle when the server did not change checked', () => {
+      const hook = getHook()
+      const fromEl = input('<input type="checkbox">')
+      fromEl.checked = true
+      const toEl = input('<input type="checkbox">')
+
+      hook(fromEl, toEl)
+
+      expect(toEl.checked).toBe(true)
+    })
+
+    it('clears a focused textarea when the server empties it', () => {
+      const hook = getHook()
+      const t = document.createElement('template')
+      t.innerHTML = '<textarea>draft</textarea><textarea></textarea>'
+      const [fromEl, toEl] = Array.from(t.content.children) as HTMLTextAreaElement[]
+      vi.spyOn(document, 'activeElement', 'get').mockReturnValue(fromEl)
+
+      hook(fromEl, toEl)
+
+      expect(toEl.value).toBe('')
+    })
+
+    it('does not restore the old value into a focused input the morph cleared', async () => {
+      const realMorphdom = (await vi.importActual<{ default: typeof morphdom }>('morphdom')).default
+      vi.mocked(morphdom).mockImplementationOnce(realMorphdom)
+      document.body.innerHTML = '<div id="app"><input id="title" value="hello"></div>'
+      const el = document.getElementById('title') as HTMLInputElement
+      el.value = 'hello'
+      el.focus()
+
+      updater.update('<html><body><div id="app"><input id="title" value=""></div></body></html>')
+
+      const after = document.getElementById('title') as HTMLInputElement
+      expect(after).toBe(el)
+      expect(after.value).toBe('')
+    })
+  })
+
   it('should preserve file input node and sync attributes', () => {
     const morphdomMock = vi.mocked(morphdom)
     updater.update('<html><body><input id="avatar" type="file"></body></html>')

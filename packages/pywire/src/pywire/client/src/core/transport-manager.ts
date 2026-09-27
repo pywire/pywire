@@ -48,9 +48,13 @@ export class TransportManager {
     const transports = this.getTransportPriority()
 
     for (const TransportClass of transports) {
+      // Log the instance's `name`, not `TransportClass.name`: class names are
+      // minified in the shipped bundle.
+      let label = 'transport'
       try {
-        logger.log(`PyWire: Trying ${TransportClass.name}...`)
         this.transport = new TransportClass()
+        label = this.transport.name
+        logger.log(`PyWire: Trying ${label}...`)
 
         // Forward message handlers
         for (const handler of this.messageHandlers) {
@@ -75,7 +79,7 @@ export class TransportManager {
         logger.log(`PyWire: Connected via ${this.transport.name}`)
         return
       } catch (e) {
-        logger.warn(`PyWire: ${TransportClass.name} failed, trying next...`, e)
+        logger.warn(`PyWire: ${label} failed, trying next...`, e)
         this.transport = null
       }
     }

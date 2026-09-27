@@ -24,6 +24,29 @@ interface FocusState {
   scrollTop: number
   scrollLeft: number
   value: string
+  element: Element
+}
+
+/**
+ * Whether a morph should keep the value the user has in `fromEl` rather than
+ * the server-rendered value in `toEl`.
+ *
+ * The rendered `value` attribute (`defaultValue`) is the server's intent. If
+ * it didn't change, the server has nothing new to say, so the user's text
+ * stays. If it did change, the server wins, except while the user is typing
+ * in that element and the new value is just a lagging echo of their input
+ * (one is a prefix of the other). An empty server value is never an echo, so
+ * Python can clear a focused input.
+ */
+function keepClientValue(
+  fromEl: HTMLInputElement | HTMLTextAreaElement,
+  toEl: HTMLInputElement | HTMLTextAreaElement
+): boolean {
+  if (fromEl.defaultValue === toEl.defaultValue) return true
+  if (fromEl !== document.activeElement) return false
+  const server = toEl.value
+  const client = fromEl.value
+  return server !== '' && (client.startsWith(server) || server.startsWith(client))
 }
 
 export class DOMUpdater {
@@ -149,6 +172,7 @@ export class DOMUpdater {
       scrollTop: 0,
       scrollLeft: 0,
       value: '',
+      element: active,
     }
 
     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
@@ -188,8 +212,10 @@ export class DOMUpdater {
 
     // Restore selection/caret position
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      // Restore value if it matches what we captured
+      // Restore the typed value only if morph replaced the node. A node that
+      // was patched in place already holds the value the morph decided on.
       if (
+        el !== state.element &&
         !(el instanceof HTMLInputElement && el.type === 'file') &&
         state.value &&
         el.value !== state.value
@@ -465,22 +491,21 @@ export class DOMUpdater {
                   return false
                 }
                 if (fromEl.type === 'checkbox' || fromEl.type === 'radio') {
-                  toEl.checked = fromEl.checked
-                } else {
-                  const s = toEl.value || ''
-                  const c = fromEl.value || ''
-                  if (c.startsWith(s) || s.startsWith(c)) {
-                    toEl.value = c
+                  // Keep the user's toggle unless the server changed `checked`.
+                  if (fromEl.defaultChecked === toEl.defaultChecked) {
+                    toEl.checked = fromEl.checked
                   }
+                } else if (keepClientValue(fromEl, toEl)) {
+                  toEl.value = fromEl.value
                 }
               }
 
-              if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
-                const s = toEl.value || ''
-                const c = fromEl.value || ''
-                if (c.startsWith(s) || s.startsWith(c)) {
-                  toEl.value = c
-                }
+              if (
+                fromEl instanceof HTMLTextAreaElement &&
+                toEl instanceof HTMLTextAreaElement &&
+                keepClientValue(fromEl, toEl)
+              ) {
+                toEl.value = fromEl.value
               }
 
               // Select: preserve selected option

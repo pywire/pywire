@@ -3,6 +3,7 @@ import { TransportManager } from './transport-manager'
 import { WebTransportTransport } from './transports/webtransport'
 import { WebSocketTransport } from './transports/websocket'
 import { HTTPTransport } from './transports/http'
+import { logger } from './logger'
 
 // Create mock classes that can be used in the tests
 class MockWebTransport {
@@ -120,6 +121,23 @@ describe('TransportManager', () => {
 
     expect(HTTPTransport).toHaveBeenCalled()
     expect(manager.getActiveTransport()).toBe('HTTPTransport')
+  })
+
+  it('logs the transport instance name, not the (minified) class name', async () => {
+    // Regression for #289: bundles minify class names, so `TransportClass.name`
+    // printed e.g. "PyWire: Trying K...".
+    Object.defineProperty(WebTransportTransport, 'name', { value: 'K' })
+    const log = vi.spyOn(logger, 'log')
+    try {
+      const manager = new TransportManager()
+      await manager.connect()
+      const lines = log.mock.calls.map((c) => String(c[0]))
+      expect(lines).toContain('PyWire: Trying WebTransportTransport...')
+      expect(lines.some((l) => l.includes('Trying K'))).toBe(false)
+    } finally {
+      log.mockRestore()
+      Object.defineProperty(WebTransportTransport, 'name', { value: 'WebTransportTransport' })
+    }
   })
 
   it('should skip WebTransport if not on HTTPS', async () => {
