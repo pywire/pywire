@@ -18,6 +18,9 @@ jobs:
   # job. If jobs were skipped (not failed), make a new bump commit to create a fresh release.
   release-please:
     runs-on: ubuntu-latest
+    # One release-please at a time. When several PRs merge back to back, a
+    # queued run is replaced by the newest one; that is safe because every
+    # run releases all merged-but-untagged release PRs, not just its own.
     concurrency:
       group: release-please-${{ github.ref }}
       cancel-in-progress: false
@@ -53,12 +56,16 @@ jobs:
       # main — release PRs only bump versions/changelogs, never floors).
       - uses: actions/checkout@v7
 
-      # release-please PRs are created with GITHUB_TOKEN, which suppresses
-      # pull_request workflow triggers, so CI never runs on them: set success
+      # release-please PRs are pushed with GITHUB_TOKEN, so their CI and
+      # CodeQL runs wait for approval ("action required") and never run
+      # (they show as failed once the branch is deleted on merge): set success
       # statuses for the required CI checks, and evaluate the release floors
       # gate for real — a release PR is only mergeable when every monorepo
       # floor it carries is already published upstream (make "Release
-      # Floors Gate" a required check to enforce merge order).
+      # Floors Gate" a required check to enforce merge order). No step may
+      # push to these branches after this one, or the new head loses these
+      # statuses; release-please ("always-update") already rebuilds every
+      # release PR from the latest main on each run.
       - name: Set CI statuses + release floors gate on release-please PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -128,30 +135,6 @@ jobs:
               -f context="Release Floors Gate" \
               -f description="$gate_desc" \
               --silent
-          done
-
-      # After release-please runs and CI statuses are set, merge main into
-      # any open release-please PR branches so they stay conflict-free.
-      # This resolves .release-please-manifest.json drift when one release
-      # PR merges before others.
-      - name: Update release-please PR branches with latest main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          prs=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --json number,headRefName \
-            --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
-
-          if [ "$prs" = "[]" ] || [ -z "$prs" ]; then
-            echo "No open release-please PRs to update"
-            exit 0
-          fi
-
-          echo "$prs" | jq -c '.[]' | while read -r pr; do
-            num=$(echo "$pr" | jq -r '.number')
-            echo "Updating PR #$num branch with latest main"
-            gh pr update-branch "$num" --repo "$GITHUB_REPOSITORY" || true
           done
 
   # Build pywire (pure Python wheel + sdist)

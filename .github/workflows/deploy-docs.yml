@@ -35,6 +35,13 @@ jobs:
       contents: read
       deployments: write
     name: Deploy Documentation
+    # A docs push and a release can both deploy production at once (e.g. a
+    # pywire release whose docs sync commit also touches docs/). Run one
+    # deploy per environment at a time so an older build can't finish last
+    # and overwrite a newer one; a queued deploy is superseded by the newest.
+    concurrency:
+      group: deploy-docs-${{ inputs.environment || 'production' }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:

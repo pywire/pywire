@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: "0 0 * * 1" # Weekly on Monday
 
+# New pushes to a PR supersede older runs; main runs are never cancelled.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
