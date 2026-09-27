@@ -19,6 +19,7 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
 from pywire import __version__
+from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
@@ -133,6 +134,7 @@ class PyWire:
         reconnect_overlay: bool = True,
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
+        compress: bool = True,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -247,12 +249,16 @@ class PyWire:
         self.reconnect_max_attempts = reconnect_max_attempts
         self.reconnect_overlay = reconnect_overlay
 
-        # Reconnect template HTML/CSS — always populated (built-in default or
-        # user's __reconnect__.wire override).  The server injects this as
-        # <template id="_pywire_reconnect"> so the client has a single code path.
+        # Gzip text responses (pages, client runtime, JSON, msgpack updates).
+        # Turn off when a CDN or reverse proxy in front already compresses.
+        self.compress = compress
+        self._gzip_static_cache: Dict[str, Tuple[bytes, bytes]] = {}
+
+        # Custom reconnect overlay from the user's __reconnect__.wire, injected
+        # into each page as <template id="_pywire_reconnect">. Without one the
+        # client uses the default overlay built into the (cached) bundle.
         self._reconnect_template_html: Optional[str] = None
         self._reconnect_template_style: Optional[str] = None
-        self._load_default_reconnect_template()
 
         # Asset fingerprinting cache (prod without build: path -> content hash)
         self._asset_hash_cache: Dict[str, str] = {}
@@ -649,9 +655,19 @@ class PyWire:
         }
         ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
         ct = content_types.get(ext, "application/octet-stream")
-        return Response(
-            data, media_type=ct, headers={"Cache-Control": "public, max-age=31536000"}
-        )
+        headers = {"Cache-Control": "public, max-age=31536000"}
+        if self.compress:
+            headers["Vary"] = "Accept-Encoding"
+            if "gzip" in request.headers.get("accept-encoding", ""):
+                cached = self._gzip_static_cache.get(filename)
+                if cached is None or cached[0] != data:  # dev rebuilds in place
+                    cached = self._gzip_static_cache[filename] = (
+                        data,
+                        gzip_bytes(data, 9),
+                    )
+                headers["Content-Encoding"] = "gzip"
+                data = cached[1]
+        return Response(data, media_type=ct, headers=headers)
 
     async def _handle_capabilities(self, request: Request) -> JSONResponse:
         """Return server transport capabilities for client negotiation."""
@@ -914,42 +930,6 @@ class PyWire:
         reconnect_page_path = self.pages_dir / "__reconnect__.wire"
         if reconnect_page_path.exists():
             self._load_reconnect_template(reconnect_page_path)
-
-    def _load_default_reconnect_template(self) -> None:
-        """Load the built-in default reconnect overlay from templates/reconnect/default.html.
-
-        This provides the default "Reconnecting..." / "Connection lost" overlay.
-        It can be overridden by a user's ``__reconnect__.wire`` in their pages dir.
-        """
-        import importlib.resources
-        import re
-
-        try:
-            content = (
-                importlib.resources.files("pywire")
-                .joinpath("templates")
-                .joinpath("reconnect")
-                .joinpath("default.html")
-                .read_text(encoding="utf-8")
-            )
-        except Exception:
-            logger.warning("Built-in reconnect template not found in package data")
-            return
-
-        # Extract <style>...</style> blocks
-        style_parts: list[str] = []
-
-        def _collect_style(m: re.Match[str]) -> str:
-            style_parts.append(m.group(1))
-            return ""
-
-        html = re.sub(r"<style>(.*?)</style>", _collect_style, content, flags=re.DOTALL)
-        html = html.strip()
-
-        if html:
-            self._reconnect_template_html = html
-        if style_parts:
-            self._reconnect_template_style = "\n".join(style_parts)
 
     def _load_reconnect_template(self, file_path: Path) -> None:
         """Load __reconnect__.wire as a static HTML template with optional scoped styles.
@@ -1825,6 +1805,12 @@ class PyWire:
             and self.web_transport_handler is not None
         ):
             await self.web_transport_handler.handle(scope, receive, send)
+            return
+
+        if self.compress:
+            # Outermost HTTP layer, so middleware added later still sees
+            # uncompressed bodies. Internal relocate replays target self.app.
+            await CompressionMiddleware(self.app)(scope, receive, send)
             return
 
         await self.app(scope, receive, send)

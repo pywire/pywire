@@ -1,12 +1,11 @@
-import { logger } from './logger'
+import { DEFAULT_RECONNECT_OVERLAY } from './reconnect-overlay-default'
 
 /**
  * Reconnection overlay shown when the transport disconnects.
  *
- * Expects a `<template id="_pywire_reconnect">` injected by the server into
- * the page HTML. The server always provides one — either the user's custom
- * `__reconnect__.wire` template or the built-in default from
- * `templates/reconnect/default.html`.
+ * Uses the `<template id="_pywire_reconnect">` the server injects when the app
+ * has a custom `__reconnect__.wire`, else the built-in default from
+ * `reconnect-overlay-default.ts`.
  *
  * The root element exposes `data-pw-reconnect-state` ("reconnecting" | "failed")
  * so templates can style both states with CSS alone.
@@ -78,8 +77,6 @@ export class ReconnectOverlay {
 
   /**
    * Build or re-use the overlay DOM element.
-   *
-   * Expects a `<template id="_pywire_reconnect">` injected by the server.
    */
   private ensureElement(): void {
     // Re-create if removed from DOM (e.g. by PJAX morphdom update)
@@ -88,16 +85,18 @@ export class ReconnectOverlay {
     }
     if (this.element) return
 
+    const wrapper = document.createElement('div')
+    wrapper.id = '_pywire_reconnect_overlay'
     const tmpl = document.getElementById('_pywire_reconnect') as HTMLTemplateElement | null
     if (tmpl && tmpl.content) {
-      const wrapper = document.createElement('div')
-      wrapper.id = '_pywire_reconnect_overlay'
       wrapper.appendChild(tmpl.content.cloneNode(true))
-      document.body.appendChild(wrapper)
-      this.element = wrapper
-      return
+    } else {
+      wrapper.innerHTML = DEFAULT_RECONNECT_OVERLAY
+      wrapper
+        .querySelector('.pw-reconnect-reload')
+        ?.addEventListener('click', () => window.location.reload())
     }
-
-    logger.warn('PyWire: No reconnect overlay template found in DOM')
+    document.body.appendChild(wrapper)
+    this.element = wrapper
   }
 }

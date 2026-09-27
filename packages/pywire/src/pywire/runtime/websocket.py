@@ -830,6 +830,9 @@ class WebSocketHandler:
                 "sec-websocket-version",
                 "sec-websocket-extensions",
                 "sec-websocket-protocol",
+                # The replay reads the body as HTML, so it must not be
+                # compressed by pywire or a host app's gzip middleware.
+                "accept-encoding",
                 "cookie",  # replaced with merged cookies below
             ):
                 continue

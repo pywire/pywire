@@ -1,7 +1,11 @@
-<style>
-/* PyWire reconnect overlay — tokens mirror the design system
-   (packages/pywire-design-system/colors_and_type.css). Self-contained;
-   customisable via CSS custom properties on #_pywire_reconnect_overlay. */
+/**
+ * Built-in reconnect overlay, shipped in the client bundle so pages don't
+ * inline it. A `__reconnect__.wire` in the pages dir replaces it (the server
+ * then injects `<template id="_pywire_reconnect">`). Tokens mirror the design
+ * system; override them with CSS custom properties on
+ * `#_pywire_reconnect_overlay`.
+ */
+export const DEFAULT_RECONNECT_OVERLAY = `<style>
 #_pywire_reconnect_overlay {
   --pw-reconnect-backdrop: hsl(0 100% 0% / 0.55);
   --pw-reconnect-card-bg: oklch(99% 0.005 250);
@@ -137,6 +141,7 @@
     <div class="pw-reconnect-spinner" aria-hidden="true"></div>
     <p class="pw-reconnect-message pw-reconnect-msg-reconnecting">Reconnecting&hellip;</p>
     <p class="pw-reconnect-message pw-reconnect-msg-failed">Connection failed.<br/>Try reloading.</p>
-    <button class="pw-reconnect-reload" onclick="location.reload()">Reload</button>
+    <button class="pw-reconnect-reload" type="button">Reload</button>
   </div>
 </div>
+`
