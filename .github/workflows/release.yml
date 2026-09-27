@@ -49,6 +49,10 @@ jobs:
       - uses: googleapis/release-please-action@v5
         id: release
         with:
+          # Push release PRs as a user, not GITHUB_TOKEN: GITHUB_TOKEN pushes
+          # start CI/CodeQL runs that sit in "action required" and then show
+          # as failed once the PR merges and its branch is deleted.
+          token: ${{ secrets.RELEASE_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
@@ -56,9 +60,7 @@ jobs:
       # main — release PRs only bump versions/changelogs, never floors).
       - uses: actions/checkout@v7
 
-      # release-please PRs are pushed with GITHUB_TOKEN, so their CI and
-      # CodeQL runs wait for approval ("action required") and never run
-      # (they show as failed once the branch is deleted on merge): set success
+      # Release PRs only bump versions/changelogs, so don't wait on CI: set success
       # statuses for the required CI checks, and evaluate the release floors
       # gate for real — a release PR is only mergeable when every monorepo
       # floor it carries is already published upstream (make "Release
