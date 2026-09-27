@@ -44,6 +44,7 @@ jobs:
       tree-sitter-pywire--tag_name: ${{ steps.release.outputs['packages/tree-sitter-pywire--tag_name'] }}
       prettier-plugin-pywire--release_created: ${{ steps.release.outputs['packages/prettier-plugin-pywire--release_created'] }}
       create-pywire-app--release_created: ${{ steps.release.outputs['packages/create-pywire-app--release_created'] }}
+      create-pywire-app-npm--release_created: ${{ steps.release.outputs['packages/create-pywire-app-npm--release_created'] }}
       pywire-docs--release_created: ${{ steps.release.outputs['docs--release_created'] }}
     steps:
       - uses: googleapis/release-please-action@v5
@@ -93,6 +94,7 @@ jobs:
             "Check Prettier Plugin"
             "Check Tree-sitter Grammar"
             "Check Create PyWire App"
+            "Check Create PyWire App (npm)"
             "Check Examples"
             "Check PyWire Docs"
           )
@@ -438,6 +440,32 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/create-pywire-app/dist/
+
+  # Publish the create-pywire-app npm launcher (npx create-pywire-app).
+  # npm trusted publishing (OIDC): no npm token is stored anywhere. The npm
+  # package must list this repo + workflow + the release environment as its
+  # trusted publisher (npmjs.com → package settings → Trusted publishing).
+  publish-create-app-npm:
+    name: "Publish create-pywire-app to npm"
+    needs: release-please
+    if: needs.release-please.outputs.create-pywire-app-npm--release_created == 'true'
+    runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: ./scripts/check
+        working-directory: packages/create-pywire-app-npm
+      - run: npm publish --access public
+        working-directory: packages/create-pywire-app-npm
 
   # When pywire releases, ensure docs gets a patch release too (if docs changed since
   # last docs release). Closes any stale docs release-please PR to prevent conflicts,
