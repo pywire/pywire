@@ -47,7 +47,7 @@ fly launch --no-deploy   # imports fly.toml
 fly deploy
 ```
 
-To scale to multiple machines (`fly scale count N`), you need sticky sessions or a shared Redis instance — see [Horizontal Scaling](/guides/scaling/).
+To scale to multiple machines (`fly scale count N`), you need sticky sessions or a shared Redis instance — see [Horizontal Scaling](/docs/guides/scaling/).
 
 **Railway** — generates a `railway.json` and `Dockerfile`:
 
@@ -116,7 +116,7 @@ For latency-sensitive applications, container-based deployments (Docker, Railway
 | `--redis`    | Include Redis/Valkey KV store in deployment config — not applicable to `cloudflare`        |
 | `--out-dir`  | Output directory for generated files (default: `.`)                                        |
 
-Use `--redis --workers 4` to generate configs pre-configured for multi-worker scaling. See [Horizontal Scaling](/guides/scaling/) for details.
+Use `--redis --workers 4` to generate configs pre-configured for multi-worker scaling. See [Horizontal Scaling](/docs/guides/scaling/) for details.
 
 The command validates your project before generating configs. If `pyproject.toml` or `uv.lock` is missing, you'll see a warning.
 
