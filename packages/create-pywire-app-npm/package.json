@@ -1,6 +1,6 @@
 {
   "name": "create-pywire-app",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Create a new pywire app: runs the create-pywire-app wizard through uv, installing uv if needed",
   "type": "module",
   "bin": {
