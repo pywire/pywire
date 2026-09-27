@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/pywire/pywire/compare/create-pywire-app-v0.12.0...create-pywire-app-v0.12.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **create-pywire-app:** use count.value = 0 for reset in counter templates ([4bcbeb6](https://github.com/pywire/pywire/commit/4bcbeb63fa7e9a3d8fe5dad89e77bb39609de52c))
+* scaffold font and README drift, dev --port, LSP dependency floor ([#305](https://github.com/pywire/pywire/issues/305)) ([724248a](https://github.com/pywire/pywire/commit/724248a04d9a3980b9b3b28d809363c109bc3248))
+
 ## [0.12.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.11.0...create-pywire-app-v0.12.0) (2026-05-04)
 
 
