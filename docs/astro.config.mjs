@@ -8,13 +8,20 @@ import starlightLlmsTxt from 'starlight-llms-txt'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { satteri } from '@astrojs/markdown-satteri'
+import baseLinks from './src/plugins/base-links.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const base = '/docs'
 
 // https://astro.build/config
 export default defineConfig({
   site: 'https://pywire.dev/',
-  base: '/docs',
+  base,
+  markdown: {
+    // Astro's default processor, plus in-content links that keep the base.
+    processor: satteri({ mdastPlugins: [baseLinks({ base })] }),
+  },
   // Astro 7 defaults to 'jsx' HTML compression; keep v6 HTML-aware behavior.
   compressHTML: true,
   vite: {

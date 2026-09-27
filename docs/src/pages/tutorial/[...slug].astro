@@ -64,7 +64,7 @@ const { slug, redirectTo } = Astro.props as Props
 
 // --- 3. REDIRECT LOGIC ---
 if (redirectTo) {
-  return Astro.redirect(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/tutorial/${redirectTo}`)
+  return Astro.redirect(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/tutorial/${redirectTo}/`)
 }
 
 // Fetch all tutorial steps for the SPA context
