@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.0...pywire-cli-v0.3.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* scaffold font and README drift, dev --port, LSP dependency floor ([#305](https://github.com/pywire/pywire/issues/305)) ([724248a](https://github.com/pywire/pywire/commit/724248a04d9a3980b9b3b28d809363c109bc3248))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/pywire-cli-v0.2.0...pywire-cli-v0.3.0) (2026-05-02)
 
 
