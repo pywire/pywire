@@ -297,7 +297,6 @@ These properties are available on every page and component instance, accessible 
 | `url`      | `URLHelper`       | URL helper for the current request                                                                                  |
 | `user`     | `Any`             | User object populated by the `get_user` hook                                                                        |
 | `attrs`    | `dict`            | Fallthrough attributes not captured by `@props`                                                                     |
-| `errors`   | `ErrorNamespace`  | Form validation errors                                                                                              |
 | `loading`  | `dict`            | Loading state for async operations                                                                                  |
 | `children` | `Snippet \| None` | Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`. |
 
@@ -357,7 +356,7 @@ Also available as `$event` for compatibility with other frameworks.
 
 - **`.keyCode`** (`int`): The integer key code for keyboard events.
 
-- **`.formData`** (`dict`): A dictionary of form fields for `@submit` events on forms.
+- **`.formData`** (`dict`): A dictionary of form fields for `@submit` events on forms. A submit event also reads like that dictionary: `event["name"]`, `event.get("name")`. See [Forms & Validation](/docs/guides/forms/).
 
 **Mouse event properties:** `.client_x`, `.client_y`, `.offset_x`, `.offset_y`, `.page_x`, `.page_y`, `.button`.
 
