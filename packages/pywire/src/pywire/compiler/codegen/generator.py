@@ -539,13 +539,13 @@ class CodeGenerator:
         if parsed.python_ast:
             user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
 
-        # Compile-time dispatch allowlist: the handlers the template binds
-        # (``@event={name}``) plus the generated ``_handler_N`` wrappers.
-        # A frontmatter function no template attribute binds is plain Python
-        # the client can never invoke by name, and neither are lifecycle
-        # hooks, @derived/@effect or @expose methods (reached via ComponentRef)
-        # unless the template wires one directly. Anything else is refused by
-        # ``BasePage._dispatch_handler``.
+        # Compile-time dispatch allowlist: the defs the template wires by
+        # name (``@click={save}``) plus the generated ``_handler_N`` wrappers.
+        # A def only reached through a wrapper (``@click={charge(price)}``)
+        # stays off the list, so a client can't call it with its own
+        # arguments. Lifecycle hooks, @derived/@effect and @expose methods
+        # are never on it unless the template wires one directly. Anything
+        # else is refused by ``BasePage._dispatch_handler``.
         event_handlers = self._wired_handler_names | {h.name for h in handlers}
         class_body.append(
             ast.Assign(

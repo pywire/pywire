@@ -1,0 +1,8 @@
+---
+saved = wire(0)
+
+def save():
+    saved.value += 1
+---
+<p id="status">Saved {saved}</p>
+<button id="save" @click.optimistic-class-saving={save}>Save</button>

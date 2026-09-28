@@ -171,23 +171,48 @@ def import_app(app_str: str) -> Any:
 
 
 # Pure-FaaS platforms serve one-shot requests with no durable state — only
-# stateless mode works there. cloudflare (Durable Objects) and gcp-cloudrun
-# (long-running container) accept either mode.
+# stateless mode works there. gcp-cloudrun (long-running container) accepts
+# either mode. cloudflare (Durable Objects) is stateful only: its entry
+# builds the app at import time, where Workers expose no secrets, so a
+# stateless app never starts there; cloudflare-edge serves those.
 _STATELESS_PLATFORMS = frozenset(
     {"cloudflare-edge", "aws-lambda", "azure-functions", "gcp-functions"}
+)
+
+
+_SECRET_HINT = (
+    "Building imports the app, so PYWIRE_SECRET_KEY must be set for the build "
+    "as well as in your provider environment."
 )
 
 
 def _fail_missing_secret(platform: str) -> None:
     console.print(
         f"[bold red]Error:[/] [cyan]{platform}[/] needs the stateless snapshot "
-        "signing secret — set PYWIRE_SECRET_KEY in your provider environment."
+        f"signing secret. {_SECRET_HINT}"
     )
     sys.exit(1)
 
 
+def _fail_on_secret_error(exc: RuntimeError) -> None:
+    """Turn PyWire's missing or weak stateless secret error into guidance."""
+    if "PYWIRE_SECRET_KEY" not in str(exc):
+        return
+    from rich.markup import escape
+
+    console.print(f"[bold red]Error:[/] {escape(str(exc))}\n{_SECRET_HINT}")
+    sys.exit(1)
+
+
 def _require_stateless(app_instance: Any, platform: Optional[str]) -> None:
-    """Fail fast when a pure-FaaS build target isn't configured stateless."""
+    """Fail fast when the app's mode can't run on the build target."""
+    if platform == "cloudflare" and getattr(app_instance, "stateless", False) is True:
+        console.print(
+            "[bold red]Error:[/] [cyan]cloudflare[/] (Durable Objects) serves "
+            "stateful apps — build a stateless app with "
+            "[cyan]--platform cloudflare-edge[/]."
+        )
+        sys.exit(1)
     if platform not in _STATELESS_PLATFORMS:
         return
     if not getattr(app_instance, "stateless", False):
@@ -461,10 +486,9 @@ def build(
         app_instance = import_app(app)
     except RuntimeError as exc:
         # PyWire(stateless=True) raises at construction when the signing
-        # secret is missing — turn it into deploy-target guidance. (Both
+        # secret is missing or too short — turn it into guidance. (Both
         # discovery and import_app execute the app module.)
-        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
-            _fail_missing_secret(platform)
+        _fail_on_secret_error(exc)
         raise
     _require_stateless(app_instance, platform)
 
@@ -522,7 +546,7 @@ def build(
         from pywire_cli.deploy import (
             generate_aws_lambda_handler,
             generate_aws_lambda_readme,
-            generate_aws_lambda_requirements,
+            generate_faas_requirements,
         )
 
         aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
@@ -539,7 +563,7 @@ def build(
             generate_aws_lambda_handler(Path.cwd(), app or "src.main:app")
         )
         (aws_dir / "requirements.txt").write_text(
-            generate_aws_lambda_requirements(Path.cwd())
+            generate_faas_requirements(Path.cwd(), "aws")
         )
         (aws_dir / "README.md").write_text(
             generate_aws_lambda_readme(Path.cwd(), Path.cwd().name)
@@ -552,7 +576,10 @@ def build(
             "  2. Follow [cyan]README.md[/] to package and deploy to AWS Lambda"
         )
     elif platform == "azure-functions":
-        from pywire_cli.deploy import generate_azure_function_app
+        from pywire_cli.deploy import (
+            generate_azure_function_app,
+            generate_faas_requirements,
+        )
         from pywire_templates import render_deploy_template
 
         target = Path.cwd() / ".pywire" / "deploy" / "azure"
@@ -569,18 +596,20 @@ def build(
         (target / "function_app.py").write_text(
             generate_azure_function_app(Path.cwd(), app or "src.main:app")
         )
-        for name in (
-            "host.json",
-            "local.settings.json",
-            "requirements.txt",
-        ):
+        for name in ("host.json", "local.settings.json"):
             (target / name).write_text(render_deploy_template(f"azure/{name}.j2"))
+        (target / "requirements.txt").write_text(
+            generate_faas_requirements(Path.cwd(), "azure")
+        )
         (target / "README.md").write_text(
             render_deploy_template("azure/README.md.j2", function_name=Path.cwd().name)
         )
         console.print("✅ Generated [cyan].pywire/deploy/azure/[/] for Azure Functions")
     elif platform == "gcp-functions":
-        from pywire_cli.deploy import generate_gcp_functions_main
+        from pywire_cli.deploy import (
+            generate_faas_requirements,
+            generate_gcp_functions_main,
+        )
         from pywire_templates import render_deploy_template
 
         if (app or "src.main:app").split(":", 1)[0].split(".")[0] == "main":
@@ -604,7 +633,7 @@ def build(
             generate_gcp_functions_main(Path.cwd(), app or "src.main:app")
         )
         (target / "requirements.txt").write_text(
-            render_deploy_template("gcp_functions/requirements.txt.j2")
+            generate_faas_requirements(Path.cwd(), "gcp_functions")
         )
         (target / "README.md").write_text(
             render_deploy_template(
@@ -939,9 +968,8 @@ def deploy(
         # Pre-compile
         app_instance = import_app(app)
     except RuntimeError as exc:
-        # Same RuntimeError translation as `build` (missing stateless secret).
-        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
-            _fail_missing_secret(platform)
+        # Same RuntimeError translation as `build` (stateless secret).
+        _fail_on_secret_error(exc)
         raise
     _require_stateless(app_instance, platform)
 
@@ -1033,7 +1061,7 @@ def deploy(
         from pywire_cli.deploy import (
             generate_aws_lambda_handler,
             generate_aws_lambda_readme,
-            generate_aws_lambda_requirements,
+            generate_faas_requirements,
         )
 
         aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
@@ -1050,7 +1078,7 @@ def deploy(
             generate_aws_lambda_handler(project_root, app or "src.main:app")
         )
         (aws_dir / "requirements.txt").write_text(
-            generate_aws_lambda_requirements(project_root)
+            generate_faas_requirements(project_root, "aws")
         )
         (aws_dir / "README.md").write_text(
             generate_aws_lambda_readme(project_root, project_name)

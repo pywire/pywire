@@ -21,14 +21,16 @@ For a root-level app (`main:app`) instead of the `src/` layout, copy the module
 file instead (`cp main.py .pywire/deploy/aws/`) and add `main.py` to the zip in
 place of `src`.
 
-Create an API Gateway HTTP API, a Lambda integration, and a catch-all route:
+Create an API Gateway HTTP API, a Lambda integration, and a catch-all route,
+then let API Gateway invoke the function:
 
 ```sh
 function_arn=$(aws lambda create-function --function-name {{ function_name }} --runtime python3.12 --handler handler.handler --role arn:aws:iam::YOUR_ACCOUNT_ID:role/lambda-execution-role --zip-file fileb://function.zip --query FunctionArn --output text)
-api_id=$(aws apigatewayv2 create-api --api-name {{ function_name }} --protocol-type HTTP --query ApiId --output text)
-integration_id=$(aws apigatewayv2 create-integration --api-id "$api_id" --integration-type AWS_PROXY --integration-uri "$function_arn" --query IntegrationId --output text)
+api_id=$(aws apigatewayv2 create-api --name {{ function_name }} --protocol-type HTTP --query ApiId --output text)
+integration_id=$(aws apigatewayv2 create-integration --api-id "$api_id" --integration-type AWS_PROXY --integration-uri "$function_arn" --payload-format-version 2.0 --query IntegrationId --output text)
 aws apigatewayv2 create-route --api-id "$api_id" --route-key '$default' --target "integrations/$integration_id"
-aws apigatewayv2 create-stage --api-id "$api_id" --stage-name '$default'
+aws apigatewayv2 create-stage --api-id "$api_id" --stage-name '$default' --auto-deploy
+aws lambda add-permission --function-name {{ function_name }} --statement-id apigateway-invoke --action lambda:InvokeFunction --principal apigateway.amazonaws.com --source-arn "arn:aws:execute-api:$(aws configure get region):$(aws sts get-caller-identity --query Account --output text):$api_id/*"
 ```
 
 Generate the snapshot signing secret and hold it in the shell — never paste a

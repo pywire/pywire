@@ -74,6 +74,8 @@ Cloudflare Python Workers requires a [Workers Paid plan](https://dash.cloudflare
 
 Cloudflare Workers use a fundamentally different architecture from container-based platforms. Instead of a long-running server, each user session runs in a **Durable Object** with persistent storage and WebSocket hibernation support. Static assets are served from Cloudflare's edge CDN.
 
+This target serves stateful apps, and the build refuses a `PyWire(stateless=True)` app. Deploy a stateless app to a plain Worker with `--platform cloudflare-edge` instead (see [Provider quickstarts](/guides/stateless-provider-quickstarts/)).
+
 **Local development:**
 
 ```sh

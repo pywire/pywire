@@ -9,8 +9,11 @@ from unittest.mock import patch
 
 import jinja2
 import msgpack
+import pytest
+import pywire
 from pywire import PyWire
 
+from pywire_cli.deploy import generate_faas_requirements
 from pywire_cli.main import _install_aws_dependencies
 
 TEMPLATES = (
@@ -37,10 +40,16 @@ def _load_handler(tmp_path: Path) -> tuple[object, dict]:
         "---\n"
         '<p id="count">{count}</p><button @click={increment}>+</button>\n'
     )
+    (pages / "cookies.wire").write_text(
+        "---\nseen = wire('')\n\n@init\ndef load():\n"
+        "    seen.value = self.request.cookies.get('hello', 'none')\n"
+        "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
+        '---\n<p id="seen">{seen}</p>\n'
+    )
     app = PyWire(
         pages_dir=str(pages),
         stateless=True,
-        secret_key="lambda-test-secret",
+        secret_key="lambda-test-secret-at-least-32-bytes",
     )
     module = types.ModuleType("lambda_fixture_app")
     module.app = app  # type: ignore[attr-defined]
@@ -79,10 +88,40 @@ def test_readme_packages_from_aws_deploy_directory() -> None:
     assert "zip -r function.zip handler.py _routes.py _pywire_build package" in readme
     assert "x86_64" in readme and "Python 3.12" in readme
     assert "arm64" in readme
+    # CreateApi takes --name; HTTP API Lambda integrations need a payload
+    # version; a stage deploys nothing without --auto-deploy; and API
+    # Gateway can't invoke the function until it is granted permission.
+    assert "create-api --name demo" in readme
+    assert "--payload-format-version 2.0" in readme
+    assert "--auto-deploy" in readme
+    assert "aws lambda add-permission" in readme
 
 
-def test_requirements_pin_oneshot_release() -> None:
-    assert _render("requirements.txt.j2").strip() == "pywire>=0.15.0"
+@pytest.mark.parametrize(
+    ("target", "platform_dep"),
+    [
+        ("aws", None),
+        ("azure", "azure-functions"),
+        ("gcp_functions", "functions-framework"),
+    ],
+)
+def test_requirements_pin_building_pywire_and_keep_app_deps(
+    tmp_path: Path, target: str, platform_dep: str | None
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\n"
+        "dependencies = ['pywire[cli]>=0.15', 'httpx>=0.27', 'PyWire_Auth>=0.3']\n"
+    )
+    lines = generate_faas_requirements(tmp_path, target).split()
+    # The prebuilt pages call into the pywire that compiled them, so the
+    # app's own looser pywire requirement is replaced, not added.
+    expected = [f"pywire=={pywire.__version__}", "httpx>=0.27", "PyWire_Auth>=0.3"]
+    assert lines == ([platform_dep] if platform_dep else []) + expected
+
+
+def test_requirements_without_pyproject(tmp_path: Path) -> None:
+    lines = generate_faas_requirements(tmp_path, "aws").split()
+    assert lines == [f"pywire=={pywire.__version__}"]
 
 
 def test_uv_vendoring_targets_lambda_runtime(tmp_path: Path) -> None:
@@ -136,6 +175,35 @@ def test_lambda_handler_round_trips_stateless_snapshot(tmp_path: Path) -> None:
         assert post["isBase64Encoded"] is True
         message = msgpack.unpackb(base64.b64decode(post["body"]), raw=False)
         assert "regions" in message
+    finally:
+        sys.modules.pop(app_module, None)
+        sys.modules.pop("_routes", None)
+
+
+def test_lambda_handler_passes_cookies_both_ways(tmp_path: Path) -> None:
+    handler, app_module = _load_handler(tmp_path)
+    try:
+        # Payload 2.0 (HTTP API) moves request cookies to event["cookies"]
+        # and takes response cookies from result["cookies"].
+        event = {
+            **_event("GET", "/cookies"),
+            "version": "2.0",
+            "cookies": ["hello=world"],
+        }
+        result = handler(event, None)
+        assert result["statusCode"] == 200
+        assert ">world</p>" in base64.b64decode(result["body"]).decode()
+        assert sorted(c.split("=", 1)[0] for c in result["cookies"]) == ["a", "b"]
+        assert "set-cookie" not in result["headers"]
+
+        # Payload 1.0 (REST API) keeps Cookie in the headers and needs
+        # multiValueHeaders for repeated Set-Cookie.
+        event = _event("GET", "/cookies")
+        event["headers"]["Cookie"] = "hello=rest"
+        result = handler(event, None)
+        assert ">rest</p>" in base64.b64decode(result["body"]).decode()
+        cookies = result["multiValueHeaders"]["set-cookie"]
+        assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
     finally:
         sys.modules.pop(app_module, None)
         sys.modules.pop("_routes", None)

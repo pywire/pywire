@@ -61,3 +61,29 @@ def test_stateless_event_round_trip_no_ws(
     expect(page.locator("#c")).to_have_text(
         "1"
     )  # re-extracted snapshot still round-trips
+
+
+def test_stateless_spa_nav_boots_one_client(page: Page, stateless_server: str):
+    # A stateless relocate fetches the full document, client bundle included.
+    # Re-running that bundle on morph boots a second app, and every later
+    # event is POSTed twice (double side effects on the server).
+    posts: list[str] = []
+    page.on(
+        "request",
+        lambda r: (
+            posts.append(r.url)
+            if r.method == "POST" and "/_pywire/stateless" in r.url
+            else None
+        ),
+    )
+    page.goto(stateless_server)
+    page.click("#link-about")
+    expect(page.locator("#about-title")).to_have_text("About Page")
+    page.click("#link-home")
+    expect(page).to_have_url(f"{stateless_server}/")
+    expect(page.locator("#c")).to_have_text("0")
+
+    page.click("#increment")
+    expect(page.locator("#c")).to_have_text("1")
+    page.wait_for_timeout(300)
+    assert len(posts) == 1, posts

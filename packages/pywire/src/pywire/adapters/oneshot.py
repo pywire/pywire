@@ -11,9 +11,12 @@ the JS interop layer.
 from __future__ import annotations
 
 import asyncio
+import logging
 import traceback
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class OneShotASGIAdapter:
@@ -65,6 +68,7 @@ class OneShotASGIAdapter:
         )
 
         status = 200
+        started = False
         response_headers: List[Tuple[str, str]] = []
         body_parts: List[bytes] = []
 
@@ -72,9 +76,10 @@ class OneShotASGIAdapter:
             return await receive_queue.get()
 
         async def send(message: dict):
-            nonlocal status, response_headers
+            nonlocal status, response_headers, started
             msg_type = message.get("type")
             if msg_type == "http.response.start":
+                started = True
                 status = message.get("status", 200)
                 raw_headers = message.get("headers", [])
                 response_headers = [
@@ -91,6 +96,13 @@ class OneShotASGIAdapter:
             await self.app(scope, receive, send)
         except Exception as exc:
             if not getattr(self.app, "debug", False):
+                if started:
+                    # Starlette's ServerErrorMiddleware sends the app's own
+                    # 500 page, then re-raises so the server can log it.
+                    # Log here and return that page; re-raising would fail
+                    # the whole FaaS invocation and discard it.
+                    logger.exception("Unhandled error in %s %s", method, path)
+                    return status, response_headers, b"".join(body_parts)
                 raise  # Don't leak tracebacks outside debug mode
             tb = traceback.format_exc()
             error_html = (

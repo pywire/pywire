@@ -2,7 +2,7 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
-import { applyOptimistic, isOptimistic, revertElement } from './pending'
+import { applyOptimistic, bindPending, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
 
 // Type alias for backward compatibility
@@ -638,7 +638,8 @@ export class UnifiedEventHandler {
       applyOptimistic(element, modifiers)
     }
 
-    this.app.sendEvent(handler, eventData)
+    const eventId = this.app.sendEvent(handler, eventData)
+    bindPending(element, eventId)
   }
 
   private validateFileInputs(form: HTMLFormElement): boolean {

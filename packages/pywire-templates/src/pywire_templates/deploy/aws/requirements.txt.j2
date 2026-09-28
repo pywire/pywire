@@ -1,1 +1,4 @@
-pywire>=0.15.0
+pywire=={{ pywire_version }}
+{% for dep in dependencies %}
+{{ dep }}
+{% endfor %}

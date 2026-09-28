@@ -1,0 +1,20 @@
+---
+rows = wire([{"id": k, "name": "row-" + str(k), "done": False} for k in range(5)])
+
+def toggle(i):
+    rows.value[i]["done"] = not rows.value[i]["done"]
+
+def rename(i):
+    rows.value[i]["name"] = "renamed-" + str(i)
+---
+<table id="t"><tbody>
+{$for i, r in enumerate(rows.value), key=r["id"]}
+<tr><td class="name">{r["name"]}</td><td class="done">{r["done"]}</td><td><button class="toggle" @click={toggle(i)}>t</button></td></tr>
+{/for}
+</tbody></table>
+<select id="s">
+{$for i, r in enumerate(rows.value), key=r["id"]}
+<option value={r["id"]}>{r["name"]}</option>
+{/for}
+</select>
+<button id="rename2" @click={rename(2)}>rename 2</button>
