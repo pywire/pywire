@@ -320,9 +320,14 @@ class PyWire:
         # Stateless (client-held state) mode: signed snapshots replace the
         # server session; interactive transports (WS/long-poll) are not mounted.
         self.stateless = stateless
-        from pywire.compiler.tier_gate import set_stateless_tier
-
-        set_stateless_tier(stateless)
+        try:
+            from pywire.compiler.tier_gate import set_stateless_tier
+        except ImportError:
+            # No pywire-parser: a runtime-only install (FaaS bundles ship
+            # prebuilt pages) compiles nothing, so there is no tier to gate.
+            pass
+        else:
+            set_stateless_tier(stateless)
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
         if stateless:

@@ -4,6 +4,8 @@ Binding contract for every FaaS deploy target: `fetch()` is binary-safe and
 returns (status, headers, body: bytes).
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 import msgpack
@@ -81,3 +83,18 @@ async def test_binary_response_byte_identical():
     assert status == 200
     assert body == payload
     assert dict(headers)["content-type"] == "application/x-msgpack"
+
+
+def test_stateless_app_boots_without_pywire_parser(tmp_path):
+    # FaaS bundles install plain `pywire` (no [build] extra, so no parser)
+    # and serve prebuilt pages; constructing the app must not need it.
+    script = (
+        "import sys\n"
+        "sys.modules['pywire_parser'] = None  # importing it raises ImportError\n"
+        "from pywire.runtime.app import PyWire\n"
+        f"PyWire(pages_dir={str(tmp_path)!r}, stateless=True, secret_key='k')\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+    )
+    assert proc.returncode == 0, proc.stderr
