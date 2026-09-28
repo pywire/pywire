@@ -1,5 +1,8 @@
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 utilities (via @tailwindcss/vite) without preflight/base styles,
+   so Starlight's own reset is untouched. `source(none)` + explicit @source. */
+@import 'tailwindcss/theme.css' layer(theme) source(none);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source '../../src/';
 
 /* =================================================================
    PyWire Design System — applied to Starlight docs.
@@ -51,8 +54,6 @@
 /* ---------- Brand tokens ----------------------------------------- */
 
 :root {
-  color-scheme: light dark;
-
   /* The Wire — primary signal. */
   --color-wire-90: oklch(89% 0.13 195);
   --color-wire-65: oklch(65% 0.13 195);
@@ -90,6 +91,7 @@
 
 /* The Void — dark mode */
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --sl-color-accent-low: var(--color-wire-25);
   --sl-color-accent: var(--color-wire-90);
   --sl-color-accent-high: oklch(94% 0.1 195);
@@ -126,6 +128,7 @@
 
 /* The Lab — light mode */
 :root[data-theme='light'] {
+  color-scheme: light;
   --sl-color-accent-low: var(--color-wire-95);
   --sl-color-accent: var(--color-wire-65);
   --sl-color-accent-high: var(--color-wire-55);
@@ -165,6 +168,10 @@ body {
 }
 
 html {
+  /* Paint the canvas in the theme's background, so the root cross-fade of a
+     view transition (and the gap before first paint) never shows the
+     browser's default white. */
+  background-color: var(--sl-color-bg);
   scroll-behavior: smooth;
   /* Anchor jumps land below the sticky header. */
   scroll-padding-top: calc(var(--sl-nav-height) + 1rem);

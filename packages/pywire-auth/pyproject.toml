@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire-auth"
-version = "0.3.0"
+version = "0.3.2"
 description = "Authentication providers and identity store adapters for PyWire"
 authors = [
     { name = "Reece Holmdahl", email = "reece@pywire.dev" },
 ]
 requires-python = ">=3.11"
-license = "MIT"
+license = "Apache-2.0"
 dependencies = [
-    "pywire>=0.13.0",
+    "pywire>=0.15.0",
     "starlette>=0.31",
     "authlib>=1.3",
     "httpx>=0.25",
@@ -48,6 +48,7 @@ dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
     "httpx>=0.25",
+    "ruff>=0.1.0",
 ]
 
 [tool.hatch.build.targets.wheel]

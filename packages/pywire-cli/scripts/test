@@ -3,4 +3,4 @@ set -e
 
 echo "🧪 Running tests for pywire-cli..."
 
-uv run --package pywire-cli pytest tests/ "$@"
+uv run --package pywire-cli --extra dev pytest tests/ "$@"

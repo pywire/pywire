@@ -1,6 +1,7 @@
 import argparse
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -107,8 +108,19 @@ class TemplateRenderer:
     def copy_static(self, source_path: str, dest: Path) -> None:
         """Copy a static template file (no Jinja2 rendering)."""
         template_root = Path(__file__).parent / "templates"
-        source = template_root / source_path
-        dest.write_text(source.read_text())
+        shutil.copyfile(template_root / source_path, dest)
+
+
+# Adapters whose deploy files include a generated Dockerfile.
+DOCKERFILE_ADAPTERS = frozenset({"docker", "render", "fly", "railway"})
+
+# Self-hosted Atkinson Hyperlegible Next (SIL OFL) for pywire-brand.css.
+BRAND_FONT_FILES = (
+    "AtkinsonHyperlegibleNext-Regular.woff2",
+    "AtkinsonHyperlegibleNext-Medium.woff2",
+    "AtkinsonHyperlegibleNext-Bold.woff2",
+    "OFL.txt",
+)
 
 
 class ProjectGenerator:
@@ -139,13 +151,15 @@ class ProjectGenerator:
 
         self.app_root = project_path / "src" if use_src else project_path
         self.pages_dir = self.app_root / "pages"
+        # Project-relative pages path, as shown to the user in docs and copy.
+        self.pages_rel = "src/pages" if use_src else "pages"
 
     def get_dependencies(self) -> list[str]:
         """Get runtime dependencies for the selected template."""
         import re
 
         deploy_adapters = self.get_deploy_adapters()
-        docker_adapters = {"docker", "render", "fly", "railway"}
+        docker_adapters = DOCKERFILE_ADAPTERS
         has_docker = bool(set(deploy_adapters) & docker_adapters)
 
         # Include pydantic (forms extra) for non-CF-only projects
@@ -282,6 +296,9 @@ class ProjectGenerator:
             "deploy_adapters": self.get_deploy_adapters(),
             "redis_enabled": self.redis_enabled,
             "workers": self.workers,
+            "has_dockerfile": any(
+                adapter in DOCKERFILE_ADAPTERS for adapter in self.get_deploy_adapters()
+            ),
         }
         content = self.renderer.render("common/README.md.j2", context)
         (self.project_path / "README.md").write_text(content)
@@ -330,6 +347,12 @@ class ProjectGenerator:
         self.renderer.copy_static(
             "common/static/favicon.svg", static_dir / "favicon.svg"
         )
+        fonts_dir = static_dir / "fonts"
+        fonts_dir.mkdir(exist_ok=True)
+        for font_file in BRAND_FONT_FILES:
+            self.renderer.copy_static(
+                f"common/static/fonts/{font_file}", fonts_dir / font_file
+            )
 
     def _generate_counter(self) -> None:
         """Generate Counter template files."""
@@ -341,9 +364,11 @@ class ProjectGenerator:
                 "counter/path-based/__layout__.wire.j2", context
             )
             (self.pages_dir / "__layout__.wire").write_text(layout_content)
-            self.renderer.copy_static(
-                "counter/path-based/index.wire", self.pages_dir / "index.wire"
+            index_content = self.renderer.render(
+                "counter/path-based/index.wire.j2",
+                {"index_path": f"{self.pages_rel}/index.wire"},
             )
+            (self.pages_dir / "index.wire").write_text(index_content)
         else:
             layout_content = self.renderer.render(
                 "counter/explicit/layout.wire.j2", context

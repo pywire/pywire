@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/pywire/pywire/compare/pywire-v0.14.5...pywire-v0.15.0) (2026-09-27)
+
+
+### Features
+
+* **create-pywire-app-npm:** npx create-pywire-app launcher ([#317](https://github.com/pywire/pywire/issues/317)) ([c735fd8](https://github.com/pywire/pywire/commit/c735fd8ae9dfb8fe256423b9d3a6a6aee52d15aa))
+
+## [0.14.5](https://github.com/pywire/pywire/compare/pywire-v0.14.4...pywire-v0.14.5) (2026-09-27)
+
+
+### Bug Fixes
+
+* **pywire:** compiler and reactivity bugs that break docs examples ([#304](https://github.com/pywire/pywire/issues/304)) ([caf4551](https://github.com/pywire/pywire/commit/caf4551c5104bbc123ebdd3946e0da63399c69ed))
+* **pywire:** let the server clear inputs and uncheck boxes during morph ([#303](https://github.com/pywire/pywire/issues/303)) ([933aa1c](https://github.com/pywire/pywire/commit/933aa1c9b25b518d6263f2ba021f5edb6a8b523d))
+
 ## [0.14.4](https://github.com/pywire/pywire/compare/pywire-v0.14.3...pywire-v0.14.4) (2026-05-06)
 
 

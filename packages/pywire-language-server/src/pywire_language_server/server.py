@@ -250,7 +250,51 @@ server = LanguageServer(
 virtual_manager: Optional[VirtualFileManager] = None
 ty_client: Optional[TyClient] = None
 
-ty_diagnostics: dict[str, List[Diagnostic]] = {}
+# .wire URI -> virtual file URI (shadow .py, stub .pyi) -> mapped diagnostics.
+# Kept per virtual file: ty publishes each one separately, and one must not
+# overwrite the other's diagnostics for the same .wire document.
+ty_diagnostics: dict[str, dict[str, List[Diagnostic]]] = {}
+
+
+def _handle_ty_diagnostics(ls: LanguageServer, params: dict) -> None:
+    """Map diagnostics ty published for a virtual file back onto its .wire document."""
+    uri = params.get("uri")
+    diagnostics = params.get("diagnostics", [])
+    logger.info(f"[Server] Received diagnostics for {uri}: {len(diagnostics)} items")
+
+    # Check if this URI matches a shadow file we know about
+    if not uri or virtual_manager is None:
+        return
+
+    # If usage of shadow file is internal to this server, we should
+    # map the URI back to the original .wire file
+    wire_uri = virtual_manager.get_original_uri(uri)
+    if wire_uri:
+        # Robust lookup: Find the actual key in documents that matches this URI
+        # because casing or path normalization might differ.
+        target_uri = wire_uri
+        if wire_uri not in documents:
+            # Try case-insensitive scan
+            norm_wire = wire_uri.lower()
+            for doc_uri in documents:
+                if doc_uri.lower() == norm_wire:
+                    target_uri = doc_uri
+                    break
+
+        logger.info(f"[Server] Mapped {uri} -> {wire_uri} (Target: {target_uri})")
+
+        # Map diagnostics back
+        mapped_diagnostics = []
+        source_map = virtual_manager.get_source_map(uri)
+        if source_map:
+            for diag in diagnostics:
+                mapped = _map_diagnostic(diag, source_map)
+                if mapped:
+                    mapped_diagnostics.append(mapped)
+
+        # Store and publish using the found TARGET URI
+        ty_diagnostics.setdefault(target_uri, {})[uri] = mapped_diagnostics
+        _publish_diagnostics(ls, target_uri)
 
 
 @server.feature("initialize")
@@ -265,58 +309,14 @@ async def initialize(ls: LanguageServer, params: Any):
     if root_uri:
         virtual_manager = VirtualFileManager(root_uri)
         # Always use Ty
-        init_opts = getattr(params, "initializationOptions", {}) or {}
+        init_opts = params.initialization_options or {}
         ty_path = init_opts.get("tyPath", None)
 
         client = TyClient()
         if client.start(ty_path=ty_path):
             ty_client = client
 
-            # Hook up diagnostics
-            def handle_diagnostics(params):
-                uri = params.get("uri")
-                diagnostics = params.get("diagnostics", [])
-                logger.info(
-                    f"[Server] Received diagnostics for {uri}: {len(diagnostics)} items"
-                )
-
-                # Check if this URI matches a shadow file we know about
-                if not uri:
-                    return
-
-                # If usage of shadow file is internal to this server, we should
-                # map the URI back to the original .wire file
-                wire_uri = virtual_manager.get_original_uri(uri)
-                if wire_uri:
-                    # Robust lookup: Find the actual key in documents that matches this URI
-                    # because casing or path normalization might differ.
-                    target_uri = wire_uri
-                    if wire_uri not in documents:
-                        # Try case-insensitive scan
-                        norm_wire = wire_uri.lower()
-                        for doc_uri in documents:
-                            if doc_uri.lower() == norm_wire:
-                                target_uri = doc_uri
-                                break
-
-                    logger.info(
-                        f"[Server] Mapped {uri} -> {wire_uri} (Target: {target_uri})"
-                    )
-
-                    # Map diagnostics back
-                    mapped_diagnostics = []
-                    source_map = virtual_manager.get_source_map(uri)
-                    if source_map:
-                        for diag in diagnostics:
-                            mapped = _map_diagnostic(diag, source_map)
-                            if mapped:
-                                mapped_diagnostics.append(mapped)
-
-                    # Store and publish using the found TARGET URI
-                    ty_diagnostics[target_uri] = mapped_diagnostics
-                    _publish_diagnostics(ls, target_uri)
-
-            ty_client.set_diagnostics_callback(handle_diagnostics)
+            ty_client.set_diagnostics_callback(lambda p: _handle_ty_diagnostics(ls, p))
 
             # Initialize Ty and wait for it
             await _init_ty(ls, params)
@@ -1533,7 +1533,22 @@ def _publish_diagnostics(ls: LanguageServer, uri: str) -> None:
     if not doc:
         return
     diagnostics = list(doc.diagnostics)
-    diagnostics.extend(ty_diagnostics.get(uri, []))
+    seen: set[tuple] = set()
+    for virtual_diagnostics in ty_diagnostics.get(uri, {}).values():
+        for diag in virtual_diagnostics:
+            # The shadow and the stub can both report the same mapped problem.
+            r = diag.range
+            key = (
+                r.start.line,
+                r.start.character,
+                r.end.line,
+                r.end.character,
+                diag.message,
+                diag.code,
+            )
+            if key not in seen:
+                seen.add(key)
+                diagnostics.append(diag)
     ls.text_document_publish_diagnostics(
         PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
     )

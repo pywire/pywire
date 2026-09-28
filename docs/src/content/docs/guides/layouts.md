@@ -140,7 +140,7 @@ theme = wire("light")
 </div>
 ```
 
-Any page or component can then inject the theme with `!inject { theme: 'THEME' }`. See [Context & Injection](/docs/concepts/context) for details.
+Any page or component can then inject the theme with `!inject { theme: 'THEME' }`.
 
 ## Named Snippets and `{$head}`
 

@@ -1,37 +1,23 @@
 #!/bin/sh -e
 
-echo "=== Checking Tree-sitter Grammar ==="
-(cd packages/tree-sitter-pywire && ./scripts/check)
+# Graph-driven: iterate units in topological order (grammar/parser before
+# consumers). New packages are orchestrated automatically.
+#
+# --changed [base-ref]: check only the units affected by the working tree /
+# branch diff (changed units plus everything downstream).
 
-echo "=== Checking PyWire Parser ==="
-(cd packages/pywire-parser && ./scripts/check)
+if [ "$1" = "--changed" ]; then
+  shift
+  units=$(python3 scripts/monorepo_graph.py affected "$@")
+  if [ -z "$units" ]; then
+    echo "No affected units — nothing to check."
+    exit 0
+  fi
+else
+  units=$(python3 scripts/monorepo_graph.py units)
+fi
 
-echo "=== Checking PyWire (Core, Client) ==="
-(cd packages/pywire && ./scripts/check)
-
-echo "=== Checking PyWire Templates ==="
-(cd packages/pywire-templates && ./scripts/check)
-
-echo "=== Checking PyWire CLI ==="
-(cd packages/pywire-cli && ./scripts/check)
-
-echo "=== Checking PyWire Auth ==="
-(cd packages/pywire-auth && ./scripts/check)
-
-echo "=== Checking PyWire Language Server ==="
-(cd packages/pywire-language-server && ./scripts/check)
-
-echo "=== Checking Create PyWire App ==="
-(cd packages/create-pywire-app && ./scripts/check)
-
-echo "=== Checking Examples ==="
-(cd examples && ./scripts/check)
-
-echo "=== Checking VS Code Extension ==="
-(cd packages/vscode-pywire && ./scripts/check)
-
-echo "=== Checking Prettier Plugin PyWire ==="
-(cd packages/prettier-plugin-pywire && ./scripts/check)
-
-echo "=== Checking PyWire Docs ==="
-(cd docs && pnpm check)
+for unit in $units; do
+  echo "=== Checking $unit ==="
+  (cd "$unit" && ./scripts/check)
+done

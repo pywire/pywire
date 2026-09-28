@@ -141,4 +141,4 @@ Full reference at [pywire.dev/reference/auth-api](https://pywire.dev/reference/a
 
 ## License
 
-MIT
+Apache 2.0

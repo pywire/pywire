@@ -5,23 +5,20 @@ The core framework for pywire.
 <!-- INSTALL_MESSAGE_TEMPLATE_START -->
 ## 🚀 Quick Start
 
-If you already have [uv](https://docs.astral.sh/uv/) installed, you can get started instantly:
+Pick whichever tool you already have. All three launch the same wizard:
 
 ```sh
+# uv (recommended)
 uvx create-pywire-app
+
+# Node.js (installs uv for you if it's missing)
+npx create-pywire-app
+
+# Neither: installs uv, then launches the wizard
+curl -fsSL https://pywire.dev/install | sh
 ```
 
-If you don't have `uv` installed or aren't sure, use our installer script which handles the setup for you:
-
-### macOS / Linux
-```sh
-curl -fsSL pywire.dev/install | sh
-```
-
-### Windows (PowerShell)
-```powershell
-irm pywire.dev/install.ps1 | iex
-```
+On Windows (PowerShell): `irm https://pywire.dev/install.ps1 | iex`
 <!-- INSTALL_MESSAGE_TEMPLATE_END -->
 
 <!-- SUPPORT_MESSAGE_TEMPLATE_START -->

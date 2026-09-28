@@ -22,6 +22,7 @@ This is the PyWire monorepo. All packages are developed and released from here.
 | [`packages/pywire-auth`](packages/pywire-auth) | Authentication — OAuth2/OIDC providers, local IdP, policies, live auth | [![PyPI](https://img.shields.io/pypi/v/pywire-auth)](https://pypi.org/project/pywire-auth/) |
 | [`packages/pywire-language-server`](packages/pywire-language-server) | LSP server for `.wire` files (completions, diagnostics, hover) | [![PyPI](https://img.shields.io/pypi/v/pywire-language-server)](https://pypi.org/project/pywire-language-server/) |
 | [`packages/create-pywire-app`](packages/create-pywire-app) | Project scaffolding CLI — `uvx create-pywire-app` | [![PyPI](https://img.shields.io/pypi/v/create-pywire-app)](https://pypi.org/project/create-pywire-app/) |
+| [`packages/create-pywire-app-npm`](packages/create-pywire-app-npm) | npm entry point — `npx create-pywire-app` runs the scaffolder through uv | [![npm](https://img.shields.io/npm/v/create-pywire-app)](https://www.npmjs.com/package/create-pywire-app) |
 | [`packages/vscode-pywire`](packages/vscode-pywire) | VS Code extension — syntax highlighting, LSP integration | [![VS Code](https://vsmarketplacebadges.dev/version-short/pywire.pywire.svg)](https://marketplace.visualstudio.com/items?itemName=pywire.pywire) |
 | [`packages/prettier-plugin-pywire`](packages/prettier-plugin-pywire) | Prettier formatter for `.wire` files | - |
 | [`packages/tree-sitter-pywire`](packages/tree-sitter-pywire) | Tree-sitter grammar for `.wire` syntax | [![PyPI](https://img.shields.io/pypi/v/pywire-auth)](https://pypi.org/project/tree-sitter-pywire/) |
@@ -31,23 +32,22 @@ This is the PyWire monorepo. All packages are developed and released from here.
 
 ## Quick start
 
-You need [uv](https://docs.astral.sh/uv/) installed.
+Pick whichever tool you already have. All three launch the same wizard:
 
 ```sh
-uvx create-pywire-app   # scaffold a new project
+uvx create-pywire-app                              # uv (recommended)
+npx create-pywire-app                              # Node.js, installs uv if missing
+curl -fsSL https://pywire.dev/install | sh         # neither: installs uv, then the wizard
+```
+
+Then start the dev server:
+
+```sh
 cd my-app
 uv run pywire dev       # start dev server with hot reload
 ```
 
-Or with the installer script (handles uv setup too):
-
-```sh
-# macOS / Linux
-curl -fsSL pywire.dev/install | sh
-
-# Windows (PowerShell)
-irm pywire.dev/install.ps1 | iex
-```
+On Windows (PowerShell): `irm https://pywire.dev/install.ps1 | iex`
 
 ---
 

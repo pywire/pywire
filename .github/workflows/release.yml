@@ -18,6 +18,9 @@ jobs:
   # job. If jobs were skipped (not failed), make a new bump commit to create a fresh release.
   release-please:
     runs-on: ubuntu-latest
+    # One release-please at a time. When several PRs merge back to back, a
+    # queued run is replaced by the newest one; that is safe because every
+    # run releases all merged-but-untagged release PRs, not just its own.
     concurrency:
       group: release-please-${{ github.ref }}
       cancel-in-progress: false
@@ -41,18 +44,32 @@ jobs:
       tree-sitter-pywire--tag_name: ${{ steps.release.outputs['packages/tree-sitter-pywire--tag_name'] }}
       prettier-plugin-pywire--release_created: ${{ steps.release.outputs['packages/prettier-plugin-pywire--release_created'] }}
       create-pywire-app--release_created: ${{ steps.release.outputs['packages/create-pywire-app--release_created'] }}
+      create-pywire-app-npm--release_created: ${{ steps.release.outputs['packages/create-pywire-app-npm--release_created'] }}
       pywire-docs--release_created: ${{ steps.release.outputs['docs--release_created'] }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
+          # Push release PRs as a user, not GITHUB_TOKEN: GITHUB_TOKEN pushes
+          # start CI/CodeQL runs that sit in "action required" and then show
+          # as failed once the PR merges and its branch is deleted.
+          token: ${{ secrets.RELEASE_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # release-please PRs are created with GITHUB_TOKEN, which suppresses
-      # pull_request workflow triggers. Set success statuses for all required
-      # CI checks so branch protection doesn't block merge.
-      - name: Set CI status on release-please PRs
+      # Workspace checkout for the release floors gate below (floors live on
+      # main — release PRs only bump versions/changelogs, never floors).
+      - uses: actions/checkout@v7
+
+      # Release PRs only bump versions/changelogs, so don't wait on CI: set success
+      # statuses for the required CI checks, and evaluate the release floors
+      # gate for real — a release PR is only mergeable when every monorepo
+      # floor it carries is already published upstream (make "Release
+      # Floors Gate" a required check to enforce merge order). No step may
+      # push to these branches after this one, or the new head loses these
+      # statuses; release-please ("always-update") already rebuilds every
+      # release PR from the latest main on each run.
+      - name: Set CI statuses + release floors gate on release-please PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -77,6 +94,7 @@ jobs:
             "Check Prettier Plugin"
             "Check Tree-sitter Grammar"
             "Check Create PyWire App"
+            "Check Create PyWire App (npm)"
             "Check Examples"
             "Check PyWire Docs"
           )
@@ -84,6 +102,7 @@ jobs:
           echo "$prs" | jq -c '.[]' | while read -r pr; do
             sha=$(echo "$pr" | jq -r '.headRefOid')
             num=$(echo "$pr" | jq -r '.number')
+            branch=$(echo "$pr" | jq -r '.headRefName')
             echo "Setting CI statuses on PR #$num ($sha)"
             for context in "${checks[@]}"; do
               gh api "repos/${{ github.repository }}/statuses/$sha" \
@@ -92,30 +111,34 @@ jobs:
                 -f description="Skipped for release-please PR" \
                 --silent
             done
-          done
 
-      # After release-please runs and CI statuses are set, merge main into
-      # any open release-please PR branches so they stay conflict-free.
-      # This resolves .release-please-manifest.json drift when one release
-      # PR merges before others.
-      - name: Update release-please PR branches with latest main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          prs=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --json number,headRefName \
-            --jq '[.[] | select(.headRefName | startswith("release-please--"))]')
-
-          if [ "$prs" = "[]" ] || [ -z "$prs" ]; then
-            echo "No open release-please PRs to update"
-            exit 0
-          fi
-
-          echo "$prs" | jq -c '.[]' | while read -r pr; do
-            num=$(echo "$pr" | jq -r '.number')
-            echo "Updating PR #$num branch with latest main"
-            gh pr update-branch "$num" --repo "$GITHUB_REPOSITORY" || true
+            # Release floors gate: separate-pull-requests means one component
+            # per PR, named release-please--branches--main--components--<pkg>.
+            # check-publishable fails while any floor of that package is not
+            # yet published (upstream release PR unmerged, or publish failed).
+            gate_desc="All floors published"
+            gate_state=success
+            case "$branch" in
+              release-please--branches--main--components--*)
+                component=${branch#release-please--branches--main--components--}
+                [ "$component" = "pywire-docs" ] && component="docs"
+                if out=$(python3 scripts/monorepo_graph.py check-publishable "$component" 2>&1); then
+                  echo "PR #$num: floors ok ($component)"
+                else
+                  gate_state=failure
+                  gate_desc=$(echo "$out" | grep 'floor' | head -1 | cut -c1-140)
+                  echo "PR #$num: floors gate RED — $gate_desc"
+                fi
+                ;;
+              *)
+                echo "PR #$num: not a component release PR, skipping floors gate"
+                ;;
+            esac
+            gh api "repos/${{ github.repository }}/statuses/$sha" \
+              -f state="$gate_state" \
+              -f context="Release Floors Gate" \
+              -f description="$gate_desc" \
+              --silent
           done
 
   # Build pywire (pure Python wheel + sdist)
@@ -125,20 +148,20 @@ jobs:
     if: needs.release-please.outputs.pywire--release_created == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
-      - uses: pnpm/action-setup@v4
+          node-version: '24'
+      - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 10
       - name: Build JS client
         run: pnpm install && pnpm build
         working-directory: packages/pywire/src/pywire/client
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pywire-dist
           path: packages/pywire/dist/*
@@ -148,10 +171,13 @@ jobs:
     name: "Publish pywire to PyPI"
     needs: build-pywire
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pywire-dist
           path: dist
@@ -169,13 +195,13 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pypa/cibuildwheel@v2.23
+      - uses: actions/checkout@v7
+      - uses: pypa/cibuildwheel@v4.2.1
         with:
           package-dir: packages/tree-sitter-pywire
         env:
           CIBW_BUILD: "cp310-*"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tree-sitter-pywire-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -186,11 +212,11 @@ jobs:
     if: needs.release-please.outputs.tree-sitter-pywire--release_created == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --sdist --out-dir dist
         working-directory: packages/tree-sitter-pywire
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tree-sitter-pywire-sdist
           path: packages/tree-sitter-pywire/dist/*.tar.gz
@@ -201,8 +227,8 @@ jobs:
     if: needs.release-please.outputs.tree-sitter-pywire--release_created == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.13"
           enable-cache: false
@@ -248,7 +274,7 @@ jobs:
             --file "$wheel" \
             --content-type "application/zip" \
             --remote
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tree-sitter-pywire-wasm
           path: packages/tree-sitter-pywire/dist/*.whl
@@ -257,10 +283,13 @@ jobs:
     name: "Publish tree-sitter-pywire to PyPI"
     needs: [build-tree-sitter-pywire, build-tree-sitter-pywire-sdist, build-tree-sitter-pywire-wasm]
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: tree-sitter-pywire-*
           path: dist
@@ -277,11 +306,14 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-parser--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-parser
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -294,11 +326,14 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-auth--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-auth
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -311,11 +346,14 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-cli--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-cli
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -328,11 +366,14 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-templates--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-templates
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -345,11 +386,14 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.pywire-language-server--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/pywire-language-server
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -362,11 +406,14 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.vscode-pywire--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 10
       - run: |
           cd packages/vscode-pywire
           pnpm install
@@ -380,16 +427,45 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.create-pywire-app--release_created == 'true'
     runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --out-dir dist
         working-directory: packages/create-pywire-app
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/create-pywire-app/dist/
+
+  # Publish the create-pywire-app npm launcher (npx create-pywire-app).
+  # npm trusted publishing (OIDC): no npm token is stored anywhere. The npm
+  # package must list this repo + workflow + the release environment as its
+  # trusted publisher (npmjs.com → package settings → Trusted publishing).
+  publish-create-app-npm:
+    name: "Publish create-pywire-app to npm"
+    needs: release-please
+    if: needs.release-please.outputs.create-pywire-app-npm--release_created == 'true'
+    runs-on: ubuntu-latest
+    # Gate: publishing requires approval from the maintainers team
+    # (repo Settings → Environments → release)
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: ./scripts/check
+        working-directory: packages/create-pywire-app-npm
+      - run: npm publish --access public
+        working-directory: packages/create-pywire-app-npm
 
   # When pywire releases, ensure docs gets a patch release too (if docs changed since
   # last docs release). Closes any stale docs release-please PR to prevent conflicts,
@@ -406,7 +482,7 @@ jobs:
     outputs:
       released: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}

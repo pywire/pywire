@@ -11,6 +11,7 @@ test — non-interactive mode is expected to bypass every questionary call.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from collections.abc import Iterable
@@ -428,3 +429,63 @@ class TestNonInteractiveTrigger:
         # Marker file must be untouched — guard was NOT applied (that's the point),
         # but we also didn't clobber before reaching the prompt.
         assert (project / "marker.txt").read_text() == "x"
+
+
+class TestScaffoldContentDrift:
+    """Regressions for #288 (README/lede drift) and #299 (brand font)."""
+
+    def _scaffold(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *extra: str
+    ) -> Path:
+        project = tmp_path / "app"
+        _run(
+            [str(project), "-y", "--no-install", "--no-git", *extra],
+            cwd=tmp_path,
+            monkeypatch=monkeypatch,
+        )
+        return project
+
+    def test_readme_without_dockerfile_does_not_mention_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = self._scaffold(tmp_path, monkeypatch)
+        _assert_missing(project, "Dockerfile")
+        readme = (project / "README.md").read_text()
+        assert "Dockerfile" not in readme
+        assert "https://pywire.dev/docs/guides/scaling/" in readme
+        assert "https://pywire.dev/guides/" not in readme
+
+    def test_readme_with_dockerfile_describes_workers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = self._scaffold(tmp_path, monkeypatch, "--deploy", "docker")
+        readme = (project / "README.md").read_text()
+        assert "The `Dockerfile` runs with `--workers 1`" in readme
+
+    @pytest.mark.parametrize(
+        ("flags", "expected"),
+        [((), "src/pages/index.wire"), (("--no-src",), "pages/index.wire")],
+    )
+    def test_counter_lede_names_the_real_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        flags: tuple[str, ...],
+        expected: str,
+    ) -> None:
+        project = self._scaffold(tmp_path, monkeypatch, "--template", "counter", *flags)
+        index = project / expected
+        assert f"<code>{expected}</code>" in index.read_text()
+
+    def test_brand_css_loads_bundled_font(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = self._scaffold(tmp_path, monkeypatch)
+        css = (project / "static" / "pywire-brand.css").read_text()
+        urls = re.findall(r"url\('\./(fonts/[^']+)'\)", css)
+        assert urls, "pywire-brand.css has no @font-face sources"
+        for url in urls:
+            font = project / "static" / url
+            assert font.is_file(), url
+            assert font.read_bytes()[:4] == b"wOF2"
+        assert (project / "static" / "fonts" / "OFL.txt").is_file()

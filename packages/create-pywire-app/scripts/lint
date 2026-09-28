@@ -10,10 +10,10 @@ else
 fi
 
 echo "-> Running ruff check..."
-uv run ruff check src/ tests/
+uv run --package create-pywire-app --extra dev ruff check src/ tests/
 
 echo "-> Running ruff format..."
-uv run ruff format --check src/ tests/
+uv run --package create-pywire-app --extra dev ruff format --check src/ tests/
 
 echo "-> Running ty check..."
-uv run ty check src/
+uv run --package create-pywire-app --extra dev ty check src/
