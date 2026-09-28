@@ -5,4 +5,4 @@ api_key = wire("sk-hidden").lock()
 def increment():
     count.value += 1
 ---
-<p id="c">{count}</p><button @click={increment()}>+</button>
+<p id="c">{count}</p><button @click={increment}>+</button>

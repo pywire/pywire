@@ -11,9 +11,13 @@ count = wire(0)
 
 def increment():
     count.value += 1
+
+def reset_everything():
+    count.value = -1
 ---
 <p>{count}</p>
-<button @click={increment()}>go</button>
+<button @click={increment}>go</button>
+<button @click={count += 1}>inline</button>
 """
 
 _SCOPE = {
@@ -49,6 +53,20 @@ def test_allowlist_contains_user_handlers(tmp_path):
 def test_dispatch_rejects_non_handlers(tmp_path, name):
     with pytest.raises(ValueError):
         asyncio.run(_page(tmp_path)._dispatch_handler(name, {}))
+
+
+def test_allowlist_is_only_what_the_template_binds(tmp_path):
+    # ``reset_everything`` is a frontmatter def no template attribute binds:
+    # plain Python the client must never reach by name.
+    allowed = type(_page(tmp_path)).__event_handlers__
+    assert allowed == frozenset({"increment", "_handler_0"})
+
+
+def test_dispatch_rejects_unbound_frontmatter_function(tmp_path):
+    page = _page(tmp_path)
+    with pytest.raises(ValueError, match="not a registered event handler"):
+        asyncio.run(page._dispatch_handler("reset_everything", {}))
+    assert page.count.value == 0
 
 
 def test_dispatch_allows_listed_handler(tmp_path):

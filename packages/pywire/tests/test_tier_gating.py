@@ -46,7 +46,7 @@ count = wire(0)
 async def bump():
     count.value += 1
 ---
-<p id="c">{count}</p><button @click={bump()}>+</button>
+<p id="c">{count}</p><button @click={bump}>+</button>
 """
 
 SLOW_COMPONENT = """---

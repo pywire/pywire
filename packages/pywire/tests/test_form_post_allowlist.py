@@ -180,7 +180,7 @@ def test_form_post_rejects_underscore_component_handler(tmp_path, monkeypatch):
                 headers={"X-PyWire-Handler": f"_comp:{key}:{name}"},
             )
             assert r.status_code == 400
-            assert "not allowed" in r.text
+            assert "not a registered event handler" in r.text
             assert not probe.exists(), f"{name} ran via forged component handler"
 
         # ... and the legit component handler keeps working.
@@ -219,12 +219,12 @@ def test_form_post_rejects_underscore_page_handler(tmp_path):
         client = TestClient(app, raise_server_exceptions=False)
         r = client.post("/priv", data={}, headers={"X-PyWire-Handler": "_private"})
         assert r.status_code == 400
-        assert "not allowed" in r.text
+        assert "not a registered event handler" in r.text
         assert not probe.exists(), "_private handler ran via X-PyWire-Handler"
 
         r = client.post("/priv", data={"__pywire_handler": "_private"})
         assert r.status_code == 400
-        assert "not allowed" in r.text
+        assert "not a registered event handler" in r.text
         assert not probe.exists(), "_private handler ran via __pywire_handler"
     finally:
         shutil.rmtree(test_dir, ignore_errors=True)
