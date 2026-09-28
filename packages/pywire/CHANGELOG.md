@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/pywire/pywire/compare/pywire-v0.15.0...pywire-v0.15.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **pywire:** throttle session saves, gzip responses, fix inline event args ([#335](https://github.com/pywire/pywire/issues/335)) ([9b246ee](https://github.com/pywire/pywire/commit/9b246ee9bebaee2dcf4d8adbaadc828abad6a193))
+
 ## [0.15.0](https://github.com/pywire/pywire/compare/pywire-v0.14.5...pywire-v0.15.0) (2026-09-27)
 
 
