@@ -898,19 +898,31 @@ class CodeGenerator:
                     except Exception:
                         pass  # ast.unparse can fail on malformed nodes; skip gracefully
 
+        bind_count = 0
+
         def visit_nodes(nodes: List[TemplateNode]) -> None:
-            nonlocal handler_count
+            nonlocal handler_count, bind_count
             for node in nodes:
-                if (
-                    self._bind_attr(node) is not None
-                    and (node.tag or "").lower() == "form"
-                ):
+                bind = self._bind_attr(node)
+                tag = (node.tag or "").lower()
+                if bind is not None and tag == "form":
                     handlers.append(
                         self._bound_form_handler(
                             node, f"_handler_{handler_count}", known_methods, known_vars
                         )
                     )
                     handler_count += 1
+                elif (
+                    bind is not None
+                    and tag in ("input", "select", "textarea")
+                    and bind.expr.strip() in known_vars
+                ):
+                    handlers.append(
+                        self._wire_bind_handler(
+                            bind, f"_handle_bind_{bind_count}", bind.expr.strip()
+                        )
+                    )
+                    bind_count += 1
                 # Check for events
                 for attr in node.special_attributes:
                     if isinstance(attr, EventAttribute):
@@ -1128,6 +1140,55 @@ class CodeGenerator:
                 defaults=[],
             ),
             body=[ast.Expr(value=call)],
+            decorator_list=[],
+            returns=None,
+        )
+
+    def _wire_bind_handler(
+        self, bind: ReactiveAttribute, method_name: str, name: str
+    ) -> ast.AsyncFunctionDef:
+        """``<input $bind={query}>`` -> the handler that writes the element's
+        value back into the page-level wire ``query``.
+
+        ``async def _handle_bind_N(self, event_data):
+               apply_bind_event(self.query, event_data)``
+
+        It only acts when ``query`` is a wire at run time; a bare name bound
+        to anything else renders through the forms helpers and never sends.
+        """
+        setattr(bind, "_pw_bind_handler", method_name)
+        self._wired_handler_names.add(method_name)
+        return ast.AsyncFunctionDef(
+            name=method_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self"), ast.arg(arg="event_data")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=[
+                ast.ImportFrom(
+                    module="pywire.runtime.bind",
+                    names=[ast.alias(name="apply_bind_event", asname=None)],
+                    level=0,
+                ),
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Name(id="apply_bind_event", ctx=ast.Load()),
+                        args=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
+                            ),
+                            ast.Name(id="event_data", ctx=ast.Load()),
+                        ],
+                        keywords=[],
+                    )
+                ),
+            ],
             decorator_list=[],
             returns=None,
         )

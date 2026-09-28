@@ -153,6 +153,8 @@ export interface EventData {
   name?: string
   tagName?: string
   value?: unknown
+  /** Every selected value of a `<select multiple>`. */
+  values?: string[]
   checked?: boolean
   inputType?: string
   formData?: Record<string, unknown>

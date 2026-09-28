@@ -725,6 +725,13 @@ export class UnifiedEventHandler {
         if (!allowedFields || allowedFields.has('value')) {
           eventData.value = element.value
         }
+        if (
+          element instanceof HTMLSelectElement &&
+          element.multiple &&
+          (!allowedFields || allowedFields.has('values'))
+        ) {
+          eventData.values = Array.from(element.selectedOptions, (o) => o.value)
+        }
       }
     }
 

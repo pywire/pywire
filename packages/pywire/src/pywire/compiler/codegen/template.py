@@ -5365,11 +5365,15 @@ class TemplateCodegen:
                     ]
                 else:
                     helper = "field_attrs"
+                    wire_handler = getattr(bind_attr, "_pw_bind_handler", None)
                     helper_args = [
                         ast.Name(id=bind_var, ctx=ast.Load()),
                         ast.Constant(value=bind_tag),
                         ast.Name(id="attrs", ctx=ast.Load()),
                         ast.Name(id="self", ctx=ast.Load()),
+                        self._prefixed_handler(wire_handler)
+                        if wire_handler
+                        else ast.Constant(value=""),
                     ]
                 body.append(self._forms_import(helper))
                 body.append(
@@ -5635,8 +5639,15 @@ class TemplateCodegen:
 
     @staticmethod
     def _forms_import(name: str) -> ast.stmt:
+        # A bound <form> needs pywire.forms (Pydantic); bound fields go
+        # through pywire.runtime.bind, which also binds plain wires.
+        module = (
+            "pywire.forms.render"
+            if name in ("form_attrs", "handler_input")
+            else "pywire.runtime.bind"
+        )
         return ast.ImportFrom(
-            module="pywire.forms.render",
+            module=module,
             names=[ast.alias(name=name, asname=None)],
             level=0,
         )

@@ -144,6 +144,18 @@ describe('UnifiedEventHandler', () => {
     vi.useRealTimers()
   })
 
+  it('sends every selected value of a multiple select', () => {
+    document.body.innerHTML = `<select id="s" multiple data-on-change="pick">
+        <option value="a" selected>A</option><option value="b">B</option>
+        <option value="c" selected>C</option></select>`
+    handler.init()
+    document.getElementById('s')!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(appMock.sendEvent).toHaveBeenCalledWith(
+      'pick',
+      expect.objectContaining({ values: ['a', 'c'] })
+    )
+  })
+
   it('should extract input value', () => {
     document.body.innerHTML = '<input id="input" value="hello" data-on-change="save">'
     const input = document.getElementById('input')!

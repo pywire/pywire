@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping
 
+from pywire.runtime.bind import BindError
 from pywire.runtime.escape import escape_html
 
 if TYPE_CHECKING:
@@ -51,10 +52,6 @@ _APPLIES = {
     "step": frozenset({"number", "range", "date", "datetime-local", "time"}),
     "inputmode": frozenset({"number", "text"}),
 }
-
-
-class BindError(TypeError):
-    """A ``$bind`` that can't mean what it says."""
 
 
 def _is_debug(page: Any) -> bool:
@@ -349,26 +346,3 @@ def select_options(field: Any) -> str:
             f"{escape_html(option.label)}</option>"
         )
     return "".join(parts)
-
-
-def bind_select(page: Any, site: str, field: Any) -> None:
-    """Remember which field a bound ``<select>`` holds, for its options."""
-    selects: Optional[Dict[str, Any]] = getattr(page, "_pw_bound_selects", None)
-    if selects is None:
-        selects = page._pw_bound_selects = {}
-    selects[site] = field
-
-
-def option_attrs(page: Any, site: str, attrs: Dict[str, Any]) -> Dict[str, Any]:
-    """Mark a hand-written ``<option>`` selected when the field holds it."""
-    field = (getattr(page, "_pw_bound_selects", None) or {}).get(site)
-    if field is None or "value" not in attrs:
-        return attrs
-    raw = field.raw
-    chosen = raw if isinstance(raw, list) else [raw]
-    out = dict(attrs)
-    if str(attrs["value"]) in chosen:
-        out["selected"] = True
-    else:
-        out.pop("selected", None)
-    return out
