@@ -85,6 +85,19 @@ async def test_binary_response_byte_identical():
     assert dict(headers)["content-type"] == "application/x-msgpack"
 
 
+@pytest.mark.asyncio
+async def test_unhandled_error_returns_the_apps_500_page(tmp_path):
+    # Starlette sends the app's 500 page and then re-raises. fetch() must
+    # return that page: raising fails the whole FaaS invocation instead.
+    (tmp_path / "index.wire").write_text(
+        '---\n@init\ndef load():\n    raise RuntimeError("boom")\n---\n<p>x</p>\n'
+    )
+    app = PyWire(pages_dir=str(tmp_path), stateless=True, secret_key=SECRET)
+    status, _, body = await OneShotASGIAdapter(app).fetch("GET", "/")
+    assert status == 500
+    assert body and b"boom" not in body  # no traceback outside debug mode
+
+
 def test_stateless_app_boots_without_pywire_parser(tmp_path):
     # FaaS bundles install plain `pywire` (no [build] extra, so no parser)
     # and serve prebuilt pages; constructing the app must not need it.
