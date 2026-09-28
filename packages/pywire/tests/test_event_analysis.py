@@ -334,3 +334,32 @@ def test_codegen_empty_field_mask():
     codegen = EventAttributeCodegen()
     html = codegen.generate_html(attr)
     assert 'data-pw-fields-click=""' in html
+
+
+def test_first_parameter_is_the_event_whatever_its_name():
+    source = """
+def handle(e):
+    print(e.client_x)
+"""
+    assert analyze_event_fields(source) == {"clientX"}
+
+
+def test_form_mapping_access_needs_form_data():
+    source = """
+def save(data):
+    name = data.get("name")
+    tags = [k for k in data]
+    if "email" in data:
+        pass
+"""
+    assert analyze_event_fields(source, "submit") == {"formData"}
+
+
+def test_submit_subscript_reads_a_form_field():
+    source = """
+def save(data):
+    return data["username"]
+"""
+    assert analyze_event_fields(source, "submit") == {"username", "formData"}
+    # Other events keep subscripts as event fields
+    assert analyze_event_fields(source, "keydown") == {"username"}

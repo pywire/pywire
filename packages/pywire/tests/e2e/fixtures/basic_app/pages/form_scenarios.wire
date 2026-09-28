@@ -1,31 +1,24 @@
 ---
-from pywire import wire, ref
+from pywire import wire, form
 from pydantic import BaseModel, Field
-from pywire.components.form import Form
-
-print("\nDEBUG: form_scenarios.wire executed")
 
 # Native Form state
 native_captured = wire(None)
 
 def on_native_submit(event):
-    # event is EventData, it has formData
-    data = event.formData
-    native_captured.value = f"Captured: {data.get('username')} - {data.get('email')}"
+    # event is FormEventData; it reads like a mapping of the fields
+    native_captured.value = f"Captured: {event.get('username')} - {event.get('email')}"
 
-# Component Form state
+# Bound form state
 class UserSchema(BaseModel):
     username: str = Field(..., min_length=3)
     age: int = Field(..., gt=0)
 
+user = form(UserSchema)
 comp_captured = wire(None)
-form_comp = ref()
 
-def on_comp_submit(user_instance):
-    comp_captured.value = f"User: {user_instance.username} (Age: {user_instance.age})"
-
-def trigger_manual_submit():
-    form_comp.submit()
+def on_comp_submit(data: UserSchema):
+    comp_captured.value = f"User: {data.username} (Age: {data.age})"
 ---
 <div id="form-tests">
     <section id="native-form">
@@ -39,20 +32,20 @@ def trigger_manual_submit():
     </section>
 
     <section id="comp-form">
-        <h2>Component Form (form.wire)</h2>
-        <Form model={UserSchema} on_submit={on_comp_submit} $ref={form_comp}>
+        <h2>Bound Form ($bind)</h2>
+        <form $bind={user} @submit={on_comp_submit} novalidate>
             <div>
-                <label>Username: <input name="username" id="comp-user" /></label>
-                <p id="err-user" $show={form_comp.errors.username}>{form_comp.errors.username}</p>
+                <label>Username: <input $bind={user.username} id="comp-user" /></label>
+                <p id="err-user" $show={user.username.error}>{user.username.error}</p>
             </div>
             <div>
-                <label>Age: <input name="age" type="number" id="comp-age" /></label>
-                <p id="err-age" $show={form_comp.errors.age}>{form_comp.errors.age}</p>
+                <label>Age: <input $bind={user.age} id="comp-age" /></label>
+                <p id="err-age" $show={user.age.error}>{user.age.error}</p>
             </div>
             <button type="submit" id="btn-comp-submit">Submit Component</button>
-        </Form>
-        
-        <button id="btn-manual-submit" @click={trigger_manual_submit}>Manual Submit via Ref</button>
+        </form>
+
+        <button type="submit" form="user" id="btn-manual-submit">Submit from outside the form</button>
         <p id="comp-result">{comp_captured}</p>
     </section>
 </div>

@@ -7,16 +7,19 @@ _here = Path(__file__).parent
 if TYPE_CHECKING:
     from pywire.runtime.page import BasePage
 
-    Form: type[BasePage]
     FileInput: type[BasePage]
 
 
 def __getattr__(name: str):
     if name == "Form":
-        return get_loader().load(_here / "form.wire")
+        raise ImportError(
+            "pywire.components.Form was replaced by model-bound forms: "
+            "`signup = form(Signup)` with `<form $bind={signup}>`. "
+            "See https://pywire.dev/docs/guides/forms/"
+        )
     if name == "FileInput":
         return get_loader().load(_here / "file_input.wire")
     raise AttributeError(name)
 
 
-__all__ = ["Form", "FileInput"]
+__all__ = ["FileInput"]

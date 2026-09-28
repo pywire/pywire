@@ -126,4 +126,31 @@ describe('UnifiedEventHandler — optimistic on non-interactive submit', () => {
     )
     vi.unstubAllGlobals()
   })
+
+  it('httpFormSubmit morphs a 422 (invalid bound form) instead of navigating', async () => {
+    const app = new PyWireApp({ autoInit: false, interactive: false })
+    const form = document.createElement('form')
+    document.body.appendChild(form)
+    const before = window.location.href
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        redirected: false,
+        text: async () => '<html><body><p>Enter a valid email address</p></body></html>',
+      })
+    )
+    const updateMock = (app as unknown as { updater: { update: ReturnType<typeof vi.fn> } }).updater
+      .update
+
+    await app.httpFormSubmit(form, 'save')
+
+    expect(updateMock).toHaveBeenCalledWith(
+      '<html><body><p>Enter a valid email address</p></body></html>'
+    )
+    expect(window.location.href).toBe(before)
+    vi.unstubAllGlobals()
+  })
 })

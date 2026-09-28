@@ -84,10 +84,23 @@ class UploadManager:
 
         return upload_id
 
+    @staticmethod
+    def _valid_id(upload_id: object) -> bool:
+        """Only the canonical uuid4 strings ``save`` issues: an id is joined
+        to a path, so anything else (``../x``, absolute paths) is refused."""
+        if not isinstance(upload_id, str) or len(upload_id) != 36:
+            return False
+        try:
+            return str(uuid.UUID(upload_id)) == upload_id
+        except ValueError:
+            return False
+
     def get(self, upload_id: str) -> Optional[FileUpload]:
         """
         Retrieve a file by ID.
         """
+        if not self._valid_id(upload_id):
+            return None
         file_path = self._temp_dir / upload_id
         meta_path = file_path.with_suffix(".meta")
 
@@ -99,19 +112,21 @@ class UploadManager:
                 meta = json.load(f)
                 filename = meta.get("filename", "unknown")
                 content_type = meta.get("content_type", "application/octet-stream")
-                size = int(meta.get("size", file_path.stat().st_size))
 
+            content = file_path.read_bytes()
             return FileUpload(
                 filename=filename,
                 content_type=content_type,
-                size=size,
-                content=file_path.read_bytes(),
+                size=len(content),
+                content=content,
             )
         except (OSError, ValueError, json.JSONDecodeError) as e:
             logger.warning("Error retrieving upload %s: %s", upload_id, e)
             return None
 
     def delete(self, upload_id: str) -> None:
+        if not self._valid_id(upload_id):
+            return
         file_path = self._temp_dir / upload_id
         meta_path = file_path.with_suffix(".meta")
         file_path.unlink(missing_ok=True)

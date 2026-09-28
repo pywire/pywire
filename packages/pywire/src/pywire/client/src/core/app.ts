@@ -552,10 +552,12 @@ export class PyWireApp {
         redirect: 'follow',
       })
 
-      // 4xx/5xx responses carry the error page — a different document.
+      // A 422 is a bound form that failed validation: the body is this page
+      // with the submitted values and errors, so it morphs like a success.
+      // Other 4xx/5xx responses carry the error page — a different document.
       // Morphing it into the current DOM would leak its styles into the
       // host app. Fall back to a full navigation.
-      if (!response.ok) {
+      if (!response.ok && response.status !== 422) {
         window.location.href = path
         return
       }

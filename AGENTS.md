@@ -38,7 +38,7 @@ Tooling: Python → ruff format / ruff check / **ty** (not mypy) / pytest (+ nox
 ## Framework conventions
 
 - **Transport-agnostic.** Middleware, auth and sessions must behave identically for HTTP loads and WebSocket SPA navigations. Never make app developers handle the two contexts differently (no Blazor-style explicit auth scopes / cascading parameters).
-- **Events vs callbacks.** `@event={handler}` is for DOM events only (modifiers like `.prevent`, field masks). Component callbacks are plain props named `on_*` typed `EventHandler[...]`, e.g. `<Form on_submit={handler} />`.
+- **Events vs callbacks.** `@event={handler}` is for DOM events only (modifiers like `.prevent`, field masks). Component callbacks are plain props named `on_*` typed `EventHandler[...]`, e.g. `<TodoItem on_toggle={handler} />`.
 - **Debug logging.** `PYWIRE_LOG_LEVEL=DEBUG` enables internal framework logs. `PyWire(debug=True)` is app-developer UX only (error pages, stack traces, source endpoints) and also un-silences the client `Logger`.
 
 ## Code policy

@@ -44,6 +44,88 @@ async def RequestContextMiddleware(scope, receive, send, app):
         _request_ctx.reset(token)
 
 
+_FORM_CONTENT_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
+
+
+def _is_form_content(request: Request) -> bool:
+    ctype = request.headers.get("content-type", "").split(";", 1)[0]
+    return ctype.strip().lower() in _FORM_CONTENT_TYPES
+
+
+def _is_cross_site(request: Request) -> bool:
+    """True when a browser says this POST came from another site.
+
+    ``Sec-Fetch-Site`` is set by the browser itself; ``Origin`` is the
+    fallback for browsers without it. A request with neither did not come
+    from a browser form, so CSRF does not apply.
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site.lower() not in ("same-origin", "none")
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False
+    if origin == "null":
+        return True
+    from urllib.parse import urlsplit
+
+    netloc = urlsplit(origin).netloc.lower()
+    hosts = {request.headers.get("host", "").lower()}
+    forwarded = request.headers.get("x-forwarded-host")
+    if forwarded:
+        hosts.update(h.strip().lower() for h in forwarded.split(","))
+    return netloc not in hosts
+
+
+async def _read_upload(upload: Any, limit: int) -> Any:
+    """A multipart file part as a FileUpload sized from the bytes read.
+
+    Returns None when the part is larger than ``limit``.
+    """
+    from pywire.runtime.files import FileUpload
+
+    chunks: List[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            return None
+        chunks.append(chunk)
+    return FileUpload(
+        filename=getattr(upload, "filename", None) or "",
+        content_type=getattr(upload, "content_type", None)
+        or "application/octet-stream",
+        size=total,
+        content=b"".join(chunks),
+    )
+
+
+def _form_handler_refusal(target: Any, name: str) -> Optional[str]:
+    """Why a form POST may not call ``name`` on ``target``; None if it may.
+
+    The same rules as ``BasePage._dispatch_handler``, checked up front so a
+    refusal is a 400 rather than an error inside the handler.
+    """
+    try:
+        # getattr_static runs no descriptors: nothing is evaluated for a
+        # name the client made up.
+        inspect.getattr_static(target, name)
+    except AttributeError:
+        return f"PyWire: handler '{name}' not found"
+    allowed = target.__class__.__event_handlers__
+    if allowed is not None and name not in allowed:
+        return f"PyWire: handler '{name}' is not a registered event handler"
+    is_framework = name.startswith("_handle_bind_") or name.startswith("_handler_")
+    if not is_framework and name.startswith("_"):
+        return f"PyWire: handler '{name}' not allowed"
+    if not callable(getattr(target, name, None)):
+        return f"PyWire: handler '{name}' not found"
+    return None
+
+
 class PyWire:
     """Main ASGI application and configuration."""
 
@@ -1297,7 +1379,9 @@ class PyWire:
                             # Store for parent __init__
                             super().__init__(request, *args, **kwargs)
 
-                        async def render(self, init: bool = True) -> Any:
+                        async def render(
+                            self, init: bool = True, *, run_hooks: Optional[bool] = None
+                        ) -> Any:
                             # Check mode at render time (not registration time!)
                             # This allows dev_server.py to set _is_dev_mode after app init
                             if captured_app.debug or getattr(
@@ -1692,12 +1776,13 @@ class PyWire:
             and (
                 not self.interactive_server_mode
                 or getattr(page, "__no_interactive__", False)
+                or _is_form_content(request)
             )
         ):
             # Form POST → @submit handler. Non-interactive server mode routes
-            # every form POST here; in interactive mode only `!no_interactive`
-            # pages get here — the client skips wiring on them, so their forms
-            # submit natively (the no-JS floor).
+            # every form POST here. In interactive mode a native form POST
+            # (JS off, or a `!no_interactive` page the client skips) lands
+            # here too, so every bound form has the same no-JS floor.
             response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
             # Internal ASGI replay from WS handler — body-only, no client scripts
@@ -1759,7 +1844,9 @@ class PyWire:
                 )
 
             # Upload Token Injection
-            if getattr(page, "__has_uploads__", False):
+            if getattr(page, "__has_uploads__", False) or getattr(
+                page, "_pw_has_uploads", False
+            ):
                 import secrets
 
                 token = secrets.token_urlsafe(32)
@@ -1784,26 +1871,30 @@ class PyWire:
         return response
 
     async def _handle_form_post(self, request: Request, page: Any) -> Response:
-        """Handle a standard HTML form POST in non-interactive mode.
+        """Handle a native HTML form POST (any mode) through the event pipeline.
 
-        Handler dispatch: JS clients send the handler name via the
-        ``X-PyWire-Handler`` header (see ``httpFormSubmit`` in the client
-        bundle). Component-scoped handlers (e.g. built-in ``<Form />``) carry
-        the ``_comp:{component_key}:`` prefix, matching interactive-mode
-        event routing.
-
-        When the client submits with ``X-PyWire-Internal: form-submit`` the
-        response renders as a body fragment (init=False) so the client can
-        morph it in — same swap path as SPA link nav. Without the header,
-        a full HTML document is returned.
+        The page renders first, exactly as a GET would (hooks run, components
+        exist, bound fields record what they rendered read-only), then the
+        handler is dispatched through ``BasePage._dispatch_handler`` with a
+        ``submit`` event, so the compile-time allowlist and a bound form's
+        validation apply the same as over a socket.
 
         Handler name source: the ``X-PyWire-Handler`` header (JS path), or
-        the ``__pywire_handler`` hidden input codegen renders into @submit
-        forms on ``!no_interactive`` pages (no-JS path — a native browser
-        POST cannot set headers). The header wins when both are present;
-        the hidden field is never passed on as handler data.
+        the ``__pywire_handler`` hidden input codegen renders into bound
+        forms and into @submit forms on ``!no_interactive`` pages (no-JS
+        path; a native browser POST cannot set headers). The header wins
+        when both are present; the hidden field is never handler data.
+
+        Responses: 303 wherever the handler navigated; 422 with the page
+        re-rendered when a bound form was invalid; else the page. With
+        ``X-PyWire-Internal: form-submit`` the page renders as a body
+        fragment (init=False) for the client to morph in.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
+        if _is_cross_site(request):
+            return PlainTextResponse(
+                "PyWire: cross-site form POST refused", status_code=403
+            )
         # Auth guard BEFORE any dispatch — a forged handler name must never
         # reach user code on a protected page (mirrors BasePage.render()'s
         # short-circuit and its _pending_navigation mirror).
@@ -1818,137 +1909,89 @@ class PyWire:
                 return denied
         try:
             form_data = await request.form()
-            event_data: Dict[str, Any] = {
-                str(k): v for k, v in form_data.multi_items() if k != "__pywire_handler"
-            }
-
             handler_name: Any = request.headers.get("x-pywire-handler") or (
                 form_data.get("__pywire_handler")
             )
             if not handler_name or not isinstance(handler_name, str):
+                if self.interactive_server_mode and not getattr(
+                    page, "__no_interactive__", False
+                ):
+                    # A plain POST to an interactive page with no handler:
+                    # nothing to dispatch, just show the page.
+                    return await page.render()
                 return PlainTextResponse(
                     "PyWire: form POST missing handler. Add "
                     "`@submit={handler_name}` to your <form>; the PyWire "
                     "client sends the X-PyWire-Handler header automatically, "
-                    "and `!no_interactive` pages render a `__pywire_handler` "
-                    "hidden input for no-JS submits.",
+                    "and bound forms and `!no_interactive` pages render a "
+                    "`__pywire_handler` hidden input for no-JS submits.",
                     status_code=400,
                 )
 
-            if handler_name.startswith("_comp:"):
-                # Component-scoped handler. We need `page._components`
-                # populated before dispatch — that only happens during
-                # `render()`. Accept the extra render cost; init hooks
-                # are expected to be idempotent.
-                await page.render()
+            fields: Dict[str, List[Any]] = {}
+            for key, value in form_data.multi_items():
+                if key == "__pywire_handler":
+                    continue
+                if not isinstance(value, str):
+                    value = await _read_upload(value, self.max_upload_size)
+                    if value is None:
+                        return PlainTextResponse(
+                            "PyWire: uploaded file too large", status_code=413
+                        )
+                fields.setdefault(str(key), []).append(value)
+            # Same shape the JS client sends: repeated names become lists.
+            payload = {k: v[0] if len(v) == 1 else v for k, v in fields.items()}
+            event_data: Dict[str, Any] = {"type": "submit", "formData": payload}
 
-                payload = handler_name[len("_comp:") :]
-                comp_key, sep, remainder = payload.partition(":")
-                if not sep or not comp_key or not remainder:
+            # Render first, like the GET that served the form.
+            await page.render()
+
+            target: Any = page
+            method = handler_name
+            if handler_name.startswith("_comp:"):
+                parsed = handler_name[len("_comp:") :]
+                comp_key, sep, method = parsed.partition(":")
+                if not sep or not comp_key or not method:
                     return PlainTextResponse(
                         f"PyWire: malformed component handler '{handler_name}'",
                         status_code=400,
                     )
-
-                component = page._components.get(comp_key)
-                if component is None:
+                target = page._components.get(comp_key)
+                if target is None:
                     return PlainTextResponse(
                         f"PyWire: component '{comp_key}' not found",
                         status_code=400,
                     )
-
-                # Enforce the component's compile-time allowlist exactly like
-                # the page-level branch below — a client must not be able to
-                # invoke arbitrary component methods (e.g. "render") via the
-                # X-PyWire-Handler header.
-                comp_allowed = component.__class__.__event_handlers__
-                if comp_allowed is not None and remainder not in comp_allowed:
+                if method.startswith("_comp:"):
                     return PlainTextResponse(
-                        f"PyWire: handler '{remainder}' is not a registered "
-                        "event handler",
-                        status_code=400,
-                    )
-                # Mirror BasePage._dispatch_handler: non-framework ``_``
-                # names are never invokable, even on permissive hand-rolled
-                # components (allowlist None).
-                is_framework_handler = remainder.startswith(
-                    "_handle_bind_"
-                ) or remainder.startswith("_handler_")
-                if not is_framework_handler and remainder.startswith("_"):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{remainder}' not allowed",
+                        "PyWire: nested component handlers are not supported "
+                        "in form POSTs",
                         status_code=400,
                     )
 
-                # Populate the component's form ref (if any) so
-                # ``form_ref.data`` returns the POSTed fields — the
-                # built-in `<Form />` component reads this during
-                # validation.
-                form_ref_attr = getattr(component, "form_ref", None)
-                if form_ref_attr is not None and hasattr(form_ref_attr, "_update_data"):
-                    form_ref_attr._update_data(dict(event_data))
+            refusal = _form_handler_refusal(target, method)
+            if refusal is not None:
+                return PlainTextResponse(refusal, status_code=400)
+            await target._dispatch_handler(method, event_data)
 
-                handler = getattr(component, remainder, None)
-                if handler is None or not callable(handler):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{remainder}' not found on component",
-                        status_code=400,
-                    )
-                if inspect.iscoroutinefunction(handler):
-                    await handler(event_data)
-                else:
-                    handler(event_data)
-            else:
-                handler = getattr(page, handler_name, None)
-                if handler is None or not callable(handler):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{handler_name}' not found on page",
-                        status_code=400,
-                    )
-                # Enforce the compile-time handler allowlist exactly like
-                # BasePage._dispatch_handler — a client must not be able to
-                # invoke arbitrary page methods (e.g. "render") via the
-                # X-PyWire-Handler header. Hand-rolled pages (allowlist
-                # None) keep the permissive behavior.
-                allowed = page.__class__.__event_handlers__
-                if allowed is not None and handler_name not in allowed:
-                    return PlainTextResponse(
-                        f"PyWire: handler '{handler_name}' is not a registered "
-                        "event handler",
-                        status_code=400,
-                    )
-                # Mirror BasePage._dispatch_handler: non-framework ``_``
-                # names are never invokable, even on permissive hand-rolled
-                # pages (allowlist None).
-                is_framework_handler = handler_name.startswith(
-                    "_handle_bind_"
-                ) or handler_name.startswith("_handler_")
-                if not is_framework_handler and handler_name.startswith("_"):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{handler_name}' not allowed",
-                        status_code=400,
-                    )
-                if inspect.iscoroutinefunction(handler):
-                    await handler(event_data)
-                else:
-                    handler(event_data)
-
-            response = await page.render(init=not is_spa_submit)
-
-            if hasattr(page, "_pending_navigation") and page._pending_navigation:
+            if getattr(page, "_pending_navigation", None):
                 from starlette.responses import RedirectResponse
 
                 redirect_path = page._pending_navigation
                 page._pending_navigation = None
                 return RedirectResponse(redirect_path, status_code=303)
 
+            invalid = bool(getattr(page, "_pw_form_invalid", False))
+            response = await page.render(init=not is_spa_submit, run_hooks=False)
+            if invalid:
+                response.status_code = 422
             return response
         except Exception as e:
             logger.error("Form POST error: %s", e, exc_info=True)
             if hasattr(page, "_form_error"):
                 page._form_error = str(e)
             try:
-                return await page.render(init=not is_spa_submit)
+                return await page.render(init=not is_spa_submit, run_hooks=False)
             except Exception:
                 return PlainTextResponse("Internal Server Error", status_code=500)
 

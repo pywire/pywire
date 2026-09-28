@@ -1,7 +1,7 @@
 """Static analysis of event handler functions to determine which event fields they access."""
 
 import ast
-from typing import Optional, Set
+from typing import Optional, Set, Union
 
 # Mapping from Python snake_case field names to JS camelCase field names.
 # This must stay in sync with the field names used in runtime/events.py
@@ -28,20 +28,31 @@ SNAKE_TO_CAMEL = {
 }
 
 
-def analyze_event_fields(handler_source: str) -> Optional[Set[str]]:
+# FormEventData reads like a mapping of the submitted fields: these all
+# need formData.
+MAPPING_METHODS = frozenset({"get", "keys", "values", "items"})
+
+
+def analyze_event_fields(
+    handler_source: str, event_type: Optional[str] = None
+) -> Optional[Set[str]]:
     """Analyze a handler function to determine which event fields it accesses.
 
     Returns a set of camelCase field names the handler uses, or None if
     static analysis cannot determine usage (e.g. handler uses **kwargs,
     passes the event object to another function, or has a syntax error).
     When None is returned, all fields should be sent (no filtering).
+
+    A handler function's first parameter is the event, whatever its name.
+    For ``submit``, ``event["name"]`` reads a form field, so it needs
+    formData.
     """
     try:
         tree = ast.parse(handler_source)
     except SyntaxError:
         return None  # Can't analyze, send everything
 
-    visitor = _EventFieldVisitor()
+    visitor = _EventFieldVisitor(is_submit=event_type == "submit")
     visitor.visit(tree)
 
     if visitor.needs_full_event:
@@ -51,10 +62,29 @@ def analyze_event_fields(handler_source: str) -> Optional[Set[str]]:
 
 
 class _EventFieldVisitor(ast.NodeVisitor):
-    def __init__(self) -> None:
+    def __init__(self, is_submit: bool = False) -> None:
         self.fields: Set[str] = set()
         self.needs_full_event = False
         self._event_names = {"event", "event_data"}
+        self._is_submit = is_submit
+        self._seen_handler = False
+
+    def _is_event(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Name) and node.id in self._event_names
+
+    def _track_event_param(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> None:
+        # The outermost function is the handler; its first parameter
+        # receives the event.
+        if self._seen_handler:
+            return
+        self._seen_handler = True
+        params = [a.arg for a in node.args.posonlyargs + node.args.args]
+        if params and params[0] == "self":
+            params = params[1:]
+        if params:
+            self._event_names.add(params[0])
 
     def visit_Assign(self, node: ast.Assign) -> None:
         # Track aliases: `e = event` adds 'e' to _event_names
@@ -78,9 +108,30 @@ class _EventFieldVisitor(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> None:
         # event.key, event_data.client_x, etc.
         if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
-            snake = node.attr
-            camel = SNAKE_TO_CAMEL.get(snake, snake)
-            self.fields.add(camel)
+            if node.attr in MAPPING_METHODS:
+                self.fields.add("formData")
+            else:
+                snake = node.attr
+                camel = SNAKE_TO_CAMEL.get(snake, snake)
+                self.fields.add(camel)
+        self.generic_visit(node)
+
+    def visit_Compare(self, node: ast.Compare) -> None:
+        # "name" in event
+        for op, right in zip(node.ops, node.comparators):
+            if isinstance(op, (ast.In, ast.NotIn)) and self._is_event(right):
+                self.fields.add("formData")
+        self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        # for name in event
+        if self._is_event(node.iter):
+            self.fields.add("formData")
+        self.generic_visit(node)
+
+    def visit_comprehension(self, node: ast.comprehension) -> None:
+        if self._is_event(node.iter):
+            self.fields.add("formData")
         self.generic_visit(node)
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
@@ -92,6 +143,8 @@ class _EventFieldVisitor(ast.NodeVisitor):
                 snake = node.slice.value
                 camel = SNAKE_TO_CAMEL.get(snake, snake)
                 self.fields.add(camel)
+                if self._is_submit:
+                    self.fields.add("formData")
             else:
                 # event[some_var] — dynamic, can't determine field
                 self.needs_full_event = True
@@ -117,10 +170,12 @@ class _EventFieldVisitor(ast.NodeVisitor):
         # Check if handler has **kwargs
         if node.args.kwarg:
             self.needs_full_event = True
+        self._track_event_param(node)
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         # Same check for async handlers
         if node.args.kwarg:
             self.needs_full_event = True
+        self._track_event_param(node)
         self.generic_visit(node)

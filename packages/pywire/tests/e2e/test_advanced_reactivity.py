@@ -38,10 +38,10 @@ def test_advanced_reactivity_primitives(page: Page, pywire_server: str):
     assert initial_eff != new_eff, "Effect did not trigger on primitive update"
 
 
-def test_form_schema_fields_exposed_ref(page: Page, pywire_server: str):
+def test_bound_form_fields_come_from_the_model(page: Page, pywire_server: str):
     page.goto(f"{pywire_server}/advanced")
 
-    # Form should have auto-generated fields based on User model (name, age)
+    # One row per User field (name, age), in model order
     fields = page.locator(".dyn-field")
     expect(fields).to_have_count(2)
 

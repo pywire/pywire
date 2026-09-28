@@ -120,7 +120,9 @@ class CompileErrorPage(BasePage):
             pass
         return self.error_file
 
-    async def render(self, init: bool = True) -> HTMLResponse:
+    async def render(
+        self, init: bool = True, *, run_hooks: Optional[bool] = None
+    ) -> HTMLResponse:
         is_syntax = isinstance(self.error, PyWireSyntaxError)
         title = "PyWire Syntax Error" if is_syntax else "Compilation Error"
         tagline = random.choice(_TAGLINES_SYNTAX if is_syntax else _TAGLINES_RUNTIME)

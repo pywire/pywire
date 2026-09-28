@@ -78,11 +78,45 @@ class InputEventData(EventData):
 
 
 class FormEventData(EventData):
-    """submit events."""
+    """submit events.
+
+    Also reads like a mapping of the submitted fields, so a plain
+    ``@submit`` handler can use ``data["name"]`` or ``data.get("name")``.
+    Repeated names (checkbox groups, multiple selects) hold lists.
+    """
 
     def __init__(self, raw: Dict[str, Any]):
         super().__init__(raw)
         self.form_data: Dict[str, Any] = raw.get("formData", {})
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self.form_data:
+            return self.form_data[key]
+        return getattr(self, key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.form_data.get(key, default)
+
+    def keys(self) -> Any:
+        return self.form_data.keys()
+
+    def values(self) -> Any:
+        return self.form_data.values()
+
+    def items(self) -> Any:
+        return self.form_data.items()
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.form_data
+
+    def __iter__(self) -> Any:
+        return iter(self.form_data)
+
+    def __len__(self) -> int:
+        return len(self.form_data)
+
+    def __bool__(self) -> bool:
+        return True
 
     @property
     def value(self) -> Any:

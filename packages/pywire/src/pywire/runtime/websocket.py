@@ -1085,7 +1085,6 @@ class WebSocketHandler:
                             "path",
                             "url",
                             "user",
-                            "errors",
                             "loading",
                             "attrs",
                             "children",

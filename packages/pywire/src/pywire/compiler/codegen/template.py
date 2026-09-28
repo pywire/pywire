@@ -79,6 +79,11 @@ class TemplateCodegen:
         self.interpolation_parser = BraceInterpolationParser()
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
+        # ``$bind`` codegen: a counter for the per-element local that holds
+        # the bound form/field, and the stack of enclosing bound <select>
+        # sites so their hand-written <option>s can be marked selected.
+        self._bind_counter = 0
+        self._bind_select_sites: List[str] = []
         # Set per page by the generator: `!no_interactive` pages get the no-JS
         # form floor (a `__pywire_handler` hidden input inside @submit forms).
         self.no_interactive = False
@@ -164,6 +169,8 @@ class TemplateCodegen:
     def _reset_state(self) -> None:
         self.auxiliary_functions = []
         self.has_file_inputs = False
+        self._bind_counter = 0
+        self._bind_select_sites = []
         self._region_counter = 0
         self.region_renderers = {}
         self.keyed_region_renderers = {}
@@ -1729,188 +1736,6 @@ class TemplateCodegen:
         if len(elements) == 1:
             return elements[0]
         return None
-
-    def _extract_field_rules(
-        self,
-        nodes: List[TemplateNode],
-        local_vars: Set[str],
-        known_globals: Optional[Set[str]] = None,
-        known_imports: Optional[Set[str]] = None,
-        async_methods: Optional[Set[str]] = None,
-        known_methods: Optional[Dict[str, int]] = None,
-        wire_vars: Set[str] = set(),
-    ) -> Optional[ast.Dict]:
-        """Extract HTML5 field rules from form input nodes for server-side Form validation."""
-        html_to_rule = {
-            "required": "required",
-            "pattern": "pattern",
-            "minlength": "minlength",
-            "maxlength": "maxlength",
-            "min": "min_value",
-            "max": "max_value",
-            "step": "step",
-            "type": "input_type",
-            "title": "title",
-            "accept": "allowed_types",
-            "multiple": "multiple",
-            "data-max-size": "max_size",
-            "data-min-size": "min_size",
-            "data-max-files": "max_files",
-            "data-allowed-names": "allowed_names",
-        }
-        component_attr_to_rule = {
-            "required": "required",
-            "accept": "allowed_types",
-            "multiple": "multiple",
-            "max-size": "max_size",
-            "min-size": "min_size",
-            "max-files": "max_files",
-            "allowed-names": "allowed_names",
-            "max_size": "max_size",
-            "min_size": "min_size",
-            "max_files": "max_files",
-            "allowed_names": "allowed_names",
-        }
-        form_tags = {"input", "select", "textarea"}
-        file_component_tags = {"fileinput"}
-        field_rules: Dict[str, Dict[str, ast.expr]] = {}
-
-        def parse_static_value(attr_name: str, raw_value: str) -> ast.expr:
-            if attr_name in {"required", "multiple"}:
-                return ast.Constant(value=True)
-            if attr_name in {"minlength", "maxlength"}:
-                try:
-                    return ast.Constant(value=int(raw_value))
-                except (TypeError, ValueError):
-                    return ast.Constant(value=raw_value)
-            if attr_name in {
-                "data-max-size",
-                "data-min-size",
-                "data-max-files",
-                "max-size",
-                "min-size",
-                "max-files",
-                "max_size",
-                "min_size",
-                "max_files",
-            }:
-                try:
-                    return ast.Constant(value=int(raw_value))
-                except (TypeError, ValueError):
-                    return ast.Constant(value=raw_value)
-            if attr_name == "accept":
-                parts = [
-                    item.strip() for item in str(raw_value).split(",") if item.strip()
-                ]
-                return ast.List(
-                    elts=[ast.Constant(value=part) for part in parts], ctx=ast.Load()
-                )
-            if attr_name in {"min", "max", "step", "pattern", "type", "title"}:
-                return ast.Constant(value=raw_value)
-            if attr_name in {"data-allowed-names", "allowed-names", "allowed_names"}:
-                return ast.Constant(value=raw_value)
-            return ast.Constant(value=raw_value)
-
-        def collect(nodes_to_visit: List[TemplateNode]) -> None:
-            for child in nodes_to_visit:
-                if child.tag is None:
-                    continue
-
-                tag = child.tag.lower()
-                if tag in file_component_tags:
-                    self.has_file_inputs = True
-
-                if tag in form_tags or tag in file_component_tags:
-                    field_name = child.attributes.get("name")
-                    if tag == "input":
-                        input_type = child.attributes.get("type")
-                        if isinstance(input_type, str) and input_type.lower() == "file":
-                            self.has_file_inputs = True
-                        if any(
-                            key in child.attributes
-                            for key in (
-                                "accept",
-                                "multiple",
-                                "data-max-size",
-                                "data-min-size",
-                                "data-max-files",
-                                "data-allowed-names",
-                            )
-                        ):
-                            self.has_file_inputs = True
-                        for special_attr in child.special_attributes:
-                            if (
-                                isinstance(special_attr, ReactiveAttribute)
-                                and special_attr.name == "type"
-                                and special_attr.expr.strip().strip("'\"") == "file"
-                            ):
-                                self.has_file_inputs = True
-                    if (
-                        field_name
-                        and field_name not in field_rules
-                        and "{" not in field_name
-                        and "}" not in field_name
-                    ):
-                        rules_for_field: Dict[str, ast.expr] = {}
-
-                        attr_map = (
-                            html_to_rule if tag in form_tags else component_attr_to_rule
-                        )
-
-                        for html_attr, rule_key in attr_map.items():
-                            if html_attr not in child.attributes:
-                                continue
-                            static_raw = child.attributes[html_attr]
-                            rules_for_field[rule_key] = parse_static_value(
-                                html_attr, static_raw
-                            )
-
-                        for special_attr in child.special_attributes:
-                            if not isinstance(special_attr, ReactiveAttribute):
-                                continue
-                            if special_attr.name not in attr_map:
-                                continue
-                            rule_key = attr_map[special_attr.name]
-                            rules_for_field[rule_key] = self._transform_reactive_expr(
-                                special_attr.expr,
-                                local_vars,
-                                known_methods=known_methods,
-                                known_globals=known_globals,
-                                known_imports=known_imports,
-                                async_methods=async_methods,
-                                line_offset=child.line,
-                                col_offset=child.column,
-                                cached=False,
-                                wire_vars=wire_vars,
-                            )
-
-                        if tag in file_component_tags:
-                            rules_for_field.setdefault(
-                                "input_type", ast.Constant(value="file")
-                            )
-
-                        if rules_for_field:
-                            field_rules[field_name] = rules_for_field
-
-                if child.children:
-                    collect(child.children)
-
-        collect(nodes)
-        if not field_rules:
-            return None
-
-        outer_keys: List[Optional[ast.expr]] = []
-        outer_values: List[ast.expr] = []
-        for field_name, rules_map in field_rules.items():
-            inner_keys: List[Optional[ast.expr]] = []
-            inner_values: List[ast.expr] = []
-            for rule_name, rule_value in rules_map.items():
-                inner_keys.append(ast.Constant(value=rule_name))
-                inner_values.append(rule_value)
-            outer_keys.append(ast.Constant(value=field_name))
-            outer_values.append(ast.Dict(keys=inner_keys, values=inner_values))
-
-        return ast.Dict(keys=outer_keys, values=outer_values)
 
     # ---- Ref ID helpers ----
 
@@ -3860,6 +3685,16 @@ class TemplateCodegen:
             # Process non-event special attributes (Reactive) and Events
             for attr in node.special_attributes:
                 if isinstance(attr, ReactiveAttribute):
+                    if attr.name == "$bind":
+                        from pywire_parser.exceptions import PyWireSyntaxError
+
+                        raise PyWireSyntaxError(
+                            f"$bind can't go on a component (<{node.tag}>). Pass "
+                            "the field as a prop and bind it on the <input> "
+                            "inside, or spread its attributes: {**field.attrs}",
+                            line=node.line,
+                            column=node.column,
+                        )
                     if attr.name == "$ref":
                         # Groundwork for component refs
                         expr = self._transform_reactive_expr(
@@ -3894,10 +3729,10 @@ class TemplateCodegen:
 
             # Compile events into callable props on component instances.
             # Use the `on_{event}` naming convention so the kwarg matches
-            # the component's Props declaration (e.g. `on_submit` on the
-            # built-in <Form />). A bare `event_type` key would collide
-            # with @expose methods of the same name (e.g. Form's own
-            # `submit()` method) and silently overwrite them.
+            # the component's Props declaration (e.g. `on_submit`). A bare
+            # `event_type` key would collide with @expose methods of the
+            # same name (e.g. a `submit()` method) and silently overwrite
+            # them.
             for event_type, attrs_list in event_attrs_by_type.items():
                 attr = attrs_list[-1]
                 raw_handler = attr.handler_name.strip()
@@ -3982,20 +3817,6 @@ class TemplateCodegen:
 
             if cls_name == "FileInput":
                 self.has_file_inputs = True
-
-            if cls_name == "Form":
-                field_rules_expr = self._extract_field_rules(
-                    all_slot_nodes,
-                    local_vars,
-                    known_globals=known_globals,
-                    known_imports=known_imports,
-                    async_methods=async_methods,
-                    known_methods=known_methods,
-                    wire_vars=wire_vars,
-                )
-                if field_rules_expr is not None:
-                    dict_keys.append(ast.Constant(value="_field_rules"))
-                    dict_values.append(field_rules_expr)
 
             # 5. Instantiate/reuse component (phase 1: resolve without slots)
             comp_var = f"_comp_{node.line}_{node.column}"
@@ -4491,6 +4312,62 @@ class TemplateCodegen:
                         ),
                     )
                 )
+
+            # --- $bind: form / field binding (pywire.forms) ---
+            bind_var: Optional[str] = None
+            bind_tag = node.tag.lower()
+            bind_attr = next(
+                (
+                    a
+                    for a in node.special_attributes
+                    if isinstance(a, ReactiveAttribute) and a.name == "$bind"
+                ),
+                None,
+            )
+            bound_form_handler: Optional[str] = None
+            if bind_attr is not None:
+                if bind_tag not in ("form", "input", "select", "textarea"):
+                    from pywire_parser.exceptions import PyWireSyntaxError
+
+                    raise PyWireSyntaxError(
+                        "$bind works on <form>, <input>, <select> and "
+                        f"<textarea>, not <{node.tag}>",
+                        line=node.line,
+                        column=node.column,
+                    )
+                bind_var = f"_pw_bind_{self._bind_counter}"
+                self._bind_counter += 1
+                body.append(
+                    self._set_line(
+                        ast.Assign(
+                            targets=[ast.Name(id=bind_var, ctx=ast.Store())],
+                            value=self._transform_reactive_expr(
+                                bind_attr.expr,
+                                local_vars,
+                                known_methods=known_methods,
+                                known_globals=known_globals,
+                                known_imports=known_imports,
+                                async_methods=async_methods,
+                                line_offset=node.line,
+                                col_offset=node.column,
+                                cached=False,
+                                wire_vars=wire_vars,
+                            ),
+                        ),
+                        node,
+                    )
+                )
+                if bind_tag == "form":
+                    bound_form_handler = next(
+                        (
+                            a.handler_name
+                            for a in node.special_attributes
+                            if isinstance(a, EventAttribute)
+                            and a.event_type == "submit"
+                            and getattr(a, "_pw_bound_form", False)
+                        ),
+                        None,
+                    )
 
             if region_id:
                 bindings["data-pw-region"] = ast.Constant(value=region_id)
@@ -5109,6 +4986,8 @@ class TemplateCodegen:
             for attr in node.special_attributes:
                 if isinstance(attr, EventAttribute):
                     continue
+                elif isinstance(attr, ReactiveAttribute) and attr.name == "$bind":
+                    continue
                 elif isinstance(attr, ReactiveAttribute):
                     val_expr = self._transform_reactive_expr(
                         attr.expr,
@@ -5473,6 +5352,69 @@ class TemplateCodegen:
                 )
                 implicit_root_source = None  # Consumed
 
+            # $bind: the model's attributes merged over the hand-written ones.
+            select_site: Optional[str] = None
+            if bind_var is not None:
+                if bind_tag == "form":
+                    helper = "form_attrs"
+                    helper_args: List[ast.expr] = [
+                        ast.Name(id=bind_var, ctx=ast.Load()),
+                        self._prefixed_handler(bound_form_handler or ""),
+                        ast.Name(id="attrs", ctx=ast.Load()),
+                        ast.Name(id="self", ctx=ast.Load()),
+                    ]
+                else:
+                    helper = "field_attrs"
+                    helper_args = [
+                        ast.Name(id=bind_var, ctx=ast.Load()),
+                        ast.Constant(value=bind_tag),
+                        ast.Name(id="attrs", ctx=ast.Load()),
+                        ast.Name(id="self", ctx=ast.Load()),
+                    ]
+                body.append(self._forms_import(helper))
+                body.append(
+                    ast.Assign(
+                        targets=[ast.Name(id="attrs", ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Name(id=helper, ctx=ast.Load()),
+                            args=helper_args,
+                            keywords=[],
+                        ),
+                    )
+                )
+                if bind_tag == "select":
+                    select_site = f"{node.line}:{node.column}"
+                    body.append(self._forms_import("bind_select"))
+                    body.append(
+                        ast.Expr(
+                            value=ast.Call(
+                                func=ast.Name(id="bind_select", ctx=ast.Load()),
+                                args=[
+                                    ast.Name(id="self", ctx=ast.Load()),
+                                    ast.Constant(value=select_site),
+                                    ast.Name(id=bind_var, ctx=ast.Load()),
+                                ],
+                                keywords=[],
+                            )
+                        )
+                    )
+            elif node.tag.lower() == "option" and self._bind_select_sites:
+                body.append(self._forms_import("option_attrs"))
+                body.append(
+                    ast.Assign(
+                        targets=[ast.Name(id="attrs", ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Name(id="option_attrs", ctx=ast.Load()),
+                            args=[
+                                ast.Name(id="self", ctx=ast.Load()),
+                                ast.Constant(value=self._bind_select_sites[-1]),
+                                ast.Name(id="attrs", ctx=ast.Load()),
+                            ],
+                            keywords=[],
+                        ),
+                    )
+                )
+
             # Import render_attrs locally to ensure availability
             body.append(
                 ast.ImportFrom(
@@ -5541,7 +5483,32 @@ class TemplateCodegen:
             # browser's native form POST is the only submit path. Carry the
             # @submit handler name in a hidden input — `_handle_form_post`
             # falls back to it when the X-PyWire-Handler header is absent.
-            if node.tag.lower() == "form" and self.no_interactive:
+            if bind_var is not None and bind_tag == "form":
+                # A bound form always carries its handler, so a native POST
+                # (JS off, or any mode) reaches the same validated pipeline.
+                body.append(self._forms_import("handler_input"))
+                body.append(
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Name(id="handler_input", ctx=ast.Load()),
+                                    args=[
+                                        self._prefixed_handler(bound_form_handler or "")
+                                    ],
+                                    keywords=[],
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    )
+                )
+            elif node.tag.lower() == "form" and self.no_interactive:
                 for _evt in node.special_attributes:
                     if isinstance(_evt, EventAttribute) and _evt.event_type == "submit":
                         _handler_expr = ast.BinOp(
@@ -5585,8 +5552,48 @@ class TemplateCodegen:
                             )
                         )
 
+            generated_content: Optional[str] = None
+            if bind_var is not None and bind_tag == "textarea":
+                generated_content = "textarea_text"
+            elif (
+                bind_var is not None
+                and bind_tag == "select"
+                and not any(
+                    c.tag is not None
+                    or c.special_attributes
+                    or (c.text_content or "").strip()
+                    for c in node.children
+                )
+            ):
+                generated_content = "select_options"
+            if generated_content is not None:
+                body.append(self._forms_import(generated_content))
+                body.append(
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Name(id=generated_content, ctx=ast.Load()),
+                                    args=[
+                                        ast.Name(id=cast(str, bind_var), ctx=ast.Load())
+                                    ],
+                                    keywords=[],
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    )
+                )
+
+            if select_site is not None:
+                self._bind_select_sites.append(select_site)
             prev_child = None
-            for child in node.children:
+            for child in node.children if generated_content is None else []:
                 # Add whitespace if there is a gap between this child and the previous one
                 self._add_gap_whitespace(prev_child, child, body, parts_var=parts_var)
 
@@ -5608,6 +5615,8 @@ class TemplateCodegen:
                     wire_vars=wire_vars,
                 )
                 prev_child = child
+            if select_site is not None:
+                self._bind_select_sites.pop()
 
             if node.tag.lower() not in self.VOID_ELEMENTS:
                 body.append(
@@ -5623,6 +5632,26 @@ class TemplateCodegen:
                         )
                     )
                 )
+
+    @staticmethod
+    def _forms_import(name: str) -> ast.stmt:
+        return ast.ImportFrom(
+            module="pywire.forms.render",
+            names=[ast.alias(name=name, asname=None)],
+            level=0,
+        )
+
+    @staticmethod
+    def _prefixed_handler(handler_name: str) -> ast.expr:
+        return ast.BinOp(
+            left=ast.Attribute(
+                value=ast.Name(id="self", ctx=ast.Load()),
+                attr="_handler_prefix",
+                ctx=ast.Load(),
+            ),
+            op=ast.Add(),
+            right=ast.Constant(value=handler_name),
+        )
 
     def _get_node_end_pos(self, node: TemplateNode) -> Tuple[int, int]:
         """Estimate the end line/column of a node for gap detection."""
