@@ -180,11 +180,27 @@ _STATELESS_PLATFORMS = frozenset(
 )
 
 
+_SECRET_HINT = (
+    "Building imports the app, so PYWIRE_SECRET_KEY must be set for the build "
+    "as well as in your provider environment."
+)
+
+
 def _fail_missing_secret(platform: str) -> None:
     console.print(
         f"[bold red]Error:[/] [cyan]{platform}[/] needs the stateless snapshot "
-        "signing secret — set PYWIRE_SECRET_KEY in your provider environment."
+        f"signing secret. {_SECRET_HINT}"
     )
+    sys.exit(1)
+
+
+def _fail_on_secret_error(exc: RuntimeError) -> None:
+    """Turn PyWire's missing or weak stateless secret error into guidance."""
+    if "PYWIRE_SECRET_KEY" not in str(exc):
+        return
+    from rich.markup import escape
+
+    console.print(f"[bold red]Error:[/] {escape(str(exc))}\n{_SECRET_HINT}")
     sys.exit(1)
 
 
@@ -470,10 +486,9 @@ def build(
         app_instance = import_app(app)
     except RuntimeError as exc:
         # PyWire(stateless=True) raises at construction when the signing
-        # secret is missing — turn it into deploy-target guidance. (Both
+        # secret is missing or too short — turn it into guidance. (Both
         # discovery and import_app execute the app module.)
-        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
-            _fail_missing_secret(platform)
+        _fail_on_secret_error(exc)
         raise
     _require_stateless(app_instance, platform)
 
@@ -953,9 +968,8 @@ def deploy(
         # Pre-compile
         app_instance = import_app(app)
     except RuntimeError as exc:
-        # Same RuntimeError translation as `build` (missing stateless secret).
-        if platform in _STATELESS_PLATFORMS and "PYWIRE_SECRET_KEY" in str(exc):
-            _fail_missing_secret(platform)
+        # Same RuntimeError translation as `build` (stateless secret).
+        _fail_on_secret_error(exc)
         raise
     _require_stateless(app_instance, platform)
 

@@ -69,7 +69,7 @@ def test_bundle_serves_component_imports_without_parser(tmp_path: Path) -> None:
     (components / "Navlink.wire").write_text(NAVLINK)
     (tmp_path / "src" / "main.py").write_text(
         "from pywire import PyWire\n"
-        "app = PyWire(pages_dir='src/pages', stateless=True, secret_key='k')\n"
+        "app = PyWire(pages_dir='src/pages', stateless=True, secret_key='k' * 32)\n"
     )
 
     build_dir = tmp_path / ".pywire" / "build"

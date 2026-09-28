@@ -338,6 +338,12 @@ class PyWire:
                     "PYWIRE_SECRET_KEY env var — it signs client-held session "
                     "snapshots"
                 )
+            if len(secret.encode("utf-8")) < 32:
+                raise RuntimeError(
+                    "PYWIRE_SECRET_KEY must be at least 32 bytes — anyone who "
+                    "guesses it can forge page state. Generate one with: "
+                    "python -c 'import secrets; print(secrets.token_hex(32))'"
+                )
             self._stateless_secret = secret.encode("utf-8")
 
             from pywire.runtime.stateless_handler import StatelessHandler

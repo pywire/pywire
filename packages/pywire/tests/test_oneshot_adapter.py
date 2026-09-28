@@ -15,7 +15,7 @@ from pywire.adapters.oneshot import OneShotASGIAdapter
 from pywire.runtime.app import PyWire
 
 FIXTURE_PAGES = Path(__file__).parent / "fixtures" / "stateless_app" / "pages"
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 
 
 @pytest.fixture()
@@ -105,7 +105,7 @@ def test_stateless_app_boots_without_pywire_parser(tmp_path):
         "import sys\n"
         "sys.modules['pywire_parser'] = None  # importing it raises ImportError\n"
         "from pywire.runtime.app import PyWire\n"
-        f"PyWire(pages_dir={str(tmp_path)!r}, stateless=True, secret_key='k')\n"
+        f"PyWire(pages_dir={str(tmp_path)!r}, stateless=True, secret_key='k' * 32)\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=60

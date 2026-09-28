@@ -13,7 +13,7 @@ from pywire.compiler.exceptions import PyWireSyntaxError
 from pywire.runtime.app import PyWire
 from pywire.runtime.loader import PageLoader
 
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 _MSGPACK = {"Content-Type": "application/x-msgpack"}
 
 READS_QUERY = """---

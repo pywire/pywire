@@ -137,7 +137,7 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         async def arrayBuffer(self):
             return Buffer(self._body)
 
-    env = types.SimpleNamespace(PYWIRE_SECRET_KEY="edge-test-secret")
+    env = types.SimpleNamespace(PYWIRE_SECRET_KEY="edge-test-secret-at-least-32-bytes")
 
     def fetch(*args, **kwargs):
         return asyncio.run(ns["on_fetch"](Request(*args, **kwargs), env))

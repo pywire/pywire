@@ -30,7 +30,11 @@ def test_gcp_functions_round_trips_stateless_snapshot(tmp_path: Path) -> None:
         "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
         '---\n<p id="seen">{seen}</p>\n'
     )
-    app = PyWire(pages_dir=str(pages), stateless=True, secret_key="gcp-test")
+    app = PyWire(
+        pages_dir=str(pages),
+        stateless=True,
+        secret_key="gcp-test-secret-at-least-32-bytes",
+    )
     mod = types.ModuleType("gcp_fixture_app")
     mod.app = app
     sys.modules[mod.__name__] = mod
@@ -89,7 +93,7 @@ def _make_app(root: Path, *, module_name: str, stateless: bool) -> None:
     (pages / "index.wire").write_text("---\ncount = wire(0)\n---\n<p>{count}</p>\n")
     (root / f"{module_name}.py").write_text(
         "from pywire import PyWire\n"
-        f"app = PyWire(pages_dir='pages', stateless={stateless!r}, secret_key='test')\n"
+        f"app = PyWire(pages_dir='pages', stateless={stateless!r}, secret_key='test' * 8)\n"
     )
     (root / "pyproject.toml").write_text("[project]\nname='test'\n")
 
@@ -198,7 +202,7 @@ def test_gcp_functions_build_produces_self_contained_deploy_dir(
         )
         (root / "gcp_isolated_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(

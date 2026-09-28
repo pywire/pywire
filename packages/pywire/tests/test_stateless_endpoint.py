@@ -17,7 +17,7 @@ from pywire.runtime.app import PyWire
 from pywire.runtime.page import BasePage
 
 FIXTURE_PAGES = Path(__file__).parent / "fixtures" / "stateless_app" / "pages"
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 
 _MSGPACK = {"Content-Type": "application/x-msgpack"}
 
@@ -64,10 +64,20 @@ def test_missing_secret_raises(monkeypatch):
         PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True)
 
 
+@pytest.mark.parametrize("secret", ["dev-only-insecure-fallback-key", "k" * 31])
+def test_short_secret_raises(monkeypatch, secret):
+    monkeypatch.delenv("PYWIRE_SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+        PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True, secret_key=secret)
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", secret)
+    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+        PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True)
+
+
 def test_secret_from_env(monkeypatch):
-    monkeypatch.setenv("PYWIRE_SECRET_KEY", "env-secret")
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "env-secret-at-least-32-bytes-long")
     app = PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True)
-    assert app._stateless_secret == b"env-secret"
+    assert app._stateless_secret == b"env-secret-at-least-32-bytes-long"
     assert app.state.stateless is True
 
 

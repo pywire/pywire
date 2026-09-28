@@ -17,7 +17,7 @@ Stateless mode replaces server-held page sessions with a signed client-carried s
 - Invalid signatures, corrupt data, and non-snapshot payloads fail with HTTP 400 before state mutation.
 - Handler dispatch uses a compile-time allowlist: the functions a template wires by name (`@click={save}`) plus the wrappers generated for expressions (`@click={charge(price)}`). A function reached only through an expression can't be called directly with arguments the client chose.
 - The endpoint only accepts `Content-Type: application/x-msgpack` from the same origin. Content types an HTML form can send are refused with HTTP 415, and requests the browser marks as cross-site with HTTP 403, so another site can't make a visitor's browser post a snapshot with their cookies.
-- Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. Never auto-generate or commit it.
+- Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. It must be at least 32 bytes; generate one with `python -c 'import secrets; print(secrets.token_hex(32))'`. Never auto-generate or commit it.
 - Snapshot integrity is not authorization. A bearer of a valid snapshot can replay its non-identity page state; authorization must still be enforced in handlers and request-derived identity.
 - Each snapshot is bound to the URL (path and query) it was rendered for. Posting it with any other path is rejected with HTTP 400.
 - `@before_load` and `@init` run on the page load that issues the snapshot, not on events. A check that must hold on every event belongs in the handler, or in `{$auth}` and `!auth`, which re-run on every request.

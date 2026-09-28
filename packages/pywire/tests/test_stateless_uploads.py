@@ -16,7 +16,7 @@ from pywire.runtime.app import PyWire
 from pywire.runtime.upload_manager import upload_manager
 
 FIXTURE_PAGES = Path(__file__).parent / "fixtures" / "stateless_app" / "pages"
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 
 _MSGPACK = {"Content-Type": "application/x-msgpack"}
 

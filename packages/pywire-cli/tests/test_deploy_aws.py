@@ -49,7 +49,7 @@ def _load_handler(tmp_path: Path) -> tuple[object, dict]:
     app = PyWire(
         pages_dir=str(pages),
         stateless=True,
-        secret_key="lambda-test-secret",
+        secret_key="lambda-test-secret-at-least-32-bytes",
     )
     module = types.ModuleType("lambda_fixture_app")
     module.app = app  # type: ignore[attr-defined]

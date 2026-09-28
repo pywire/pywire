@@ -32,7 +32,11 @@ def test_azure_function_app_round_trips_stateless_snapshot(tmp_path: Path) -> No
         "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
         '---\n<p id="seen">{seen}</p>\n'
     )
-    app = PyWire(pages_dir=str(pages), stateless=True, secret_key="azure-test")
+    app = PyWire(
+        pages_dir=str(pages),
+        stateless=True,
+        secret_key="azure-test-secret-at-least-32-bytes",
+    )
     mod = types.ModuleType("azure_fixture_app")
     mod.app = app
     sys.modules[mod.__name__] = mod
@@ -99,7 +103,7 @@ def test_azure_build_generates_deployable_artifact_set() -> None:
         (pages / "index.wire").write_text("<p>hello</p>\n")
         (root / "azure_build_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(
@@ -257,7 +261,7 @@ def test_azure_build_produces_self_contained_deploy_dir(tmp_path: Path) -> None:
         )
         (root / "azure_isolated_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(
