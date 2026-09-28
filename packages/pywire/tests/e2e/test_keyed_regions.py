@@ -78,3 +78,28 @@ def test_keyed_structural_append(page: Page, keyed_list_server: str):
     )
     expect(page.locator('[data-pw-region$="#1000"] .name')).to_have_text("new-row")
     expect(page.locator('[data-pw-region$="#1000"] li')).to_be_visible()
+
+
+@pytest.mark.parametrize("server", ["keyed_list_server", "stateless_server"])
+def test_keyed_rows_and_options_update_in_place(
+    page: Page, request: pytest.FixtureRequest, server: str
+):
+    """Keyed items that are <tr>s or <option>s carry their region themselves:
+    a wrapper <div> would be hoisted out of the table and dropped from the
+    <select> by the HTML parser, and row updates would go nowhere."""
+    page.goto(f"{request.getfixturevalue(server)}/keyed_table")
+    rows = page.locator("#t > tbody > tr[data-pw-region]")
+    expect(rows).to_have_count(5)
+    expect(page.locator("#s > option[data-pw-region]")).to_have_count(5)
+    assert page.locator("div[data-pw-region]").count() == 0
+
+    row3 = page.locator('#t tr[data-pw-region$="#3"]')
+    row3.locator(".toggle").click()
+    expect(row3.locator(".done")).to_have_text("True")
+    expect(page.locator('#t tr[data-pw-region$="#2"] .done')).to_have_text("False")
+
+    page.locator("#rename2").click()
+    expect(page.locator('#t tr[data-pw-region$="#2"] .name')).to_have_text("renamed-2")
+    expect(page.locator('#s option[data-pw-region$="#2"]')).to_have_text("renamed-2")
+    expect(rows).to_have_count(5)
+    expect(page.locator("#s > option")).to_have_count(5)

@@ -4,6 +4,21 @@
 import morphdom from 'morphdom'
 import { logger } from './logger'
 
+/** Elements the HTML parser only keeps inside a table or <select>. */
+const TABLE_CONTEXT_ELEMENTS = new Set([
+  'CAPTION',
+  'COL',
+  'COLGROUP',
+  'OPTGROUP',
+  'OPTION',
+  'TBODY',
+  'TD',
+  'TFOOT',
+  'TH',
+  'THEAD',
+  'TR',
+])
+
 // Alpine.js integration — if the user loads `@alpinejs/morph`, we hand Alpine
 // subtrees to `Alpine.morph` so reactive state survives server renders.
 // Without the plugin, morphdom strips Alpine's internal `_x_dataStack` and
@@ -413,6 +428,13 @@ export class DOMUpdater {
           const parsedDoc = parser.parseFromString(newContent, 'text/html')
           deferredScripts = this.extractScripts(parsedDoc)
           contentToMorph = parsedDoc.documentElement
+        } else if (!childrenOnly && TABLE_CONTEXT_ELEMENTS.has(target.nodeName)) {
+          // A keyed <tr>/<td>/<option> region: parsed inside a <div>, its HTML
+          // would lose those tags. A <template> parses them in any context.
+          const template = document.createElement('template')
+          template.innerHTML = newContent.trim()
+          deferredScripts = this.extractScripts(template.content)
+          contentToMorph = template.content.firstElementChild || template.content
         } else {
           const tempContainer = document.createElement(target.nodeName === 'BODY' ? 'body' : 'div')
           tempContainer.innerHTML = newContent.trim()

@@ -38,6 +38,8 @@ PyWire creates a keyed region for each iteration. Mutating one item re-renders a
 
 Keys must be stable and unique. Duplicate or churning keys cannot safely identify DOM regions.
 
+Each item's region normally sits on a wrapper `<div style="display: contents">`. Table rows, cells and `<option>`s can't be wrapped that way, because the HTML parser moves the `<div>` out of a table and drops it from a `<select>`. There the region goes on the item's own element instead, so a keyed loop in a table or `<select>` must render exactly one `<tr>`, `<td>` or `<option>` per item. Anything else is a compile error.
+
 ### v1 structural-change ceiling
 
 Append, remove, reorder, or fully reassign the collection falls back to a whole-loop render. This is intentional v1 behavior, not a per-row incremental update. For interactions that repeatedly insert or reorder, expect the larger payload until structural keyed regions ship.
