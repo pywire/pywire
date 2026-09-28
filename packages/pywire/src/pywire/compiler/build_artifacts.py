@@ -18,6 +18,7 @@ from pywire.compiler.ast_nodes import (
 )
 from pywire.compiler.codegen.generator import CodeGenerator
 from pywire.compiler.parser import PyWireParser
+from pywire.compiler.tier_gate import _resolve_wire_module
 
 
 @dataclass
@@ -227,6 +228,13 @@ class ArtifactBuilder:
                     dep_path = self._resolve_import_to_path(node, base_path)
                     if dep_path:
                         deps[str(dep_path)] = "component"
+                        continue
+                    # 'from components.Child import Child', probed from the
+                    # importing file's directory upwards like the runtime
+                    for found in _resolve_wire_module(
+                        node.module, node.level, base_path.parent
+                    ):
+                        deps[str(found.resolve())] = "component"
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         # Resolve 'import Button'
@@ -477,7 +485,9 @@ def generate_cf_bundle(
         dst_artifact = cf_bundle_dir / artifact_rel
 
         source = src_artifact.read_text(encoding="utf-8")
-        rewritten = _rewrite_artifact_for_cf(source, artifact_map, bundle_pkg)
+        rewritten = _rewrite_artifact_for_cf(
+            source, artifact_map, bundle_pkg, source_path=abs_path
+        )
         dst_artifact.write_text(rewritten, encoding="utf-8")
 
     # Generate __init__.py files for all directories
@@ -517,11 +527,16 @@ def _rewrite_artifact_for_cf(
     source: str,
     artifact_map: Dict[str, dict],
     bundle_pkg: str,
+    source_path: Optional[str] = None,
 ) -> str:
     """Rewrite a precompiled artifact for Cloudflare Workers.
 
     - Replaces load_layout('/abs/path', ...) with direct import from layout module
     - Replaces load_component('/abs/path', ...) with direct import from component module
+    - Replaces .wire component imports (``from components.Badge import
+      Badge``) with direct imports from the bundled component module; left
+      alone they go through the runtime import hook, which compiles the
+      .wire file and so needs pywire-parser
     - Clears __file_path__ assignments
     - Removes unused load_layout/load_component imports
     """
@@ -530,6 +545,15 @@ def _rewrite_artifact_for_cf(
     insertions = []  # (index, node) to insert
 
     for i, node in enumerate(tree.body):
+        if isinstance(node, ast.ImportFrom) and node.module and source_path:
+            replacement = _rewrite_wire_import(
+                node, Path(source_path).parent, artifact_map, bundle_pkg
+            )
+            if replacement:
+                removals.append(i)
+                insertions.extend((i, new_node) for new_node in replacement)
+                continue
+
         # Remove: from pywire.runtime.loader import load_layout
         if (
             isinstance(node, ast.ImportFrom)
@@ -617,6 +641,64 @@ def _rewrite_artifact_for_cf(
 
     ast.fix_missing_locations(tree)
     return ast.unparse(tree)
+
+
+def _rewrite_wire_import(
+    node: ast.ImportFrom,
+    base_dir: Path,
+    artifact_map: Dict[str, dict],
+    bundle_pkg: str,
+) -> Optional[List[ast.stmt]]:
+    """Point the .wire names of an import at their bundled artifacts.
+
+    Returns the replacement statements, or None when nothing in the import
+    is a bundled component. Names that aren't stay in the original import.
+    """
+    kept: List[ast.alias] = []
+    replacement: List[ast.stmt] = []
+    for alias in node.names:
+        info = _bundled_component(node, alias.name, base_dir, artifact_map)
+        if info is None:
+            kept.append(alias)
+            continue
+        replacement.append(
+            ast.ImportFrom(
+                module=f"{bundle_pkg}.{info['module_path']}",
+                names=[
+                    ast.alias(
+                        name=info["class_name"], asname=alias.asname or alias.name
+                    )
+                ],
+                level=0,
+            )
+        )
+    if not replacement:
+        return None
+    if kept:
+        replacement.insert(
+            0, ast.ImportFrom(module=node.module, names=kept, level=node.level)
+        )
+    for statement in replacement:
+        ast.fix_missing_locations(statement)
+    return replacement
+
+
+def _bundled_component(
+    node: ast.ImportFrom, name: str, base_dir: Path, artifact_map: Dict[str, dict]
+) -> Optional[dict]:
+    """The bundled component an imported name refers to, if any.
+
+    The import hook exposes a component's class as the file stem in
+    PascalCase (same rule as PyWireLoader.exec_module) and as
+    __page_class__, so only those names are rewritten.
+    """
+    for path in _resolve_wire_module(node.module or "", node.level, base_dir):
+        stem = path.stem.replace("-", "_").split("_")
+        if name in ("".join(p.capitalize() for p in stem), "__page_class__"):
+            info = artifact_map.get(str(path.resolve()))
+            if info:
+                return info
+    return None
 
 
 def _generate_routes_module(
