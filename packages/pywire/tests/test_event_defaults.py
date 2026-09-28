@@ -23,7 +23,9 @@ def _app(tmp_path, **kwargs) -> PyWire:
 
 
 def test_defaults_reach_the_page_meta(tmp_path):
-    app = _app(tmp_path, event_defaults={"input": "debounce.400ms", "keyup": "immediate"})
+    app = _app(
+        tmp_path, event_defaults={"input": "debounce.400ms", "keyup": "immediate"}
+    )
     with TestClient(app) as client:
         meta = _meta(client.get("/").text)
     assert meta["event_defaults"] == {"input": "debounce.400ms", "keyup": "immediate"}
