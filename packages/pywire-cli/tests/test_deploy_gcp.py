@@ -22,7 +22,7 @@ def test_gcp_functions_round_trips_stateless_snapshot(tmp_path: Path) -> None:
     pages = tmp_path / "pages"
     pages.mkdir()
     (pages / "index.wire").write_text(
-        "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment()}>+</button>\n"
+        "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment}>+</button>\n"
     )
     app = PyWire(pages_dir=str(pages), stateless=True, secret_key="gcp-test")
     mod = types.ModuleType("gcp_fixture_app")
@@ -176,7 +176,7 @@ def test_gcp_functions_build_produces_self_contained_deploy_dir(
         pages = root / "pages"
         pages.mkdir()
         (pages / "index.wire").write_text(
-            "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment()}>+</button>\n"
+            "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment}>+</button>\n"
         )
         (root / "gcp_isolated_app.py").write_text(
             "from pywire import PyWire\n"

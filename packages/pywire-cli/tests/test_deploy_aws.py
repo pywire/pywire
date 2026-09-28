@@ -35,7 +35,7 @@ def _load_handler(tmp_path: Path) -> tuple[object, dict]:
         "def increment():\n"
         "    count.value += 1\n"
         "---\n"
-        '<p id="count">{count}</p><button @click={increment()}>+</button>\n'
+        '<p id="count">{count}</p><button @click={increment}>+</button>\n'
     )
     app = PyWire(
         pages_dir=str(pages),
