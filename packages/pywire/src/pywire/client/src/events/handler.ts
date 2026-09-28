@@ -2,7 +2,7 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
-import { beginSubmit, isBoundForm, releaseForms } from './forms'
+import { beginSubmit, isBoundForm, releaseForms, submitterField } from './forms'
 import { applyOptimistic, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
 import { checkFiles, UploadError, Uploader, UploadRef } from './uploads'
@@ -707,7 +707,7 @@ export class UnifiedEventHandler {
       if (isOptimistic(modifiers)) {
         applyOptimistic(element, modifiers)
       }
-      await this.app.httpFormSubmit(element, handler)
+      await this.app.httpFormSubmit(element, handler, (e as SubmitEvent).submitter)
       return
     }
 
@@ -821,6 +821,8 @@ export class UnifiedEventHandler {
       if (isBoundForm(element) && !beginSubmit(element)) return
 
       const data = this.formFields(element)
+      const pressed = submitterField((e as SubmitEvent).submitter)
+      if (pressed) data[pressed[0]] = pressed[1]
       const inputs = this.uploadInputs(element).filter((input) => input.files?.length)
       if (inputs.length) {
         // Apply the optimistic prediction (and its double-submit guard)

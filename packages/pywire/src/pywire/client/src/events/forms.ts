@@ -10,6 +10,17 @@ const SUBMITTING = 'data-pw-submitting'
 
 const submitting = new Set<HTMLFormElement>()
 
+/** The name and value of the button that submitted a form, if it has a name. */
+export function submitterField(submitter: HTMLElement | null | undefined): [string, string] | null {
+  if (
+    (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
+    submitter.name
+  ) {
+    return [submitter.name, submitter.value]
+  }
+  return null
+}
+
 export function isBoundForm(el: Element): el is HTMLFormElement {
   return el instanceof HTMLFormElement && el.hasAttribute('data-pw-form')
 }

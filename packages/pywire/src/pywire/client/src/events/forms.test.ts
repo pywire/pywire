@@ -103,6 +103,19 @@ describe('bound forms', () => {
     expect(sent().filter(([, d]) => d.type === 'submit')).toHaveLength(2)
   })
 
+  it('sends the button that submitted, as a browser post would', () => {
+    const add = document.createElement('button')
+    add.type = 'submit'
+    add.name = '__pywire_action'
+    add.value = 'add:items'
+    $('signup').appendChild(add)
+    const event = new Event('submit', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'submitter', { value: add })
+    $('signup').dispatchEvent(event)
+    const submits = sent().filter(([, d]) => d.type === 'submit')
+    expect(submits[0][1].formData).toMatchObject({ __pywire_action: 'add:items' })
+  })
+
   it('focuses the first invalid field once the answer is in', () => {
     $('signup').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     $('name').setAttribute('aria-invalid', 'true')

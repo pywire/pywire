@@ -34,7 +34,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, ValidationE
 from pywire.core.wire import WirePrimitive
 from pywire.forms.errors import FieldError, Messages, error_path, map_error
 from pywire.forms.schema import FieldSpec, Option, root_spec
-from pywire.forms.shape import Flat, normalize, shape
+from pywire.forms.shape import MAX_ROWS, Flat, normalize, shape
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,10 @@ M = TypeVar("M", bound=BaseModel)
 T = TypeVar("T")
 
 Path = Tuple[Union[str, int], ...]
+
+# A submit button's name for form actions that aren't a submit: adding or
+# removing a list row ("add:items", "remove:items.2"), a wizard's "back".
+ACTION = "__pywire_action"
 
 # Names on Form itself. A model field with one of these names is still
 # reachable as ``form.fields.<name>`` or ``form["<name>"]``.
@@ -77,6 +81,8 @@ FIELD_MEMBERS = frozenset(
         "errors",
         "attrs",
         "fields",
+        "add_button",
+        "remove_button",
     }
 )
 
@@ -293,6 +299,24 @@ class BoundField(Generic[T]):
             tag = "select"
         return self._pw_render_attrs(tag, {}, None)
 
+    @property
+    def add_button(self) -> Dict[str, Any]:
+        """Attributes for a button that adds a row to this list field.
+
+        ``<button {**signup.items.add_button}>Add item</button>``: a submit
+        button, so what the user typed is kept, with or without JavaScript.
+        """
+        if self._spec.kind != "list":
+            raise TypeError(f"{self.html_name!r} is not a list field")
+        return _action_button(f"add:{self.html_name}")
+
+    @property
+    def remove_button(self) -> Dict[str, Any]:
+        """Attributes for a button that removes this row from its list."""
+        if not self._path or not isinstance(self._path[-1], int):
+            raise TypeError(f"{self.html_name!r} is not a list row")
+        return _action_button(f"remove:{self.html_name}")
+
     # -- nesting -----------------------------------------------------------
 
     def __getattr__(self, key: str) -> "BoundField[Any]":
@@ -384,6 +408,8 @@ class Form(Generic[M]):
         # before the form is submitted.
         self._touched: set[str] = set()
         self._owned: set[str] = set()
+        # Row counts from add/remove buttons, by list HTML name.
+        self._rows: Dict[str, int] = {}
         self._focus_claimed = False
         self._cache: Dict[Path, BoundField[Any]] = {}
         self._adapters: Dict[int, TypeAdapter[Any]] = {}
@@ -505,6 +531,7 @@ class Form(Generic[M]):
         self._value = None
         self._submitted = False
         self._touched = set()
+        self._rows = {}
         self._touch()
 
     # -- snapshot hooks (session_serializer) --------------------------------
@@ -519,6 +546,7 @@ class Form(Generic[M]):
             "submitted": self._submitted,
             "touched": sorted(self._touched),
             "owned": sorted(self._owned),
+            "rows": dict(self._rows),
         }
 
     def __pw_restore__(self, state: Mapping[str, Any]) -> None:
@@ -556,6 +584,12 @@ class Form(Generic[M]):
             if isinstance(owned, list)
             else set()
         )
+        rows = state.get("rows")
+        self._rows = {
+            str(k): v
+            for k, v in (rows if isinstance(rows, Mapping) else {}).items()
+            if isinstance(v, int) and 0 <= v <= MAX_ROWS
+        }
         self._touch()
 
     # -- the pipeline ------------------------------------------------------
@@ -568,7 +602,11 @@ class Form(Generic[M]):
         """
         form_data = _event_value(event, "formData")
         flat = normalize(form_data if isinstance(form_data, Mapping) else {})
+        action = _pop_action(flat)
         self._capture(flat)
+        if action is not None:
+            self._apply_action(action)
+            return
         data = shape(self._spec, self._with_owned(flat))
         if _event_value(event, "type") == "validate":
             self._validate_live(data, _event_value(event, "field"))
@@ -598,6 +636,44 @@ class Form(Generic[M]):
         self._validate(data)
         self._value = value  # .value is the last *submitted* valid model
         self._touch()
+
+    def _apply_action(self, action: str) -> None:
+        """Add or remove a list row, keeping what the user typed."""
+        verb, _, name = action.partition(":")
+        if verb == "add":
+            path = self._list_path(name)
+            if path is None:
+                return
+            spec = self._spec_at(path)
+            count = self._row_count(path, spec)
+            if count < min(spec.max_items or MAX_ROWS, MAX_ROWS):
+                self._rows[name] = count + 1
+        elif verb == "remove":
+            list_name, _, index = name.rpartition(".")
+            path = self._list_path(list_name)
+            if path is None or not index.isdigit():
+                return
+            count = self._row_count(path, self._spec_at(path))
+            row = int(index)
+            if row >= count:
+                return
+            html = _shift_rows(list_name + ".", row)
+            self._raw = {
+                new: v for k, v in self._raw.items() if (new := html(k)) is not None
+            }
+            key = _shift_rows(self._path_key(path) + ".", row)
+            self._errors = {
+                new: v for k, v in self._errors.items() if (new := key(k)) is not None
+            }
+            self._touched = {new for t in self._touched if (new := key(t)) is not None}
+            self._rows[list_name] = count - 1
+        self._touch()
+
+    def _list_path(self, name: str) -> Optional[Path]:
+        path, spec = self._lookup(name)
+        if spec is None and path and self._spec_at(path).kind == "list":
+            return path
+        return None
 
     def _shown(self, key: str) -> bool:
         """Errors show after a submit, or for fields the user has been through."""
@@ -842,7 +918,9 @@ class Form(Generic[M]):
         from_raw = max(rows) + 1 if rows else 0
         initial = self._initial_value(path)
         from_initial = len(initial) if isinstance(initial, (list, tuple)) else 0
-        return from_raw if self._has_raw else max(from_raw, from_initial)
+        count = from_raw if self._has_raw else max(from_raw, from_initial)
+        # A row whose inputs send nothing (unticked boxes) still counts.
+        return max(count, self._rows.get(name, 0))
 
 
 def _event_value(event: Any, key: str) -> Any:
@@ -853,6 +931,40 @@ def _event_value(event: Any, key: str) -> Any:
     if isinstance(raw, Mapping):
         return raw.get(key)
     return None
+
+
+def _action_button(value: str) -> Dict[str, Any]:
+    return {
+        "type": "submit",
+        "name": ACTION,
+        "value": value,
+        "formnovalidate": True,
+    }
+
+
+def _pop_action(flat: Flat) -> Optional[str]:
+    values = flat.pop(ACTION, None)
+    last = values[-1] if values else None
+    return last if isinstance(last, str) else None
+
+
+def _shift_rows(prefix: str, removed: int) -> Callable[[str], Optional[str]]:
+    """Rename keys under ``prefix`` as if row ``removed`` were deleted."""
+
+    def shift(key: str) -> Optional[str]:
+        if not key.startswith(prefix):
+            return key
+        head, dot, rest = key[len(prefix) :].partition(".")
+        if not head.isdigit():
+            return key
+        row = int(head)
+        if row == removed:
+            return None
+        if row < removed:
+            return key
+        return f"{prefix}{row - 1}{dot}{rest}"
+
+    return shift
 
 
 def _mark_invalid(page: Any) -> None:

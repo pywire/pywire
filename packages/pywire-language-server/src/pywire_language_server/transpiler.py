@@ -73,6 +73,8 @@ FIELD_MEMBERS = frozenset(
         "errors",
         "attrs",
         "fields",
+        "add_button",
+        "remove_button",
     }
 )
 _CHAIN_STEP = re.compile(r"\.([A-Za-z_]\w*)|\[\s*(\d+)\s*\]|\[[^\[\]]*\]")

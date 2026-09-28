@@ -12,7 +12,7 @@ import {
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
-import { releaseForms, settleForms } from '../events/forms'
+import { releaseForms, settleForms, submitterField } from '../events/forms'
 import { clearPending, revertPending } from '../events/pending'
 import { clearPollInFlight } from '../events/poll'
 import { RefManager } from './ref-manager'
@@ -545,8 +545,15 @@ export class PyWireApp {
    * Non-interactive-mode equivalent of `sendEvent` for `@submit` handlers —
    * avoids the browser POST-reload "confirm resubmission" UX.
    */
-  public async httpFormSubmit(form: HTMLFormElement, handlerName: string): Promise<void> {
+  public async httpFormSubmit(
+    form: HTMLFormElement,
+    handlerName: string,
+    submitter: HTMLElement | null = null
+  ): Promise<void> {
     const fd = new FormData(form)
+    // The button that submitted, as a browser's own POST would send it.
+    const pressed = submitterField(submitter)
+    if (pressed) fd.append(pressed[0], pressed[1])
     const path = window.location.pathname + window.location.search
     try {
       const response = await fetch(path, {
