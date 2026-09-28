@@ -105,7 +105,7 @@ describe('StatelessTransport', () => {
     fetchMock.mockResolvedValueOnce(
       msgpackRes(200, { type: 'update', regions: [], snapshot: 'SNAP_V2' })
     )
-    fetchMock.mockResolvedValueOnce(msgpackRes(400, { error: 'invalid snapshot' }))
+    fetchMock.mockResolvedValueOnce(msgpackRes(400, { error: 'invalid handler' }))
     transport.send({ ...eventMsg(), id: 7 })
     transport.send({ ...eventMsg(), id: 8 })
 
@@ -118,14 +118,26 @@ describe('StatelessTransport', () => {
   })
 
   it('(d) HTTP 400 msgpack {error} → {type:"error", error} notified', async () => {
-    fetchMock.mockResolvedValueOnce(msgpackRes(400, { error: 'invalid snapshot' }))
+    fetchMock.mockResolvedValueOnce(msgpackRes(400, { error: 'invalid handler' }))
     transport.send(eventMsg())
 
     await vi.waitFor(() => {
       const err = messages.find((m) => m.type === 'error')
       expect(err).toBeDefined()
-      expect(err?.error).toBe('invalid snapshot')
+      expect(err?.error).toBe('invalid handler')
     })
+  })
+
+  it.each([
+    ['a rejected snapshot', msgpackRes(400, { error: 'invalid snapshot' })],
+    ['an oversized snapshot', msgpackRes(413, { error: 'snapshot too large' })],
+    ['a proxy 413 page', res(413, '<html>Request Entity Too Large</html>')],
+  ])('reloads for a fresh snapshot after %s', async (_label, response) => {
+    fetchMock.mockResolvedValueOnce(response)
+    transport.send(eventMsg())
+
+    await vi.waitFor(() => expect(messages.some((m) => m.type === 'reload')).toBe(true))
+    expect(messages.some((m) => m.type === 'error')).toBe(false)
   })
 
   it('network failure → error notified, transport stays connected', async () => {
