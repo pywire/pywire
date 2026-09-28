@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.6](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.5...pywire-language-server-v0.7.6) (2026-09-28)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump pywire floor to 0.15.1 ([#342](https://github.com/pywire/pywire/issues/342)) ([129d8b4](https://github.com/pywire/pywire/commit/129d8b4764b09b03df09f9ce4b37a49eabeead37))
+
 ## [0.7.5](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.4...pywire-language-server-v0.7.5) (2026-09-27)
 
 
