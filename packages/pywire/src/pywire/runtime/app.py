@@ -1703,12 +1703,13 @@ class PyWire:
             and response.media_type == "text/html"
         ):
             from pywire.runtime.page import _find_tag_outside_raw_text
-            from pywire.runtime.snapshot_codec import encode_snapshot
+            from pywire.runtime.snapshot_codec import encode_snapshot, snapshot_route
 
             body = cast(bytes, response.body).decode("utf-8")
             blob = encode_snapshot(
                 page,
                 secret=self._stateless_secret,
+                route=snapshot_route(request.url.path, request.url.query),
                 warn_size=self.session_warn_size,
             )
             tag = f'<script id="_pywire_snapshot" type="text/plain">{blob}</script>'

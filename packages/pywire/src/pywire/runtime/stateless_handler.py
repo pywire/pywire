@@ -9,6 +9,7 @@ compile-time ``__event_handlers__`` allowlist), then re-snapshotted.
 
 import logging
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import msgpack
 from starlette.requests import Request
@@ -22,6 +23,7 @@ from pywire.runtime.snapshot_codec import (
     SnapshotError,
     decode_snapshot,
     encode_snapshot,
+    snapshot_route,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,15 @@ class StatelessHandler:
         path = data.get("path", "/")
         if not isinstance(path, str):
             return self._err(400, "invalid path")
+        # The snapshot only rebuilds the page it was rendered for. Replayed
+        # against another path or query, it would run that page's handlers
+        # with @before_load/@init skipped (they don't re-run on events),
+        # bypassing any authorization they perform.
+        parts = urlsplit(path)
+        route = snapshot_route(parts.path, parts.query)
+        if snapshot.get("route") != route:
+            logger.warning("stateless: snapshot not issued for %r", path)
+            return self._err(400, "invalid snapshot")
         event_data = data.get("data", {})
         if not isinstance(event_data, dict):
             return self._err(400, "invalid data")
@@ -125,6 +136,7 @@ class StatelessHandler:
         payload["snapshot"] = encode_snapshot(
             page,
             secret=self.app._stateless_secret,
+            route=route,
             warn_size=self.app.session_warn_size,
         )
         return self._msg(payload)

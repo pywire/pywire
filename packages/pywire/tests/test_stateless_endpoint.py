@@ -1,6 +1,8 @@
 """Stateless (client-held state) mode: config, snapshot embedding, POST endpoint."""
 
 import base64
+import hashlib
+import hmac
 import zlib
 import json
 from pathlib import Path
@@ -47,6 +49,12 @@ def _post(client, blob: str, path: str = "/", handler: str = "increment", data=N
 
 def _error(r) -> str:
     return msgpack.unpackb(r.content, raw=False)["error"]
+
+
+def _sign(snapshot: dict) -> str:
+    body = zlib.compress(msgpack.packb(snapshot))
+    sig = hmac.new(SECRET.encode(), body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(sig + body).decode("ascii")
 
 
 def test_missing_secret_raises(monkeypatch):
@@ -125,10 +133,76 @@ def test_user_never_restored_from_client(client):
 
 
 def test_unknown_path_404(client):
-    blob = _blob(client.get("/").text)
+    blob = _sign({"attrs": {}, "route": "/nope"})
     r = _post(client, blob, path="/nope")
     assert r.status_code == 404
     assert _error(r) == "no route"
+
+
+def test_snapshot_bound_to_its_path(client):
+    # A snapshot rendered for "/" must not rebuild "/boom": that page's
+    # @before_load/@init hooks never run on events, so a transplanted
+    # snapshot would reach its handlers without their checks.
+    blob = _blob(client.get("/").text)
+    r = _post(client, blob, path="/boom", handler="explode")
+    assert r.status_code == 400
+    assert _error(r) == "invalid snapshot"
+
+
+def test_snapshot_bound_to_its_query(client):
+    blob = _blob(client.get("/?tab=a").text)
+    assert _post(client, blob, path="/?tab=b").status_code == 400
+    r = _post(client, blob, path="/?tab=a")
+    assert r.status_code == 200
+    # The next snapshot stays bound to the same URL.
+    nxt = msgpack.unpackb(r.content, raw=False)["snapshot"]
+    assert _post(client, nxt, path="/?tab=a").status_code == 200
+    assert _post(client, nxt, path="/").status_code == 400
+
+
+def test_unsigned_route_rejected(client):
+    # Pre-binding snapshots (no route) are refused like any foreign blob.
+    blob = _sign({"attrs": {}})
+    r = _post(client, blob, path="/")
+    assert r.status_code == 400
+    assert _error(r) == "invalid snapshot"
+
+
+BEFORE_LOAD_GUARD = """---
+result = wire("")
+
+@before_load
+def authorize():
+    if org_id != "1":
+        raise PermissionError("not a member of this org")
+
+def rename():
+    result.value = f"renamed org {org_id}"
+---
+<p id="r">{result}</p><button @click={rename()}>rename</button>
+"""
+
+
+def test_transplant_cannot_skip_before_load(tmp_path):
+    pages = tmp_path / "pages"
+    (pages / "orgs").mkdir(parents=True)
+    (pages / "orgs" / "[org_id].wire").write_text(BEFORE_LOAD_GUARD)
+    (pages / "index.wire").write_text("<p>home</p>")
+    app = PyWire(pages_dir=str(pages), stateless=True, secret_key=SECRET)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        assert c.get("/orgs/2").status_code == 500  # @before_load refuses
+
+        for source in ("/", "/orgs/1"):
+            blob = _blob(c.get(source).text)
+            r = _post(c, blob, path="/orgs/2", handler="rename")
+            assert r.status_code == 400, source
+            assert _error(r) == "invalid snapshot"
+
+        blob = _blob(c.get("/orgs/1").text)
+        r = _post(c, blob, path="/orgs/1", handler="rename")
+        assert r.status_code == 200
+        html = "".join(reg["html"] for reg in msgpack.unpackb(r.content)["regions"])
+        assert "renamed org 1" in html
 
 
 def test_non_string_path_400(client):
@@ -166,7 +240,7 @@ def test_non_ascii_path_resolves_cleanly(client):
     # Deterministic outcome: router patterns are ASCII, so "/caf\u00e9" matches
     # no route and resolve_page returns None *before* the raw_path
     # ascii-encoding is reached \u2014 a clean 404, never a UnicodeEncodeError 500.
-    blob = _blob(client.get("/").text)
+    blob = _sign({"attrs": {}, "route": "/caf\u00e9"})
     r = _post(client, blob, path="/caf\u00e9")
     assert r.status_code == 404
     assert _error(r) == "no route"

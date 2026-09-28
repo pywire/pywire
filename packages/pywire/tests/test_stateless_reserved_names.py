@@ -61,6 +61,7 @@ def test_signed_snapshot_cannot_overwrite_request_query(tmp_path) -> None:
             "attrs": {"seen": "", "query": {"q": "forged"}, "_region_cache": {}},
             "wire_tags": {"seen": "primitive"},
             "page_class": "IndexPage",
+            "route": "/?q=real",
         }
         forged = _sign(snapshot)
         assert forged != blob.split("</script>")[0]
