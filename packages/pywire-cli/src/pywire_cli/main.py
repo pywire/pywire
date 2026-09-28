@@ -531,7 +531,7 @@ def build(
         from pywire_cli.deploy import (
             generate_aws_lambda_handler,
             generate_aws_lambda_readme,
-            generate_aws_lambda_requirements,
+            generate_faas_requirements,
         )
 
         aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
@@ -548,7 +548,7 @@ def build(
             generate_aws_lambda_handler(Path.cwd(), app or "src.main:app")
         )
         (aws_dir / "requirements.txt").write_text(
-            generate_aws_lambda_requirements(Path.cwd())
+            generate_faas_requirements(Path.cwd(), "aws")
         )
         (aws_dir / "README.md").write_text(
             generate_aws_lambda_readme(Path.cwd(), Path.cwd().name)
@@ -561,7 +561,10 @@ def build(
             "  2. Follow [cyan]README.md[/] to package and deploy to AWS Lambda"
         )
     elif platform == "azure-functions":
-        from pywire_cli.deploy import generate_azure_function_app
+        from pywire_cli.deploy import (
+            generate_azure_function_app,
+            generate_faas_requirements,
+        )
         from pywire_templates import render_deploy_template
 
         target = Path.cwd() / ".pywire" / "deploy" / "azure"
@@ -578,18 +581,20 @@ def build(
         (target / "function_app.py").write_text(
             generate_azure_function_app(Path.cwd(), app or "src.main:app")
         )
-        for name in (
-            "host.json",
-            "local.settings.json",
-            "requirements.txt",
-        ):
+        for name in ("host.json", "local.settings.json"):
             (target / name).write_text(render_deploy_template(f"azure/{name}.j2"))
+        (target / "requirements.txt").write_text(
+            generate_faas_requirements(Path.cwd(), "azure")
+        )
         (target / "README.md").write_text(
             render_deploy_template("azure/README.md.j2", function_name=Path.cwd().name)
         )
         console.print("✅ Generated [cyan].pywire/deploy/azure/[/] for Azure Functions")
     elif platform == "gcp-functions":
-        from pywire_cli.deploy import generate_gcp_functions_main
+        from pywire_cli.deploy import (
+            generate_faas_requirements,
+            generate_gcp_functions_main,
+        )
         from pywire_templates import render_deploy_template
 
         if (app or "src.main:app").split(":", 1)[0].split(".")[0] == "main":
@@ -613,7 +618,7 @@ def build(
             generate_gcp_functions_main(Path.cwd(), app or "src.main:app")
         )
         (target / "requirements.txt").write_text(
-            render_deploy_template("gcp_functions/requirements.txt.j2")
+            generate_faas_requirements(Path.cwd(), "gcp_functions")
         )
         (target / "README.md").write_text(
             render_deploy_template(
@@ -1042,7 +1047,7 @@ def deploy(
         from pywire_cli.deploy import (
             generate_aws_lambda_handler,
             generate_aws_lambda_readme,
-            generate_aws_lambda_requirements,
+            generate_faas_requirements,
         )
 
         aws_dir = Path.cwd() / ".pywire" / "deploy" / "aws"
@@ -1059,7 +1064,7 @@ def deploy(
             generate_aws_lambda_handler(project_root, app or "src.main:app")
         )
         (aws_dir / "requirements.txt").write_text(
-            generate_aws_lambda_requirements(project_root)
+            generate_faas_requirements(project_root, "aws")
         )
         (aws_dir / "README.md").write_text(
             generate_aws_lambda_readme(project_root, project_name)

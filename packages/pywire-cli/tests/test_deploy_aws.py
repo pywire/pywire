@@ -9,8 +9,11 @@ from unittest.mock import patch
 
 import jinja2
 import msgpack
+import pytest
+import pywire
 from pywire import PyWire
 
+from pywire_cli.deploy import generate_faas_requirements
 from pywire_cli.main import _install_aws_dependencies
 
 TEMPLATES = (
@@ -94,8 +97,31 @@ def test_readme_packages_from_aws_deploy_directory() -> None:
     assert "aws lambda add-permission" in readme
 
 
-def test_requirements_pin_oneshot_release() -> None:
-    assert _render("requirements.txt.j2").strip() == "pywire>=0.15.0"
+@pytest.mark.parametrize(
+    ("target", "platform_dep"),
+    [
+        ("aws", None),
+        ("azure", "azure-functions"),
+        ("gcp_functions", "functions-framework"),
+    ],
+)
+def test_requirements_pin_building_pywire_and_keep_app_deps(
+    tmp_path: Path, target: str, platform_dep: str | None
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\n"
+        "dependencies = ['pywire[cli]>=0.15', 'httpx>=0.27', 'PyWire_Auth>=0.3']\n"
+    )
+    lines = generate_faas_requirements(tmp_path, target).split()
+    # The prebuilt pages call into the pywire that compiled them, so the
+    # app's own looser pywire requirement is replaced, not added.
+    expected = [f"pywire=={pywire.__version__}", "httpx>=0.27", "PyWire_Auth>=0.3"]
+    assert lines == ([platform_dep] if platform_dep else []) + expected
+
+
+def test_requirements_without_pyproject(tmp_path: Path) -> None:
+    lines = generate_faas_requirements(tmp_path, "aws").split()
+    assert lines == [f"pywire=={pywire.__version__}"]
 
 
 def test_uv_vendoring_targets_lambda_runtime(tmp_path: Path) -> None:
