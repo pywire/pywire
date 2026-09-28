@@ -8,23 +8,32 @@
  * is guarded against double-submit.
  *
  * Tracking is PER ELEMENT (one shared list would let the first arriving
- * response clobber the predictions of controls still in flight):
+ * response clobber the predictions of controls still in flight), and each
+ * prediction is bound to the id of the event it sent. Replies to an event
+ * echo that id as `ack`; events are answered in order, so an ack settles
+ * every prediction with an id up to it:
  * - Success (`clearPending`, called after the morph): flush entries whose
  *   marker is gone — the morph reconciled them and the server HTML owns their
- *   classes. Entries still carrying a marker belong to requests whose response
- *   has NOT arrived; they stay tracked and guarded.
- * - Error (`revertPending`): revert entries still carrying a marker — in the
- *   transports' queue models the error corresponds to the outstanding
- *   requests. No morph arrives, so we undo the classes we added and re-enable
- *   any control we disabled. A control is never left stuck.
+ *   classes. An answered entry the morph never reached (its region didn't
+ *   re-render) is reverted: the server HTML for it didn't change. Other
+ *   entries belong to requests still in flight; they stay tracked and guarded.
+ * - Error (`revertPending`): revert answered entries, or every entry when the
+ *   error names no event. No morph arrives, so we undo the classes we added
+ *   and re-enable any control we disabled. A control is never left stuck.
  */
 
 const PENDING = 'data-pw-pending'
 const PENDING_DISABLED = 'data-pw-pending-disabled'
 const CLASS_PREFIX = 'optimistic-class-'
 
-/** Predicted classes for every element still awaiting its response. */
-const predictions = new Map<HTMLElement, string[]>()
+interface Prediction {
+  classes: string[]
+  /** Id of the event sent for this prediction; null until it is sent. */
+  eventId: number | null
+}
+
+/** Predictions for every element still awaiting its response. */
+const predictions = new Map<HTMLElement, Prediction>()
 
 /** True when modifiers request optimistic behavior (bare token or any class token). */
 export function isOptimistic(modifiers: string[]): boolean {
@@ -58,14 +67,20 @@ export function applyOptimistic(el: HTMLElement, modifiers: string[]): void {
     ;(el as HTMLButtonElement).disabled = true
   }
 
-  predictions.set(el, classes)
+  predictions.set(el, { classes, eventId: null })
+}
+
+/** Bind `el`'s prediction to the event just sent for it. */
+export function bindPending(el: HTMLElement, eventId: number): void {
+  const prediction = predictions.get(el)
+  if (prediction) prediction.eventId = eventId
 }
 
 /** Undo one element's prediction: classes, marker, and the disable we added. */
 export function revertElement(el: HTMLElement): void {
-  const classes = predictions.get(el)
-  if (classes === undefined) return
-  for (const c of classes) el.classList.remove(c)
+  const prediction = predictions.get(el)
+  if (prediction === undefined) return
+  for (const c of prediction.classes) el.classList.remove(c)
   el.removeAttribute(PENDING)
   if (el.hasAttribute(PENDING_DISABLED)) {
     el.removeAttribute(PENDING_DISABLED)
@@ -79,24 +94,32 @@ function reconciled(el: HTMLElement): boolean {
   return !el.isConnected || !el.hasAttribute(PENDING)
 }
 
+/** True when the reply acknowledging event `ack` also answers `prediction`. */
+function answered(prediction: Prediction, ack: number | undefined): boolean {
+  return ack !== undefined && prediction.eventId !== null && prediction.eventId <= ack
+}
+
 /**
  * On a successful update (after the morph has been applied): drop entries the
- * morph reconciled; entries still marked are in-flight requests whose response
- * hasn't arrived yet — leave them tracked and guarded.
+ * morph reconciled and revert answered ones it never reached; entries still
+ * marked are in-flight requests — leave them tracked and guarded. `ack` is the
+ * id of the event this update answers (absent for server pushes).
  */
-export function clearPending(): void {
-  for (const el of predictions.keys()) {
+export function clearPending(ack?: number): void {
+  for (const [el, prediction] of predictions) {
     if (reconciled(el)) predictions.delete(el)
+    else if (answered(prediction, ack)) revertElement(el)
   }
 }
 
 /**
- * On an error response: revert every element still awaiting its response (no
- * morph is coming for those), and drop already-reconciled entries.
+ * On an error response: revert every element whose event failed (no morph is
+ * coming for those), and drop already-reconciled entries. Without an `ack`
+ * the failed request is unknown, so every pending element is reverted.
  */
-export function revertPending(): void {
-  for (const el of predictions.keys()) {
+export function revertPending(ack?: number): void {
+  for (const [el, prediction] of predictions) {
     if (reconciled(el)) predictions.delete(el)
-    else revertElement(el)
+    else if (ack === undefined || answered(prediction, ack)) revertElement(el)
   }
 }

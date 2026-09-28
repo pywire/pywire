@@ -22,19 +22,15 @@ and the "Poll — background jobs" section below.)
 ```sh
 cd examples/demo-edge-stateless
 uv sync
+export PYWIRE_SECRET_KEY=$(openssl rand -hex 32)
 uv run pywire dev
 ```
 
 Open the printed URL (typically <https://localhost:3000> — the dev server
 auto-generates a local mkcert certificate, so it's HTTPS).
 
-The page state is HMAC-signed with `PYWIRE_SECRET_KEY` if set; otherwise
-`src/main.py` falls back to a clearly-marked dev-only key. Set the env var
-for anything beyond local poking:
-
-```sh
-PYWIRE_SECRET_KEY=$(openssl rand -hex 32) uv run pywire dev
-```
+The page state is HMAC-signed with `PYWIRE_SECRET_KEY`, which must be at
+least 32 bytes. The app refuses to start without it.
 
 ## What changed
 

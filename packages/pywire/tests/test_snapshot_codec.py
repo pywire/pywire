@@ -4,6 +4,7 @@ from pywire import wire
 from pywire.runtime.snapshot_codec import (
     encode_snapshot,
     decode_snapshot,
+    snapshot_route,
     SnapshotError,
 )
 
@@ -27,17 +28,31 @@ def make_page():
 
 
 def test_round_trip():
-    blob = encode_snapshot(make_page(), secret=SECRET)
+    blob = encode_snapshot(make_page(), secret=SECRET, route="/")
     assert decode_snapshot(blob, secret=SECRET)["attrs"]["count"] == 7
 
 
+def test_route_is_signed_into_snapshot():
+    blob = encode_snapshot(make_page(), secret=SECRET, route="/orgs/1?tab=a")
+    assert decode_snapshot(blob, secret=SECRET)["route"] == "/orgs/1?tab=a"
+
+
+def test_snapshot_route_canonical_form():
+    # Browsers send percent-encoded paths; servers see them decoded.
+    assert snapshot_route("/users/j%C3%B6rg") == snapshot_route("/users/j\u00f6rg")
+    assert snapshot_route("/a", "x=1") == "/a?x=1"
+    assert snapshot_route("/a", "") == "/a"
+
+
 def test_user_never_in_snapshot():
-    snap = decode_snapshot(encode_snapshot(make_page(), secret=SECRET), secret=SECRET)
+    snap = decode_snapshot(
+        encode_snapshot(make_page(), secret=SECRET, route="/"), secret=SECRET
+    )
     assert "user" not in snap
 
 
 def test_tampered_snapshot_rejected():
-    blob = encode_snapshot(make_page(), secret=SECRET)
+    blob = encode_snapshot(make_page(), secret=SECRET, route="/")
     raw = bytearray(base64.urlsafe_b64decode(blob))
     raw[-1] ^= 0xFF
     with pytest.raises(SnapshotError):
@@ -45,7 +60,7 @@ def test_tampered_snapshot_rejected():
 
 
 def test_wrong_secret_rejected():
-    blob = encode_snapshot(make_page(), secret=SECRET)
+    blob = encode_snapshot(make_page(), secret=SECRET, route="/")
     with pytest.raises(SnapshotError):
         decode_snapshot(blob, secret=b"other-secret")
 
@@ -59,7 +74,7 @@ def test_garbage_rejected():
 def test_large_state_round_trips():
     p = make_page()
     p.big = wire([{"row": i, "name": f"item-{i}"} for i in range(5000)])
-    blob = encode_snapshot(p, secret=SECRET, warn_size=1024)
+    blob = encode_snapshot(p, secret=SECRET, route="/", warn_size=1024)
     assert len(decode_snapshot(blob, secret=SECRET)["attrs"]["big"]) == 5000
 
 
@@ -70,7 +85,7 @@ def test_snapshot_is_compressed():
 
     p = make_page()
     p.rows = wire([{"name": f"item-{i}", "done": False} for i in range(1000)])
-    blob = encode_snapshot(p, secret=SECRET)
+    blob = encode_snapshot(p, secret=SECRET, route="/")
     raw = msgpack.packb(snapshot_page_state(p))
 
     assert len(blob) * 5 < len(raw)

@@ -7,7 +7,8 @@ project root, copy it into place and deploy:
 cp .pywire/deploy/gcp_cloudrun/Dockerfile ./Dockerfile
 gcloud run deploy {{ project_name }} \
   --source . \
-  --region us-central1
+  --region us-central1 \
+  --port 8000
 ```
 
 For WebSocket/session-affinity mode add `--session-affinity`; stateless mode does not need it.
@@ -24,6 +25,7 @@ command (never commit it):
 gcloud run deploy {{ project_name }} \
   --source . \
   --region us-central1 \
+  --port 8000 \
   --set-env-vars PYWIRE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 

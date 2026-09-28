@@ -24,48 +24,41 @@ def test_azure_function_app_round_trips_stateless_snapshot(tmp_path: Path) -> No
     pages = tmp_path / "pages"
     pages.mkdir()
     (pages / "index.wire").write_text(
-        "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment()}>+</button>\n"
+        "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment}>+</button>\n"
     )
-    app = PyWire(pages_dir=str(pages), stateless=True, secret_key="azure-test")
+    (pages / "cookies.wire").write_text(
+        "---\nseen = wire('')\n\n@init\ndef load():\n"
+        "    seen.value = self.request.cookies.get('hello', 'none')\n"
+        "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
+        '---\n<p id="seen">{seen}</p>\n'
+    )
+    app = PyWire(
+        pages_dir=str(pages),
+        stateless=True,
+        secret_key="azure-test-secret-at-least-32-bytes",
+    )
     mod = types.ModuleType("azure_fixture_app")
     mod.app = app
     sys.modules[mod.__name__] = mod
     sys.modules["_routes"] = types.ModuleType("_routes")
     azure = types.ModuleType("azure.functions")
 
-    class FunctionApp:
-        def route(self, **kwargs):
-            return lambda fn: fn
-
     class HttpRequest:
-        def __init__(self, method, url, body=b""):
+        def __init__(self, method, url, body=b"", cookie=""):
             self.method, self.url, self._body = method, url, body
+            self._cookie = cookie
 
         @property
         def headers(self):
-            return {"content-type": "application/x-msgpack"}
+            headers = {"content-type": "application/x-msgpack"}
+            if self._cookie:
+                headers["cookie"] = self._cookie
+            return headers
 
         def get_body(self):
             return self._body
 
-    class HttpResponse:
-        def __init__(self, body, status_code, headers=None, mimetype=None):
-            self.body, self.status_code, self.headers, self.mimetype = (
-                body,
-                status_code,
-                headers,
-                mimetype,
-            )
-
-    class HttpAuthLevel:
-        ANONYMOUS = "anonymous"
-
-    azure.FunctionApp, azure.HttpRequest, azure.HttpResponse, azure.HttpAuthLevel = (
-        FunctionApp,
-        HttpRequest,
-        HttpResponse,
-        HttpAuthLevel,
-    )
+    exec(compile(_AZURE_FUNCTIONS_STUB, "azure/functions.py", "exec"), azure.__dict__)
     sys.modules["azure"] = types.ModuleType("azure")
     sys.modules["azure.functions"] = azure
     source = (
@@ -91,6 +84,12 @@ def test_azure_function_app_round_trips_stateless_snapshot(tmp_path: Path) -> No
     assert post.status_code == 200 and "regions" in msgpack.unpackb(
         post.body, raw=False
     )
+    got = handler(
+        HttpRequest("GET", "https://example.test/cookies", cookie="hello=world")
+    )
+    assert got.status_code == 200 and ">world</p>" in got.body.decode()
+    cookies = got.headers.get_all("set-cookie")
+    assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
     for name in (mod.__name__, "azure", "azure.functions", "_routes"):
         sys.modules.pop(name, None)
 
@@ -104,7 +103,7 @@ def test_azure_build_generates_deployable_artifact_set() -> None:
         (pages / "index.wire").write_text("<p>hello</p>\n")
         (root / "azure_build_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(
@@ -129,18 +128,30 @@ def test_azure_build_generates_deployable_artifact_set() -> None:
             settings["Values"]["PYWIRE_SECRET_KEY"] == ""
         )  # never ship a known secret
         assert settings["Values"]["AzureWebJobsFeatureFlags"] == "EnableWorkerIndexing"
+        # Azure prefixes HTTP routes with /api unless routePrefix is cleared;
+        # pages must be served from the site root.
+        host = json.loads((target / "host.json").read_text())
+        assert host["extensions"]["http"]["routePrefix"] == ""
 
 
 _AZURE_FUNCTIONS_STUB = '''\
-"""Minimal azure.functions stub for the isolated-entrypoint test."""
+"""Minimal azure.functions stub, faithful to the names the worker checks."""
+
+import inspect
 
 
 class FunctionApp:
-    def route(self, **kwargs):
-        return lambda fn: fn
+    def route(self, route=None, trigger_arg_name="req", **kwargs):
+        def decorator(fn):
+            # The worker skips (silently) a function whose parameter isn't
+            # named trigger_arg_name.
+            assert trigger_arg_name in inspect.signature(fn).parameters
+            return fn
+
+        return decorator
 
 
-class HttpAuthLevel:
+class AuthLevel:
     ANONYMOUS = "anonymous"
 
 
@@ -148,11 +159,24 @@ class HttpRequest:
     pass
 
 
+class _Headers(list):
+    """Multi-value headers, like the werkzeug Headers the real class uses."""
+
+    def add(self, name, value):
+        self.append((name, value))
+
+    def get(self, name, default=None):
+        return next((v for k, v in self if k.lower() == name.lower()), default)
+
+    def get_all(self, name):
+        return [v for k, v in self if k.lower() == name.lower()]
+
+
 class HttpResponse:
-    def __init__(self, body, status_code=None, headers=None, mimetype=None):
+    def __init__(self, body=None, *, status_code=None, headers=None, mimetype=None, charset=None):
         self.body = body
         self.status_code = status_code
-        self.headers = headers
+        self.headers = _Headers((headers or {}).items())
         self.mimetype = mimetype
 '''
 
@@ -212,7 +236,7 @@ print(
             "get_status": get.status_code,
             "has_snapshot": bool(match),
             "post_status": post.status_code,
-            "post_content_type": (post.headers or {}).get("content-type"),
+            "post_content_type": post.headers.get("content-type"),
             "post_regions": "regions" in msgpack.unpackb(post.body, raw=False),
         }
     )
@@ -233,11 +257,11 @@ def test_azure_build_produces_self_contained_deploy_dir(tmp_path: Path) -> None:
         pages = root / "pages"
         pages.mkdir()
         (pages / "index.wire").write_text(
-            "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment()}>+</button>\n"
+            "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment}>+</button>\n"
         )
         (root / "azure_isolated_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test')\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(

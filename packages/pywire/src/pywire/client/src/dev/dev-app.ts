@@ -54,7 +54,7 @@ export class PyWireDevApp extends PyWireApp {
         }
         // This case returns without reaching core handleMessage, so revert the
         // optimistic prediction here too — never leave a control stuck disabled.
-        revertPending()
+        revertPending(msg.ack)
         return
 
       case 'console':

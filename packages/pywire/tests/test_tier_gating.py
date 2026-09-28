@@ -16,7 +16,7 @@ from pywire.compiler.build import build_project
 from pywire.compiler.tier_gate import set_stateless_tier
 from pywire.runtime.app import PyWire
 
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 
 AWAIT_PAGE = """---
 import asyncio
@@ -46,7 +46,7 @@ count = wire(0)
 async def bump():
     count.value += 1
 ---
-<p id="c">{count}</p><button @click={bump()}>+</button>
+<p id="c">{count}</p><button @click={bump}>+</button>
 """
 
 SLOW_COMPONENT = """---

@@ -8,8 +8,10 @@ import { clearPending, revertPending } from './pending'
 // by the morph when the response arrives (success → morph reconciles classes);
 // tracking is per element, so an error reverts only controls still pending.
 describe('UnifiedEventHandler — optimistic prediction', () => {
+  // Like PyWireApp.sendEvent: each event gets the next id, echoed as `ack`.
+  let lastEventId = 0
   const appMock = {
-    sendEvent: vi.fn(),
+    sendEvent: vi.fn((_handler: string, _data: unknown) => ++lastEventId),
     getConfig: vi.fn().mockReturnValue({ debug: false }),
   }
 
@@ -93,6 +95,51 @@ describe('UnifiedEventHandler — optimistic prediction', () => {
     reconcile(btn)
     clearPending()
     expect(btn.classList.contains('done')).toBe(true)
+  })
+
+  it('releases an answered control whose region the update never re-rendered', () => {
+    // e.g. a Save button whose handler only changes a status line elsewhere:
+    // the reply acks the event but the morph never reaches the button.
+    const btn = makeButton()
+    btn.click()
+    const id = appMock.sendEvent.mock.results[0].value as number
+
+    clearPending(id)
+
+    expect(btn.hasAttribute('data-pw-pending')).toBe(false)
+    expect(btn.disabled).toBe(false)
+    // The server HTML for the button didn't change, so neither does its class.
+    expect(btn.classList.contains('done')).toBe(false)
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps later events guarded when an earlier one is answered', () => {
+    const [b1, b2] = makeTwoButtons()
+    b1.click()
+    b2.click()
+    const [first] = appMock.sendEvent.mock.results.map((r) => r.value as number)
+
+    clearPending(first)
+    expect(b1.disabled).toBe(false)
+    expect(b2.hasAttribute('data-pw-pending')).toBe(true)
+    expect(b2.disabled).toBe(true)
+
+    revertPending(first) // a late error for the first event changes nothing
+    expect(b2.disabled).toBe(true)
+  })
+
+  it('an error for one event reverts only that event, not those queued behind it', () => {
+    const [b1, b2] = makeTwoButtons()
+    b1.click()
+    b2.click()
+    const [first] = appMock.sendEvent.mock.results.map((r) => r.value as number)
+
+    revertPending(first)
+    expect(b1.classList.contains('done')).toBe(false)
+    expect(b1.disabled).toBe(false)
+    expect(b2.classList.contains('done')).toBe(true)
+    expect(b2.disabled).toBe(true)
   })
 
   it('clears markers AND removes predicted classes on an error message', () => {

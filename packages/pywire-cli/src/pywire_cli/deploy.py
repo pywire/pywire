@@ -7,8 +7,11 @@ that feeds the right context variables to each template.
 
 from __future__ import annotations
 
+import re
+import tomllib
 from pathlib import Path
 
+from pywire import __version__ as pywire_version
 from pywire_templates import render_deploy_template
 
 
@@ -105,9 +108,33 @@ def generate_gcp_functions_main(
     )
 
 
-def generate_aws_lambda_requirements(project_root: Path) -> str:
-    """Generate runtime requirements for the AWS Lambda package."""
-    return render_deploy_template("aws/requirements.txt.j2")
+def _app_dependencies(project_root: Path) -> list[str]:
+    """The project's own runtime dependencies, minus pywire itself."""
+    pyproject = project_root / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+    with pyproject.open("rb") as f:
+        deps = tomllib.load(f).get("project", {}).get("dependencies", [])
+    kept = []
+    for dep in deps:
+        match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", dep.strip())
+        if match and re.sub(r"[-_.]+", "-", match.group()).lower() == "pywire":
+            continue
+        kept.append(dep.strip())
+    return kept
+
+
+def generate_faas_requirements(project_root: Path, target: str) -> str:
+    """Generate requirements.txt for a FaaS target (``aws``, ``azure``, ...).
+
+    Pins the pywire that compiled ``_pywire_build``: the prebuilt pages call
+    into its runtime, so a different release may not run them.
+    """
+    return render_deploy_template(
+        f"{target}/requirements.txt.j2",
+        pywire_version=pywire_version,
+        dependencies=_app_dependencies(project_root),
+    )
 
 
 def generate_aws_lambda_readme(project_root: Path, project_name: str) -> str:

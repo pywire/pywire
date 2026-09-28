@@ -5,6 +5,8 @@ description: Build and deploy PyWire stateless apps to Cloudflare, AWS, Azure, a
 
 Set `PyWire(stateless=True)` before building and provision `PYWIRE_SECRET_KEY` in the target environment. Except for Cloudflare edge, generated deployment READMEs under `.pywire/deploy/<platform>/` are the authoritative provider-specific instructions; regenerate them rather than hand-editing them.
 
+For AWS Lambda, Azure Functions and Google Cloud Functions, the generated `requirements.txt` pins the exact pywire version that built `_pywire_build/`, because the prebuilt pages only run on that release. It also lists the dependencies from your `pyproject.toml`. Add anything else the app needs there, then rebuild.
+
 ## Cloudflare edge Worker
 
 This target uses Python Workers/Pyodide and a plain Worker—no Durable Object. It is stateless-only. The build writes `wrangler.toml`, `entry.py`, and `_pywire_build/` to the project root and does not generate a deployment README.

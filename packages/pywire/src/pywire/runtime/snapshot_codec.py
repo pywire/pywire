@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import logging
 import zlib
+from urllib.parse import unquote
 
 import msgpack
 
@@ -29,11 +30,22 @@ class SnapshotError(Exception):
     """Raised when a client snapshot is corrupt, tampered, or foreign."""
 
 
-def encode_snapshot(page, *, secret: bytes, warn_size: int = 0) -> str:
-    """base64(HMAC-SHA256(body) + body), body = zlib(msgpack(snapshot))."""
+def snapshot_route(path: str, query: str = "") -> str:
+    """Canonical page URL a snapshot is bound to: decoded path + raw query."""
+    path = unquote(path)
+    return f"{path}?{query}" if query else path
+
+
+def encode_snapshot(page, *, secret: bytes, route: str, warn_size: int = 0) -> str:
+    """base64(HMAC-SHA256(body) + body), body = zlib(msgpack(snapshot)).
+
+    ``route`` (from ``snapshot_route``) is signed into the body so the
+    stateless endpoint only rebuilds the page the snapshot was rendered for.
+    """
     snap = snapshot_page_state(page)
     # Never trust the client with identity — re-resolved per request.
     snap.pop("user", None)
+    snap["route"] = route
     raw = msgpack.packb(snap)
     if warn_size > 0 and len(raw) > warn_size:
         logger.warning(

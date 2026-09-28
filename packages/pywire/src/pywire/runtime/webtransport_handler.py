@@ -9,6 +9,7 @@ import uuid
 from typing import Any, Dict, Set, cast
 
 from pywire.runtime.page import BasePage
+from pywire.runtime.protocol import event_ack, with_ack
 from pywire.runtime.session_serializer import restore_page_state
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,7 @@ class WebTransportHandler:
                 page = self.connection_pages[connection_id]
                 handler_name = data.get("handler")
                 event_data = data.get("data", {})
+                ack = event_ack(data)
 
                 try:
                     if handler_name and isinstance(handler_name, str):
@@ -130,7 +132,9 @@ class WebTransportHandler:
                     if hasattr(response, "body"):
                         html = cast(bytes, response.body).decode("utf-8")
                         response_data = {"type": "update", "html": html}
-                        await self._send_response(send, stream_id, response_data)
+                        await self._send_response(
+                            send, stream_id, with_ack(response_data, ack)
+                        )
 
                     # Persist session state
                     session_id = self.session_ids.get(connection_id)
@@ -138,9 +142,17 @@ class WebTransportHandler:
                         self.app.session_persister.schedule(session_id, page)
 
                 except Exception as e:
-                    # Send error response (no print - response is sufficient)
+                    # Like the WebSocket handler: the exception text can carry
+                    # internals (queries, paths), so only dev mode sends it.
+                    if getattr(self.app, "_is_dev_mode", False):
+                        error = str(e)
+                    else:
+                        logger.exception("WebTransport event failed")
+                        error = f"{type(e).__name__}: An error occurred"
                     await self._send_response(
-                        send, stream_id, {"type": "error", "error": str(e)}
+                        send,
+                        stream_id,
+                        with_ack({"type": "error", "error": error}, ack),
                     )
 
         elif msg_type == "init":

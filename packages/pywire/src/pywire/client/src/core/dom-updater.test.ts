@@ -356,6 +356,30 @@ describe('DOMUpdater', () => {
     querySpy.mockRestore()
   })
 
+  it('should never re-run the PyWire client bundle from a full-document update', async () => {
+    // Stateless SPA navigation morphs a full document that carries the client
+    // bundle at </body>; re-running it would boot a second app.
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
+
+    updater.update(
+      '<html><body><div id="app">Next</div>' +
+        '<script src="/_pywire/static/pywire.core.min.js?v=1"></script>' +
+        '<script src="/app.js"></script></body></html>'
+    )
+    // Non-async src scripts are appended through the sequenced load chain.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const srcs = appendSpy.mock.calls
+      .map((call) => call[0])
+      .filter((node): node is HTMLScriptElement => node instanceof HTMLScriptElement)
+      .map((node) => node.getAttribute('src'))
+    expect(srcs).not.toContain('/_pywire/static/pywire.core.min.js?v=1')
+    expect(srcs).toContain('/app.js')
+    appendSpy.mockRestore()
+  })
+
   it('should execute scripts with attributes', () => {
     const appendSpy = vi
       .spyOn(document.head, 'appendChild')
