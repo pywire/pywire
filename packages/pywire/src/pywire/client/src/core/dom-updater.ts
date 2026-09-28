@@ -317,6 +317,10 @@ export class DOMUpdater {
 
       const srcAttr = script.getAttribute('src')
       if (srcAttr) {
+        // The PyWire client is already running. A full-document update (the
+        // stateless transport's navigation GET) carries its bundle again, and
+        // re-running it boots a second app that sends every event twice.
+        if (srcAttr.includes('/_pywire/static/')) continue
         // Skip if a script with this src already exists in <head>.
         // Use getAttribute to compare the raw attribute value (not the resolved URL).
         const existing = document.head.querySelector(`script[src="${srcAttr}"]`)
