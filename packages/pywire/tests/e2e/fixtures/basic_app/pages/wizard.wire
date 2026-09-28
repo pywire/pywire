@@ -1,0 +1,29 @@
+---
+from pydantic import BaseModel, Field
+from pywire import wizard, wire
+
+class Account(BaseModel):
+    email: str = Field(min_length=3)
+
+class About(BaseModel):
+    name: str = Field(min_length=2)
+
+class Signup(BaseModel):
+    account: Account
+    about: About
+
+signup = wizard(Signup)
+done = wire("")
+
+def create(data: Signup):
+    done.value = f"{data.account.email}/{data.about.name}"
+---
+<form $bind={signup} @submit={create}>
+  <p id="step">{signup.step}</p>
+  <input $if={signup.step == "account"} $bind={signup.account.email}>
+  <input $if={signup.step == "about"} $bind={signup.about.name}>
+  <p id="err">{signup.about.name.error or ""}</p>
+  <button id="back" $if={not signup.on_first_step} {**signup.back_button}>Back</button>
+  <button id="next" type="submit">{"Create" if signup.on_last_step else "Next"}</button>
+</form>
+<p id="done">{done}</p>

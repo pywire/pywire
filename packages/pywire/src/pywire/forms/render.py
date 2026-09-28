@@ -318,10 +318,15 @@ def _has_files(spec: Any, depth: int = 0) -> bool:
     return False
 
 
-def handler_input(handler_name: str) -> str:
+def handler_input(form: Any, handler_name: str) -> str:
+    """Hidden inputs a bound form posts: its handler, and any form state.
+
+    ``form_attrs`` has already checked that ``form`` is a Form.
+    """
+    hidden = form._pw_hidden_inputs()
     return (
         '<input type="hidden" name="__pywire_handler" value="'
-        f'{escape_html(handler_name)}">'
+        f'{escape_html(handler_name)}">{hidden}'
     )
 
 

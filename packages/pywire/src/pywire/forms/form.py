@@ -61,6 +61,12 @@ FORM_MEMBERS = frozenset(
         "fields",
         "load",
         "reset",
+        # Wizard (pywire.forms.wizard)
+        "step",
+        "steps",
+        "on_first_step",
+        "on_last_step",
+        "back_button",
     }
 )
 # Names on BoundField. Same rule: a nested model's field with one of these
@@ -591,6 +597,10 @@ class Form(Generic[M]):
             if isinstance(v, int) and 0 <= v <= MAX_ROWS
         }
         self._touch()
+
+    def _pw_hidden_inputs(self) -> str:
+        """HTML for state the form posts back (see ``Wizard``)."""
+        return ""
 
     # -- the pipeline ------------------------------------------------------
 

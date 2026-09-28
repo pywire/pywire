@@ -5500,7 +5500,10 @@ class TemplateCodegen:
                                 ast.Call(
                                     func=ast.Name(id="handler_input", ctx=ast.Load()),
                                     args=[
-                                        self._prefixed_handler(bound_form_handler or "")
+                                        ast.Name(id=bind_var, ctx=ast.Load()),
+                                        self._prefixed_handler(
+                                            bound_form_handler or ""
+                                        ),
                                     ],
                                     keywords=[],
                                 )

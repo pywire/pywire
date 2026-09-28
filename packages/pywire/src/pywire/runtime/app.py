@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+import secrets
 import traceback
 import inspect
 import hashlib
@@ -389,10 +390,15 @@ class PyWire:
         from pywire.compiler.tier_gate import set_stateless_tier
 
         set_stateless_tier(stateless)
+        secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
+        # Signs state a page hands the browser to send back (wizard steps).
+        # Processes that serve the same pages must share it.
+        self.signing_secret: bytes = (
+            secret.encode("utf-8") if secret else secrets.token_bytes(32)
+        )
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
         if stateless:
-            secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
             if not secret:
                 raise RuntimeError(
                     "PyWire(stateless=True) requires secret_key= or the "
@@ -1832,8 +1838,6 @@ class PyWire:
             if getattr(page, "__has_uploads__", False) or getattr(
                 page, "_pw_has_uploads", False
             ):
-                import secrets
-
                 token = secrets.token_urlsafe(32)
                 self._store_upload_token(token, None, time.time())
                 # Token meta tag
