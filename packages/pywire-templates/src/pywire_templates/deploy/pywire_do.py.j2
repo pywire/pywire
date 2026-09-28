@@ -92,7 +92,9 @@ class PyWireSessionDO(DurableObject):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            _send(ws, _reply(msg, {"type": "error", "error": str(e)}))
+            # The exception text can carry internals; it stays in the log.
+            error = f"{type(e).__name__}: An error occurred"
+            _send(ws, _reply(msg, {"type": "error", "error": error}))
 
     async def on_webSocketClose(self, ws, code, reason, was_clean):
         if self.page:
