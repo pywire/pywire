@@ -1229,6 +1229,7 @@ class BasePage:
                 # Reconnect overlay config from PyWire app
                 reconnect_max_attempts = 10
                 reconnect_overlay_enabled = True
+                event_defaults: Dict[str, str] = {}
                 try:
                     pywire_app = self.request.app.state.pywire
                     _rma = getattr(pywire_app, "reconnect_max_attempts", 10)
@@ -1237,6 +1238,9 @@ class BasePage:
                     _roe = getattr(pywire_app, "reconnect_overlay", True)
                     if isinstance(_roe, bool):
                         reconnect_overlay_enabled = _roe
+                    _ed = getattr(pywire_app, "event_defaults", None)
+                    if isinstance(_ed, dict):
+                        event_defaults = _ed
                 except (AttributeError, KeyError):
                     pass
 
@@ -1282,6 +1286,7 @@ class BasePage:
                     "mount_path": root_path,
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
+                    "event_defaults": event_defaults,
                     "interactive": interactive_mode,
                     "stateless": stateless_mode,
                     # Per-page !no_interactive: WebSocket stays connected,

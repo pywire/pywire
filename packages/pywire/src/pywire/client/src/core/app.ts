@@ -36,6 +36,11 @@ export interface PyWireConfig extends TransportConfig {
    * subscriptions, and ref tracking are NOT wired up for the current page.
    */
   pageInteractive?: boolean
+  /**
+   * Per-event timing overrides from `PyWire(event_defaults=...)`, e.g.
+   * `{ input: 'debounce.400ms', scroll: 'throttle.50ms', keyup: 'immediate' }`.
+   */
+  eventDefaults?: Record<string, string>
 }
 
 const DEFAULT_CONFIG: PyWireConfig = {
@@ -259,6 +264,9 @@ export class PyWireApp {
         }
         if (meta.page_interactive !== undefined) {
           this.config.pageInteractive = !!meta.page_interactive
+        }
+        if (meta.event_defaults && typeof meta.event_defaults === 'object') {
+          this.config.eventDefaults = meta.event_defaults as Record<string, string>
         }
         // Stateless (client-held state) mode: branch to the fetch-based
         // transport BEFORE the WS/WebTransport/HTTP fallback order —

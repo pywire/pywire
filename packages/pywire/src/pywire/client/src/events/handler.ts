@@ -11,6 +11,31 @@ type Application = PyWireApp
 type UploadResult = { _upload_id: string }
 type FormDataValue = string | string[] | UploadResult | UploadResult[]
 
+type Timing = { kind: 'immediate' } | { kind: 'debounce' | 'throttle'; ms: number }
+
+/**
+ * Timing for events written without `.debounce`, `.throttle` or `.immediate`.
+ * `input` applies to text-like controls only; checkboxes, selects and the
+ * like send at once. `PyWire(event_defaults=...)` overrides entries.
+ */
+const DEFAULT_TIMING: Record<string, string> = {
+  input: 'debounce.250ms',
+  scroll: 'throttle.100ms',
+  wheel: 'throttle.100ms',
+  resize: 'throttle.100ms',
+  mousemove: 'throttle.100ms',
+  pointermove: 'throttle.100ms',
+  touchmove: 'throttle.100ms',
+  drag: 'throttle.100ms',
+}
+const TEXT_INPUT_TYPES = new Set(['text', 'email', 'search', 'url', 'tel', 'password', 'number'])
+
+function isTextLike(el: EventTarget | null): boolean {
+  if (el instanceof HTMLTextAreaElement) return true
+  if (el instanceof HTMLInputElement) return TEXT_INPUT_TYPES.has(el.type)
+  return el instanceof HTMLElement && el.isContentEditable
+}
+
 // Event base class metadata — serializable but useless noise on every Event.
 // These never change since they're the Event interface itself.
 const SKIP_EVENT_META = new Set([
@@ -28,8 +53,11 @@ const SKIP_EVENT_META = new Set([
 
 export class UnifiedEventHandler {
   private app: Application
-  private debouncers = new Map<string, number>()
-  private throttlers = new Map<string, number>()
+  // Pending debounced sends and throttle windows, keyed per element, event
+  // and handler. Both flush before any event that sends at once, in order,
+  // so a handler never reads state from before the user's last keystroke.
+  private debouncers = new Map<string, { timer: number; run: () => void }>()
+  private throttlers = new Map<string, { timer: number; trailing: (() => void) | null }>()
   private firedOnce = new Set<string>()
 
   private defaultEvents = ['click', 'submit', 'input', 'change']
@@ -318,6 +346,7 @@ export class UnifiedEventHandler {
         'once',
         'debounce',
         'throttle',
+        'immediate',
       ]
 
       // Key modifiers are anything that's not a system mod and is either a known key or a single character
@@ -389,45 +418,99 @@ export class UnifiedEventHandler {
       }
     }
 
-    // --- 3. Performance Modifiers ---
-    const debounceMod = modifiers.find((m) => m.startsWith('debounce'))
-    const throttleMod = modifiers.find((m) => m.startsWith('throttle'))
-
+    // --- 3. Timing: debounce, throttle, or send now ---
     const elementId = element.id || this.getUniqueId(element)
     const eventKey = `${elementId}-${eventType}-${handlerName}`
-
-    if (debounceMod) {
-      const duration = this.parseDuration(modifiers, 250)
-
-      if (this.debouncers.has(eventKey)) {
-        window.clearTimeout(this.debouncers.get(eventKey))
-      }
-
-      const timer = window.setTimeout(() => {
-        this.debouncers.delete(eventKey)
-        void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
-      }, duration)
-
-      this.debouncers.set(eventKey, timer)
-      return
-    }
-
-    if (throttleMod) {
-      const duration = this.parseDuration(modifiers, 250)
-      if (this.throttlers.has(eventKey)) return
-
-      this.throttlers.set(eventKey, Date.now())
-      // Execute immediately
+    const send = (): void => {
       void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
+    }
+    this.schedule(eventKey, this.timingFor(eventType, modifiers, e.target), send)
+  }
 
-      window.setTimeout(() => {
-        this.throttlers.delete(eventKey)
-      }, duration)
+  /**
+   * Run `send` now, after a debounce, or throttled (first and last event of
+   * each window). Anything sent now flushes pending debounced and trailing
+   * sends first, in the order they were queued.
+   */
+  schedule(key: string, timing: Timing, send: () => void): void {
+    if (timing.kind === 'debounce') {
+      const pending = this.debouncers.get(key)
+      if (pending) window.clearTimeout(pending.timer)
+      const timer = window.setTimeout(() => {
+        this.debouncers.delete(key)
+        send()
+      }, timing.ms)
+      // Re-insert so flush order follows the latest keystroke.
+      this.debouncers.delete(key)
+      this.debouncers.set(key, { timer, run: send })
       return
     }
 
-    // Direct dispatch
-    void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
+    if (timing.kind === 'throttle') {
+      const window_ = this.throttlers.get(key)
+      if (window_) {
+        window_.trailing = send
+        return
+      }
+      send()
+      this.openThrottleWindow(key, timing.ms)
+      return
+    }
+
+    this.flushPending()
+    send()
+  }
+
+  private openThrottleWindow(key: string, ms: number): void {
+    const state = { timer: 0, trailing: null as (() => void) | null }
+    state.timer = window.setTimeout(() => {
+      this.throttlers.delete(key)
+      const trailing = state.trailing
+      if (trailing) {
+        trailing()
+        this.openThrottleWindow(key, ms)
+      }
+    }, ms)
+    this.throttlers.set(key, state)
+  }
+
+  /** Send every pending debounced and trailing throttled event now. */
+  flushPending(): void {
+    const debounced = Array.from(this.debouncers.values())
+    this.debouncers.clear()
+    for (const pending of debounced) {
+      window.clearTimeout(pending.timer)
+      pending.run()
+    }
+    for (const state of this.throttlers.values()) {
+      const trailing = state.trailing
+      state.trailing = null
+      if (trailing) trailing()
+    }
+  }
+
+  private timingFor(eventType: string, modifiers: string[], target: EventTarget | null): Timing {
+    const explicit = this.timingFromModifiers(modifiers, 250)
+    if (explicit) return explicit
+    if (eventType === 'input' && target instanceof HTMLInputElement && target.type === 'range') {
+      return { kind: 'throttle', ms: 100 }
+    }
+    if (eventType === 'input' && !isTextLike(target)) return { kind: 'immediate' }
+    const configured = this.app.getConfig().eventDefaults?.[eventType]
+    const spec = configured ?? DEFAULT_TIMING[eventType]
+    if (!spec) return { kind: 'immediate' }
+    return this.timingFromModifiers(spec.split('.'), 100) ?? { kind: 'immediate' }
+  }
+
+  private timingFromModifiers(modifiers: string[], fallbackMs: number): Timing | null {
+    if (modifiers.includes('immediate')) return { kind: 'immediate' }
+    if (modifiers.some((m) => m.startsWith('debounce'))) {
+      return { kind: 'debounce', ms: this.parseDuration(modifiers, fallbackMs) }
+    }
+    if (modifiers.some((m) => m.startsWith('throttle'))) {
+      return { kind: 'throttle', ms: this.parseDuration(modifiers, fallbackMs) }
+    }
+    return null
   }
 
   /**

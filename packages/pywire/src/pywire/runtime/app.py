@@ -10,7 +10,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -101,6 +101,24 @@ async def _read_upload(upload: Any, limit: int) -> Any:
         size=total,
         content=b"".join(chunks),
     )
+
+
+_EVENT_TIMING = re.compile(r"immediate|(debounce|throttle)(\.\d+ms)?")
+
+
+def _check_event_defaults(defaults: Mapping[str, str]) -> Dict[str, str]:
+    """``{"input": "debounce.400ms", "scroll": "throttle.50ms"}``, checked."""
+    checked: Dict[str, str] = {}
+    for event, timing in defaults.items():
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", str(event)) or not (
+            isinstance(timing, str) and _EVENT_TIMING.fullmatch(timing)
+        ):
+            raise ValueError(
+                f"event_defaults[{event!r}] = {timing!r}: use 'immediate', "
+                "'debounce', 'debounce.300ms', 'throttle' or 'throttle.100ms'"
+            )
+        checked[str(event)] = timing
+    return checked
 
 
 def _form_handler_refusal(target: Any, name: str) -> Optional[str]:
@@ -212,6 +230,7 @@ class PyWire:
         ws_ping_timeout: int = 10,
         reconnect_max_attempts: int = 10,
         reconnect_overlay: bool = True,
+        event_defaults: Optional[Mapping[str, str]] = None,
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
         stateless: bool = False,
@@ -329,6 +348,7 @@ class PyWire:
         # Reconnection overlay config (passed to client via SPA metadata)
         self.reconnect_max_attempts = reconnect_max_attempts
         self.reconnect_overlay = reconnect_overlay
+        self.event_defaults = _check_event_defaults(event_defaults or {})
 
         # Reconnect template HTML/CSS — always populated (built-in default or
         # user's __reconnect__.wire override).  The server injects this as

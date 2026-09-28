@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UnifiedEventHandler } from './handler'
 import { PyWireApp } from '../core/app'
 
@@ -343,17 +343,89 @@ describe('UnifiedEventHandler', () => {
     btn.click()
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
 
-    // Second click quickly - ignored
+    // More clicks inside the window collapse into one trailing send
+    btn.click()
     btn.click()
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
 
-    // Wait for throttle (default 250ms)
+    // Window ends (default 250ms): the last click arrives
     vi.advanceTimersByTime(300)
-
-    // Third click - works again
-    btn.click()
     expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+
+    // Quiet window, then a click sends at once again
+    vi.advanceTimersByTime(300)
+    btn.click()
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(3)
     vi.useRealTimers()
+  })
+
+  describe('timing defaults', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    const fire = (el: Element, type: string): void => {
+      el.dispatchEvent(new Event(type, { bubbles: true }))
+    }
+
+    it('debounces @input on text inputs by default', () => {
+      document.body.innerHTML = '<input id="q" data-on-input="search">'
+      handler.init()
+      const q = document.getElementById('q')!
+      fire(q, 'input')
+      fire(q, 'input')
+      expect(appMock.sendEvent).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(260)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends @input from a checkbox at once', () => {
+      document.body.innerHTML = '<input id="c" type="checkbox" data-on-input="tick">'
+      handler.init()
+      fire(document.getElementById('c')!, 'input')
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('.immediate opts out of the default', () => {
+      document.body.innerHTML =
+        '<input id="q" data-on-input="search" data-modifiers-input="immediate">'
+      handler.init()
+      fire(document.getElementById('q')!, 'input')
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('flushes a pending debounced event before a click', () => {
+      document.body.innerHTML =
+        '<input id="q" data-on-input="search"><button id="b" data-on-click="save"></button>'
+      handler.init()
+      fire(document.getElementById('q')!, 'input')
+      ;(document.getElementById('b') as HTMLButtonElement).click()
+      expect(appMock.sendEvent.mock.calls.map((c) => c[0])).toEqual(['search', 'save'])
+      vi.advanceTimersByTime(500)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+    })
+
+    it('throttles scroll with a trailing send', () => {
+      document.body.innerHTML = '<div id="s" data-on-scroll="moved"></div>'
+      handler.init()
+      const s = document.getElementById('s')!
+      fire(s, 'scroll')
+      fire(s, 'scroll')
+      fire(s, 'scroll')
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(110)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+    })
+
+    it('uses PyWire(event_defaults=...) from the page config', () => {
+      appMock.getConfig.mockReturnValue({ eventDefaults: { input: 'debounce.500ms' } })
+      document.body.innerHTML = '<input id="q" data-on-input="search">'
+      handler.init()
+      fire(document.getElementById('q')!, 'input')
+      vi.advanceTimersByTime(300)
+      expect(appMock.sendEvent).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(250)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('should support system modifiers like .shift.ctrl', () => {
