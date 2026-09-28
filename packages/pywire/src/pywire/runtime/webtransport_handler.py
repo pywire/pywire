@@ -142,11 +142,17 @@ class WebTransportHandler:
                         self.app.session_persister.schedule(session_id, page)
 
                 except Exception as e:
-                    # Send error response (no print - response is sufficient)
+                    # Like the WebSocket handler: the exception text can carry
+                    # internals (queries, paths), so only dev mode sends it.
+                    if getattr(self.app, "_is_dev_mode", False):
+                        error = str(e)
+                    else:
+                        logger.exception("WebTransport event failed")
+                        error = f"{type(e).__name__}: An error occurred"
                     await self._send_response(
                         send,
                         stream_id,
-                        with_ack({"type": "error", "error": str(e)}, ack),
+                        with_ack({"type": "error", "error": error}, ack),
                     )
 
         elif msg_type == "init":
