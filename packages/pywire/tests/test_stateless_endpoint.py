@@ -180,7 +180,7 @@ def authorize():
 def rename():
     result.value = f"renamed org {org_id}"
 ---
-<p id="r">{result}</p><button @click={rename()}>rename</button>
+<p id="r">{result}</p><button @click={rename}>rename</button>
 """
 
 

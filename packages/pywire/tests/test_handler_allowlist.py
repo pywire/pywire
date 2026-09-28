@@ -38,9 +38,10 @@ def _page(tmp_path):
     return cls(request=Request(_SCOPE), params={}, query={}, path={"main": True})
 
 
-def test_allowlist_contains_user_handlers(tmp_path):
+def test_allowlist_is_what_the_template_wires(tmp_path):
+    # @click={increment()} wires the generated wrapper, not increment itself.
     allowed = type(_page(tmp_path)).__event_handlers__
-    assert allowed is not None and "increment" in allowed
+    assert allowed == frozenset({"_handler_0"})
 
 
 @pytest.mark.parametrize(
@@ -53,8 +54,39 @@ def test_dispatch_rejects_non_handlers(tmp_path, name):
 
 def test_dispatch_allows_listed_handler(tmp_path):
     page = _page(tmp_path)
-    asyncio.run(page._dispatch_handler("increment", {}))
+    asyncio.run(page._dispatch_handler("_handler_0", {}))
     assert page.count.value == 1
+
+
+LIFTED = """---
+balance = wire(100)
+price = 5
+
+def charge(amount):
+    balance.value -= amount
+
+def helper():
+    balance.value = 0
+---
+<p>{balance}</p>
+<button @click={charge(price)}>buy</button>
+<button @click={helper}>reset</button>
+"""
+
+
+def test_defs_reached_only_through_a_wrapper_are_not_callable(tmp_path):
+    """charge() is only reachable through its wrapper, which supplies the
+    amount server-side: a client must not call it with its own."""
+    f = tmp_path / "lifted.wire"
+    f.write_text(LIFTED)
+    cls = PageLoader().load(f, use_cache=False)
+    assert cls.__event_handlers__ == frozenset({"_handler_0", "helper"})
+    page = cls(request=Request(_SCOPE), params={}, query={}, path={"main": True})
+    with pytest.raises(ValueError, match="not a registered event handler"):
+        asyncio.run(page._dispatch_handler("charge", {"args": {"amount": -5000}}))
+    assert page.balance.value == 100
+    asyncio.run(page._dispatch_handler("_handler_0", {}))
+    assert page.balance.value == 95
 
 
 def test_dispatch_ignores_unknown_name(tmp_path):

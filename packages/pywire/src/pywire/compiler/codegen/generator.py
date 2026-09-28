@@ -563,29 +563,12 @@ class CodeGenerator:
         if parsed.python_ast:
             user_code_stmts = self._transform_user_code(parsed.python_ast, all_globals)
 
-        # Compile-time dispatch allowlist: frontmatter defs + generated
-        # ``_handler_N`` wrappers, minus framework-invoked defs (lifecycle
-        # hooks, @derived/@effect, @expose - reached via ComponentRef, never by
-        # client name) unless the template wires one directly as a handler.
-        # Anything else is refused by ``BasePage._dispatch_handler``.
-        # Must run after _transform_user_code, which collects the hooks.
-        framework_invoked = {
-            *self._collected_init_hooks,
-            *self._collected_mount_hooks,
-            *self._collected_unmount_hooks,
-            *self._collected_before_load_hooks,
-            *self._collected_before_update_hooks,
-            *self._collected_after_update_hooks,
-            *self._collected_error_hooks,
-            *self._collected_derived_hooks,
-            *self._collected_effect_hooks,
-            *self._collected_exposed_methods,
-        }
-        event_handlers = (
-            (set(known_methods) - framework_invoked)
-            | self._wired_handler_names
-            | {h.name for h in handlers}
-        )
+        # Compile-time dispatch allowlist: the defs the template wires by
+        # name (``@click={save}``) plus the generated ``_handler_N`` wrappers.
+        # A def only reached through a wrapper (``@click={charge(price)}``)
+        # stays off the list, so a client can't call it with its own
+        # arguments. Anything else is refused by ``BasePage._dispatch_handler``.
+        event_handlers = self._wired_handler_names | {h.name for h in handlers}
         class_body.append(
             ast.Assign(
                 targets=[ast.Name(id="__event_handlers__", ctx=ast.Store())],

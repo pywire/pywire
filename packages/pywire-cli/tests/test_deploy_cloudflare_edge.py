@@ -86,7 +86,7 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
     pages.mkdir()
     (pages / "index.wire").write_text(
         "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n"
-        "<p>{count}</p><button @click={increment()}>+</button>\n"
+        "<p>{count}</p><button @click={increment}>+</button>\n"
     )
     (pages / "cookies.wire").write_text(
         "---\nseen = wire('')\n\n@init\ndef load():\n"
