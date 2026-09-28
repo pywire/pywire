@@ -35,7 +35,6 @@ from pywire.core.wire import WirePrimitive
 from pywire.forms.errors import FieldError, Messages, error_path, map_error
 from pywire.forms.schema import FieldSpec, Option, root_spec
 from pywire.forms.shape import Flat, normalize, shape
-from pywire.runtime.files import FileUpload
 
 logger = logging.getLogger(__name__)
 
@@ -141,15 +140,6 @@ def _takes_arg(fn: Callable[..., Any]) -> bool:
         )
         for p in params
     )
-
-
-def _resolve_upload(value: Any) -> Optional[FileUpload]:
-    upload_id = value.get("_upload_id") if isinstance(value, Mapping) else None
-    if not isinstance(upload_id, str):
-        return None
-    from pywire.runtime.upload_manager import upload_manager
-
-    return upload_manager.get(upload_id)
 
 
 def _root_page(page: Any) -> Any:
@@ -579,7 +569,7 @@ class Form(Generic[M]):
         form_data = _event_value(event, "formData")
         flat = normalize(form_data if isinstance(form_data, Mapping) else {})
         self._capture(flat)
-        data = shape(self._spec, self._with_owned(flat), resolve_upload=_resolve_upload)
+        data = shape(self._spec, self._with_owned(flat))
         if _event_value(event, "type") == "validate":
             self._validate_live(data, _event_value(event, "field"))
             return

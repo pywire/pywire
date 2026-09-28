@@ -22,8 +22,9 @@ from pywire import __version__
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
-from pywire.runtime.upload_manager import upload_manager
+from pywire.runtime.uploads import Staging, part_chunks
 from pywire.runtime.websocket import WebSocketHandler
+from pywire.storage import FileStore, LocalStore
 
 logger = logging.getLogger(__name__)
 
@@ -75,32 +76,6 @@ def _is_cross_site(request: Request) -> bool:
     if forwarded:
         hosts.update(h.strip().lower() for h in forwarded.split(","))
     return netloc not in hosts
-
-
-async def _read_upload(upload: Any, limit: int) -> Any:
-    """A multipart file part as a FileUpload sized from the bytes read.
-
-    Returns None when the part is larger than ``limit``.
-    """
-    from pywire.runtime.files import FileUpload
-
-    chunks: List[bytes] = []
-    total = 0
-    while True:
-        chunk = await upload.read(1024 * 1024)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > limit:
-            return None
-        chunks.append(chunk)
-    return FileUpload(
-        filename=getattr(upload, "filename", None) or "",
-        content_type=getattr(upload, "content_type", None)
-        or "application/octet-stream",
-        size=total,
-        content=b"".join(chunks),
-    )
 
 
 _EVENT_TIMING = re.compile(r"immediate|(debounce|throttle)(\.\d+ms)?")
@@ -221,6 +196,7 @@ class PyWire:
         static_dir: Optional[str] = None,
         static_route: Optional[str] = None,
         max_upload_size: int = 10 * 1024 * 1024,
+        upload_store: Optional[FileStore] = None,
         upload_token_ttl_seconds: int = 600,
         middleware: Optional[List] = None,
         session_store: Optional[Any] = None,
@@ -453,8 +429,13 @@ class PyWire:
         self.upload_tokens: Set[str] = set()
         # Token metadata: token -> (bound_session_id, issued_ts)
         self._upload_token_meta: Dict[str, Tuple[Optional[str], float]] = {}
-        upload_manager.configure_storage(self._runtime_dir / "uploads")
-        upload_manager.max_upload_size = self.max_upload_size
+        # Where uploads wait for a handler. Several processes (workers,
+        # stateless instances) must share one store, e.g. an ObjectStore.
+        self.uploads = Staging(
+            upload_store
+            if upload_store is not None
+            else LocalStore(self._runtime_dir / "uploads")
+        )
 
         # Compile and register all pages
         self._load_pages()
@@ -888,38 +869,22 @@ class PyWire:
                     pass
 
             form = await request.form()
-            response_data: Dict[str, Any] = {}
-            upload_errors: Dict[str, str] = {}
-            items_iter = (
-                form.multi_items() if hasattr(form, "multi_items") else form.items()
-            )
-            for field_name, file in items_iter:
-                if not hasattr(file, "filename"):
+            response_data: Dict[str, List[str]] = {}
+            for field_name, file in form.multi_items():
+                if isinstance(file, str):
                     continue
-                from starlette.datastructures import UploadFile
-
-                try:
-                    upload_id = upload_manager.save(
-                        cast(UploadFile, file), max_size=self.max_upload_size
-                    )
-                except ValueError:
-                    upload_errors[field_name] = "Payload Too Large"
-                    continue
-
-                existing = response_data.get(field_name)
-                if existing is None:
-                    response_data[field_name] = upload_id
-                    continue
-                if isinstance(existing, list):
-                    existing.append(upload_id)
-                    continue
-                response_data[field_name] = [existing, upload_id]
-
-            logger.debug(f"Upload successful. Returning: {response_data}")
-            if upload_errors:
-                return JSONResponse(
-                    {"uploads": response_data, "errors": upload_errors}, status_code=400
+                upload_id = await self.uploads.stage(
+                    part_chunks(file),
+                    filename=file.filename or "",
+                    content_type=file.content_type or "application/octet-stream",
+                    limit=self.max_upload_size,
                 )
+                if upload_id is None:
+                    return JSONResponse(
+                        {"error": "Payload Too Large", "field": field_name},
+                        status_code=413,
+                    )
+                response_data.setdefault(field_name, []).append(upload_id)
             return JSONResponse(response_data)
         except Exception as e:
             logger.error(f"Upload failed: {e}", exc_info=True)
@@ -1953,11 +1918,19 @@ class PyWire:
                 if key == "__pywire_handler":
                     continue
                 if not isinstance(value, str):
-                    value = await _read_upload(value, self.max_upload_size)
-                    if value is None:
+                    if not value.filename:
+                        continue  # a file input with no file chosen
+                    upload_id = await self.uploads.stage(
+                        part_chunks(value),
+                        filename=value.filename,
+                        content_type=value.content_type or "application/octet-stream",
+                        limit=self.max_upload_size,
+                    )
+                    if upload_id is None:
                         return PlainTextResponse(
                             "PyWire: uploaded file too large", status_code=413
                         )
+                    value = {"_upload_id": upload_id}
                 fields.setdefault(str(key), []).append(value)
             # Same shape the JS client sends: repeated names become lists.
             payload = {k: v[0] if len(v) == 1 else v for k, v in fields.items()}

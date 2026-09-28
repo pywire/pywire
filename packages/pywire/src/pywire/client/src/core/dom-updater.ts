@@ -3,6 +3,7 @@
  */
 import morphdom from 'morphdom'
 import { logger } from './logger'
+import { isUploadState, keepUploadProgress } from '../events/uploads'
 
 // Alpine.js integration — if the user loads `@alpinejs/morph`, we hand Alpine
 // subtrees to `Alpine.morph` so reactive state survives server renders.
@@ -488,7 +489,7 @@ export class DOMUpdater {
                     }
                   }
                   for (const attr of Array.from(fromEl.attributes)) {
-                    if (!toEl.hasAttribute(attr.name)) {
+                    if (!toEl.hasAttribute(attr.name) && !isUploadState(fromEl, attr.name)) {
                       fromEl.removeAttribute(attr.name)
                     }
                   }
@@ -526,6 +527,11 @@ export class DOMUpdater {
                 ) {
                   toEl.selectedIndex = fromEl.selectedIndex
                 }
+              }
+
+              // An upload's progress bar keeps what the client drew.
+              if (fromEl instanceof HTMLProgressElement && toEl instanceof HTMLProgressElement) {
+                keepUploadProgress(fromEl, toEl)
               }
 
               // Preserve client-generated IDs (vital for debouncers/throttlers that key off ID)

@@ -5,12 +5,12 @@ import { logger } from '../core/logger'
 import { beginSubmit, isBoundForm, releaseForms } from './forms'
 import { applyOptimistic, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
+import { checkFiles, UploadError, Uploader, UploadRef } from './uploads'
 
 // Type alias for backward compatibility
 type Application = PyWireApp
 
-type UploadResult = { _upload_id: string }
-type FormDataValue = string | string[] | UploadResult | UploadResult[]
+type FormDataValue = string | string[] | UploadRef | UploadRef[]
 
 type Timing = { kind: 'immediate' } | { kind: 'debounce' | 'throttle'; ms: number }
 
@@ -62,6 +62,7 @@ export class UnifiedEventHandler {
   private firedOnce = new Set<string>()
   // Fields the user has typed in, per bound form: they validate on blur.
   private dirtyFields = new WeakMap<HTMLFormElement, Set<string>>()
+  private uploader: Uploader
 
   private defaultEvents = ['click', 'submit', 'input', 'change']
   private attachedEvents = new Set<string>()
@@ -73,6 +74,10 @@ export class UnifiedEventHandler {
 
   constructor(app: Application) {
     this.app = app
+    this.uploader = new Uploader(
+      () => `${this.app.mountPath || ''}/_pywire/upload`,
+      (input) => this.afterUpload(input)
+    )
   }
 
   private debugLog(...args: unknown[]): void {
@@ -193,14 +198,19 @@ export class UnifiedEventHandler {
 
     const eventType = e.type
 
-    // File inputs can retain a prior custom validity error unless we clear it
-    // immediately when the user re-selects a file, even without data-on-change.
+    // A file input in a pywire form uploads its files when they're picked.
+    // Either way a new pick clears the last pick's validity error.
     if (
       eventType === 'change' &&
       e.target instanceof HTMLInputElement &&
       e.target.type === 'file'
     ) {
-      e.target.setCustomValidity('')
+      const form = e.target.form
+      if (form && this.app.isInteractive !== false && this.uploadInputs(form).includes(e.target)) {
+        this.uploader.select(e.target)
+      } else {
+        e.target.setCustomValidity('')
+      }
     }
 
     // Skip focus/blur/mouseenter/mouseleave events during DOM updates to prevent loops
@@ -527,32 +537,75 @@ export class UnifiedEventHandler {
   }
 
   private sendValidate(form: HTMLFormElement, handler: string, field: string): void {
+    const inputs = this.uploadInputs(form)
     this.app.sendEvent(handler, {
       type: 'validate',
       id: form.id || undefined,
       tagName: form.tagName,
       args: {},
       field,
-      formData: this.formFields(form).data,
+      formData: {
+        ...this.formFields(form),
+        ...this.uploadRefs(inputs, (input) => this.uploader.uploaded(input)),
+      },
     })
   }
 
-  /** A form's fields as the server reads them: repeated names become lists. */
-  private formFields(form: HTMLFormElement): {
-    data: Record<string, FormDataValue>
-    files: FormData | null
-  } {
-    const data: Record<string, FormDataValue> = {}
-    const files = new FormData()
-    let hasFiles = false
-    new FormData(form).forEach((value, key) => {
-      if (value instanceof File) {
-        if (value.size > 0) {
-          files.append(key, value)
-          hasFiles = true
-        }
-        return
+  /** An upload finished: a live form checks the field now. */
+  private afterUpload(input: HTMLInputElement): void {
+    const form = input.form
+    if (!form || form.dataset.pwValidate !== 'blur') return
+    const handler = this.getHandlers(form, 'submit')[0]?.name
+    if (handler) this.sendValidate(form, handler, input.name)
+  }
+
+  /** A form's file inputs that pywire uploads (named, enabled, handled). */
+  private uploadInputs(form: HTMLFormElement): HTMLInputElement[] {
+    if (!this.getHandlers(form, 'submit').length) return []
+    return Array.from(form.elements).filter(
+      (el): el is HTMLInputElement =>
+        el instanceof HTMLInputElement && el.type === 'file' && !!el.name && !el.disabled
+    )
+  }
+
+  /** Upload references by field name: a list for `multiple` or repeated names. */
+  private uploadRefs(
+    inputs: HTMLInputElement[],
+    idsOf: (input: HTMLInputElement) => string[]
+  ): Record<string, UploadRef | UploadRef[]> {
+    const out: Record<string, UploadRef | UploadRef[]> = {}
+    for (const input of inputs) {
+      const refs = idsOf(input).map((id) => ({ _upload_id: id }))
+      if (!refs.length) continue
+      const existing = out[input.name]
+      if (existing === undefined && !input.multiple) {
+        out[input.name] = refs[0]
+      } else {
+        out[input.name] = [...(existing === undefined ? [] : [existing].flat()), ...refs]
       }
+    }
+    return out
+  }
+
+  /** Check picked files before a submit; false (and reported) when one can't go. */
+  private checkFileInputs(form: HTMLFormElement): boolean {
+    for (const input of this.uploadInputs(form)) {
+      input.setCustomValidity('')
+      const problem = checkFiles(input, Array.from(input.files ?? []))
+      if (problem) {
+        input.setCustomValidity(problem)
+        input.reportValidity()
+        return false
+      }
+    }
+    return true
+  }
+
+  /** A form's fields as the server reads them (files aside): repeated names become lists. */
+  private formFields(form: HTMLFormElement): Record<string, FormDataValue> {
+    const data: Record<string, FormDataValue> = {}
+    new FormData(form).forEach((value, key) => {
+      if (value instanceof File) return
       const strVal = value.toString()
       const existing = data[key]
       if (existing === undefined) {
@@ -563,7 +616,7 @@ export class UnifiedEventHandler {
         data[key] = [existing as string, strVal]
       }
     })
-    return { data, files: hasFiles ? files : null }
+    return data
   }
 
   private openThrottleWindow(key: string, ms: number): void {
@@ -646,9 +699,7 @@ export class UnifiedEventHandler {
       eventType === 'submit' &&
       element instanceof HTMLFormElement
     ) {
-      if (!this.validateFileInputs(element)) {
-        return
-      }
+      if (!this.checkFileInputs(element)) return
       if (isBoundForm(element) && !beginSubmit(element)) return
       // Apply the optimistic prediction (and its double-submit guard) before
       // the async POST. httpFormSubmit reconciles it: every failure mode
@@ -765,46 +816,38 @@ export class UnifiedEventHandler {
       eventType === 'submit' &&
       element instanceof HTMLFormElement
     ) {
-      if (!this.validateFileInputs(element)) {
-        return
-      }
+      if (!this.checkFileInputs(element)) return
       // A bound form waits for the server's answer before it submits again.
       if (isBoundForm(element) && !beginSubmit(element)) return
 
-      const { data, files: uploadFormData } = this.formFields(element)
-
-      if (uploadFormData) {
+      const data = this.formFields(element)
+      const inputs = this.uploadInputs(element).filter((input) => input.files?.length)
+      if (inputs.length) {
         // Apply the optimistic prediction (and its double-submit guard)
-        // synchronously, BEFORE the async upload starts — otherwise a slow
-        // upload leaves the control unguarded and a second click kicks off a
-        // second upload.
+        // before waiting on uploads, so a second click can't resubmit.
         if (isOptimistic(modifiers)) {
           applyOptimistic(element, modifiers)
         }
-        let uploadMap: Record<string, UploadResult | UploadResult[]>
         try {
-          uploadMap = await this.uploadFiles(uploadFormData, element)
+          const ids = new Map(
+            await Promise.all(
+              inputs.map(async (input) => [input, await this.uploader.ids(input)] as const)
+            )
+          )
+          Object.assign(
+            data,
+            this.uploadRefs(inputs, (input) => ids.get(input) ?? [])
+          )
         } catch (err) {
-          // No server error event will arrive for a failed upload — undo the
-          // prediction here so the control is never left stuck.
+          // No server answer will come for a failed upload: undo the
+          // prediction and release the form here.
           revertElement(element)
           releaseForms()
+          if (err instanceof UploadError) return // reported on the input
           throw err
-        }
-        for (const [field, uploadValue] of Object.entries(uploadMap)) {
-          data[field] = uploadValue
         }
       }
       eventData.formData = data
-
-      // Non-interactive (SSR) mode: form POST → fetch + morph instead of
-      // a browser POST, so reload doesn't surface the "confirm resubmission"
-      // dialog and the swap feels SPA-like. Treat missing flag as interactive
-      // (matches the server-side default and the existing mock-app pattern).
-      if (this.app.isInteractive === false) {
-        await this.app.httpFormSubmit(element, handler)
-        return
-      }
     }
 
     // Apply the optimistic prediction synchronously, immediately before send
@@ -814,136 +857,6 @@ export class UnifiedEventHandler {
     }
 
     this.app.sendEvent(handler, eventData)
-  }
-
-  private validateFileInputs(form: HTMLFormElement): boolean {
-    const fileInputs = form.querySelectorAll('input[type="file"]')
-    for (const input of fileInputs) {
-      if (!(input instanceof HTMLInputElement)) {
-        continue
-      }
-      if (input.dataset.pwFileInput === '1') {
-        continue
-      }
-
-      input.setCustomValidity('')
-      const files = input.files ? Array.from(input.files) : []
-
-      const maxFilesRaw = input.dataset.maxFiles
-      if (maxFilesRaw) {
-        const maxFiles = Number.parseInt(maxFilesRaw, 10)
-        if (!Number.isNaN(maxFiles) && maxFiles > 0 && files.length > maxFiles) {
-          input.setCustomValidity(`At most ${maxFiles} files are allowed`)
-          input.reportValidity()
-          return false
-        }
-      }
-
-      const minSizeRaw = input.dataset.minSize
-      const maxSizeRaw = input.dataset.maxSize
-      const minSize = minSizeRaw ? Number.parseInt(minSizeRaw, 10) : null
-      const maxSize = maxSizeRaw ? Number.parseInt(maxSizeRaw, 10) : null
-      if (
-        (minSize !== null && Number.isNaN(minSize)) ||
-        (maxSize !== null && Number.isNaN(maxSize))
-      ) {
-        continue
-      }
-
-      for (const file of files) {
-        if (minSize !== null && minSize > 0 && file.size < minSize) {
-          input.setCustomValidity(`File is too small (min ${minSize} bytes)`)
-          input.reportValidity()
-          return false
-        }
-        if (maxSize !== null && maxSize > 0 && file.size > maxSize) {
-          const sizeMb = maxSize / (1024 * 1024)
-          input.setCustomValidity(`File is too large (max ${sizeMb.toFixed(1)}MB)`)
-          input.reportValidity()
-          return false
-        }
-      }
-
-      const allowedNames = input.dataset.allowedNames
-      if (allowedNames) {
-        let allowedRegex: RegExp | null = null
-        try {
-          allowedRegex = new RegExp(allowedNames.replace(/\\\\/g, '\\'))
-        } catch {
-          allowedRegex = null
-        }
-
-        if (allowedRegex) {
-          for (const file of files) {
-            if (allowedRegex.test(file.name)) {
-              continue
-            }
-            input.setCustomValidity('Filename is not allowed')
-            input.reportValidity()
-            return false
-          }
-        }
-      }
-    }
-    return true
-  }
-
-  private async uploadFiles(
-    fileData: FormData,
-    form?: HTMLFormElement
-  ): Promise<Record<string, UploadResult | UploadResult[]>> {
-    const token = (
-      document.querySelector('meta[name="pywire-upload-token"]') as HTMLMetaElement | null
-    )?.content
-    if (!token) {
-      throw new Error('Missing upload token. File uploads are not enabled for this page.')
-    }
-
-    const headers: Record<string, string> = {
-      'X-Upload-Token': token,
-    }
-    const httpSession = (window as Window & { __PYWIRE_HTTP_SESSION?: string | null })
-      .__PYWIRE_HTTP_SESSION
-    if (typeof httpSession === 'string' && httpSession.length > 0) {
-      headers['X-PyWire-Session'] = httpSession
-    }
-
-    const uploadUrl = `${this.app.mountPath || ''}/_pywire/upload`
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers,
-      body: fileData,
-      credentials: 'same-origin',
-    })
-    const payload = (await response.json()) as Record<string, unknown>
-    if (!response.ok) {
-      const uploadError = payload?.error || 'File upload failed'
-      throw new Error(String(uploadError))
-    }
-
-    const uploadIds = (payload.uploads ?? payload) as Record<string, unknown>
-    const result: Record<string, UploadResult | UploadResult[]> = {}
-    const multipleFieldNames = new Set<string>()
-    if (form) {
-      form.querySelectorAll('input[type="file"][multiple][name]').forEach((input) => {
-        if (input instanceof HTMLInputElement && input.name) {
-          multipleFieldNames.add(input.name)
-        }
-      })
-    }
-    for (const [field, raw] of Object.entries(uploadIds)) {
-      const isMultipleField = multipleFieldNames.has(field)
-      if (Array.isArray(raw)) {
-        result[field] = raw.map((uploadId: unknown) => ({ _upload_id: String(uploadId) }))
-        continue
-      }
-      if (isMultipleField) {
-        result[field] = [{ _upload_id: String(raw) }]
-        continue
-      }
-      result[field] = { _upload_id: String(raw) }
-    }
-    return result
   }
 
   private parseDuration(modifiers: string[], defaultDuration: number): number {

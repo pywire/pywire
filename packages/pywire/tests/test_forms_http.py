@@ -12,28 +12,27 @@ from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import decode_snapshot
-from pywire.runtime.upload_manager import UploadManager
 
 SECRET = "forms-test-secret"
 
 PAGE = """---
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from pydantic import BaseModel, EmailStr, Field
 from pywire import form
-from pywire.runtime.files import FileUpload
+from pywire.forms import Upload, UploadField
 
 class Signup(BaseModel):
     email: EmailStr
     name: str = Field(min_length=2)
     tags: list[Literal["a", "b", "c"]] = []
     terms: Literal[True]
-    avatar: Optional[FileUpload] = None
+    avatar: Optional[Annotated[Upload, UploadField(max_size=500, accept="image/*")]] = None
 
 signup = form(Signup)
 done = wire("")
 
 async def create(data: Signup):
-    size = data.avatar.size if data.avatar else 0
+    size = len(await data.avatar.read()) if data.avatar else 0
     done.value = f"{data.email}|{data.tags}|{size}"
     if data.name == "Go":
         navigate("/thanks")
@@ -47,6 +46,7 @@ async def create(data: Signup):
   <input type="checkbox" value="b" $bind={signup.tags}>
   <input $bind={signup.terms}>
   <input $bind={signup.avatar}>
+  <p $if={signup.avatar.error}>FILE:{signup.avatar.error}</p>
 </form>
 """
 
@@ -133,6 +133,40 @@ def test_multipart_file_is_sized_from_bytes(client):
     assert "|100</p>" in r.text
 
 
+def test_upload_field_rules_render_and_apply(client):
+    html = client.get("/").text
+    avatar = re.search(r'<input[^>]*type="file"[^>]*>', html).group(0)
+    assert 'accept="image/*"' in avatar and 'data-pw-max-size="500"' in avatar
+
+    handler = _handler(client)
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": ("a.png", b"x" * 600, "image/png")},
+    )
+    assert r.status_code == 422
+    assert "FILE:Choose a file no larger than 500 B" in r.text
+
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": ("a.txt", b"x", "text/plain")},
+    )
+    assert r.status_code == 422
+    assert "FILE:Choose a file of type image/*" in r.text
+
+
+def test_no_file_chosen_is_no_file(client):
+    handler = _handler(client)
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": ("", b"", "application/octet-stream")},
+    )
+    assert r.status_code == 200
+    assert "|0</p>" in r.text
+
+
 def test_multipart_file_over_the_limit_is_413(client):
     handler = _handler(client)
     r = client.post(
@@ -204,12 +238,3 @@ def test_stateless_event_carries_form_state_in_the_snapshot():
             assert "ERR:" not in str(out["regions"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
-
-
-@pytest.mark.parametrize(
-    "upload_id", ["../../etc/passwd", "/etc/passwd", "abc", "", None, "0" * 36]
-)
-def test_upload_ids_must_be_canonical_uuids(tmp_path, upload_id):
-    manager = UploadManager(storage_dir=tmp_path)
-    assert manager.get(upload_id) is None  # type: ignore[arg-type]
-    manager.delete(upload_id)  # type: ignore[arg-type]

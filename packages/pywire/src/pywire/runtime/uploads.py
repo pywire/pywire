@@ -1,0 +1,349 @@
+"""Uploaded files: the ``Upload`` a handler receives, and where it waits.
+
+A file reaches the server one of two ways. With JavaScript, the client
+sends it to ``/_pywire/upload`` as soon as it is picked and the submit
+carries its id; a native form POST carries the file itself. Either way it is
+staged in the app's upload store (``PyWire(upload_store=...)``) and the
+handler gets an :class:`Upload` to read or ``save()`` somewhere permanent.
+Staged files expire (an hour by default), so a handler keeps what it needs.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import re
+import secrets
+import time
+from pathlib import Path
+from typing import (
+    Any,
+    AsyncIterable,
+    AsyncIterator,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Union,
+)
+
+from pywire.storage import FileStore, LocalStore, check_key
+
+logger = logging.getLogger(__name__)
+
+PREFIX = "pywire-uploads/"
+# Upload references one event may carry; the rest are dropped.
+MAX_REFS = 100
+
+_ID = re.compile(r"[0-9a-f]{8,12}-[0-9a-f]{32}")
+_EXT = re.compile(r"\.[A-Za-z0-9]{1,10}")
+
+
+class Upload:
+    """A file sent with a form.
+
+    ``filename`` and ``content_type`` are what the browser said, so treat
+    them as hints; ``size`` is counted from the bytes the server received.
+    """
+
+    __slots__ = ("filename", "content_type", "size", "_store", "_key")
+
+    def __init__(
+        self,
+        filename: str,
+        content_type: str,
+        size: int,
+        store: FileStore,
+        key: str,
+    ) -> None:
+        self.filename = filename
+        self.content_type = content_type
+        self.size = size
+        self._store = store
+        self._key = key
+
+    def __repr__(self) -> str:
+        return (
+            f"<Upload {self.filename!r} {self.content_type} {format_size(self.size)}>"
+        )
+
+    @property
+    def extension(self) -> str:
+        """The filename's extension, lowercased (``".png"``), or ``""``."""
+        ext = os.path.splitext(self.filename)[1]
+        return ext.lower() if _EXT.fullmatch(ext) else ""
+
+    async def read(self) -> bytes:
+        """The whole file."""
+        return await self._store.get(self._key)
+
+    async def stream(self) -> AsyncIterator[bytes]:
+        """The file in chunks, for large files."""
+        async for chunk in self._store.stream(self._key):
+            yield chunk
+
+    async def save(
+        self,
+        to: Union[FileStore, str, Path],
+        key: Optional[str] = None,
+    ) -> str:
+        """Keep the file: in a store (returns the key) or at a path.
+
+        ``await upload.save(store)`` picks a random key with the file's
+        extension; pass ``key`` to choose it. ``await upload.save("a/b.png")``
+        writes a file on disk. The browser's filename is never used as a key
+        or path.
+        """
+        if isinstance(to, (str, Path)):
+            if key is not None:
+                raise TypeError("save(path) takes no key; the path is the name")
+            path = Path(to)
+            await LocalStore(path.parent).put(path.name, self.stream())
+            return str(path)
+        name = check_key(key) if key is not None else secrets.token_hex(16)
+        if key is None:
+            name += self.extension
+        await to.put(name, self.stream(), content_type=self.content_type)
+        return name
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source: Any, handler: Any) -> Any:
+        from pydantic_core import core_schema
+
+        # Only the server builds Uploads (from a staged file), so validation
+        # is an instance check: nothing a client sends as data becomes a file.
+        return core_schema.is_instance_schema(cls)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> Any:
+        return {"type": "string", "format": "binary"}
+
+
+_UNITS = {
+    "": 1,
+    "b": 1,
+    "kb": 1000,
+    "mb": 1000**2,
+    "gb": 1000**3,
+    "kib": 1024,
+    "mib": 1024**2,
+    "gib": 1024**3,
+}
+_SIZE = re.compile(r"\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*", re.IGNORECASE)
+
+
+def parse_size(size: Union[int, str]) -> int:
+    """``2_000_000``, ``"2 MB"`` or ``"1.5 MiB"`` as bytes (KB = 1000, KiB = 1024)."""
+    if isinstance(size, bool):
+        raise ValueError(f"Invalid size {size!r}")
+    if isinstance(size, int):
+        if size < 0:
+            raise ValueError(f"Invalid size {size!r}")
+        return size
+    match = _SIZE.fullmatch(size) if isinstance(size, str) else None
+    unit = _UNITS.get(match.group(2).lower()) if match else None
+    if match is None or unit is None:
+        raise ValueError(
+            f"Invalid size {size!r}: use bytes or a string like '2 MB' or '512 KiB'"
+        )
+    return int(float(match.group(1)) * unit)
+
+
+def format_size(size: int) -> str:
+    """Bytes for people: ``2 MiB`` when it divides evenly, else ``2.1 MB``.
+
+    The client formats sizes the same way (``uploads.ts``).
+    """
+    for unit, factor in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if size >= factor and size % factor == 0:
+            return f"{size // factor} {unit}"
+    for unit, factor in (("GB", 1000**3), ("MB", 1000**2), ("KB", 1000)):
+        if size >= factor:
+            text = f"{size / factor:.1f}".removesuffix(".0")
+            return f"{text} {unit}"
+    return f"{size} B"
+
+
+class _TooLarge(Exception):
+    pass
+
+
+class Staging:
+    """Uploads waiting for a handler, in one store.
+
+    Every staged file has a sidecar ``<id>.json`` with its name, type and
+    size, so any process that shares the store can resolve its id.
+    """
+
+    def __init__(self, store: FileStore, *, ttl: float = 3600.0) -> None:
+        self.store = store
+        self.ttl = ttl
+        self._last_cleanup = 0.0
+        self._tasks: Set[asyncio.Task[Any]] = set()
+
+    async def stage(
+        self,
+        chunks: AsyncIterable[bytes],
+        *,
+        filename: str,
+        content_type: str,
+        limit: int,
+    ) -> Optional[str]:
+        """Store one file; its id, or None when it is larger than ``limit``."""
+        self._cleanup_soon()
+        upload_id = f"{int(time.time()):x}-{secrets.token_hex(16)}"
+        key = PREFIX + upload_id
+        size = 0
+
+        async def counted() -> AsyncIterator[bytes]:
+            nonlocal size
+            async for chunk in chunks:
+                size += len(chunk)
+                if size > limit:
+                    raise _TooLarge
+                yield chunk
+
+        try:
+            await self.store.put(key, counted(), content_type=content_type)
+        except Exception:
+            await self.store.delete(key)
+            if size > limit:
+                return None
+            raise
+        meta = {"filename": filename, "content_type": content_type, "size": size}
+        await self.store.put(
+            key + ".json", json.dumps(meta).encode(), content_type="application/json"
+        )
+        return upload_id
+
+    async def get(self, upload_id: object) -> Optional[Upload]:
+        """The staged file, or None for an unknown, malformed or expired id."""
+        if not isinstance(upload_id, str) or not _ID.fullmatch(upload_id):
+            return None
+        if int(upload_id.split("-", 1)[0], 16) + self.ttl < time.time():
+            return None
+        key = PREFIX + upload_id
+        try:
+            meta = json.loads(await self.store.get(key + ".json"))
+        except (FileNotFoundError, ValueError):
+            return None
+        if not isinstance(meta, dict):
+            return None
+        filename = meta.get("filename")
+        content_type = meta.get("content_type")
+        size = meta.get("size")
+        if not (
+            isinstance(filename, str)
+            and isinstance(content_type, str)
+            and isinstance(size, int)
+        ):
+            return None
+        return Upload(filename, content_type, size, self.store, key)
+
+    async def cleanup(self) -> int:
+        """Delete expired files; how many were removed."""
+        cutoff = time.time() - self.ttl
+        removed = 0
+        async for key in self.store.list(PREFIX):
+            name = key[len(PREFIX) :].removesuffix(".json")
+            if not _ID.fullmatch(name):
+                continue
+            if int(name.split("-", 1)[0], 16) < cutoff:
+                await self.store.delete(key)
+                removed += 1
+        return removed
+
+    def _cleanup_soon(self) -> None:
+        now = time.time()
+        if now - self._last_cleanup < min(600.0, self.ttl):
+            return
+        self._last_cleanup = now
+
+        async def run() -> None:
+            try:
+                await self.cleanup()
+            except Exception as exc:
+                logger.warning("Cleaning up staged uploads failed: %s", exc)
+
+        task = asyncio.get_running_loop().create_task(run())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+
+async def part_chunks(part: Any) -> AsyncIterator[bytes]:
+    """A multipart file part (Starlette ``UploadFile``) in chunks."""
+    while chunk := await part.read(1024 * 1024):
+        yield chunk
+
+
+def _ref(value: Any) -> Optional[str]:
+    if isinstance(value, Mapping) and len(value) == 1:
+        upload_id = value.get("_upload_id")
+        if isinstance(upload_id, str):
+            return upload_id
+    return None
+
+
+def has_upload_refs(form_data: Mapping[str, Any]) -> bool:
+    return any(
+        _ref(v) is not None
+        for value in form_data.values()
+        for v in (value if isinstance(value, list) else [value])
+    )
+
+
+async def resolve_uploads(
+    staging: Staging, form_data: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Replace ``{"_upload_id": ...}`` references in submitted data with Uploads.
+
+    Unknown or expired ids are dropped, as if no file had been chosen.
+    """
+    budget = MAX_REFS
+    out: Dict[str, Any] = {}
+    for name, value in form_data.items():
+        values = value if isinstance(value, list) else [value]
+        if not any(_ref(v) is not None for v in values):
+            out[name] = value
+            continue
+        files: List[Upload] = []
+        for v in values:
+            upload_id = _ref(v)
+            if upload_id is None or budget <= 0:
+                continue
+            budget -= 1
+            upload = await staging.get(upload_id)
+            if upload is not None:
+                files.append(upload)
+        if isinstance(value, list):
+            out[name] = files
+        elif files:
+            out[name] = files[0]
+    return out
+
+
+_default: Optional[Staging] = None
+
+
+def staging_for(page: Any) -> Staging:
+    """The upload staging of the app serving ``page``."""
+    while getattr(page, "_parent_page", None) is not None:
+        page = page._parent_page
+    try:
+        staging = page.request.app.state.pywire.uploads
+    except (AttributeError, KeyError):
+        staging = None
+    if isinstance(staging, Staging):
+        return staging
+    global _default
+    if _default is None:
+        import tempfile
+
+        _default = Staging(LocalStore(Path(tempfile.gettempdir()) / "pywire_uploads"))
+    return _default
+
+
+__all__ = ["Upload", "Staging", "parse_size", "format_size", "resolve_uploads"]

@@ -218,43 +218,54 @@ class TestAppExhaustive:
         )
         assert response.status_code == 413
 
-    @patch("pywire.runtime.app.upload_manager")
+    @staticmethod
+    def _files(**parts: bytes) -> Any:
+        import io
+
+        from starlette.datastructures import FormData, UploadFile
+
+        return FormData(
+            [
+                (name, UploadFile(io.BytesIO(body), filename=f"{name}.png"))
+                for name, body in parts.items()
+            ]
+        )
+
     @pytest.mark.asyncio
-    async def test_handle_upload_success(self, mock_um: MagicMock) -> None:
+    async def test_handle_upload_success(self) -> None:
         app = PyWire(str(self.pages_dir))
         app.upload_tokens.add("tok")
-        mock_um.save.return_value = "upload_123"
 
-        mock_file = MagicMock()
-        mock_file.filename = "test.png"
-
-        files = {"avatar": mock_file}
-
-        response = await self._async_test_upload(app, "tok", files=files)
+        response = await self._async_test_upload(
+            app, "tok", files=self._files(avatar=b"png")
+        )
 
         assert response.status_code == 200
-        data = json.loads(response.body)
-        assert data["avatar"] == "upload_123"
-        mock_um.save.assert_called_with(mock_file, max_size=app.max_upload_size)
+        (upload_id,) = json.loads(response.body)["avatar"]
+        upload = await app.uploads.get(upload_id)
+        assert upload is not None and upload.filename == "avatar.png"
 
-    @patch("pywire.runtime.app.upload_manager")
     @pytest.mark.asyncio
-    async def test_handle_upload_token_shared_between_app_instances(
-        self, mock_um: MagicMock
-    ) -> None:
+    async def test_handle_upload_over_the_limit_is_413(self) -> None:
+        app = PyWire(str(self.pages_dir), max_upload_size=2)
+        app.upload_tokens.add("tok")
+        response = await self._async_test_upload(
+            app, "tok", content_length=0, files=self._files(avatar=b"png")
+        )
+        assert response.status_code == 413
+        assert json.loads(response.body)["field"] == "avatar"
+
+    @pytest.mark.asyncio
+    async def test_handle_upload_token_shared_between_app_instances(self) -> None:
         app_a = PyWire(str(self.pages_dir))
         app_b = PyWire(str(self.pages_dir))
         app_a._store_upload_token("shared_tok", None, time.time())
-        mock_um.save.return_value = "upload_cross_worker"
 
-        mock_file = MagicMock()
-        mock_file.filename = "cross.png"
-        files = {"avatar": mock_file}
-
-        response = await self._async_test_upload(app_b, "shared_tok", files=files)
+        response = await self._async_test_upload(
+            app_b, "shared_tok", files=self._files(avatar=b"png")
+        )
         assert response.status_code == 200
-        data = json.loads(response.body)
-        assert data["avatar"] == "upload_cross_worker"
+        assert len(json.loads(response.body)["avatar"]) == 1
 
     def test_reload_page(self) -> None:
         app = PyWire(str(self.pages_dir))

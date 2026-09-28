@@ -74,6 +74,10 @@ _BY_TYPE: Dict[str, Tuple[str, str]] = {
     "url_scheme": ("typeMismatch", "Enter a valid URL"),
     "url_too_long": ("typeMismatch", "Enter a valid URL"),
     "is_instance_of": ("badInput", "Choose a file"),
+    # UploadField (pywire.forms.uploads)
+    "file_too_large": ("fileTooLarge", "Choose a file no larger than {max_size}"),
+    "file_type": ("fileType", "Choose a file of type {accept}"),
+    "too_many_files": ("tooManyFiles", "Choose at most {max_files} files"),
 }
 
 

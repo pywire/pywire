@@ -166,31 +166,36 @@ describe('UnifiedEventHandler — optimistic prediction', () => {
     document.body.innerHTML =
       '<meta name="pywire-upload-token" content="tok">' +
       '<form id="f" data-on-submit="save" data-modifiers-submit="optimistic optimistic-class-saving">' +
-      '<input type="file" name="doc">' +
+      '<input name="title" value="hello">' +
+      '<input id="doc" type="file" name="doc">' +
       '<button type="submit">Go</button>' +
       '</form>'
     const form = document.getElementById('f') as HTMLFormElement
+    const doc = document.getElementById('doc') as HTMLInputElement
+    Object.defineProperty(doc, 'files', {
+      value: [new File(['x'], 'a.txt', { type: 'text/plain' })],
+    })
 
-    // jsdom clones form-associated Files with size 0, so a real
-    // `new FormData(form)` never reports a non-empty file. Stub just enough of
-    // FormData for the handler's extraction loop to see one file + one string.
-    class FakeFormData {
-      append(): void {}
-      forEach(cb: (value: FormDataEntryValue, key: string) => void): void {
-        cb(new File(['x'], 'a.txt', { type: 'text/plain' }), 'doc')
-        cb('hello', 'title')
+    const uploads: Array<{ onload: (() => void) | null; status: number; responseText: string }> = []
+    class FakeXHR {
+      upload = { onprogress: null }
+      onload: (() => void) | null = null
+      status = 0
+      responseText = ''
+      constructor() {
+        uploads.push(this)
       }
+      open(): void {}
+      setRequestHeader(): void {}
+      send(): void {}
+      abort(): void {}
     }
-    vi.stubGlobal('FormData', FakeFormData as unknown as typeof FormData)
-
-    let resolveUpload!: (v: unknown) => void
-    const fetchMock = vi.fn().mockReturnValue(new Promise((r) => (resolveUpload = r)))
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+    vi.stubGlobal('XMLHttpRequest', FakeXHR)
 
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 
     // Same tick, upload still in flight: prediction + guard already applied.
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(uploads).toHaveLength(1)
     expect(form.hasAttribute('data-pw-pending')).toBe(true)
     expect(form.classList.contains('saving')).toBe(true)
     expect(appMock.sendEvent).not.toHaveBeenCalled()
@@ -198,9 +203,11 @@ describe('UnifiedEventHandler — optimistic prediction', () => {
     // A second submit during the upload is guarded — no second upload.
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await Promise.resolve()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(uploads).toHaveLength(1)
 
-    resolveUpload({ ok: true, json: async () => ({ uploads: { doc: 'u1' } }) })
+    uploads[0].status = 200
+    uploads[0].responseText = JSON.stringify({ doc: ['u1'] })
+    uploads[0].onload?.()
     await vi.waitFor(() => expect(appMock.sendEvent).toHaveBeenCalledTimes(1))
     const sent = appMock.sendEvent.mock.calls[0][1] as { formData: Record<string, unknown> }
     expect(sent.formData).toEqual({ title: 'hello', doc: { _upload_id: 'u1' } })

@@ -16,6 +16,7 @@ from typing import (
     FrozenSet,
     Iterable,
     List,
+    Mapping,
     Optional,
     Set,
     Tuple,
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
 from pywire.runtime.style_collector import StyleCollector
+from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
 from pywire.core.snippet import HeadBuffer, Snippet
 
 logger = logging.getLogger(__name__)
@@ -346,8 +348,14 @@ class BasePage:
         self._pending_navigation: Optional[str] = None
         # Set by a bound form's submit pipeline: a native POST answers 422.
         self._pw_form_invalid = False
-        # Set when a bound form renders a file input (upload token needed).
+        # Set when the page, or a component in it, renders a file input: the
+        # page then carries an upload token.
         self._pw_has_uploads = False
+        if self._parent_page is not None and getattr(self, "__has_uploads__", False):
+            root = self._parent_page
+            while root._parent_page is not None:
+                root = root._parent_page
+            root._pw_has_uploads = True
         self._pending_dispatches: List[Dict[str, Any]] = []
         self._pending_intercepted_handlers: List[tuple[str, dict]] = []
         self._components: Dict[str, "BasePage"] = {}
@@ -761,6 +769,12 @@ class BasePage:
         self, event_name: str, event_data: Dict[str, Any]
     ) -> None:
         self._sync_ref_data(event_data)
+
+        form_data = event_data.get("formData")
+        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
+            # Files arrive as ids of staged uploads; handlers get Uploads.
+            event_data = dict(event_data)
+            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
         # Framework-generated handlers are always allowed (form wrappers, bindings)
         is_framework_handler = event_name.startswith(

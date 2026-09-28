@@ -11,7 +11,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 from pywire import form
 from pywire.forms.schema import html_pattern, humanize, root_spec
-from pywire.runtime.files import FileUpload
+from pywire.forms import Upload, UploadField
 
 
 class Plan(str, Enum):
@@ -61,8 +61,12 @@ class Everything(BaseModel):
     code: str = Field(pattern=r"^[A-Z]{3}$")
     loose: str = Field("", pattern=r"[a-z]+")
     maybe_int: Optional[int] = None
-    avatar: Optional[FileUpload] = None
-    docs: list[FileUpload] = []
+    avatar: Optional[Upload] = None
+    docs: list[Upload] = []
+    photo: Annotated[
+        Upload, UploadField(max_size="1 MiB", accept=["image/png", ".JPG"])
+    ]
+    papers: Annotated[list[Upload], UploadField(max_files=3, max_size=1000)] = []
     secret_server_side: SkipJsonSchema[str] = "server"
 
 
@@ -153,6 +157,13 @@ def test_nested_and_alias_and_skip():
 def test_files():
     assert (C["avatar"].kind, C["avatar"].required) == ("file", False)
     assert C["docs"].kind == "files"
+    assert C["photo"].required
+    assert C["photo"].attrs == {
+        "accept": "image/png,.jpg",
+        "data-pw-max-size": str(1024 * 1024),
+    }
+    assert C["papers"].max_items == 3
+    assert C["papers"].attrs == {"data-pw-max-size": "1000"}
 
 
 def test_pattern_only_when_anchored():

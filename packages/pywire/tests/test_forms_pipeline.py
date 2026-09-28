@@ -19,7 +19,8 @@ from pydantic.json_schema import SkipJsonSchema
 
 from pywire import form
 from pywire.forms.form import FORM_MEMBERS, FIELD_MEMBERS
-from pywire.runtime.files import FileUpload
+from pywire.forms import Upload
+from pywire.storage import MemoryStore
 
 
 class Address(BaseModel):
@@ -343,13 +344,13 @@ def test_server_owned_fields_keep_the_server_value():
 
 
 def test_files_only_come_from_the_server():
-    class Upload(BaseModel):
-        avatar: Optional[FileUpload] = None
-        docs: list[FileUpload] = []
+    class Files(BaseModel):
+        avatar: Optional[Upload] = None
+        docs: list[Upload] = []
 
     got = []
-    f = form(Upload)
-    real = FileUpload("a.png", "image/png", 3, b"abc")
+    f = form(Files)
+    real = Upload("a.png", "image/png", 3, MemoryStore(), "a")
     submit(
         f,
         {"avatar": "data:image/png;base64,AAAA", "docs": [real, {"content": "x"}]},
@@ -359,11 +360,11 @@ def test_files_only_come_from_the_server():
     assert got[-1].docs == [real]
 
 
-def test_unknown_upload_ids_are_ignored():
-    class Upload(BaseModel):
-        avatar: FileUpload
+def test_unresolved_upload_ids_are_no_file():
+    class Files(BaseModel):
+        avatar: Upload
 
-    f = form(Upload)
+    f = form(Files)
     submit(f, {"avatar": {"_upload_id": "../../etc/passwd"}})
     assert f.avatar.error == "Choose a file"
 

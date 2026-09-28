@@ -13,7 +13,8 @@ server trusts. Requires Pydantic v2 (``pip install "pywire[forms]"``).
 from pywire.forms.errors import FieldError
 from pywire.forms.form import BoundField, FieldList, Form, form
 from pywire.forms.schema import Option
-from pywire.runtime.files import FileUpload
+from pywire.forms.uploads import UploadField
+from pywire.runtime.uploads import Upload
 
 __all__ = [
     "form",
@@ -22,5 +23,6 @@ __all__ = [
     "FieldList",
     "FieldError",
     "Option",
-    "FileUpload",
+    "Upload",
+    "UploadField",
 ]

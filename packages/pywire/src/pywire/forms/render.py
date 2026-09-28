@@ -183,8 +183,13 @@ def field_attrs(
         elif itype == "file":
             if spec.kind == "files":
                 base["multiple"] = True
+                if spec.max_items is not None:
+                    base["data-pw-max-files"] = str(spec.max_items)
             if spec.required:
                 base["required"] = True
+            # accept= and data-pw-max-size, from UploadField: the client
+            # checks them before uploading.
+            base.update(spec.attrs)
             if page is not None:
                 _root(page)._pw_has_uploads = True
         else:

@@ -3815,9 +3815,6 @@ class TemplateCodegen:
             for s_nodes in bucketed.values():
                 all_slot_nodes.extend(s_nodes)
 
-            if cls_name == "FileInput":
-                self.has_file_inputs = True
-
             # 5. Instantiate/reuse component (phase 1: resolve without slots)
             comp_var = f"_comp_{node.line}_{node.column}"
             comp_key_var = f"_comp_key_{node.line}_{node.column}"
