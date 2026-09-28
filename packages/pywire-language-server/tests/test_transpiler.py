@@ -311,8 +311,13 @@ def test_form_path_tokens_map_back_to_the_source():
 
 
 def test_ty_reports_unknown_form_fields(tmp_path):
-    pytest.importorskip("pydantic")
-    pytest.importorskip("pywire.forms")
+    # ty resolves imports from the interpreter's environment, so check there
+    # rather than in this process, whose sys.path can differ.
+    probe = subprocess.run(
+        [sys.executable, "-c", "import pydantic, pywire.forms"], capture_output=True
+    )
+    if probe.returncode != 0:
+        pytest.skip("needs pywire[forms] installed")
     code, _ = Transpiler(FORM_PAGE).transpile()
     target = tmp_path / "page_wire.py"
     target.write_text(code)

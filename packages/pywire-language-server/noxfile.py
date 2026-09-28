@@ -12,9 +12,12 @@ def tests(session):
 
     # Ensure we use the latest pywire with correct line-number reporting.
     # We prefer the local workspace version, but fall back to GitHub main in CI.
+    # The forms extra brings pydantic, which the bound-form typing tests need.
     if os.path.exists(pywire_path):
         print(f"Using local pywire from {pywire_path}")
-        session.run("uv", "pip", "install", "-e", pywire_path, external=True)
+        session.run(
+            "uv", "pip", "install", "-e", f"{pywire_path}[forms]", external=True
+        )
     else:
         print("Local pywire not found. Installing latest from GitHub main...")
         # Fallback to the GitHub version to avoid the buggy/outdated PyPI version.
@@ -23,7 +26,7 @@ def tests(session):
             "uv",
             "pip",
             "install",
-            "git+https://github.com/pywire/pywire.git",
+            "pywire[forms] @ git+https://github.com/pywire/pywire.git",
             external=True,
         )
 
