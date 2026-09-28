@@ -1,11 +1,22 @@
 """Tests for the cloudflare-edge target (stateless plain Worker, no DOs)."""
 
+import asyncio
+import re
+import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import jinja2
+import msgpack
 from click.testing import CliRunner
 
 from pywire_cli.main import cli
+
+EDGE_TEMPLATES = (
+    Path(__file__).parents[2]
+    / "pywire-templates/src/pywire_templates/deploy/cloudflare_edge"
+)
 
 
 def _make_app_dir() -> None:
@@ -67,3 +78,102 @@ class TestDeployCloudflareEdge:
             assert "OneShotASGIAdapter" in Path("entry.py").read_text()
             assert "durable_objects" not in Path("wrangler.toml").read_text()
             assert not Path("pywire_do.py").exists()
+
+
+def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
+    """Run the generated entry.py against a real app with a stub `workers`."""
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "index.wire").write_text(
+        "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n"
+        "<p>{count}</p><button @click={increment()}>+</button>\n"
+    )
+    (pages / "cookies.wire").write_text(
+        "---\nseen = wire('')\n\n@init\ndef load():\n"
+        "    seen.value = self.request.cookies.get('hello', 'none')\n"
+        "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
+        '---\n<p id="seen">{seen}</p>\n'
+    )
+    # Like a real app: the secret comes from os.environ at import time.
+    (tmp_path / "edge_fixture_app.py").write_text(
+        "from pywire import PyWire\n"
+        f"app = PyWire(pages_dir={str(pages)!r}, stateless=True)\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "edge_fixture_app", raising=False)
+    monkeypatch.delenv("PYWIRE_SECRET_KEY", raising=False)
+
+    class Response:
+        def __init__(self, body, status=200, headers=None):
+            self.body, self.status, self.headers = body, status, headers
+
+    workers = types.ModuleType("workers")
+    workers.Response = Response  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "workers", workers)
+    monkeypatch.setitem(sys.modules, "_routes", types.ModuleType("_routes"))
+
+    source = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(EDGE_TEMPLATES))
+        .get_template("entry.py.j2")
+        .render(app_module="edge_fixture_app", app_attr="app")
+    )
+    ns: dict = {}
+    # Python Workers only expose the secret on `env`, so importing the app
+    # here (before any request) would raise for want of one.
+    exec(compile(source, "entry.py", "exec"), ns)
+
+    class Buffer:
+        def __init__(self, data):
+            self.data = data
+
+        def to_py(self):
+            return self.data
+
+    class Request:
+        def __init__(self, method, url, body=b"", headers=None):
+            self.method, self.url, self._body = method, url, body
+            self.headers = {"accept-encoding": "gzip", **(headers or {})}
+
+        async def arrayBuffer(self):
+            return Buffer(self._body)
+
+    env = types.SimpleNamespace(PYWIRE_SECRET_KEY="edge-test-secret")
+
+    def fetch(*args, **kwargs):
+        return asyncio.run(ns["on_fetch"](Request(*args, **kwargs), env))
+
+    try:
+        get = fetch("GET", "https://edge.test/")
+        assert get.status == 200
+        # The Workers runtime compresses by itself; the app must not have.
+        assert "content-encoding" not in dict(get.headers)
+        match = re.search(
+            r'_pywire_snapshot" type="text/plain">(.*?)</script>', get.body.decode()
+        )
+        assert match
+
+        event = msgpack.packb(
+            {
+                "path": "/",
+                "handler": "increment",
+                "data": {},
+                "snapshot": match.group(1),
+            }
+        )
+        post = fetch(
+            "POST",
+            "https://edge.test/_pywire/stateless",
+            body=event,
+            headers={"content-type": "application/x-msgpack"},
+        )
+        assert post.status == 200
+        assert "regions" in msgpack.unpackb(post.body, raw=False)
+
+        got = fetch(
+            "GET", "https://edge.test/cookies", headers={"cookie": "hello=world"}
+        )
+        assert b">world</p>" in got.body
+        cookies = [v for k, v in got.headers if k.lower() == "set-cookie"]
+        assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
+    finally:
+        sys.modules.pop("edge_fixture_app", None)
