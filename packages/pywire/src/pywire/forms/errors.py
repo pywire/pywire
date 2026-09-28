@@ -105,6 +105,9 @@ def map_error(
         code, template = "valueMissing", "Check this box to continue"
     elif kind == "file" and etype in ("missing", "is_instance_of"):
         code, template = "valueMissing", "Choose a file"
+    elif kind in ("text", "secret") and etype in ("too_short", "too_long"):
+        # SecretStr reports its length the way a list does.
+        code, template = _BY_TYPE["string_" + etype]
     elif etype in ("value_error", "assertion_error") and "error" in ctx:
         # A ValueError/AssertionError raised by a validator: its own message
         # is the one the user should see, without Pydantic's prefix.

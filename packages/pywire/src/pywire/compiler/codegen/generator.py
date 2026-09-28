@@ -1147,7 +1147,7 @@ class CodeGenerator:
     def _wire_bind_handler(
         self, bind: ReactiveAttribute, method_name: str, name: str
     ) -> ast.AsyncFunctionDef:
-        """``<input $bind={query}>`` -> the handler that writes the element's
+        """``<input $bind={term}>`` -> the handler that writes the element's
         value back into the page-level wire ``query``.
 
         ``async def _handle_bind_N(self, event_data):

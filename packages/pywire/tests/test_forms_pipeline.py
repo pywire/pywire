@@ -241,6 +241,20 @@ def test_validator_message_wins_on_an_email_field():
     )
 
 
+def test_password_length_is_counted_in_characters():
+    class Login(BaseModel):
+        password: SecretStr = Field(min_length=12, max_length=64)
+
+    f = form(Login)
+    submit(f, {"password": "short"})
+    assert (f.password.error, f.password.errors[0].code) == (
+        "Use at least 12 characters",
+        "tooShort",
+    )
+    submit(f, {"password": "x" * 65})
+    assert f.password.error == "Use 64 characters or fewer"
+
+
 def test_handler_can_reject_with_errors():
     f = form(Signup)
 

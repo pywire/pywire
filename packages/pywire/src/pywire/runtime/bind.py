@@ -2,7 +2,7 @@
 
 ``$bind`` means "this element's value is that". The target is either a form
 field (``signup.email``, handled by :mod:`pywire.forms.render`) or a plain
-wire defined in the frontmatter (``query = wire("")``), which this module
+wire defined in the frontmatter (``term = wire("")``), which this module
 binds both ways: the element renders the wire's value, and editing the
 element writes the wire, coerced to the type the wire holds.
 
@@ -59,7 +59,7 @@ def field_attrs(
     if not handler:
         raise BindError(
             f"$bind on <{tag}> binds a wire defined in this page's frontmatter "
-            '(e.g. query = wire("")) by its name, or a form field.'
+            '(e.g. term = wire("")) by its name, or a form field.'
         )
     current = _current(obj)
     out = dict(hand)
