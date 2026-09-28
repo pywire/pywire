@@ -85,24 +85,53 @@ Triggers when a click occurs **outside** the element. Useful for closing dropdow
 
 ## Timing Modifiers
 
+### Default timing
+
+Events that fire in bursts are paced for you, so a handler written without a timing modifier doesn't send a message per keystroke or per pixel:
+
+| Event                                                                        | Default                                           |
+| ---------------------------------------------------------------------------- | ------------------------------------------------- |
+| `input` on a text box, `<textarea>` or editable element                      | Debounced 250ms: sent once the user pauses typing |
+| `input` on a range slider                                                    | Throttled 100ms                                   |
+| `scroll`, `wheel`, `resize`, `mousemove`, `pointermove`, `touchmove`, `drag` | Throttled 100ms, always sending the last one      |
+| Everything else, including `input` on checkboxes, radios and selects         | Sent at once                                      |
+
+Pacing never reorders anything. An event that sends at once (a click, a submit, a key press) first sends any debounced or throttled event still waiting, so a button always runs on the latest value of the box next to it.
+
+Change the defaults for the whole app with `event_defaults`:
+
+```python
+app = PyWire(event_defaults={"input": "debounce.400ms", "scroll": "throttle.50ms", "keyup": "debounce"})
+```
+
+Each value is `"immediate"`, `"debounce"`, `"debounce.Nms"`, `"throttle"` or `"throttle.Nms"`. The modifiers below override both the built-in and the configured defaults for one handler.
+
 ### `.debounce.Nms`
 
-Delays the handler until N milliseconds have passed since the last event. Useful for search-as-you-type inputs.
+Delays the handler until N milliseconds have passed since the last event. Without a duration, it waits 250ms.
 
 ```pywire
 <input type="text"
-       @input.debounce.300ms={search_users(event.value)}
+       @input.debounce.500ms={search_users(event.value)}
        placeholder="Search users..." />
 ```
 
 ### `.throttle.Nms`
 
-Ensures the handler is called at most once every N milliseconds. Useful for scroll or resize events.
+Calls the handler at most once every N milliseconds, and once more at the end so the last event isn't lost. Without a duration, it uses 250ms.
 
 ```pywire
-<div @scroll.throttle.100ms={handle_scroll}>
+<div @scroll.throttle.50ms={handle_scroll}>
     Scrollable content
 </div>
+```
+
+### `.immediate`
+
+Sends every event as it happens, turning off the default pacing:
+
+```pywire
+<input @input.immediate={track_every_keystroke} />
 ```
 
 ## Chaining Modifiers
