@@ -12,6 +12,7 @@ import {
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
+import { releaseForms, settleForms } from '../events/forms'
 import { clearPending, revertPending } from '../events/pending'
 import { clearPollInFlight } from '../events/poll'
 import { RefManager } from './ref-manager'
@@ -579,6 +580,7 @@ export class PyWireApp {
       this.updater.update(html)
       // Flush optimistic predictions the morph reconciled (see handleMessage).
       clearPending()
+      settleForms()
       clearPollInFlight()
       this.eventHandler?.refreshListeners()
 
@@ -647,6 +649,7 @@ export class PyWireApp {
         // reconciled in-region markers/classes, so just strip any leftover
         // optimistic pending markers and re-enable guarded controls.
         clearPending()
+        settleForms()
         // Same signal for @poll: a response arrived (even an empty one), so
         // clear the per-element in-flight overlap guard.
         clearPollInFlight()
@@ -700,6 +703,7 @@ export class PyWireApp {
         // No morph is coming — revert the optimistic prediction so a failed
         // control is never left stuck disabled (review focus #8).
         revertPending()
+        releaseForms()
         // A poll dispatch that errored is no longer in flight — let the next
         // tick retry.
         clearPollInFlight()
@@ -709,6 +713,7 @@ export class PyWireApp {
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
         revertPending()
+        releaseForms()
         clearPollInFlight()
         break
 

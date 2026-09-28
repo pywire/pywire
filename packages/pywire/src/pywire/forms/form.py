@@ -21,6 +21,7 @@ from typing import (
     Generic,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Tuple,
@@ -272,8 +273,12 @@ class BoundField(Generic[T]):
 
     @property
     def errors(self) -> List[FieldError]:
+        """Current errors, once the field was filled in and left, or submitted."""
         self._form._track()
-        return list(self._form._errors.get(self._form._path_key(self._path), ()))
+        key = self._form._path_key(self._path)
+        if not self._form._shown(key):
+            return []
+        return list(self._form._errors.get(key, ()))
 
     @property
     def error(self) -> Optional[str]:
@@ -363,14 +368,18 @@ class Form(Generic[M]):
         context: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None] = None,
         messages: Optional[Messages] = None,
         id: Optional[str] = None,
+        validate: Literal["blur", "submit"] = "blur",
     ) -> None:
         if not (isinstance(model, type) and issubclass(model, BaseModel)):
             raise TypeError(
                 f"form() takes a Pydantic model class, got {model!r}. "
                 "Define `class MyForm(BaseModel): ...` and pass MyForm."
             )
+        if validate not in ("blur", "submit"):
+            raise ValueError(f"validate={validate!r}: use 'blur' or 'submit'")
         object.__setattr__(self, "_spec", root_spec(model))
         self.model = model
+        self._live = validate == "blur"
         self._initial = initial
         self._context = context
         self._messages: Dict[str, Any] = dict(messages or {})
@@ -381,7 +390,11 @@ class Form(Generic[M]):
         self._errors: Dict[str, List[FieldError]] = {}
         self._value: Optional[M] = None
         self._submitted = False
+        # Fields the user has been through (path keys): their errors show
+        # before the form is submitted.
+        self._touched: set[str] = set()
         self._owned: set[str] = set()
+        self._focus_claimed = False
         self._cache: Dict[Path, BoundField[Any]] = {}
         self._adapters: Dict[int, TypeAdapter[Any]] = {}
 
@@ -443,6 +456,7 @@ class Form(Generic[M]):
 
     @property
     def valid(self) -> bool:
+        """True when the last check (live or submit) found no errors."""
         self._track()
         return not self._errors
 
@@ -471,7 +485,7 @@ class Form(Generic[M]):
     def error(self) -> Optional[str]:
         """Form-level error: model validators, or one the handler sets."""
         self._track()
-        errs = self._errors.get("")
+        errs = self._errors.get("") if self._submitted else None
         return errs[0].message if errs else None
 
     @error.setter
@@ -482,7 +496,11 @@ class Form(Generic[M]):
     def errors(self) -> Dict[str, str]:
         """Every field error as ``{dotted path: message}``."""
         self._track()
-        return {k: v[0].message for k, v in self._errors.items() if k and v}
+        return {
+            k: v[0].message
+            for k, v in self._errors.items()
+            if k and v and self._shown(k)
+        }
 
     def load(self, obj: Any) -> None:
         """Fill the form from a model instance or mapping (edit forms)."""
@@ -496,6 +514,7 @@ class Form(Generic[M]):
         self._errors = {}
         self._value = None
         self._submitted = False
+        self._touched = set()
         self._touch()
 
     # -- snapshot hooks (session_serializer) --------------------------------
@@ -508,6 +527,7 @@ class Form(Generic[M]):
             "has_raw": self._has_raw,
             "errors": {k: [e.to_dict() for e in v] for k, v in self._errors.items()},
             "submitted": self._submitted,
+            "touched": sorted(self._touched),
             "owned": sorted(self._owned),
         }
 
@@ -534,6 +554,12 @@ class Form(Generic[M]):
             if isinstance(v, list)
         }
         self._submitted = bool(state.get("submitted"))
+        touched = state.get("touched")
+        self._touched = (
+            {t for t in touched if isinstance(t, str)}
+            if isinstance(touched, list)
+            else set()
+        )
         owned = state.get("owned")
         self._owned = (
             {n for n in owned if isinstance(n, str)}
@@ -550,12 +576,13 @@ class Form(Generic[M]):
         Generated for ``<form $bind={f} @submit={handler}>``: the only way a
         client reaches ``handler``, which never sees unvalidated data.
         """
-        form_data = getattr(event, "form_data", None)
-        if form_data is None and isinstance(event, Mapping):
-            form_data = event.get("formData")
+        form_data = _event_value(event, "formData")
         flat = normalize(form_data if isinstance(form_data, Mapping) else {})
         self._capture(flat)
         data = shape(self._spec, self._with_owned(flat), resolve_upload=_resolve_upload)
+        if _event_value(event, "type") == "validate":
+            self._validate_live(data, _event_value(event, "field"))
+            return
         self._submitted = True
         instance = self._validate(data)
         self._touch()
@@ -568,6 +595,28 @@ class Form(Generic[M]):
                 await result
         if self._errors:
             _mark_invalid(page)
+
+    def _validate_live(self, data: Dict[str, Any], field: Any) -> None:
+        """A field was left (or changed): check the whole form, show its errors."""
+        if not self._live:
+            return
+        if isinstance(field, str):
+            path, _ = self._lookup(field)
+            if path:
+                self._touched.add(self._path_key(path))
+        value = self._value
+        self._validate(data)
+        self._value = value  # .value is the last *submitted* valid model
+        self._touch()
+
+    def _shown(self, key: str) -> bool:
+        """Errors show after a submit, or for fields the user has been through."""
+        if self._submitted:
+            return True
+        if not key:
+            return False
+        prefix = key + "."
+        return any(t == key or t.startswith(prefix) for t in self._touched)
 
     def _validate(self, data: Dict[str, Any]) -> Optional[M]:
         ctx = self._context
@@ -626,6 +675,8 @@ class Form(Generic[M]):
     def _set_error(self, key: str, message: Optional[str]) -> None:
         if message:
             self._errors[key] = [FieldError(code="customError", message=str(message))]
+            if key:
+                self._touched.add(key)
         else:
             self._errors.pop(key, None)
         self._touch()
@@ -804,6 +855,16 @@ class Form(Generic[M]):
         return from_raw if self._has_raw else max(from_raw, from_initial)
 
 
+def _event_value(event: Any, key: str) -> Any:
+    """``event.<key>`` for event objects, ``event[key]`` for plain mappings."""
+    if isinstance(event, Mapping):
+        return event.get(key)
+    raw = getattr(event, "_raw_data", None)
+    if isinstance(raw, Mapping):
+        return raw.get(key)
+    return None
+
+
 def _mark_invalid(page: Any) -> None:
     if page is not None:
         _root_page(page)._pw_form_invalid = True
@@ -817,6 +878,7 @@ def form(
     context: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None] = None,
     messages: Optional[Messages] = None,
     id: Optional[str] = None,
+    validate: Literal["blur", "submit"] = "blur",
 ) -> Form[M]:
     """Bind a Pydantic model to a ``<form $bind={...}>``.
 
@@ -829,5 +891,15 @@ def form(
             field and code (``"name.tooShort"``). ``{min_length}`` style
             placeholders are filled from the error.
         id: DOM id prefix. Defaults to the variable name on the page.
+        validate: ``"blur"`` (default) checks a field when the user leaves
+            it, then as they type while it shows an error; ``"submit"``
+            checks on submit only.
     """
-    return Form(model, initial=initial, context=context, messages=messages, id=id)
+    return Form(
+        model,
+        initial=initial,
+        context=context,
+        messages=messages,
+        id=id,
+        validate=validate,
+    )

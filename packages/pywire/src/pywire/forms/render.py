@@ -212,6 +212,11 @@ def field_attrs(
         if field.error_id not in described:
             described.append(field.error_id)
         base["aria-describedby"] = " ".join(described)
+        if form._submitted and not form._focus_claimed:
+            # After a submit without JS the browser lands on the first
+            # invalid field; with JS the client moves focus itself.
+            form._focus_claimed = True
+            base["autofocus"] = True
 
     return _merge(page, field, base, hand)
 
@@ -283,7 +288,10 @@ def form_attrs(
     # Fields re-register as they render: only what renders read-only now is
     # server-owned on the next submit.
     form._owned.clear()
+    form._focus_claimed = False
     base: Dict[str, Any] = {"method": "post", "data-pw-form": form._dom_id_value()}
+    if form._live:
+        base["data-pw-validate"] = "blur"
     if "id" not in hand:
         base["id"] = form._dom_id_value()
     if _has_files(form._spec):

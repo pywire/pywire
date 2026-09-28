@@ -2,6 +2,7 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
+import { beginSubmit, isBoundForm, releaseForms } from './forms'
 import { applyOptimistic, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
 
@@ -59,12 +60,14 @@ export class UnifiedEventHandler {
   private debouncers = new Map<string, { timer: number; run: () => void }>()
   private throttlers = new Map<string, { timer: number; trailing: (() => void) | null }>()
   private firedOnce = new Set<string>()
+  // Fields the user has typed in, per bound form: they validate on blur.
+  private dirtyFields = new WeakMap<HTMLFormElement, Set<string>>()
 
   private defaultEvents = ['click', 'submit', 'input', 'change']
   private attachedEvents = new Set<string>()
 
   // Events that should be suppressed during DOM updates to prevent loops
-  private suppressDuringUpdate = ['focus', 'blur', 'mouseenter', 'mouseleave']
+  private suppressDuringUpdate = ['focus', 'blur', 'focusout', 'mouseenter', 'mouseleave']
 
   private static ENABLE_TRACE = false
 
@@ -83,7 +86,8 @@ export class UnifiedEventHandler {
    * Uses event delegation on document body.
    */
   init(): void {
-    this.attachListeners(this.defaultEvents)
+    // focusout drives live validation of bound forms.
+    this.attachListeners([...this.defaultEvents, 'focusout'])
     this.refreshListeners()
   }
 
@@ -218,6 +222,10 @@ export class UnifiedEventHandler {
     if ((e as unknown as Record<string, unknown>).__pwServerHandled) {
       this.debugLog('[Handler] Skipping server-handled dispatch event:', eventType)
       return
+    }
+
+    if (eventType === 'input' || eventType === 'change' || eventType === 'focusout') {
+      this.liveValidate(e)
     }
 
     // 1. Delegated handlers (standard path walk with bubbling)
@@ -457,8 +465,105 @@ export class UnifiedEventHandler {
       return
     }
 
+    const own = this.debouncers.get(key)
+    if (own) {
+      window.clearTimeout(own.timer)
+      this.debouncers.delete(key)
+    }
     this.flushPending()
     send()
+  }
+
+  /**
+   * Live validation for bound forms rendered with `data-pw-validate="blur"`:
+   * a field the user typed in validates when it loses focus, then on every
+   * (debounced) keystroke while it shows an error. Checkboxes, radios and
+   * selects validate on change. The server validates the whole form and
+   * shows errors only for fields the user has been through.
+   */
+  private liveValidate(e: Event): void {
+    if (this.app.isInteractive === false) return
+    const field = e.target
+    if (
+      !(
+        field instanceof HTMLInputElement ||
+        field instanceof HTMLSelectElement ||
+        field instanceof HTMLTextAreaElement
+      )
+    ) {
+      return
+    }
+    const form = field.form
+    if (!form || form.dataset.pwValidate !== 'blur' || !field.name) return
+    if (field instanceof HTMLInputElement && field.type === 'file') return
+    const handler = this.getHandlers(form, 'submit')[0]?.name
+    if (!handler) return
+
+    let dirty = this.dirtyFields.get(form)
+    if (!dirty) {
+      dirty = new Set()
+      this.dirtyFields.set(form, dirty)
+    }
+    const name = field.name
+    const key = `validate:${this.getUniqueId(form)}:${name}`
+    const send = (): void => this.sendValidate(form, handler, name)
+    const textLike = isTextLike(field)
+
+    if (e.type === 'input') {
+      if (!textLike) return
+      dirty.add(name)
+      if (field.getAttribute('aria-invalid') === 'true') {
+        this.schedule(key, this.timingFor('input', [], field), send)
+      }
+      return
+    }
+    if (e.type === 'change') {
+      if (!textLike) this.schedule(key, { kind: 'immediate' }, send)
+      return
+    }
+    if (textLike && dirty.has(name)) {
+      this.schedule(key, { kind: 'immediate' }, send)
+    }
+  }
+
+  private sendValidate(form: HTMLFormElement, handler: string, field: string): void {
+    this.app.sendEvent(handler, {
+      type: 'validate',
+      id: form.id || undefined,
+      tagName: form.tagName,
+      args: {},
+      field,
+      formData: this.formFields(form).data,
+    })
+  }
+
+  /** A form's fields as the server reads them: repeated names become lists. */
+  private formFields(form: HTMLFormElement): {
+    data: Record<string, FormDataValue>
+    files: FormData | null
+  } {
+    const data: Record<string, FormDataValue> = {}
+    const files = new FormData()
+    let hasFiles = false
+    new FormData(form).forEach((value, key) => {
+      if (value instanceof File) {
+        if (value.size > 0) {
+          files.append(key, value)
+          hasFiles = true
+        }
+        return
+      }
+      const strVal = value.toString()
+      const existing = data[key]
+      if (existing === undefined) {
+        data[key] = strVal
+      } else if (Array.isArray(existing)) {
+        ;(existing as string[]).push(strVal)
+      } else {
+        data[key] = [existing as string, strVal]
+      }
+    })
+    return { data, files: hasFiles ? files : null }
   }
 
   private openThrottleWindow(key: string, ms: number): void {
@@ -544,6 +649,7 @@ export class UnifiedEventHandler {
       if (!this.validateFileInputs(element)) {
         return
       }
+      if (isBoundForm(element) && !beginSubmit(element)) return
       // Apply the optimistic prediction (and its double-submit guard) before
       // the async POST. httpFormSubmit reconciles it: every failure mode
       // navigates away, success morphs + clearPending().
@@ -655,34 +761,12 @@ export class UnifiedEventHandler {
       if (!this.validateFileInputs(element)) {
         return
       }
+      // A bound form waits for the server's answer before it submits again.
+      if (isBoundForm(element) && !beginSubmit(element)) return
 
-      const formData = new FormData(element)
-      const data: Record<string, FormDataValue> = {}
-      const uploadFormData = new FormData()
-      let hasFileUploads = false
-      formData.forEach((value, key) => {
-        if (value instanceof File) {
-          if (value.size > 0) {
-            uploadFormData.append(key, value)
-            hasFileUploads = true
-          }
-          return
-        }
+      const { data, files: uploadFormData } = this.formFields(element)
 
-        const strVal = value.toString()
-        // Handle multiple values for same key
-        if (data[key] !== undefined) {
-          if (Array.isArray(data[key])) {
-            ;(data[key] as string[]).push(strVal)
-          } else {
-            data[key] = [data[key] as string, strVal]
-          }
-        } else {
-          data[key] = strVal
-        }
-      })
-
-      if (hasFileUploads) {
+      if (uploadFormData) {
         // Apply the optimistic prediction (and its double-submit guard)
         // synchronously, BEFORE the async upload starts — otherwise a slow
         // upload leaves the control unguarded and a second click kicks off a
@@ -697,6 +781,7 @@ export class UnifiedEventHandler {
           // No server error event will arrive for a failed upload — undo the
           // prediction here so the control is never left stuck.
           revertElement(element)
+          releaseForms()
           throw err
         }
         for (const [field, uploadValue] of Object.entries(uploadMap)) {
