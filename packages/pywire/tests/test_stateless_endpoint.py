@@ -290,6 +290,39 @@ def test_stateless_embedding_preserves_set_cookie():
     assert "flavor=choc" in r.headers.get("set-cookie", "")
 
 
+@pytest.mark.parametrize("content_type", [None, "text/plain", "application/json"])
+def test_cross_site_capable_content_types_refused(client, content_type):
+    """A form or no-cors fetch can post text/plain without a preflight; a
+    valid snapshot minted by an attacker must not ride the victim's cookies."""
+    blob = _blob(client.get("/").text)
+    body = msgpack.packb(
+        {"path": "/", "handler": "increment", "data": {}, "snapshot": blob}
+    )
+    headers = {"Content-Type": content_type} if content_type else {}
+    r = client.post("/_pywire/stateless", content=body, headers=headers)
+    assert r.status_code == 415
+
+
+@pytest.mark.parametrize(
+    ("site", "status"),
+    [("cross-site", 403), ("same-site", 403), ("same-origin", 200), ("none", 200)],
+)
+def test_sec_fetch_site_must_be_same_origin(client, site, status):
+    blob = _blob(client.get("/").text)
+    body = msgpack.packb(
+        {"path": "/", "handler": "increment", "data": {}, "snapshot": blob}
+    )
+    r = client.post(
+        "/_pywire/stateless",
+        content=body,
+        headers={
+            "Content-Type": "application/x-msgpack; charset=binary",
+            "Sec-Fetch-Site": site,
+        },
+    )
+    assert r.status_code == status
+
+
 def test_malformed_body_400(client):
     r = client.post("/_pywire/stateless", content=b"not msgpack", headers=_MSGPACK)
     assert r.status_code == 400

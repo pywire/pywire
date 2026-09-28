@@ -50,6 +50,18 @@ class StatelessHandler:
         return page
 
     async def handle_event(self, request: Request) -> Response:
+        # CSRF: snapshots aren't bound to a user, so a cross-site page could
+        # mint one and make a victim's browser post it with their cookies.
+        # A form or no-cors fetch can't send this content type, and a CORS
+        # fetch that does needs a preflight this endpoint never answers.
+        content_type = request.headers.get("content-type", "")
+        if content_type.split(";")[0].strip().lower() != "application/x-msgpack":
+            return self._err(415, "expected application/x-msgpack")
+        if request.headers.get("sec-fetch-site", "same-origin") not in (
+            "same-origin",
+            "none",
+        ):
+            return self._err(403, "cross-site request")
         # Defense in depth: a declared length over the snapshot cap cannot
         # hold a valid request — reject before buffering the body at all.
         declared = request.headers.get("content-length", "")

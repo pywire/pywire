@@ -63,6 +63,7 @@ def test_gcp_functions_round_trips_stateless_snapshot(tmp_path: Path) -> None:
     )
     Request.method = "POST"
     Request.path = "/_pywire/stateless"
+    Request.headers = {"content-type": "application/x-msgpack"}
     Request.get_data = lambda self: event
     body, status, headers = ns["pywire"](Request())
     assert isinstance(body, bytes)
@@ -156,6 +157,7 @@ match = re.search(r'_pywire_snapshot" type="text/plain">(.*?)</script>', text)
 snapshot = match.group(1) if match else ""
 Request.method = "POST"
 Request.path = "/_pywire/stateless"
+Request.headers = {"content-type": "application/x-msgpack"}
 post_body, post_status, post_headers = entrypoint.pywire(
     Request(
         msgpack.packb(
