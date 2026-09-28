@@ -54,6 +54,7 @@ pywire run [APP] [OPTIONS]
 - `--port INTEGER`: Bind port (default: `8000`).
 - `--workers INTEGER`: Number of worker processes (default: auto-calculated based on CPU cores).
 - `--no-access-log`: Disable access logging for performance.
+- `--no-ws-deflate`: Turn off WebSocket compression (permessage-deflate). Compression shrinks large updates (a 5,000-row list re-render drops from 913 KB to 31 KB), but each compressed connection holds about 100 KB of extra memory. Apps that only send small updates fit about 3× more sessions per GiB without it.
 
 ## `pywire build`
 

@@ -41,7 +41,13 @@ That's it. PyWire auto-detects `REDIS_URL` at startup and uses it for session pe
 
 ### How it works
 
-After each event handler executes, PyWire serializes page state and persists it to Redis. On WebSocket reconnect (or when a different worker handles the next request), state is restored from Redis into a fresh page instance.
+After an event handler executes, PyWire serializes page state and persists it to Redis. On WebSocket reconnect (or when a different worker handles the next request), state is restored from Redis into a fresh page instance.
+
+A snapshot costs time in proportion to the page's state, so PyWire writes at most one per session per `session_persist_interval` (default 1 second). The first event after a quiet spell is written straight away; a burst of events inside the window collapses into one write of the latest state at the end of it. State is also written as soon as a connection closes, and a reconnect waits for that write. Set the interval to `0` to write after every event:
+
+```python
+app = PyWire(session_persist_interval=0.25)
+```
 
 **What gets persisted:**
 
