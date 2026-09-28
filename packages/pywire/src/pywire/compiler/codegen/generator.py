@@ -950,8 +950,10 @@ class CodeGenerator:
                             handler_count += 1
 
                             try:
-                                # Transform body logic
-                                code_to_transform = attr.handler_name
+                                # Transform body logic (`$event` is an alias of `event`)
+                                code_to_transform = attr.handler_name.replace(
+                                    "$event", "event"
+                                )
                                 if is_identifier:
                                     # If it's a bare identifier (like 'print'), transform it to call with event
                                     code_to_transform = f"{code_to_transform}(event)"
@@ -1220,6 +1222,16 @@ class CodeGenerator:
                 call = stmt.value
                 for i, arg in enumerate(call.args):
                     if isinstance(arg, ast.Starred):
+                        continue
+
+                    # `event` only exists when the handler runs, so an argument
+                    # that reads it (e.g. `on_search(event.value)`) must stay in
+                    # the handler body. Its render-time names are still lifted
+                    # one by one by ArgumentLifter below.
+                    if any(
+                        isinstance(n, ast.Name) and n.id == "event"
+                        for n in ast.walk(arg)
+                    ):
                         continue
 
                     # Only lift if it's not a known name

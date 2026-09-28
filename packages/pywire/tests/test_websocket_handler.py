@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import msgpack
 from pywire.runtime.page import BasePage
+from pywire.runtime.session_persist import SessionPersister
 from pywire.runtime.session_store import MemorySessionStore
 from pywire.runtime.websocket import WebSocketHandler
 from starlette.requests import Request
@@ -71,6 +72,8 @@ class TestWebSocketHandler:
     def setup_method(self, method) -> None:
         self.app = MagicMock()
         self.app.router = MagicMock()
+        self.app.session_persist_interval = 60
+        self.app.session_persister = SessionPersister(self.app)
         self.handler = WebSocketHandler(self.app)
 
     @pytest.mark.asyncio
@@ -248,3 +251,33 @@ class TestWebSocketHandler:
         init_ack = next((m for m in ws.sent_messages if m["type"] == "init_ack"), None)
         assert init_ack is not None
         assert init_ack["session_restored"] is False
+
+    @pytest.mark.asyncio
+    async def test_reconnect_restores_state_held_by_persist_throttle(self) -> None:
+        """A reconnect inside the persist window restores the latest state."""
+        store = MemorySessionStore()
+        self.app.session_store = store
+        self.app.router.match.return_value = (MockPage, {}, "main")
+        self.app.debug = False
+        self.app._is_dev_mode = False
+        self.app.session_ttl = 60
+        self.app.session_warn_size = 256 * 1024
+        persister = self.app.session_persister
+
+        old_page = MockPage(MagicMock(), {}, {})
+        old_page.count = 1
+        persister.schedule("sess", old_page)
+        for _ in range(3):
+            await asyncio.sleep(0)
+        old_page.count = 2
+        persister.schedule("sess", old_page)  # held until the window closes
+        stored = await store.get("sess")
+        assert stored is not None and stored["attrs"]["count"] == 1
+
+        ws = MockWebSocket()
+        data = {"type": "init", "path": "/", "session_id": "sess"}
+        await self.handler._handle_init(cast(WebSocket, ws), data)
+
+        assert getattr(self.handler.connection_pages[ws], "count") == 2
+        persister.flush("sess")
+        await asyncio.sleep(0)

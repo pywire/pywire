@@ -75,7 +75,9 @@ Python frontmatter and event handlers are ignored, since the browser is by
 definition disconnected from the server when the overlay is visible.
 
 The server injects your template as `<template id="_pywire_reconnect">` on
-every page. When the transport disconnects, the client clones it into a
+every page. Without a custom file, pages carry no overlay markup: the
+default overlay ships inside the cached client bundle. When the transport
+disconnects, the client clones the template (or the default) into a
 wrapper `<div id="_pywire_reconnect_overlay">` and toggles a single
 attribute as state changes:
 
@@ -140,7 +142,7 @@ app = PyWire(
 )
 ```
 
-When `reconnect_overlay=False`, the template is still injected but the
+When `reconnect_overlay=False`, a custom template is still injected but the
 client never displays it — useful if you want a fully bespoke disconnection
 indicator wired up from your own page code.
 
@@ -155,4 +157,4 @@ indicator wired up from your own page code.
   are not recommended.
 
 For a fully styled reference, see the built-in default at
-[`packages/pywire/src/pywire/templates/reconnect/default.html`](https://github.com/pywire/pywire/blob/main/packages/pywire/src/pywire/templates/reconnect/default.html).
+[`packages/pywire/src/pywire/client/src/core/reconnect-overlay-default.ts`](https://github.com/pywire/pywire/blob/main/packages/pywire/src/pywire/client/src/core/reconnect-overlay-default.ts).
