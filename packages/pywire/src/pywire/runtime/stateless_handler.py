@@ -146,7 +146,9 @@ class StatelessHandler:
         """True when dispatch must be refused per ``__event_handlers__``.
 
         Mirrors ``BasePage._dispatch_handler`` allowlist semantics (None =
-        permissive hand-rolled) for both page-level and ``_comp:`` names.
+        permissive hand-rolled) for both page-level and ``_comp:`` names,
+        walking nested components (``_comp:<layout>:_comp:<Nav>:bump``) the
+        same way ``_handle_component_event`` dispatches them.
         """
         if handler_name.startswith("_comp:"):
             comp_key, sep, remainder = handler_name[len("_comp:") :].partition(":")
@@ -157,8 +159,7 @@ class StatelessHandler:
             )
             if component is None:
                 return True
-            allowed = component.__class__.__event_handlers__
-            return allowed is not None and remainder not in allowed
+            return StatelessHandler._refused(component, remainder)
         allowed = page.__class__.__event_handlers__
         return allowed is not None and handler_name not in allowed
 

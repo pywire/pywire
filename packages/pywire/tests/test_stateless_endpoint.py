@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import re
 import zlib
 import json
 from pathlib import Path
@@ -319,3 +320,45 @@ def test_oversized_declared_content_length_rejected_before_body(client):
         headers={**_MSGPACK, "Content-Length": str(MAX_SNAPSHOT_LEN + 2049)},
     )
     assert r.status_code == 413
+
+
+NAV_COMPONENT = """---
+n = wire(0)
+
+def bump():
+    n.value += 1
+---
+<button id="nav" @click={bump()}>nav {n}</button>
+"""
+
+NAV_LAYOUT = """---
+from components.Nav import Nav
+---
+<html><body><Nav /><main>{$render children}</main></body></html>
+"""
+
+
+def test_nested_component_handler_dispatches(tmp_path, monkeypatch):
+    # A component inside the layout is two levels deep:
+    # _comp:<layout>:_comp:<Nav>:bump. The allowlist check must walk the
+    # same chain handle_event dispatches through.
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (tmp_path / "components").mkdir()
+    (tmp_path / "components" / "Nav.wire").write_text(NAV_COMPONENT)
+    (pages / "__layout__.wire").write_text(NAV_LAYOUT)
+    (pages / "index.wire").write_text("<p>home</p>")
+    monkeypatch.syspath_prepend(str(tmp_path))  # project root, as in a real app
+    app = PyWire(pages_dir=str(pages), stateless=True, secret_key=SECRET)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        html = c.get("/").text
+        handler = re.search(r'id="nav"[^>]*data-on-click="([^"]+)"', html)[1]
+        assert handler.count("_comp:") == 2, handler
+
+        r = _post(c, _blob(html), handler=handler)
+        assert r.status_code == 200, _error(r)
+
+        prefix = handler.rsplit(":", 1)[0]
+        r = _post(c, _blob(html), handler=f"{prefix}:render")
+        assert r.status_code == 400
+        assert _error(r) == "invalid handler"
