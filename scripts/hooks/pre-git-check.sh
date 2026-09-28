@@ -52,17 +52,23 @@ fi
 
 # Map files to checkable units: packages/*, examples, docs. Workspace-wide
 # config changes trigger the full workspace check; other root files need none.
+# Spec/planning docs (docs/superpowers/**) never trigger the docs unit.
 units=""
 full=false
 while IFS= read -r f; do
   case $f in
     packages/*/*) p=${f#packages/}; units+="packages/${p%%/*}"$'\n' ;;
     examples/*) units+=$'examples\n' ;;
+    docs/superpowers/*) ;;
     docs/*) units+=$'docs\n' ;;
-    scripts/hooks/*) ;;
+    scripts/hooks/* | scripts/tests/*) ;;
     pyproject.toml | uv.lock | package.json | pnpm-lock.yaml | pnpm-workspace.yaml | scripts/*) full=true ;;
   esac
 done <<<"$files"
+
+# Canonical unit list from the graph script — hook, orchestrators and
+# ci.yml all derive from the same source, so they can't drift apart.
+graph_units=$(python3 scripts/monorepo_graph.py units 2>/dev/null || true)
 
 tmp=${TMPDIR:-/tmp}
 log=$(mktemp "${tmp%/}/pre-git-check.XXXXXX")
@@ -82,10 +88,11 @@ if $full; then
 fi
 
 for unit in $(sort -u <<<"$units"); do
-  if [[ $unit == docs ]]; then
-    echo "pre-git-check: docs" >&2
-    (cd docs && pnpm check) >>"$log" 2>&1 || fail "docs check failed"
-  elif [[ -x $unit/scripts/check ]]; then
+  if [[ -n $graph_units ]] && ! grep -qx "$unit" <<<"$graph_units"; then
+    echo "pre-git-check: $unit is not a graph unit — skipping" >&2
+    continue
+  fi
+  if [[ -x $unit/scripts/check ]]; then
     echo "pre-git-check: $unit" >&2
     (cd "$unit" && ./scripts/check) >>"$log" 2>&1 || fail "$unit check failed"
   fi

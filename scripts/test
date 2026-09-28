@@ -1,23 +1,12 @@
 #!/bin/sh -e
 
-# Run tests for every Python package in the workspace.
-# CI does this per-package via dedicated jobs; this script is for local
-# developer convenience (run everything in one shot).
+# Tests for every unit that exposes scripts/test, in topological order.
+# Units without scripts/test are skipped (granular entry points are
+# optional per the AGENTS.md tooling contract).
 
-echo "=== Running PyWire Core Tests ==="
-(cd packages/pywire && ./scripts/test "$@")
-
-echo "=== Running PyWire Parser Tests ==="
-(cd packages/pywire-parser && ./scripts/test "$@")
-
-echo "=== Running PyWire CLI Tests ==="
-(cd packages/pywire-cli && ./scripts/test "$@")
-
-echo "=== Running PyWire Auth Tests ==="
-(cd packages/pywire-auth && ./scripts/test "$@")
-
-echo "=== Running PyWire Language Server Tests ==="
-(cd packages/pywire-language-server && ./scripts/test "$@")
-
-echo "=== Running Create PyWire App Tests ==="
-(cd packages/create-pywire-app && ./scripts/test "$@")
+for unit in $(python3 scripts/monorepo_graph.py units); do
+  if [ -x "$unit/scripts/test" ]; then
+    echo "=== Testing $unit ==="
+    (cd "$unit" && ./scripts/test "$@")
+  fi
+done

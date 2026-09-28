@@ -72,7 +72,6 @@ import type { Props } from '@astrojs/starlight/props'
   }
 
   function onThemeChange(theme: Theme): void {
-    // @ts-expect-error — global from ThemeProvider
     StarlightThemeProvider.updatePickers(theme)
     document.documentElement.dataset.theme = getResolved(theme)
     storeTheme(theme)

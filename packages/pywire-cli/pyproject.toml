@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire-cli"
-version = "0.3.0"
+version = "0.3.3"
 description = "Command-line tools for PyWire projects: dev, build, deploy, check"
 authors = [
     { name = "Reece Holmdahl", email = "reece@pywire.dev" },
 ]
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "Apache-2.0"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
-    "pywire[build]>=0.14.4",
+    "pywire[build]>=0.15.0",
     "pywire-templates>=0.2.0",
     "jinja2>=3.1.0",
     "uvicorn[standard]>=0.27.0",

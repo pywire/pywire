@@ -1,0 +1,35 @@
+{
+  "name": "create-pywire-app",
+  "version": "0.0.0",
+  "description": "Create a new pywire app: runs the create-pywire-app wizard through uv, installing uv if needed",
+  "type": "module",
+  "bin": {
+    "create-pywire-app": "bin/create-pywire-app.js"
+  },
+  "files": [
+    "bin",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test 'tests/*.test.mjs'"
+  },
+  "keywords": [
+    "pywire",
+    "python",
+    "create",
+    "scaffold",
+    "uv"
+  ],
+  "homepage": "https://pywire.dev/docs/guides/quickstart/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pywire/pywire.git",
+    "directory": "packages/create-pywire-app-npm"
+  },
+  "bugs": "https://github.com/pywire/pywire/issues",
+  "author": "Reece Holmdahl",
+  "license": "Apache-2.0"
+}

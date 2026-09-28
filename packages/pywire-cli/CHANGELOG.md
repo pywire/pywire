@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.3](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.2...pywire-cli-v0.3.3) (2026-09-27)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump pywire floor to 0.15.0 ([#334](https://github.com/pywire/pywire/issues/334)) ([042f103](https://github.com/pywire/pywire/commit/042f103a34b20a168e31a1068345eadcd7a64f2e))
+
+## [0.3.2](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.1...pywire-cli-v0.3.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* **ci:** serialize docs deploys, stop pushing to release PRs, bump pywire floors ([#312](https://github.com/pywire/pywire/issues/312)) ([b6a0ac2](https://github.com/pywire/pywire/commit/b6a0ac2c76b78db92b476f6fe99da793d9c12bca))
+
+## [0.3.1](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.0...pywire-cli-v0.3.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* scaffold font and README drift, dev --port, LSP dependency floor ([#305](https://github.com/pywire/pywire/issues/305)) ([724248a](https://github.com/pywire/pywire/commit/724248a04d9a3980b9b3b28d809363c109bc3248))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/pywire-cli-v0.2.0...pywire-cli-v0.3.0) (2026-05-02)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "create-pywire-app"
-version = "0.12.0"
+version = "0.13.0"
 description = "Init wizard for new pywire projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,4 +32,9 @@ dev = [
 exclude = [
     "src/create_pywire_app/templates",
 ]
+
+[tool.ty.rules]
+# ty (unpinned in nox venvs) flaps on the set_event_loop_policy directive:
+# versions that flag the 3.14 deprecation need it; older ones call it unused.
+unused-ignore-comment = "ignore"
 

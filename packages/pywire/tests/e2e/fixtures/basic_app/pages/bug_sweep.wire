@@ -1,0 +1,30 @@
+---
+draft = wire("")
+items = wire([])
+show_open = wire(False)
+tasks = wire([{"title": "ship", "done": True}, {"title": "write", "done": False}])
+
+def add(event):
+    items.value = [*items.value, event.form_data.get("title")]
+    draft.value = ""
+
+def set_draft(event):
+    draft.value = event.value
+
+def toggle_filter():
+    show_open.value = not show_open.value
+
+def visible():
+    return [t for t in tasks.value if not (show_open.value and t["done"])]
+---
+<h1 id="title">Bug sweep</h1>
+<form id="add-form" @submit.prevent={add}>
+    <input id="title-input" name="title" value={draft} @input={set_draft} />
+    <button id="add" type="submit">Add</button>
+</form>
+<ul id="items"><li $for={i in items}>{i}</li></ul>
+
+<button id="filter" @click={toggle_filter}>Toggle open only</button>
+<ul id="tasks">
+    <li $for={t in visible()}><input type="checkbox" checked={t["done"]} /> {t["title"]}</li>
+</ul>

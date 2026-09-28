@@ -6,14 +6,14 @@
 FILES="src/pywire_language_server"
 
 echo "-> Formatting..."
-uv run ruff format --check --diff $FILES
+uv run --package pywire-language-server --extra dev ruff format --check --diff $FILES
 
 echo "-> Type Checking..."
-uv run --with ty ty check $FILES
+uv run --package pywire-language-server --extra dev ty check $FILES
 
 echo "-> Linting..."
-uv run ruff check $FILES
+uv run --package pywire-language-server --extra dev ruff check $FILES
 
 echo "-> Testing (Multi-version)..."
 # Use uv run to execute nox from dev dependencies
-uv run nox
+uv run --package pywire-language-server --extra dev nox

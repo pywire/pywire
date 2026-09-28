@@ -45,6 +45,25 @@ BOOLEAN_HTML_ATTRS = frozenset(
     }
 )
 
+# BasePage attributes the runtime assigns per request (see runtime/page.py).
+RESERVED_PAGE_NAMES = frozenset({"request", "params", "query", "path", "url"})
+
+# HTML boolean attributes. `$checked={x}` is not a directive: it used to render
+# literally and break DOM diffing, while plain `checked={x}` already toggles.
+BOOLEAN_HTML_ATTRS = frozenset(
+    {
+        "checked",
+        "disabled",
+        "readonly",
+        "required",
+        "selected",
+        "hidden",
+        "open",
+        "multiple",
+        "autofocus",
+    }
+)
+
 logger = logging.getLogger(__name__)
 
 

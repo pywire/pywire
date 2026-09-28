@@ -208,6 +208,7 @@ connections via Durable Object transactional storage.
 
 ## Workers & scaling
 
+{% if has_dockerfile %}
 The `Dockerfile` runs with `--workers {{ workers }}`. Each worker is a separate Uvicorn process.
 
 {% if workers > 1 %}
@@ -216,5 +217,10 @@ session store, WebSocket sessions would be split across processes and break reac
 {% else %}
 A single worker is the safe default — all WebSocket session state stays in one process.
 To scale to multiple workers or machines, you need a shared session store (Redis or Valkey).
-See [Horizontal Scaling](https://pywire.dev/guides/scaling/) for details.
+See [Horizontal Scaling](https://pywire.dev/docs/guides/scaling/) for details.
+{% endif %}
+{% else %}
+`uv run pywire run` serves the app from a single process, which keeps all WebSocket session
+state in one place. To scale to multiple workers or machines, you need a shared session store
+(Redis or Valkey). See [Horizontal Scaling](https://pywire.dev/docs/guides/scaling/) for details.
 {% endif %}

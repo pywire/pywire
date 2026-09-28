@@ -11,7 +11,7 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "Apache-2.0"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -28,6 +28,12 @@ dependencies = [
 [project.urls]
 Homepage = "https://pywire.dev"
 Repository = "https://github.com/pywire/pywire"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "ty",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pywire_templates"]

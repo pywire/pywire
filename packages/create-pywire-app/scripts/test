@@ -9,4 +9,4 @@ else
     COLOR_ARGS="--color=no"
 fi
 
-uv run pytest "$@"
+uv run --package create-pywire-app --extra dev pytest "$@"

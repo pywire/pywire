@@ -127,4 +127,4 @@ See [Deployment](/docs/guides/deployment) for platform-specific guides.
 
 ## `create-pywire-app`
 
-(Separate command, typically run via `uvx`) Scaffolds a new project. See [Quickstart](/docs/guides/quickstart).
+(Separate command, run via `uvx create-pywire-app`, `npx create-pywire-app` or the install script) Scaffolds a new project. See [Quickstart](/docs/guides/quickstart).

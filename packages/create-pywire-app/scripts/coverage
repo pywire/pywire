@@ -3,4 +3,4 @@ set -e
 
 echo "📊 Running coverage for create-pywire-app..."
 
-uv run pytest --cov=src/create_pywire_app --cov-report=term-missing "$@"
+uv run --package create-pywire-app --extra dev pytest --cov=src/create_pywire_app --cov-report=term-missing "$@"

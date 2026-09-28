@@ -52,15 +52,25 @@ Verify by running code rather than guessing: throwaway scripts go in `scratch/` 
 
 ## Cross-package version floors
 
-Dependency chains: `tree-sitter-pywire` → `pywire-parser` → `pywire[build]` / `pywire-language-server`; `pywire-cli` → `pywire[build]`, `pywire-templates`; `pywire-auth` → `pywire`; `create-pywire-app` → `pywire-templates`.
+The dependency graph is **derived, not declared**: `python3 scripts/monorepo_graph.py` parses every `pyproject.toml` (plus a small side-table for `examples`/docs) and is the source of truth for floors, `ci.yml` fan-outs, and root orchestrator order.
 
-When a downstream package starts using a new upstream feature, bump **both** in the same commit:
-1. the dep floor in the downstream `pyproject.toml` (e.g. `pywire-parser>=0.6.0`), and
-2. `_FLOORS` in the downstream `src/<package>/_compat.py` (runtime guard for stale venvs).
+- `check-floors` — every floor must be ≥ the latest **published** upstream version, and `_FLOORS` in the downstream `src/<pkg>/_compat.py` must equal the pyproject floor. Run it after touching any floor; it's also an always-on CI job.
+- `check-ci` — `ci.yml` `if:` fan-outs must match the graph-derived sets (a job runs for its own package + all transitive upstream packages).
+- `check-publishable <pkg>` — a release PR for `<pkg>` is mergeable only when every floor it declares is already published (upstream merged + published).
+- `release-order [pkgs...]` — topological merge order for release PRs (auto-detects open `release-please--*` PRs with no args).
+- `units` / `affected [base-ref]` — what the root orchestrators and `--changed` iterate.
+
+When a downstream package starts using a new upstream feature, bump **both** in the same commit: the dep floor in the downstream `pyproject.toml` and `_FLOORS` in its `_compat.py` — `check-floors` tells you exactly what and where. CI (`check-monorepo-graph`) and the release-PR gate (`Release Floors Gate` status, set by `release.yml`) enforce both.
 
 JS packages (`vscode-pywire`, `prettier-plugin-pywire`) don't depend on tree-sitter-pywire via npm; no floors there.
 
 Import across packages only via published dependencies, never by folder path.
+
+### Local tooling contract
+
+Every checkable unit (each `packages/*`, `examples`, `docs`) **must** expose `scripts/check` = the full local gate (format, lint, types, generated-code staleness, tests), self-contained (`uv run --package <pkg> --extra dev …` — never assume the root venv). `scripts/lint` and `scripts/test` are optional granular entry points; orchestrators skip units that lack them. `check-scripts` verifies all of this.
+
+Root `scripts/check|test|lint` iterate `monorepo_graph.py units` (topological); `scripts/check --changed [base-ref]` runs only affected units. `scripts/hooks/pre-git-check.sh` validates its unit mapping against the same graph.
 
 ## Worktrees & commit gate
 
@@ -77,4 +87,9 @@ Releases are automated by release-please (one PR per package; merge it to publis
 - `chore:` commits are ignored by release-please — use for CI/infra/deps.
 - PR titles must not contain parentheses beyond the scope: squash-merge appends ` (#NN)`, and an extra `(` makes release-please silently drop the commit. Put `Closes #N` in the body; use `feat!:` + a `BREAKING CHANGE:` footer for breaking changes.
 
-CI (`.github/workflows/ci.yml`) path-filters jobs per package.
+Release ordering:
+1. Feature PRs bump floors for any new upstream feature they use (same commit; `check-floors` verifies).
+2. Merge release PRs upstream-first — `release-order` prints the order; the `Release Floors Gate` status check enforces it.
+3. If the gate is red, the blocker is upstream: an unmerged release PR or a failed publish job — fix that, not the gate.
+
+CI (`.github/workflows/ci.yml`) path-filters jobs per package; `check-ci` verifies the fan-outs match the graph.

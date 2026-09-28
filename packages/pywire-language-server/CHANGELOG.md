@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.5](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.4...pywire-language-server-v0.7.5) (2026-09-27)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump pywire floor to 0.15.0 ([#334](https://github.com/pywire/pywire/issues/334)) ([042f103](https://github.com/pywire/pywire/commit/042f103a34b20a168e31a1068345eadcd7a64f2e))
+* **pywire-language-server:** keep ty diagnostics and find the bundled ty ([#322](https://github.com/pywire/pywire/issues/322)) ([8c59806](https://github.com/pywire/pywire/commit/8c59806b5d910910a98de27b4fe2a02c461fc059))
+
+## [0.7.4](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.3...pywire-language-server-v0.7.4) (2026-09-27)
+
+
+### Bug Fixes
+
+* **ci:** serialize docs deploys, stop pushing to release PRs, bump pywire floors ([#312](https://github.com/pywire/pywire/issues/312)) ([b6a0ac2](https://github.com/pywire/pywire/commit/b6a0ac2c76b78db92b476f6fe99da793d9c12bca))
+
+## [0.7.3](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.2...pywire-language-server-v0.7.3) (2026-09-27)
+
+
+### Bug Fixes
+
+* scaffold font and README drift, dev --port, LSP dependency floor ([#305](https://github.com/pywire/pywire/issues/305)) ([724248a](https://github.com/pywire/pywire/commit/724248a04d9a3980b9b3b28d809363c109bc3248))
+
 ## [0.7.2](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.1...pywire-language-server-v0.7.2) (2026-05-06)
 
 

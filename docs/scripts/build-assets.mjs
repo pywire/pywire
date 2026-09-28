@@ -123,8 +123,15 @@ async function main() {
         TS_PYWIRE_PKG,
       )
 
-      // Set up the Pyodide cross-build environment for the target version
-      run(pyodideBin, ['xbuildenv', 'install', '0.29.3'], TS_PYWIRE_PKG)
+      // Set up the Pyodide cross-build environment for the target version.
+      // --url bypasses the metadata JSON lookup: pyodide's main branch no
+      // longer hosts the 0.29.x cross-build metadata (deterministic 404), so
+      // pin straight to the matching release tarball.
+      run(
+        pyodideBin,
+        ['xbuildenv', 'install', '--url', 'https://github.com/pyodide/pyodide/releases/download/0.29.3/xbuildenv-0.29.3.tar.bz2'],
+        TS_PYWIRE_PKG,
+      )
 
       // Ask pyodide-build which Emscripten version is required — avoids hardcoding
       const { execFileSync: execSync } = await import('node:child_process')

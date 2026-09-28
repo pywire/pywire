@@ -6,7 +6,9 @@
     "packages/pywire": {
       "release-type": "python",
       "component": "pywire",
-      "extra-files": ["src/pywire/client/package.json"]
+      "extra-files": [
+        "src/pywire/client/package.json"
+      ]
     },
     "packages/pywire-parser": {
       "release-type": "python",
@@ -31,7 +33,10 @@
     "packages/tree-sitter-pywire": {
       "release-type": "python",
       "component": "tree-sitter-pywire",
-      "extra-files": ["package.json", "Cargo.toml"]
+      "extra-files": [
+        "package.json",
+        "Cargo.toml"
+      ]
     },
     "packages/vscode-pywire": {
       "release-type": "node",
@@ -48,6 +53,11 @@
     "docs": {
       "release-type": "node",
       "component": "pywire-docs"
+    },
+    "packages/create-pywire-app-npm": {
+      "release-type": "node",
+      "component": "create-pywire-app-npm",
+      "initial-version": "0.1.0"
     }
   }
 }
