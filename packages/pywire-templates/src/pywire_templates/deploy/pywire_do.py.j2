@@ -25,8 +25,15 @@ def _send(ws, msg):
     ws.send(to_js(msgpack.packb(msg)))
 
 
-def _send_update(ws, update):
-    _send(ws, build_update_payload(update))
+def _send_update(ws, update, msg=None):
+    _send(ws, _reply(msg, build_update_payload(update)))
+
+
+def _reply(msg, payload):
+    """Echo a client event's id as ``ack`` so it can settle that event."""
+    if msg is not None and isinstance(msg.get("id"), int):
+        payload["ack"] = msg["id"]
+    return payload
 
 
 def _decode(message):
@@ -79,7 +86,7 @@ class PyWireSessionDO(DurableObject):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            _send(ws, {"type": "error", "error": str(e)})
+            _send(ws, _reply(msg, {"type": "error", "error": str(e)}))
 
     async def on_webSocketClose(self, ws, code, reason, was_clean):
         if self.page:
@@ -135,7 +142,7 @@ class PyWireSessionDO(DurableObject):
         if not self.page:
             self.page = _resolve_page(msg.get("path", "/"))
             if not self.page:
-                _send(ws, {"type": "error", "error": "No page"})
+                _send(ws, _reply(msg, {"type": "error", "error": "No page"}))
                 return
             await self._restore_from_storage(self.page)
             await self.page.render(init=True)
@@ -148,11 +155,11 @@ class PyWireSessionDO(DurableObject):
             update = await self.page.render_update(init=False)
 
         if self.page._pending_navigation:
-            _send(ws, {"type": "navigate", "path": self.page._pending_navigation})
+            _send(ws, _reply(msg, {"type": "navigate", "path": self.page._pending_navigation}))
             self.page._pending_navigation = None
             return
 
-        _send_update(ws, update)
+        _send_update(ws, update, msg)
         await self.page._run_hooks(self.page.AFTER_UPDATE_HOOKS)
         if self._persister.should_persist(time.monotonic()):
             await self._persist_state()

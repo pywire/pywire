@@ -42,3 +42,20 @@ def build_update_payload(update: Any) -> dict[str, Any]:
 
     # Fallback: force full reload
     return {"type": "reload"}
+
+
+def event_ack(message: dict[str, Any]) -> int | None:
+    """The id of a client event message, to echo back as ``ack``.
+
+    The client numbers its events and settles each optimistic prediction when
+    the reply carrying that event's id arrives. Non-int ids are ignored.
+    """
+    ack = message.get("id")
+    return ack if isinstance(ack, int) and not isinstance(ack, bool) else None
+
+
+def with_ack(payload: dict[str, Any], ack: int | None) -> dict[str, Any]:
+    """Mark ``payload`` as the reply to client event ``ack`` (if known)."""
+    if ack is not None:
+        payload["ack"] = ack
+    return payload

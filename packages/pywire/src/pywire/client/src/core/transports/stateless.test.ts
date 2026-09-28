@@ -101,6 +101,22 @@ describe('StatelessTransport', () => {
     expect(sentBody(1).snapshot).toBe('SNAP_V2')
   })
 
+  it('marks each reply, success or error, with its event id as ack', async () => {
+    fetchMock.mockResolvedValueOnce(
+      msgpackRes(200, { type: 'update', regions: [], snapshot: 'SNAP_V2' })
+    )
+    fetchMock.mockResolvedValueOnce(msgpackRes(400, { error: 'invalid snapshot' }))
+    transport.send({ ...eventMsg(), id: 7 })
+    transport.send({ ...eventMsg(), id: 8 })
+
+    await vi.waitFor(() => expect(messages.filter((m) => m.ack !== undefined)).toHaveLength(2))
+    const replies = messages.filter((m) => m.ack !== undefined)
+    expect(replies.map((m) => [m.type, m.ack])).toEqual([
+      ['update', 7],
+      ['error', 8],
+    ])
+  })
+
   it('(d) HTTP 400 msgpack {error} → {type:"error", error} notified', async () => {
     fetchMock.mockResolvedValueOnce(msgpackRes(400, { error: 'invalid snapshot' }))
     transport.send(eventMsg())

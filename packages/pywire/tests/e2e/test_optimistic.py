@@ -184,3 +184,19 @@ def test_rapid_double_click_submits_once(
         ".filter(r => r.name.includes('/_pywire/stateless')).length"
     )
     assert posts == 1, f"expected exactly one stateless POST, saw {posts}"
+
+
+@pytest.mark.parametrize("server", ["stateless_server", "pywire_server"])
+def test_control_outside_the_updated_region_is_released(
+    page: Page, request: pytest.FixtureRequest, server: str
+):
+    """The Save button's handler only changes a status line elsewhere, so the
+    reply never morphs the button: it must still be released when the reply
+    to its own event arrives."""
+    page.goto(f"{request.getfixturevalue(server)}/optimistic_elsewhere")
+    save = page.locator("#save")
+    for n in (1, 2):
+        save.click()
+        expect(page.locator("#status")).to_have_text(f"Saved {n}")
+        expect(save).to_be_enabled(timeout=5000)
+        expect(save).not_to_have_class("saving")

@@ -77,6 +77,8 @@ export class PyWireApp {
   protected sessionId: string | null = null
   private intentionalDisconnect = false
   private connectStartTime: number | null = null
+  /** Id of the last event sent; replies echo it as `ack`. */
+  private lastEventId = 0
   /**
    * Tracks the target path of a pending PJAX navigation.
    * Set before sending a relocate message, cleared after the resulting
@@ -586,16 +588,20 @@ export class PyWireApp {
   }
 
   /**
-   * Send an event to the server.
+   * Send an event to the server. Returns the event's id, which the reply
+   * echoes as `ack`.
    */
-  sendEvent(handler: string, data: EventData): void {
+  sendEvent(handler: string, data: EventData): number {
+    const id = ++this.lastEventId
     const message: ClientMessage = {
       type: 'event',
       handler,
       path: window.location.pathname + window.location.search,
       data,
+      id,
     }
     this.transport.send(message)
+    return id
   }
 
   /**
@@ -634,9 +640,9 @@ export class PyWireApp {
         }
 
         // An update message is the "request finished" signal: the morph already
-        // reconciled in-region markers/classes, so just strip any leftover
-        // optimistic pending markers and re-enable guarded controls.
-        clearPending()
+        // reconciled in-region markers/classes; settle the predictions of the
+        // event it answers that the morph never reached.
+        clearPending(msg.ack)
         // Same signal for @poll: a response arrived (even an empty one), so
         // clear the per-element in-flight overlap guard.
         clearPollInFlight()
@@ -689,7 +695,7 @@ export class PyWireApp {
         logger.error('PyWire: Server error:', msg.error)
         // No morph is coming — revert the optimistic prediction so a failed
         // control is never left stuck disabled (review focus #8).
-        revertPending()
+        revertPending(msg.ack)
         // A poll dispatch that errored is no longer in flight — let the next
         // tick retry.
         clearPollInFlight()
@@ -698,7 +704,7 @@ export class PyWireApp {
       case 'error_trace':
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
-        revertPending()
+        revertPending(msg.ack)
         clearPollInFlight()
         break
 

@@ -83,16 +83,17 @@ export class StatelessTransport extends BaseTransport {
             typeof payload.error === 'string'
               ? payload.error
               : `stateless request failed: ${response.status}`,
+          ack: msg.id,
         })
         return
       }
       if (typeof payload.snapshot === 'string') {
         this.snapshot = payload.snapshot
       }
-      this.notifyHandlers(payload)
+      this.notifyHandlers({ ...payload, ack: msg.id })
     } catch (e) {
       logger.error('PyWire: stateless event failed', e)
-      this.notifyHandlers({ type: 'error', error: 'stateless request failed' })
+      this.notifyHandlers({ type: 'error', error: 'stateless request failed', ack: msg.id })
     }
   }
 

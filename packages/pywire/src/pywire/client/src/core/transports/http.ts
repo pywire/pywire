@@ -110,6 +110,10 @@ export class HTTPTransport extends BaseTransport {
       return
     }
 
+    const eventId =
+      (message as { type?: string; id?: number }).type === 'event'
+        ? (message as { id?: number }).id
+        : undefined
     try {
       const response = await fetch(`${this.baseUrl}/event`, {
         method: 'POST',
@@ -128,9 +132,12 @@ export class HTTPTransport extends BaseTransport {
       // The response contains the updated HTML
       const buffer = await response.arrayBuffer()
       const result = decode(buffer) as ServerMessage
-      this.notifyHandlers(result)
+      this.notifyHandlers({ ...result, ack: eventId })
     } catch (e) {
       logger.error('PyWire: HTTP send error', e)
+      if (eventId !== undefined) {
+        this.notifyHandlers({ type: 'error', error: 'event send failed', ack: eventId })
+      }
     }
   }
 

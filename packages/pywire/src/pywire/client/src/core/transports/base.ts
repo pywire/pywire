@@ -84,6 +84,8 @@ export interface ServerMessage {
   session_id?: string
   session_restored?: boolean
   meta?: { page_interactive?: boolean; [key: string]: unknown }
+  /** Id of the event this reply answers (absent for server pushes). */
+  ack?: number
 }
 
 export interface NavigateMessage {
@@ -120,6 +122,8 @@ export interface EventMessage {
   handler: string
   path: string
   data: EventData
+  /** Client-assigned, increasing per page load; replies echo it as `ack`. */
+  id?: number
 }
 
 export interface RelocateMessage {
