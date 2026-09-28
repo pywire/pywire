@@ -110,7 +110,12 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
     workers = types.ModuleType("workers")
     workers.Response = Response  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "workers", workers)
-    monkeypatch.setitem(sys.modules, "_routes", types.ModuleType("_routes"))
+    # The entry sets PYWIRE_PREBUILT, so PyWire() compiles nothing and the
+    # bundle's _routes.py registers the pages; this one compiles them instead.
+    (tmp_path / "_routes.py").write_text(
+        "from edge_fixture_app import app\napp._load_pages()\n"
+    )
+    monkeypatch.delitem(sys.modules, "_routes", raising=False)
 
     source = (
         jinja2.Environment(loader=jinja2.FileSystemLoader(EDGE_TEMPLATES))

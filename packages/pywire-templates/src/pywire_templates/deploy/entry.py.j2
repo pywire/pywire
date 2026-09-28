@@ -1,4 +1,9 @@
 import asgi
+import os
+
+# _routes.py registers the prebuilt pages: PyWire() must not compile src/pages.
+os.environ["PYWIRE_PREBUILT"] = "1"
+
 from {{ app_module }} import {{ app_attr }}
 import _routes  # noqa: F401 — registers routes as a side effect
 from pywire_do import PyWireSessionDO

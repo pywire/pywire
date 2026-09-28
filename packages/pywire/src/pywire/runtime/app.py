@@ -377,8 +377,12 @@ class PyWire:
         upload_manager.configure_storage(self._runtime_dir / "uploads")
         upload_manager.max_upload_size = self.max_upload_size
 
-        # Compile and register all pages
-        self._load_pages()
+        # Compile and register all pages. Prebuilt deploy bundles (FaaS and
+        # Cloudflare) skip this: their entrypoint sets PYWIRE_PREBUILT, the
+        # bundle's _routes.py registers the precompiled pages, and there is
+        # usually no compiler to run.
+        if os.environ.get("PYWIRE_PREBUILT") != "1":
+            self._load_pages()
 
         # Prepare exception handlers
         exception_handlers: Dict[Any, Any] = {}

@@ -6,6 +6,8 @@ import sys
 from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "package"))
+# _routes.py registers the prebuilt pages: PyWire() must not compile src/pages.
+os.environ["PYWIRE_PREBUILT"] = "1"
 
 from pywire.adapters.oneshot import OneShotASGIAdapter
 from {{ app_module }} import {{ app_attr }}

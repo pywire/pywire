@@ -1,5 +1,10 @@
 """Google Cloud Functions entry point for a stateless PyWire app."""
 import asyncio
+import os
+
+# _routes.py registers the prebuilt pages: PyWire() must not compile src/pages.
+os.environ["PYWIRE_PREBUILT"] = "1"
+
 from pywire.adapters.oneshot import OneShotASGIAdapter
 from {{ app_module }} import {{ app_attr }} as _pywire_app
 import _routes  # noqa: F401

@@ -46,10 +46,12 @@ class Props:
 
 SERVE = """
 import asyncio
+import os
 import sys
 
 sys.modules["pywire_parser"] = None  # importing it raises ImportError
 sys.path.insert(0, ".")
+os.environ["PYWIRE_PREBUILT"] = "1"  # as every prebuilt entrypoint does
 import _routes  # noqa: F401  (imports src.main and registers bundled pages)
 from src.main import app
 from pywire.adapters.oneshot import OneShotASGIAdapter
@@ -96,3 +98,6 @@ def test_bundle_serves_component_imports_without_parser(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.split() == ["200", "True", "True"], proc.stderr[-3000:]
+    # The shipped src/pages/*.wire are not compiled at startup: _routes.py
+    # registers the prebuilt pages, and there is no compiler to run.
+    assert "Failed to load" not in proc.stderr, proc.stderr[-3000:]

@@ -7,9 +7,15 @@ All imports are at the top level so they are captured in the Cloudflare
 Workers memory snapshot at deploy time, giving fast cold starts.
 """
 
+import os
+
 from workers import DurableObject, Response
 from js import WebSocketPair
 from pyodide.ffi import to_js
+
+# _routes.py registers the prebuilt pages: PyWire() must not compile src/pages.
+os.environ["PYWIRE_PREBUILT"] = "1"
+
 from {{ app_module }} import {{ app_attr }}
 import _routes  # noqa: F401 — registers routes as a side effect
 import msgpack

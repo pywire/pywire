@@ -17,6 +17,9 @@ def _get_adapter(env):
         secret = getattr(env, "PYWIRE_SECRET_KEY", None)
         if secret:
             os.environ.setdefault("PYWIRE_SECRET_KEY", str(secret))
+        # _routes.py registers the prebuilt pages: PyWire() must not compile
+        # src/pages.
+        os.environ["PYWIRE_PREBUILT"] = "1"
         from {{ app_module }} import {{ app_attr }}
         import _routes  # noqa: F401
 
