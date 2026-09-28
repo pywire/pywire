@@ -262,3 +262,46 @@ def toggle():
             assert "disabled" in joined
         finally:
             os.chdir(orig_cwd)
+
+
+@pytest.mark.asyncio
+async def test_derived_in_attribute_binding(
+    loader: PageLoader, mock_app: MagicMock
+) -> None:
+    """Regression for #292: @derived in an attribute was auto-called like a
+    zero-arg method, raising "'Derived' object is not callable"."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        page_code = """
+---
+done = wire(3)
+total = wire(4)
+
+@derived
+def progress():
+    return int(done.value / total.value * 100)
+
+@derived
+def all_done():
+    return done.value == total.value
+---
+
+<progress aria-valuenow={progress} value={progress} max="100" hidden={all_done}>{progress}%</progress>
+"""
+        (tmp_path / "page.wire").write_text(page_code)
+
+        orig_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            page_class = loader.load(tmp_path / "page.wire")
+            request = MagicMock()
+            request.app = mock_app
+            page = page_class(request, {}, {}, {}, None)
+            html = await page._render_template()
+
+            assert 'aria-valuenow="75"' in html
+            assert 'value="75"' in html
+            assert "hidden" not in html
+            assert "75%" in html
+        finally:
+            os.chdir(orig_cwd)

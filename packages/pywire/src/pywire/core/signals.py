@@ -49,8 +49,9 @@ class Derived:
         if self._dirty:
             # Cleanup old deps
             for dep in list(self.dependencies):
-                if hasattr(dep, "_subscribers"):
-                    dep._subscribers.discard(self)
+                subscribers = getattr(dep, "_subscribers", None)
+                if subscribers is not None:
+                    subscribers.discard(self)
             self.dependencies.clear()
 
             self._computing = True
@@ -130,8 +131,97 @@ class Derived:
     def __bool__(self) -> bool:
         return bool(self.value)
 
+    # Derived is used in sets and WeakSets, so hashing and comparing against
+    # another reactive node stay identity-based. Everything else compares
+    # the computed value, like wire() does.
+    def __hash__(self) -> int:
+        return id(self)
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Derived) or _is_wire(other):
+            return self is other
+        return self.value == other
+
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
+
+    def __lt__(self, other: Any) -> bool:
+        return self.value < other
+
+    def __le__(self, other: Any) -> bool:
+        return self.value <= other
+
+    def __gt__(self, other: Any) -> bool:
+        return self.value > other
+
+    def __ge__(self, other: Any) -> bool:
+        return self.value >= other
+
+    def __len__(self) -> int:
+        return len(self.value)
+
+    def __iter__(self) -> Any:
+        return iter(self.value)
+
+    def __contains__(self, item: Any) -> bool:
+        return item in self.value
+
+    def __getitem__(self, key: Any) -> Any:
+        return self.value[key]
+
+    def __add__(self, other: Any) -> Any:
+        return self.value + other
+
+    def __radd__(self, other: Any) -> Any:
+        return other + self.value
+
+    def __sub__(self, other: Any) -> Any:
+        return self.value - other
+
+    def __rsub__(self, other: Any) -> Any:
+        return other - self.value
+
+    def __mul__(self, other: Any) -> Any:
+        return self.value * other
+
+    def __rmul__(self, other: Any) -> Any:
+        return other * self.value
+
+    def __truediv__(self, other: Any) -> Any:
+        return self.value / other
+
+    def __rtruediv__(self, other: Any) -> Any:
+        return other / self.value
+
+    def __floordiv__(self, other: Any) -> Any:
+        return self.value // other
+
+    def __rfloordiv__(self, other: Any) -> Any:
+        return other // self.value
+
+    def __mod__(self, other: Any) -> Any:
+        return self.value % other
+
+    def __rmod__(self, other: Any) -> Any:
+        return other % self.value
+
+    def __neg__(self) -> Any:
+        return -self.value
+
+    def __int__(self) -> int:
+        return int(self.value)
+
+    def __float__(self) -> float:
+        return float(self.value)
+
     def __repr__(self) -> str:
         return f"derived({self._cache!r}, dirty={self._dirty})"
+
+
+def _is_wire(obj: Any) -> bool:
+    from pywire.core.wire import WireBase
+
+    return isinstance(obj, WireBase)
 
 
 class Effect:
@@ -154,8 +244,9 @@ class Effect:
 
         # Cleanup old deps
         for dep in list(self.dependencies):
-            if hasattr(dep, "_subscribers"):
-                dep._subscribers.discard(self)
+            subscribers = getattr(dep, "_subscribers", None)
+            if subscribers is not None:
+                subscribers.discard(self)
         self.dependencies.clear()
 
         _TRACKING_STACK.append(self)
@@ -167,8 +258,9 @@ class Effect:
     def dispose(self) -> None:
         self._disposed = True
         for dep in list(self.dependencies):
-            if hasattr(dep, "_subscribers"):
-                dep._subscribers.discard(self)
+            subscribers = getattr(dep, "_subscribers", None)
+            if subscribers is not None:
+                subscribers.discard(self)
         self.dependencies.clear()
 
 

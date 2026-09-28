@@ -80,7 +80,7 @@ def test_list_structural_ops_keep_identity_consistent():
 def test_list_item_write_bubbles_per_index_field():
     w = wire([{"a": 1}, {"b": 2}])
     page = _FakePage()
-    w._pages.add(page)
+    w._add_page(page)
     child = w[0]
     child["a"] = 5
     assert (w, "0") in page.invals
@@ -115,7 +115,7 @@ def test_dict_child_identity_stable_and_write_persists():
 def test_dict_item_write_bubbles_per_key_field():
     d = wire({"x": {"n": 1}})
     page = _FakePage()
-    d._pages.add(page)
+    d._add_page(page)
     d["x"]["n"] = 2
     assert (d, "x") in page.invals
     assert (d, "value") not in page.invals
@@ -136,7 +136,7 @@ def test_dict_structural_ops_replace_entries():
 def test_dict_get_is_tracked():
     d = wire({"a": {"x": 1}})
     page = _FakePage()
-    d._pages.add(page)
+    d._add_page(page)
     token = set_render_context(page, "r1")
     try:
         val = d.get("a")

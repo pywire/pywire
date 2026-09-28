@@ -6,7 +6,7 @@ description: Use signed page snapshots, locked wires, and small request-scoped s
 Stateless mode replaces server-held page sessions with a signed client-carried snapshot. The server performs one round-trip per event:
 
 1. The browser sends the snapshot, allowlisted handler name, event data, and current path to `POST /_pywire/stateless`.
-2. PyWire verifies the HMAC-SHA256 signature, reconstructs the page, and resolves identity from the current request.
+2. PyWire verifies the HMAC-SHA256 signature, inflates the zlib-compressed msgpack body, reconstructs the page, and resolves identity from the current request.
 3. The handler runs and receives **unwrapped values, not live Wire objects**.
 4. PyWire renders dirty regions, signs the next snapshot, and returns both.
 
@@ -24,7 +24,13 @@ Stateless mode replaces server-held page sessions with a signed client-carried s
 
 ## Keep snapshots small: the O(n) design pattern
 
-Snapshot size grows with the number of public wires and their values. Do not copy a large result set into page state for every request. Use a locked wire as a request-local handle and fetch the current data from the store:
+Snapshot size grows with the number of public wires and their values. Do not copy a large result set into page state for every request.
+
+:::caution[Every event pays for the whole page]
+The snapshot travels in both directions on every event, and the server rebuilds the page with a full render before running the handler, so per-event cost grows with page state even when the update is one row. Measured on one server core with a 1,000-row keyed list held in a public wire: the snapshot is 3.3 KB (zlib-compressed from 28 KB) and each toggle takes about 20 ms, against about 0.5 ms for a counter. At 5,000 rows it is about 100 ms. Keep bulk data in locked wires, as below.
+:::
+
+Use a locked wire as a request-local handle and fetch the current data from the store:
 
 ```pywire
 ---

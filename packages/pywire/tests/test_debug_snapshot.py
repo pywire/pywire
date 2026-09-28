@@ -7,6 +7,7 @@ blob is a 4xx, never a decode. The signing secret is never echoed.
 
 import asyncio
 import base64
+import zlib
 from pathlib import Path
 
 import msgpack
@@ -37,7 +38,8 @@ def _blob(html: str) -> str:
 
 
 def _raw_state(blob: str) -> dict:
-    return msgpack.unpackb(base64.urlsafe_b64decode(blob)[32:], raw=False)
+    body = zlib.decompress(base64.urlsafe_b64decode(blob)[32:])
+    return msgpack.unpackb(body, raw=False)
 
 
 def test_debug_on_returns_decoded_client_snapshot():

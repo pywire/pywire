@@ -60,3 +60,43 @@ def test_large_state_round_trips():
     p.big = wire([{"row": i, "name": f"item-{i}"} for i in range(5000)])
     blob = encode_snapshot(p, secret=SECRET, warn_size=1024)
     assert len(decode_snapshot(blob, secret=SECRET)["attrs"]["big"]) == 5000
+
+
+def test_snapshot_is_compressed():
+    import msgpack
+
+    from pywire.runtime.session_serializer import snapshot_page_state
+
+    p = make_page()
+    p.rows = wire([{"name": f"item-{i}", "done": False} for i in range(1000)])
+    blob = encode_snapshot(p, secret=SECRET)
+    raw = msgpack.packb(snapshot_page_state(p))
+
+    assert len(blob) * 5 < len(raw)
+    assert len(decode_snapshot(blob, secret=SECRET)["attrs"]["rows"]) == 1000
+
+
+def test_signed_but_corrupt_body_rejected():
+    import hashlib
+    import hmac
+
+    body = b"not zlib at all"
+    sig = hmac.new(SECRET, body, hashlib.sha256).digest()
+    blob = base64.urlsafe_b64encode(sig + body).decode()
+    with pytest.raises(SnapshotError, match="corrupt"):
+        decode_snapshot(blob, secret=SECRET)
+
+
+def test_inflated_size_is_capped(monkeypatch):
+    import hashlib
+    import hmac
+    import zlib
+
+    from pywire.runtime import snapshot_codec
+
+    monkeypatch.setattr(snapshot_codec, "MAX_SNAPSHOT_RAW_LEN", 1024)
+    body = zlib.compress(b"\0" * 100_000)
+    sig = hmac.new(SECRET, body, hashlib.sha256).digest()
+    blob = base64.urlsafe_b64encode(sig + body).decode()
+    with pytest.raises(SnapshotError, match="too large"):
+        decode_snapshot(blob, secret=SECRET)

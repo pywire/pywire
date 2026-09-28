@@ -108,19 +108,19 @@ theme = wire("dark")
 
 ### Boolean Attributes
 
-Framework attributes like `$disabled`, `$checked`, and `$readonly` accept a boolean expression and add or remove the attribute accordingly.
+Boolean attributes like `disabled`, `checked` and `readonly` accept an expression: pywire adds the attribute when it's truthy and removes it when it's falsy. There's no `$` prefix; `$disabled={...}` is a compile error.
 
 ```pywire
 ---
 count = wire(0)
 accepted = wire(False)
 ---
-<button @click={count.value += 1} $disabled={count >= 10}>
+<button @click={count.value += 1} disabled={count >= 10}>
     Increment (Max 10)
 </button>
 
 <input type="checkbox" @change={accepted.value = event.checked} />
-<button $disabled={not accepted}>Submit</button>
+<button disabled={not accepted}>Submit</button>
 ```
 
 ## Attribute Spreading
