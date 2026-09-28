@@ -171,8 +171,10 @@ def import_app(app_str: str) -> Any:
 
 
 # Pure-FaaS platforms serve one-shot requests with no durable state — only
-# stateless mode works there. cloudflare (Durable Objects) and gcp-cloudrun
-# (long-running container) accept either mode.
+# stateless mode works there. gcp-cloudrun (long-running container) accepts
+# either mode. cloudflare (Durable Objects) is stateful only: its entry
+# builds the app at import time, where Workers expose no secrets, so a
+# stateless app never starts there; cloudflare-edge serves those.
 _STATELESS_PLATFORMS = frozenset(
     {"cloudflare-edge", "aws-lambda", "azure-functions", "gcp-functions"}
 )
@@ -187,7 +189,14 @@ def _fail_missing_secret(platform: str) -> None:
 
 
 def _require_stateless(app_instance: Any, platform: Optional[str]) -> None:
-    """Fail fast when a pure-FaaS build target isn't configured stateless."""
+    """Fail fast when the app's mode can't run on the build target."""
+    if platform == "cloudflare" and getattr(app_instance, "stateless", False) is True:
+        console.print(
+            "[bold red]Error:[/] [cyan]cloudflare[/] (Durable Objects) serves "
+            "stateful apps — build a stateless app with "
+            "[cyan]--platform cloudflare-edge[/]."
+        )
+        sys.exit(1)
     if platform not in _STATELESS_PLATFORMS:
         return
     if not getattr(app_instance, "stateless", False):

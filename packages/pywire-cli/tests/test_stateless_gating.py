@@ -1,8 +1,8 @@
 """Fail-fast stateless config checks for `pywire build` on pure-FaaS platforms.
 
 Pure-FaaS targets (cloudflare-edge, aws-lambda, azure-functions, gcp-functions)
-only work with `PyWire(stateless=True)` + a signing secret. gcp-cloudrun and
-cloudflare (Durable Objects) accept either mode.
+only work with `PyWire(stateless=True)` + a signing secret. gcp-cloudrun
+accepts either mode; cloudflare (Durable Objects) is stateful only.
 """
 
 import sys
@@ -133,3 +133,18 @@ def test_deploy_faas_rejects_stateful_app(monkeypatch: pytest.MonkeyPatch) -> No
             result = runner.invoke(cli, ["deploy", "--platform", "aws-lambda"])
     assert result.exit_code != 0
     assert "stateless=True" in _norm(result.output)
+
+
+def test_build_durable_objects_rejects_stateless_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The DO entry builds the app where Workers expose no secrets."""
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret")
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _write_app(stateless=True)
+        with patch("pywire.compiler.build.build_project") as mock_build:
+            mock_build.return_value = _build_summary()
+            result = runner.invoke(cli, ["build", "--platform", "cloudflare"])
+    assert result.exit_code != 0
+    assert "--platform cloudflare-edge" in _norm(result.output)
