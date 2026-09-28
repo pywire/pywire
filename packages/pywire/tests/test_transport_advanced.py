@@ -12,6 +12,7 @@ class TestTransportAdvanced:
     def setup_method(self, method) -> None:
         self.app = MagicMock(spec=PyWire)
         self.app.router = MagicMock()
+        self.app.session_persister = MagicMock()
         self.http_handler = HTTPTransportHandler(self.app)
         self.ws_handler = WebSocketHandler(self.app)
 

@@ -228,6 +228,18 @@ pywire dev --ssl-keyfile key.pem --ssl-certfile cert.pem
 
 In production, terminate SSL at a reverse proxy (Nginx, Caddy, or your cloud provider's load balancer) rather than at the application level.
 
+## Compression
+
+PyWire gzips text responses itself: pages, the client runtime, CSS, JSON and HTTP-transport updates. The client runtime is compressed once and cached, so a cold load of a small page is about 25 KB instead of 84 KB. Images, fonts and other already-compressed files pass through untouched.
+
+If a CDN or reverse proxy in front of the app already compresses, turn it off to save the CPU:
+
+```python
+app = PyWire(compress=False)
+```
+
+WebSocket messages use the browser's permessage-deflate, negotiated by Uvicorn. See `pywire run --no-ws-deflate` in the [CLI guide](/docs/guides/cli) for the memory trade-off.
+
 ## Static Files
 
 PyWire automatically serves files from the `static/` directory at the `/static` URL prefix. In production, consider serving static files from a CDN or reverse proxy for better performance.

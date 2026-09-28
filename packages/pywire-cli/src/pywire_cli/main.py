@@ -806,12 +806,18 @@ def check(
 @click.option("--port", default=8000, type=int, help="Port to bind to")
 @click.option("--workers", default=None, type=int, help="Number of worker processes")
 @click.option("--no-access-log", is_flag=True, help="Disable access logging")
+@click.option(
+    "--no-ws-deflate",
+    is_flag=True,
+    help="Turn off WebSocket permessage-deflate (less memory per session)",
+)
 def run(
     app: Optional[str],
     host: str,
     port: int,
     workers: Optional[int],
     no_access_log: bool,
+    no_ws_deflate: bool,
 ) -> None:
     """Run production server using Uvicorn."""
     import multiprocessing
@@ -840,6 +846,7 @@ def run(
         port=port,
         workers=workers,
         access_log=not no_access_log,
+        ws_per_message_deflate=not no_ws_deflate,
         factory=False,
     )
 
