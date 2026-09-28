@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.3...pywire-cli-v0.3.4) (2026-09-28)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump pywire floor to 0.15.1 ([#342](https://github.com/pywire/pywire/issues/342)) ([129d8b4](https://github.com/pywire/pywire/commit/129d8b4764b09b03df09f9ce4b37a49eabeead37))
+* **pywire:** throttle session saves, gzip responses, fix inline event args ([#335](https://github.com/pywire/pywire/issues/335)) ([9b246ee](https://github.com/pywire/pywire/commit/9b246ee9bebaee2dcf4d8adbaadc828abad6a193))
+
 ## [0.3.3](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.2...pywire-cli-v0.3.3) (2026-09-27)
 
 
