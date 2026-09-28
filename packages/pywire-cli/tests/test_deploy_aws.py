@@ -85,6 +85,13 @@ def test_readme_packages_from_aws_deploy_directory() -> None:
     assert "zip -r function.zip handler.py _routes.py _pywire_build package" in readme
     assert "x86_64" in readme and "Python 3.12" in readme
     assert "arm64" in readme
+    # CreateApi takes --name; HTTP API Lambda integrations need a payload
+    # version; a stage deploys nothing without --auto-deploy; and API
+    # Gateway can't invoke the function until it is granted permission.
+    assert "create-api --name demo" in readme
+    assert "--payload-format-version 2.0" in readme
+    assert "--auto-deploy" in readme
+    assert "aws lambda add-permission" in readme
 
 
 def test_requirements_pin_oneshot_release() -> None:
