@@ -10,4 +10,4 @@ def pywire(request):
     status, headers, body = asyncio.run(_adapter.fetch(
         request.method, request.path, dict(request.headers), request.get_data(), request.query_string.decode()
     ))
-    return body, status, dict(headers)
+    return body, status, headers  # a list, not a dict: keeps every Set-Cookie

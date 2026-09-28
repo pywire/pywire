@@ -24,6 +24,12 @@ def test_gcp_functions_round_trips_stateless_snapshot(tmp_path: Path) -> None:
     (pages / "index.wire").write_text(
         "---\ncount = wire(0)\ndef increment():\n    count.value += 1\n---\n<p>{count}</p><button @click={increment()}>+</button>\n"
     )
+    (pages / "cookies.wire").write_text(
+        "---\nseen = wire('')\n\n@init\ndef load():\n"
+        "    seen.value = self.request.cookies.get('hello', 'none')\n"
+        "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
+        '---\n<p id="seen">{seen}</p>\n'
+    )
     app = PyWire(pages_dir=str(pages), stateless=True, secret_key="gcp-test")
     mod = types.ModuleType("gcp_fixture_app")
     mod.app = app
@@ -60,8 +66,18 @@ def test_gcp_functions_round_trips_stateless_snapshot(tmp_path: Path) -> None:
     Request.get_data = lambda self: event
     body, status, headers = ns["pywire"](Request())
     assert isinstance(body, bytes)
-    assert headers.get("content-type") == "application/x-msgpack"
+    assert dict(headers).get("content-type") == "application/x-msgpack"
     assert status == 200 and "regions" in msgpack.unpackb(body, raw=False)
+
+    Request.method = "GET"
+    Request.path = "/cookies"
+    Request.headers = {"Cookie": "hello=world"}
+    Request.get_data = lambda self: b""
+    body, status, headers = ns["pywire"](Request())
+    assert status == 200 and ">world</p>" in body.decode()
+    # A dict would keep only the last Set-Cookie.
+    cookies = [v for k, v in headers if k.lower() == "set-cookie"]
+    assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
     sys.modules.pop(mod.__name__, None)
     sys.modules.pop("_routes", None)
 
@@ -153,7 +169,7 @@ print(
             "get_status": get_status,
             "has_snapshot": bool(match),
             "post_status": post_status,
-            "post_content_type": (post_headers or {}).get("content-type"),
+            "post_content_type": dict(post_headers).get("content-type"),
             "post_regions": "regions" in msgpack.unpackb(post_body, raw=False),
         }
     )

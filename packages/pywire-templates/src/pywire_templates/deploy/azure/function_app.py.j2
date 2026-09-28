@@ -9,10 +9,15 @@ import _routes  # noqa: F401
 function_app = func.FunctionApp()
 _adapter = OneShotASGIAdapter(_pywire_app)
 
-@function_app.route(route="{*path}", methods=["GET", "POST"], auth_level=func.HttpAuthLevel.ANONYMOUS)
-def pywire(request: func.HttpRequest) -> func.HttpResponse:
-    parsed = urlparse(request.url)
+# The worker binds the request to a parameter named "req" (the route()
+# default trigger_arg_name) and skips the function if the names differ.
+@function_app.route(route="{*path}", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def pywire(req: func.HttpRequest) -> func.HttpResponse:
+    parsed = urlparse(req.url)
     status, headers, body = asyncio.run(_adapter.fetch(
-        request.method, parsed.path, dict(request.headers), request.get_body(), parsed.query
+        req.method, parsed.path, dict(req.headers), req.get_body(), parsed.query
     ))
-    return func.HttpResponse(body, status_code=status, headers=dict(headers), mimetype=dict(headers).get("content-type"))
+    response = func.HttpResponse(body, status_code=status)
+    for name, value in headers:  # add(), not a dict: keeps every Set-Cookie
+        response.headers.add(name, value)
+    return response

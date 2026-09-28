@@ -37,6 +37,12 @@ def _load_handler(tmp_path: Path) -> tuple[object, dict]:
         "---\n"
         '<p id="count">{count}</p><button @click={increment()}>+</button>\n'
     )
+    (pages / "cookies.wire").write_text(
+        "---\nseen = wire('')\n\n@init\ndef load():\n"
+        "    seen.value = self.request.cookies.get('hello', 'none')\n"
+        "    self.set_cookie('a', '1')\n    self.set_cookie('b', '2')\n"
+        '---\n<p id="seen">{seen}</p>\n'
+    )
     app = PyWire(
         pages_dir=str(pages),
         stateless=True,
@@ -136,6 +142,35 @@ def test_lambda_handler_round_trips_stateless_snapshot(tmp_path: Path) -> None:
         assert post["isBase64Encoded"] is True
         message = msgpack.unpackb(base64.b64decode(post["body"]), raw=False)
         assert "regions" in message
+    finally:
+        sys.modules.pop(app_module, None)
+        sys.modules.pop("_routes", None)
+
+
+def test_lambda_handler_passes_cookies_both_ways(tmp_path: Path) -> None:
+    handler, app_module = _load_handler(tmp_path)
+    try:
+        # Payload 2.0 (HTTP API) moves request cookies to event["cookies"]
+        # and takes response cookies from result["cookies"].
+        event = {
+            **_event("GET", "/cookies"),
+            "version": "2.0",
+            "cookies": ["hello=world"],
+        }
+        result = handler(event, None)
+        assert result["statusCode"] == 200
+        assert ">world</p>" in base64.b64decode(result["body"]).decode()
+        assert sorted(c.split("=", 1)[0] for c in result["cookies"]) == ["a", "b"]
+        assert "set-cookie" not in result["headers"]
+
+        # Payload 1.0 (REST API) keeps Cookie in the headers and needs
+        # multiValueHeaders for repeated Set-Cookie.
+        event = _event("GET", "/cookies")
+        event["headers"]["Cookie"] = "hello=rest"
+        result = handler(event, None)
+        assert ">rest</p>" in base64.b64decode(result["body"]).decode()
+        cookies = result["multiValueHeaders"]["set-cookie"]
+        assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
     finally:
         sys.modules.pop(app_module, None)
         sys.modules.pop("_routes", None)
