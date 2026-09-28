@@ -193,6 +193,13 @@ def field_attrs(
             if page is not None:
                 _root(page)._pw_has_uploads = True
         else:
+            if itype == "password" and kind != "secret":
+                _complain(
+                    page,
+                    f'{field.html_name}: type="password" on a plain str field. '
+                    "Type it SecretStr so its value is never echoed back, kept in "
+                    "a snapshot or carried between wizard steps.",
+                )
             if spec.required:
                 base["required"] = True
             for key, value in spec.attrs.items():

@@ -404,7 +404,7 @@ async def create(data: Signup):
 
 Submitting a step validates that step only and moves to the next. The last step validates the whole model and calls the handler with it, so a `model_validator` that compares fields on different steps runs there; if a field on an earlier step fails, the wizard goes back to that step. `back_button` goes back a step without validating and keeps what was typed.
 
-A wizard works with JavaScript off and in stateless mode. What earlier steps held travels with the form in a hidden input, signed so it can't be altered; processes that serve the same app must share `PyWire(secret_key=...)` to accept each other's forms. It is signed, not encrypted, so the browser can read it, and secret fields such as passwords are never carried: put them on the last step. Files picked on earlier steps travel as upload references and reach the handler as `Upload`s.
+A wizard works with JavaScript off and in stateless mode. What earlier steps held travels with the form in a hidden input, signed so it can't be altered; processes that serve the same app must share `PyWire(secret_key=...)` to accept each other's forms. It is signed, not encrypted, so the browser can read it. That's why secret fields (`SecretStr`) are never carried: they must be on the last step, where they are posted with the final submit, and `wizard()` raises a `TypeError` for a model that puts one earlier. Files picked on earlier steps travel as upload references and reach the handler as `Upload`s.
 
 | Wizard member          | Description                                          |
 | ---------------------- | ---------------------------------------------------- |
@@ -435,7 +435,7 @@ The values and errors come from the submitted fields themselves, so a no-JavaScr
 - Only the generated submit handler can be reached from a request. Your handler is called with a validated model and is never directly dispatchable.
 - Only fields in the model's schema are read. Extra fields, even on a model with `extra="allow"`, never reach it.
 - Native form posts from another site are refused with a 403 (checked with `Sec-Fetch-Site` and `Origin`).
-- Secrets (`SecretStr`, password inputs) are never echoed back into the page or kept in a snapshot.
+- Secrets (`SecretStr`) are never echoed back into the page, kept in a snapshot or carried between wizard steps. Binding a plain `str` field to `type="password"` is an error in debug mode, so a password can't slip through as ordinary text.
 - An upload reference only resolves to a file this app staged in the last hour. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload.
 - List fields are capped, and add and remove buttons only act on lists the model declares.
 - Wizard state that doesn't carry this app's signature is ignored.

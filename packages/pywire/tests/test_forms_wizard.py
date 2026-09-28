@@ -14,13 +14,14 @@ from starlette.testclient import TestClient
 from pywire.forms import Upload, Wizard, wizard
 from pywire.forms.form import ACTION
 from pywire.forms.wizard import STATE
+from pywire.forms.wizard import _secret
 from pywire.runtime.app import PyWire
+from pywire.runtime.snapshot_codec import verify
 from pywire.runtime.uploads import staging_for
 
 
 class Account(BaseModel):
     email: EmailStr
-    password: Optional[SecretStr] = None
 
 
 class About(BaseModel):
@@ -30,6 +31,7 @@ class About(BaseModel):
 
 class Confirm(BaseModel):
     code: str
+    password: Optional[SecretStr] = None
 
 
 class Signup(BaseModel):
@@ -59,6 +61,41 @@ def test_wizard_needs_a_model_of_steps():
 
     with pytest.raises(TypeError, match="Flat.name is not"):
         wizard(Flat)
+
+
+class Row(BaseModel):
+    token: SecretStr
+
+
+class Early(BaseModel):
+    email: str
+    password: SecretStr
+
+
+class Rows(BaseModel):
+    rows: list[Row] = []
+
+
+class Done(BaseModel):
+    ok: bool = True
+
+
+@pytest.mark.parametrize(
+    "steps,where",
+    [
+        ({"first": (Early, ...), "last": (Done, ...)}, "first.password"),
+        ({"first": (Rows, ...), "last": (Done, ...)}, "first.rows.token"),
+    ],
+)
+def test_secrets_must_be_on_the_last_step(steps, where):
+    from pydantic import create_model
+
+    model = create_model("Late", **steps)
+    with pytest.raises(TypeError, match=rf"Late\.{where} is a secret"):
+        wizard(model)
+    # On the last step it is posted with the final submit, never carried.
+    swapped = create_model("Ok", last=steps["last"], first=steps["first"])
+    assert wizard(swapped).steps[-1].label == "First"
 
 
 def test_steps_validate_one_at_a_time():
@@ -134,7 +171,7 @@ def test_live_validation_stays_on_the_current_step():
 
 def test_state_travels_signed_for_no_js_posts():
     w = wizard(Signup)
-    post(w, {"account.email": "a@b.co", "account.password": "hunter2"})
+    post(w, {"account.email": "a@b.co"})
     blob = hidden_state(w)
 
     # A fresh wizard (a no-JS POST renders a new page) picks up from the blob.
@@ -142,12 +179,21 @@ def test_state_travels_signed_for_no_js_posts():
     post(fresh, {STATE: blob, "about.name": "Al"})
     assert fresh.step == "confirm"
     assert fresh.account.email.raw == "a@b.co"
-    # Secrets are never carried: they belong on the last step.
-    assert "account.password" not in fresh._raw
+
+    # An invalid last step re-renders; the password typed there isn't carried.
+    post(fresh, {STATE: hidden_state(fresh), "confirm.password": "hunter2"})
+    assert fresh.errors == {"confirm.code": "This field is required"}
+    state = verify(hidden_state(fresh), secret=_secret(None))
+    assert "confirm.password" not in state["raw"]
 
     got = []
-    post(fresh, {STATE: hidden_state(fresh), "confirm.code": "1"}, handler=got.append)
-    assert got[0].account.password is None
+    post(
+        fresh,
+        {STATE: hidden_state(fresh), "confirm.code": "1", "confirm.password": "pw"},
+        handler=got.append,
+    )
+    assert got[0].account.email == "a@b.co"
+    assert got[0].confirm.password.get_secret_value() == "pw"
 
 
 def test_a_forged_state_is_ignored():

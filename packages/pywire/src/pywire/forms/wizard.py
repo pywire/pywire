@@ -25,9 +25,10 @@ there; an error on an earlier step's field goes back to that step.
 
 What earlier steps held travels with the form in a hidden input, signed so
 it can't be changed (``PyWire(secret_key=...)`` shares the key between
-processes). It is signed, not encrypted, and secret fields (passwords) are
-never carried, so put them on the last step. Files picked on earlier steps
-travel as staged upload ids.
+processes). It is signed, not encrypted, so secret fields (``SecretStr``,
+passwords) are never carried: they must be on the last step, and ``wizard()``
+refuses a model that puts one earlier. Files picked on earlier steps travel
+as staged upload ids.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from pywire.forms.form import (
     _root_page,
     _takes_arg,
 )
+from pywire.forms.schema import FieldSpec
 from pywire.forms.shape import Flat, normalize, shape
 from pywire.runtime.escape import escape_html
 from pywire.runtime.snapshot_codec import SnapshotError, sign, verify
@@ -68,6 +70,20 @@ def _secret(page: Any) -> bytes:
     except (AttributeError, KeyError):
         secret = None
     return secret if isinstance(secret, bytes) and secret else _process_secret
+
+
+def _secret_in(spec: FieldSpec, depth: int = 0) -> Optional[str]:
+    """The dotted path of the first secret field under ``spec``, if any."""
+    if depth > 8:
+        return None
+    for name, child in spec.children.items():
+        if _is_secret(child):
+            return name
+        inner = child.item if child.kind == "list" else child
+        found = _secret_in(inner, depth + 1) if inner is not None else None
+        if found:
+            return f"{name}.{found}"
+    return None
 
 
 def _staged_id(upload: Upload) -> Optional[str]:
@@ -89,6 +105,15 @@ class Wizard(Form[M]):
                 "Group the fields of each step in their own BaseModel."
             )
         self._steps: Tuple[str, ...] = tuple(children)
+        for step in self._steps[:-1]:
+            secret = _secret_in(children[step])
+            if secret:
+                raise TypeError(
+                    f"wizard(): {model.__name__}.{step}.{secret} is a secret, and "
+                    "secrets are never carried from one step to the next, so it "
+                    "would be lost before the last step validates the model. Move "
+                    f"it to the last step ({self._steps[-1]})."
+                )
         self._index = 0
         # Staged upload ids of files picked on other steps, by HTML name.
         self._carried: Dict[str, List[str]] = {}
