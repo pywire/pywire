@@ -129,6 +129,10 @@ def test_azure_build_generates_deployable_artifact_set() -> None:
             settings["Values"]["PYWIRE_SECRET_KEY"] == ""
         )  # never ship a known secret
         assert settings["Values"]["AzureWebJobsFeatureFlags"] == "EnableWorkerIndexing"
+        # Azure prefixes HTTP routes with /api unless routePrefix is cleared;
+        # pages must be served from the site root.
+        host = json.loads((target / "host.json").read_text())
+        assert host["extensions"]["http"]["routePrefix"] == ""
 
 
 _AZURE_FUNCTIONS_STUB = '''\
