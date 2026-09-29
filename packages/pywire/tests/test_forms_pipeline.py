@@ -71,8 +71,12 @@ class Page:
     """Stands in for BasePage: the pipeline only flags invalid submits."""
 
 
-def submit(f, data, handler=None, page=None):
+def submit(f, data, handler=None, page=None, rendered=None):
+    """Submit ``data`` as if the page had rendered ``rendered`` (default: every
+    name posted) with ``$bind``."""
     page = page or Page()
+    names = data if rendered is None else rendered
+    f._editable.update(n for n in names if n not in f._owned)
     asyncio.run(f._pw_submit(page, handler, {"formData": data}))
     return page
 
@@ -240,6 +244,21 @@ def test_validator_message_wins_on_an_email_field():
     )
 
 
+def test_validator_messages_are_shown_as_written():
+    class Name(BaseModel):
+        name: str
+
+        @field_validator("name")
+        @classmethod
+        def taken(cls, v: str) -> str:
+            raise ValueError(f"{v} is taken")
+
+    f = form(Name)
+    for typed in ("{0}", "{", "{name.__class__}"):
+        submit(f, {"name": typed})
+        assert f.name.error == f"{typed} is taken"
+
+
 def test_handler_can_reject_with_errors():
     f = form(Signup)
 
@@ -340,6 +359,66 @@ def test_server_owned_fields_keep_the_server_value():
     f._owned.add("email")  # rendered disabled/readonly
     submit(f, {**VALID, "email": "attacker@evil.co"}, handler=got.append)
     assert got[-1].email == "owner@b.co"
+    assert f.email.raw == "owner@b.co"
+
+
+def test_only_rendered_fields_are_read():
+    class Profile(BaseModel):
+        name: str
+        role: str = "user"
+        tags: list[str] = Field(default_factory=lambda: ["new"])
+        addr: Optional[Address] = None
+        items: list[Item] = []
+
+    got = []
+    f = form(Profile)
+    forged = {
+        "name": "Al",
+        "role": "admin",
+        "tags": ["x"],
+        "addr.street": "Main",
+        "items.0.name": "x",
+    }
+    submit(f, forged, handler=got.append, rendered=["name"])
+    assert got[-1] == Profile(name="Al")
+    assert f.__pw_snapshot__()["raw"] == {"name": ["Al"]}
+
+    # With initial values (an edit form), unrendered fields keep them.
+    current = Profile(name="Al", role="editor", tags=["t"], items=[Item(name="i")])
+    f = form(Profile, initial=current)
+    submit(f, {**forged, "name": "Bo"}, handler=got.append, rendered=["name"])
+    assert got[-1] == current.model_copy(update={"name": "Bo"})
+
+
+def test_unrendered_fields_in_rendered_rows_keep_their_initial_value():
+    class Row(BaseModel):
+        id: Optional[int] = None
+        name: str
+
+    class Order(BaseModel):
+        rows: list[Row] = []
+
+    got = []
+    f = form(Order, initial={"rows": [{"id": 7, "name": "a"}, {"id": 8, "name": "b"}]})
+    data = {"rows.0.name": "A", "rows.0.id": "999", "rows.1.name": "B"}
+    submit(f, data, handler=got.append, rendered=["rows.0.name", "rows.1.name"])
+    assert got[-1].rows == [Row(id=7, name="A"), Row(id=8, name="B")]
+
+
+def test_read_only_rows_survive_a_submit_and_a_reload():
+    f = form(Signup, initial={"items": [{"name": "a"}, {"name": "b"}]})
+    f._owned.update({"items.0.name", "items.1.name"})  # rendered disabled
+    submit(f, VALID)
+    assert [row.name.raw for row in f.items] == ["a", "b"]
+    f.load({"items": [{"name": "c"}]})
+    assert [row.name.raw for row in f.items] == ["c"]
+
+
+def test_sparse_row_indexes_render_only_the_rendered_rows():
+    f = form(Signup)
+    submit(f, {**VALID, "items.999999.name": "x"}, rendered=[*VALID, "items.0.name"])
+    assert len(f.items) == 0
+    assert f.errors == {}
 
 
 def test_files_only_come_from_the_server():

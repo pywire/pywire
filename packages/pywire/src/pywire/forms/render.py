@@ -148,10 +148,15 @@ def field_attrs(
             f"{hand['name']!r} would post a field the server ignores.",
         )
 
+    # Only fields rendered here are read from a submit. One rendered
+    # read-only keeps the value the server rendered.
     form = field._form
-    if page is not None and (_present(hand, "disabled") or _present(hand, "readonly")):
-        # Rendered read-only: the value comes from server state on submit.
+    if _present(hand, "disabled") or _present(hand, "readonly"):
         form._owned.add(field.html_name)
+        form._editable.discard(field.html_name)
+    else:
+        form._editable.add(field.html_name)
+        form._owned.discard(field.html_name)
 
     base: Dict[str, Any] = {"name": field.html_name, "id": field.html_id}
     display = field.raw
@@ -280,9 +285,6 @@ def form_attrs(
     method = str(hand.get("method", "post")).lower()
     if method != "post":
         _complain(page, "A bound form always posts; drop method= from the <form>.")
-    # Fields re-register as they render: only what renders read-only now is
-    # server-owned on the next submit.
-    form._owned.clear()
     base: Dict[str, Any] = {"method": "post", "data-pw-form": form._dom_id_value()}
     if "id" not in hand:
         base["id"] = form._dom_id_value()

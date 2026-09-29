@@ -33,7 +33,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, ValidationE
 from pywire.core.wire import WirePrimitive
 from pywire.forms.errors import FieldError, Messages, error_path, map_error
 from pywire.forms.schema import FieldSpec, Option, root_spec
-from pywire.forms.shape import Flat, normalize, shape
+from pywire.forms.shape import MAX_ROWS, Flat, normalize, row_indices, shape
 from pywire.runtime.files import FileUpload
 
 logger = logging.getLogger(__name__)
@@ -381,6 +381,10 @@ class Form(Generic[M]):
         self._errors: Dict[str, List[FieldError]] = {}
         self._value: Optional[M] = None
         self._submitted = False
+        # HTML names ``$bind`` has rendered on this page, editable or
+        # read-only. Only editable ones are read from a submit; see
+        # ``_keep_unrendered`` for every other field.
+        self._editable: set[str] = set()
         self._owned: set[str] = set()
         self._cache: Dict[Path, BoundField[Any]] = {}
         self._adapters: Dict[int, TypeAdapter[Any]] = {}
@@ -496,6 +500,9 @@ class Form(Generic[M]):
         self._errors = {}
         self._value = None
         self._submitted = False
+        # The re-render this triggers registers the fields shown from now on.
+        self._editable = set()
+        self._owned = set()
         self._touch()
 
     # -- snapshot hooks (session_serializer) --------------------------------
@@ -508,6 +515,7 @@ class Form(Generic[M]):
             "has_raw": self._has_raw,
             "errors": {k: [e.to_dict() for e in v] for k, v in self._errors.items()},
             "submitted": self._submitted,
+            "editable": sorted(self._editable),
             "owned": sorted(self._owned),
         }
 
@@ -534,12 +542,8 @@ class Form(Generic[M]):
             if isinstance(v, list)
         }
         self._submitted = bool(state.get("submitted"))
-        owned = state.get("owned")
-        self._owned = (
-            {n for n in owned if isinstance(n, str)}
-            if isinstance(owned, list)
-            else set()
-        )
+        self._editable = _names(state.get("editable"))
+        self._owned = _names(state.get("owned"))
         self._touch()
 
     # -- the pipeline ------------------------------------------------------
@@ -553,9 +557,12 @@ class Form(Generic[M]):
         form_data = getattr(event, "form_data", None)
         if form_data is None and isinstance(event, Mapping):
             form_data = event.get("formData")
-        flat = normalize(form_data if isinstance(form_data, Mapping) else {})
+        flat = self._rendered_input(
+            normalize(form_data if isinstance(form_data, Mapping) else {})
+        )
         self._capture(flat)
-        data = shape(self._spec, self._with_owned(flat), resolve_upload=_resolve_upload)
+        data = shape(self._spec, flat, resolve_upload=_resolve_upload)
+        self._keep_unrendered(self._spec, (), flat, data)
         self._submitted = True
         instance = self._validate(data)
         self._touch()
@@ -590,9 +597,11 @@ class Form(Generic[M]):
         return instance
 
     def _capture(self, flat: Flat) -> None:
-        """Keep what the user typed (schema names only, never secrets)."""
+        """Keep what the user typed in editable fields (never secrets)."""
         raw: Flat = {}
         for name, values in flat.items():
+            if name not in self._editable:
+                continue
             _, spec = self._lookup(name)
             if spec is None or _is_secret(spec) or spec.kind in ("file", "files"):
                 continue
@@ -600,20 +609,50 @@ class Form(Generic[M]):
         self._raw = raw
         self._has_raw = True
 
-    def _with_owned(self, flat: Flat) -> Flat:
-        """Fields rendered disabled/readonly keep their server value."""
-        if not self._owned:
-            return flat
-        flat = dict(flat)
+    def _rendered_input(self, flat: Flat) -> Flat:
+        """Only fields rendered editable are read from the request; fields
+        rendered disabled/readonly keep the value the server rendered."""
+        out = {name: values for name, values in flat.items() if name in self._editable}
         for name in self._owned:
             path, spec = self._lookup(name)
             if spec is None:
                 continue
             initial = self._initial_display(path, spec)
-            flat[name] = list(initial) if isinstance(initial, list) else [initial]
             if spec.kind == "boolean" and initial == "":
-                flat.pop(name)
-        return flat
+                continue
+            out[name] = list(initial) if isinstance(initial, list) else [initial]
+        return out
+
+    def _keep_unrendered(
+        self, spec: FieldSpec, path: Path, flat: Flat, data: Dict[Any, Any]
+    ) -> None:
+        """Fields the page never rendered keep their initial value, or with
+        none the model default, whatever the request says."""
+        for child in spec.children.values():
+            here = path + (child.key,)
+            name = self._html_name(here)
+            if child.kind in ("model", "list") and self._rendered_under(name + "."):
+                sub = data.get(child.data_key)
+                if child.kind == "model" and isinstance(sub, dict):
+                    self._keep_unrendered(child, here, flat, sub)
+                elif child.kind == "list" and isinstance(sub, list):
+                    assert child.item is not None
+                    for i, row in zip(row_indices(flat, name + "."), sub):
+                        if isinstance(row, dict):
+                            self._keep_unrendered(child.item, here + (i,), flat, row)
+            elif child.kind in ("model", "list") or not (
+                name in self._editable or name in self._owned
+            ):
+                value = self._initial_raw(here)
+                if value is _MISSING:
+                    data.pop(child.data_key, None)
+                else:
+                    data[child.data_key] = value
+
+    def _rendered_under(self, prefix: str) -> bool:
+        return any(n.startswith(prefix) for n in self._editable) or any(
+            n.startswith(prefix) for n in self._owned
+        )
 
     # -- internals ---------------------------------------------------------
 
@@ -654,7 +693,7 @@ class Form(Generic[M]):
         for part in name.split("."):
             if spec is None:
                 return (), None
-            if spec.kind == "list" and part.isdigit() and len(part) <= 6:
+            if spec.kind == "list" and _is_index(part):
                 path.append(int(part))
                 spec = spec.item
             elif spec.kind == "model":
@@ -706,7 +745,8 @@ class Form(Generic[M]):
         hint = f" Did you mean {close[0]!r}?" if close else ""
         return f"{model} has no field {name!r}.{hint}"
 
-    def _initial_value(self, path: Path) -> Any:
+    def _initial_raw(self, path: Path) -> Any:
+        """The initial object's value at ``path``, or _MISSING."""
         obj: Any = self._initial
         spec = self._spec
         for key in path:
@@ -717,7 +757,12 @@ class Form(Generic[M]):
             else:
                 spec = spec.children[key]
                 obj = _get(obj, key, spec.data_key)
+        return obj
+
+    def _initial_value(self, path: Path) -> Any:
+        obj = self._initial_raw(path)
         if obj is _MISSING:
+            spec = self._spec_at(path)
             return spec.default if spec.has_default else None
         return obj
 
@@ -740,7 +785,7 @@ class Form(Generic[M]):
             return list(values) if spec.multiple else (values[-1] if values else "")
         if (
             self._has_raw
-            and name not in self._owned
+            and name in self._editable
             and (spec.multiple or spec.kind == "boolean")
         ):
             # Submitted without it: nothing ticked.
@@ -791,17 +836,26 @@ class Form(Generic[M]):
         return annotation
 
     def _row_count(self, path: Path, spec: FieldSpec) -> int:
-        name = self._html_name(path)
-        prefix = name + "."
-        rows = {
-            int(k[len(prefix) :].split(".", 1)[0])
-            for k in self._raw
-            if k.startswith(prefix) and k[len(prefix) :].split(".", 1)[0].isdigit()
-        }
+        prefix = self._html_name(path) + "."
+        # Rows the user submitted, and rows rendered read-only (not posted
+        # when disabled): both were rendered, so this never exceeds that.
+        heads = (k[len(prefix) :].split(".", 1)[0] for k in [*self._raw, *self._owned])
+        rows = {int(h) for h in heads if _is_index(h)}
         from_raw = max(rows) + 1 if rows else 0
         initial = self._initial_value(path)
         from_initial = len(initial) if isinstance(initial, (list, tuple)) else 0
-        return from_raw if self._has_raw else max(from_raw, from_initial)
+        count = from_raw if self._has_raw else max(from_raw, from_initial)
+        return min(count, MAX_ROWS)
+
+
+def _is_index(text: str) -> bool:
+    return text.isascii() and text.isdigit() and len(text) <= 6
+
+
+def _names(value: Any) -> set[str]:
+    return (
+        {n for n in value if isinstance(n, str)} if isinstance(value, list) else set()
+    )
 
 
 def _mark_invalid(page: Any) -> None:

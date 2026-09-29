@@ -139,6 +139,7 @@ describe('UnifiedEventHandler — optimistic on non-interactive submit', () => {
         ok: false,
         status: 422,
         redirected: false,
+        headers: new Headers({ 'X-PyWire-Form': 'invalid' }),
         text: async () => '<html><body><p>Enter a valid email address</p></body></html>',
       })
     )
@@ -151,6 +152,30 @@ describe('UnifiedEventHandler — optimistic on non-interactive submit', () => {
       '<html><body><p>Enter a valid email address</p></body></html>'
     )
     expect(window.location.href).toBe(before)
+    vi.unstubAllGlobals()
+  })
+
+  it('httpFormSubmit does not morph a 422 that pywire did not mark', async () => {
+    const app = new PyWireApp({ autoInit: false, interactive: false })
+    const form = document.createElement('form')
+    document.body.appendChild(form)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        redirected: false,
+        headers: new Headers(),
+        text: async () => '{"detail": "validation error"}',
+      })
+    )
+    const updateMock = (app as unknown as { updater: { update: ReturnType<typeof vi.fn> } }).updater
+      .update
+
+    await app.httpFormSubmit(form, 'save')
+
+    expect(updateMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 })

@@ -388,6 +388,14 @@ def add(data):
     assert analyze_event_fields(source) == {"formData"}
 
 
+def test_unpacking_the_form_needs_form_data():
+    source = """
+def add(data):
+    save({**data, "source": "web"})
+"""
+    assert analyze_event_fields(source) == {"formData"}
+
+
 def test_param_with_default_is_not_the_event():
     source = """
 def handle(event, label="x"):

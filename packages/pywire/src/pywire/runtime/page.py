@@ -630,6 +630,11 @@ class BasePage:
         dep_versions: Dict[Tuple[Any, str], int] = {
             key: getattr(key[0], "_write_seq", 0) for key in captured
         }
+        # A nested component's output is part of this one's, so its wires
+        # invalidate this cache too (its own memo already includes its
+        # children's).
+        for child in comp._components.values():
+            dep_versions.update(getattr(child, "_pw_memo_dep_versions", None) or {})
 
         comp._pw_memo_props = props_snapshot  # type: ignore[attr-defined]
         comp._pw_memo_html = html  # type: ignore[attr-defined]
@@ -1522,11 +1527,14 @@ class BasePage:
         # written by the user's handler — UI freezes despite the wire
         # change. Marking the parent's root (None) dirty triggers a full
         # re-render, which is the safe outcome since the parent has no
-        # finer-grained subscription for this wire.
+        # finer-grained subscription for this wire. Every ancestor, not just
+        # the parent: a component nested in a component is re-rendered only
+        # when the page at the top is.
         parent = getattr(self, "_parent_page", None)
-        if parent is not None:
+        while parent is not None:
             parent._dirty_regions.add(None)
             parent._wire_write_seq += 1
+            parent = getattr(parent, "_parent_page", None)
 
     async def handle_event(
         self, event_name: str, event_data: dict[str, Any]

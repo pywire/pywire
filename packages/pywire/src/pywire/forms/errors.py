@@ -85,7 +85,10 @@ class _SafeCtx(dict):
 def _render(template: Any, ctx: Dict[str, Any]) -> str:
     if callable(template):
         return str(template(ctx))
-    return str(template).format_map(_SafeCtx(ctx))
+    try:
+        return str(template).format_map(_SafeCtx(ctx))
+    except (ValueError, IndexError, KeyError, AttributeError, TypeError):
+        return str(template)
 
 
 def map_error(
@@ -95,6 +98,10 @@ def map_error(
     etype = str(err.get("type", "custom"))
     ctx: Dict[str, Any] = dict(err.get("ctx") or {})
     code, template = _BY_TYPE.get(etype, ("customError", ""))
+    # Messages from validators and Pydantic can quote what the user typed,
+    # so they are shown as they are; only our templates and the developer's
+    # overrides are filled in.
+    verbatim = False
 
     kind = spec.kind if spec is not None else ""
     if kind == "boolean" and etype in ("missing", "literal_error", "bool_parsing"):
@@ -106,20 +113,24 @@ def map_error(
         # is the one the user should see, without Pydantic's prefix.
         code = "customError"
         template = str(ctx["error"]) or str(err.get("msg", ""))
+        verbatim = True
     elif spec is not None and spec.input_type == "email" and etype == "value_error":
         code, template = "typeMismatch", "Enter a valid email address"
     elif etype in ("value_error", "assertion_error"):
         code, template = "customError", str(err.get("msg", ""))
+        verbatim = True
     elif not template:
         template = str(err.get("msg", "Invalid value"))
+        verbatim = True
 
     override = messages.get(f"{path}.{code}") if path else None
     if override is None:
         override = messages.get(code)
     if override is not None:
-        template = override
+        template, verbatim = override, False
     ctx.pop("error", None)
-    return FieldError(code=code, message=_render(template, ctx), type=etype)
+    message = str(template) if verbatim else _render(template, ctx)
+    return FieldError(code=code, message=message, type=etype)
 
 
 def error_path(

@@ -143,6 +143,17 @@ class _EventFieldVisitor(ast.NodeVisitor):
                 self.fields.add("formData")
         self.generic_visit(node)
 
+    def visit_Dict(self, node: ast.Dict) -> None:
+        # {**data}: unpacks the submitted fields
+        for key, value in zip(node.keys, node.values):
+            if (
+                key is None
+                and isinstance(value, ast.Name)
+                and value.id in self._event_names
+            ):
+                self.fields.add("formData")
+        self.generic_visit(node)
+
     def visit_Starred(self, node: ast.Starred) -> None:
         # **event or *event
         if isinstance(node.value, ast.Name) and node.value.id in self._event_names:
