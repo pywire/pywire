@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pygls>=1.3.0",
     "ty>=0.0.15",
-    "pywire>=0.17.0",
+    "pywire>=0.18.0",
     "pywire-parser>=0.8.0",
 ]
 
