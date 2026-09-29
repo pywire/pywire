@@ -1,5 +1,14 @@
 #!/bin/sh -e
+# Format and lint every example.
 
-echo "=== Linting Example Apps ==="
-# Add specific linting for examples if needed, otherwise just check
-./scripts/check
+cd "$(dirname "$0")/.."
+
+for dir in */; do
+    dir="${dir%/}"
+    [ -f "$dir/pyproject.toml" ] || continue
+    (
+        cd "$dir"
+        uv run --package "example-$dir" ruff format --check --diff .
+        uv run --package "example-$dir" ruff check .
+    )
+done

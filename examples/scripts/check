@@ -1,23 +1,21 @@
 #!/bin/sh -e
+# Full gate for every example: format, lint, pywire check, tests.
+# Each example is a uv workspace member named example-<dir>.
 
-echo "--- Checking Examples ---"
-# Check demo-app (if it has checks)
-if [ -d "demo-app" ]; then
-    echo "-> demo-app: Basic Import Check"
-    # Basic check: can we verify the dependencies are resolvable?
-    # We can try running a trivial command or check if pyproject valid
-    if [ -n "$VIRTUAL_ENV" ]; then
-        (cd demo-app && uv run --active python -c "import pywire; print('pywire accessible')")
-    else
-        (cd demo-app && uv run python -c "import pywire; print('pywire accessible')")
-    fi
-fi
+cd "$(dirname "$0")/.."
 
-if [ -d "demo-components" ]; then
-    echo "-> demo-components: Basic Import Check"
-    if [ -n "$VIRTUAL_ENV" ]; then
-        (cd demo-components && uv run --active python -c "import pywire; print('pywire accessible')")
-    else
-        (cd demo-components && uv run python -c "import pywire; print('pywire accessible')")
-    fi
-fi
+for dir in */; do
+    dir="${dir%/}"
+    [ -f "$dir/pyproject.toml" ] || continue
+    pkg="example-$dir"
+    echo "--- $dir ---"
+    (
+        cd "$dir"
+        uv run --package "$pkg" ruff format --check --diff .
+        uv run --package "$pkg" ruff check .
+        uv run --package "$pkg" pywire check
+        if [ -d tests ]; then
+            uv run --package "$pkg" pytest -q
+        fi
+    )
+done

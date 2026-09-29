@@ -1,0 +1,43 @@
+---
+import asyncio
+
+import counter
+
+rounds = wire(0)
+
+async def ten_at_once(add):
+    # Stand-in for ten users clicking at the same moment: ten handlers
+    # interleave on the event loop wherever they await.
+    await asyncio.gather(*(add() for _ in range(10)))
+    rounds.value += 1
+
+async def unsafe():
+    await ten_at_once(counter.add_unsafe)
+
+async def locked():
+    await ten_at_once(counter.add_locked)
+
+async def reset():
+    await counter.reset()
+    rounds.value = 0
+---
+<h1>Races</h1>
+<p class="muted">Each button runs ten increments at the same time against storage that takes a moment to answer, like a database would.</p>
+
+<section class="card">
+    <p class="big">{counter.saved}</p>
+    <p>
+        <button @click={unsafe}>+10 without a lock</button>
+        <button @click={locked}>+10 with a lock</button>
+        <button class="link" @click={reset}>Reset</button>
+    </p>
+    <p class="muted">Without the lock, all ten read the same value before any of them writes, so the counter goes up by 1, not 10. With the lock, each read-modify-write finishes before the next starts.</p>
+</section>
+
+<section class="card">
+    <h2>When you need a lock</h2>
+    <ul>
+        <li>A handler that reads shared state, awaits, then writes it back. Code without an <code>await</code> in between is already safe: the event loop runs one handler at a time.</li>
+        <li>An <code>asyncio.Lock</code> covers one server process. With several workers or servers, use the database: an atomic <code>UPDATE ... SET n = n + 1</code>, a transaction, or a row lock.</li>
+    </ul>
+</section>
