@@ -1,0 +1,114 @@
+---
+title: Error messages
+tutorial: Basic PyWire
+section: Forms
+description: Write your own messages, and reject a submit from your handler.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      TAKEN = {"ada", "grace"}
+
+      class Signup(BaseModel):
+        username: str = Field(min_length=3)
+        age: int = Field(ge=13)
+
+      # 1. Pass messages= to form() to reword the age error
+      signup = form(Signup)
+      result = wire("")
+
+      def join(data: Signup):
+        # 2. Reject a taken username here
+        result.value = f"Welcome, {data.username}!"
+      ---
+      <div>
+        <h1>Messages</h1>
+        <p>Taken names: ada, grace.</p>
+
+        <form $bind={signup} @submit={join} novalidate>
+          <div>
+            <label for={signup.username.html_id}>Username</label>
+            <input $bind={signup.username} />
+            <span $if={signup.username.error} style="color: red;">{signup.username.error}</span>
+          </div>
+          <div>
+            <label for={signup.age.html_id}>Age</label>
+            <input $bind={signup.age} />
+            <span $if={signup.age.error} style="color: red;">{signup.age.error}</span>
+          </div>
+          <button type="submit">Join</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      TAKEN = {"ada", "grace"}
+
+      class Signup(BaseModel):
+        username: str = Field(min_length=3)
+        age: int = Field(ge=13)
+
+      signup = form(
+        Signup,
+        messages={"age.rangeUnderflow": "You must be at least {ge} to join"},
+      )
+      result = wire("")
+
+      def join(data: Signup):
+        if data.username.lower() in TAKEN:
+          signup.username.error = "That name is taken"
+          return
+        result.value = f"Welcome, {data.username}!"
+      ---
+      <div>
+        <h1>Messages</h1>
+        <p>Taken names: ada, grace.</p>
+
+        <form $bind={signup} @submit={join} novalidate>
+          <div>
+            <label for={signup.username.html_id}>Username</label>
+            <input $bind={signup.username} />
+            <span $if={signup.username.error} style="color: red;">{signup.username.error}</span>
+          </div>
+          <div>
+            <label for={signup.age.html_id}>Age</label>
+            <input $bind={signup.age} />
+            <span $if={signup.age.error} style="color: red;">{signup.age.error}</span>
+          </div>
+          <button type="submit">Join</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Pass messages= to form()'
+    target: pages/index.wire
+    pattern: 'messages='
+  - type: file_contains
+    description: 'Set an error from the handler'
+    target: pages/index.wire
+    pattern: 'signup.username.error ='
+  - type: browser_route_text
+    route: '/'
+    description: 'Submit the name "ada" to see your error'
+    pattern: 'That name is taken'
+pagesDir: pages
+---
+
+Every rule comes with a message written for people, such as "Use at least 3 characters". You can reword any of them, and your handler can add errors the model can't know about, like a name that's already in use.
+
+### Your Task
+
+1.  Give `form()` a `messages` argument: `messages={"age.rangeUnderflow": "You must be at least {ge} to join"}`. The key is the field and the error code; `{ge}` is filled in from the rule (`13`). Leave out the field name (`"rangeUnderflow"`) to change the message for every field.
+2.  In `join`, before the welcome message, check for a taken name. If `data.username.lower()` is in `TAKEN`, set `signup.username.error = "That name is taken"` and `return`.
+3.  Submit an age of 10, then the name `ada`.
+
+`join` only runs when the model accepts the submit, so the model's own errors never reach it. Setting an error in the handler marks the form invalid and shows the message next to the field, the same way a rule from the model does.
