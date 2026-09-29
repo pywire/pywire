@@ -284,3 +284,61 @@ async def test_special_char_key_is_escaped_and_round_trips(tmp_path):
         f'style="display: contents;"><li>a</li></div>'
     )
     assert page._region_dependencies.get(raw_rid)
+
+
+TABLE_SRC = """
+---
+rows = wire([{"id": "a&b", "n": "first"}, {"id": "c", "n": "second"}])
+
+def rename(i):
+    rows.value[i]["n"] = "renamed"
+---
+<table><tbody>
+{$for i, r in enumerate(rows.value), key=r["id"]}
+    <tr><td>{r["n"]}</td><td><button @click={rename(i)}>r</button></td></tr>
+{/for}
+</tbody></table>
+<select>
+{$for r in rows.value, key=r["id"]}<option>{r["n"]}</option>{/for}
+</select>
+"""
+
+
+@pytest.mark.asyncio
+async def test_table_and_select_items_carry_their_own_region(tmp_path):
+    """The HTML parser hoists a <div> out of a <tbody> and drops it from a
+    <select>, so rows and options anchor the item region themselves."""
+    page = _make_page(tmp_path, TABLE_SRC)
+    html = await page._render_template()
+    row_site, option_site = sorted(page.__keyed_region_renderers__)
+    assert "<div" not in html
+    assert f'<tr data-pw-region="{row_site}#a&amp;b">' in html
+    assert f'<tr data-pw-region="{row_site}#c">' in html
+    assert f'<option data-pw-region="{option_site}#c">second</option>' in html
+
+    update = await page.handle_event("_handler_0", {"args": {"arg0": 1}})
+    [region] = [r for r in update["regions"] if r["region"].startswith(row_site)]
+    assert region["region"] == f"{row_site}#c"
+    assert region["html"].startswith(f'<tr data-pw-region="{row_site}#c">')
+    assert "renamed" in region["html"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<tr><td>{r}</td></tr><tr><td>{r}</td></tr>",
+        "{$if r}<tr><td>{r}</td></tr>{/if}",
+        "text <tr><td>{r}</td></tr>",
+    ],
+)
+def test_keyed_table_items_must_be_one_element(tmp_path, body):
+    from pywire_parser.exceptions import PyWireSyntaxError
+
+    src = f"""
+---
+rows = wire(["a", "b"])
+---
+<table><tbody>{{$for r in rows.value, key=r}}{body}{{/for}}</tbody></table>
+"""
+    with pytest.raises(PyWireSyntaxError, match="exactly one such element"):
+        _make_page(tmp_path, src)

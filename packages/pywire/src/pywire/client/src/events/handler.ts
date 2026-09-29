@@ -3,7 +3,7 @@ import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
 import { beginSubmit, isBoundForm, releaseForms, submitterField } from './forms'
-import { applyOptimistic, isOptimistic, revertElement } from './pending'
+import { applyOptimistic, bindPending, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
 import { checkFiles, UploadError, Uploader, UploadRef } from './uploads'
 
@@ -858,7 +858,8 @@ export class UnifiedEventHandler {
       applyOptimistic(element, modifiers)
     }
 
-    this.app.sendEvent(handler, eventData)
+    const eventId = this.app.sendEvent(handler, eventData)
+    bindPending(element, eventId)
   }
 
   private parseDuration(modifiers: string[], defaultDuration: number): number {

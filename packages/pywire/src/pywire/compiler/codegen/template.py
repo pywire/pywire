@@ -74,6 +74,22 @@ class TemplateCodegen:
         "wbr",
     }
     DOCUMENT_ROOT_ELEMENTS = {"html", "head", "body"}
+    # Elements the HTML parser only keeps inside a table or <select>. A keyed
+    # {$for} item made of one can't sit in a wrapper <div>: the parser hoists
+    # the <div> out of a table and drops it from a <select>.
+    TABLE_CONTEXT_ELEMENTS = {
+        "caption",
+        "col",
+        "colgroup",
+        "optgroup",
+        "option",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "tr",
+    }
 
     def __init__(self, *, dev_mode: Optional[bool] = None) -> None:
         self.interpolation_parser = BraceInterpolationParser()
@@ -94,6 +110,10 @@ class TemplateCodegen:
         # loops. ``render_update`` dispatches dirty ``{site}#{key}`` region
         # ids through this map.
         self.keyed_region_renderers: Dict[str, str] = {}
+        # (line, column) of a keyed {$for} item's root element -> site id,
+        # while that loop's body is generated: the element carries the
+        # item's ``{site}#{key}`` region itself instead of a wrapper <div>.
+        self._keyed_anchors: Dict[Tuple[int, int], str] = {}
         # Region IDs whose codegen happened under `{$dynamic}`. These regions
         # are force-marked dirty in `render_update` so the bypass kwarg on
         # inner `_invoke_render`/`_invoke_component` calls actually executes.
@@ -174,6 +194,7 @@ class TemplateCodegen:
         self._region_counter = 0
         self.region_renderers = {}
         self.keyed_region_renderers = {}
+        self._keyed_anchors = {}
         self.dynamic_regions = set()
         self._region_codegen_stack = []
         self._wire_vars = set()
@@ -869,6 +890,49 @@ class TemplateCodegen:
         assert isinstance(tree, ast.Module)
         return tree.body
 
+    def _keyed_table_root(self, node: TemplateNode) -> Optional[TemplateNode]:
+        """The element a keyed ``{$for}`` item anchors its region on, when the
+        item is a table or ``<select>`` part (a ``<tr>``, ``<td>``,
+        ``<option>``...). Anything else keeps the wrapper ``<div>``."""
+
+        def is_blank(n: TemplateNode) -> bool:
+            return (
+                n.tag is None
+                and not n.special_attributes
+                and not (n.text_content or "").strip()
+            )
+
+        def table_part(n: TemplateNode) -> bool:
+            tag = (n.tag or "").lower()
+            if tag in self.TABLE_CONTEXT_ELEMENTS:
+                return True
+            return tag in ("", "template") and any(table_part(c) for c in n.children)
+
+        if node.tag == "template" or (not node.tag and not node.text_content):
+            roots: List[TemplateNode] = []
+            for child in node.children:
+                if any(isinstance(a, ElseAttribute) for a in child.special_attributes):
+                    break
+                if not is_blank(child):
+                    roots.append(child)
+        else:
+            roots = [node]
+
+        if not any(table_part(r) for r in roots):
+            return None
+        root = roots[0]
+        if len(roots) == 1 and (root.tag or "").lower() in self.TABLE_CONTEXT_ELEMENTS:
+            return root
+        from pywire_parser.exceptions import PyWireSyntaxError
+
+        raise PyWireSyntaxError(
+            "A keyed {$for} over table rows, cells or <option>s must render "
+            "exactly one such element per item (e.g. one <tr>). The item's "
+            "update region is anchored on that element, because the HTML "
+            "parser drops the wrapper <div> used elsewhere.",
+            line=node.line,
+        )
+
     def _keyed_wrapper_str(self, site_id: str, key_name: ast.expr) -> ast.JoinedStr:
         """f'<div data-pw-region="{site}#{escape_html(key)}" style="display:
         contents;">' — the key is HTML-escaped so a hostile key cannot break
@@ -902,9 +966,11 @@ class TemplateCodegen:
         wire_vars: Set[str],
         node: TemplateNode,
         parts_var: str,
+        anchored: bool = False,
     ) -> List[ast.stmt]:
         """Per-iteration statements for a keyed ``{$for}``: compute the
-        region key untracked, guard duplicates, emit the wrapper div and
+        region key untracked, guard duplicates, emit the wrapper div (unless
+        the item's root element is ``anchored`` with the region itself) and
         render the body under the ``{site}#{key}`` render context."""
         k_n = f"_pw_k_{site_id}"
         rid_n = f"_pw_rid_{site_id}"
@@ -1057,12 +1123,18 @@ class TemplateCodegen:
                 )
             ),
             # parts.append(f'<div data-pw-region="{site}#{key}" ...>')
-            ast.Expr(
-                value=ast.Call(
-                    func=parts_append,
-                    args=[self._keyed_wrapper_str(site_id, nm(k_n))],
-                    keywords=[],
-                )
+            *(
+                []
+                if anchored
+                else [
+                    ast.Expr(
+                        value=ast.Call(
+                            func=parts_append,
+                            args=[self._keyed_wrapper_str(site_id, nm(k_n))],
+                            keywords=[],
+                        )
+                    )
+                ]
             ),
             # self._begin_region_render(_pw_rid)
             ast.Expr(
@@ -1087,14 +1159,20 @@ class TemplateCodegen:
                 finalbody=[ast.Expr(value=call("reset_render_context", nm(tok_n)))],
             ),
             # parts.append('</div>')
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=nm(parts_var), attr="append", ctx=ast.Load()
-                    ),
-                    args=[ast.Constant(value="</div>")],
-                    keywords=[],
-                )
+            *(
+                []
+                if anchored
+                else [
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=nm(parts_var), attr="append", ctx=ast.Load()
+                            ),
+                            args=[ast.Constant(value="</div>")],
+                            keywords=[],
+                        )
+                    )
+                ]
             ),
         ]
         for s in stmts:
@@ -1111,6 +1189,7 @@ class TemplateCodegen:
         known_imports: Optional[Set[str]],
         wire_vars: Set[str],
         node: TemplateNode,
+        anchored: bool = False,
     ) -> ast.AsyncFunctionDef:
         """``async def _pw_item_<site>(self, _pw_key) -> str`` — renders ONE
         iteration under the ``{site}#{key}`` render context, re-deriving the
@@ -1169,14 +1248,26 @@ class TemplateCodegen:
                     keywords=[],
                 )
             ),
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=nm("parts"), attr="append", ctx=ast.Load()
-                    ),
-                    args=[self._keyed_wrapper_str(site_id, nm("_pw_key"))],
-                    keywords=[],
-                )
+            *(
+                # The anchored root element renders data-pw-region from
+                # the loop's key variable.
+                [
+                    ast.Assign(
+                        targets=[nm(f"_pw_k_{site_id}", True)], value=nm("_pw_key")
+                    )
+                ]
+                if anchored
+                else [
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=nm("parts"), attr="append", ctx=ast.Load()
+                            ),
+                            args=[self._keyed_wrapper_str(site_id, nm("_pw_key"))],
+                            keywords=[],
+                        )
+                    )
+                ]
             ),
             ast.Assign(
                 targets=[nm(tok_n, True)],
@@ -1188,14 +1279,20 @@ class TemplateCodegen:
                 orelse=[],
                 finalbody=[ast.Expr(value=call("reset_render_context", nm(tok_n)))],
             ),
-            ast.Expr(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=nm("parts"), attr="append", ctx=ast.Load()
-                    ),
-                    args=[ast.Constant(value="</div>")],
-                    keywords=[],
-                )
+            *(
+                []
+                if anchored
+                else [
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=nm("parts"), attr="append", ctx=ast.Load()
+                            ),
+                            args=[ast.Constant(value="</div>")],
+                            keywords=[],
+                        )
+                    )
+                ]
             ),
             ast.Return(
                 value=ast.Call(
@@ -2252,6 +2349,17 @@ class TemplateCodegen:
             else_body: List[ast.stmt] = []
             has_else = False
 
+            # A keyed item that is a table or <select> part carries its own
+            # region attribute (see TABLE_CONTEXT_ELEMENTS): allocate the site
+            # id now so the root element's codegen can render it.
+            keyed_root = self._keyed_table_root(node) if for_attr.key else None
+            anchored_site_id: Optional[str] = None
+            if keyed_root is not None:
+                anchored_site_id = self._next_region_id()
+                self._keyed_anchors[(keyed_root.line, keyed_root.column)] = (
+                    anchored_site_id
+                )
+
             new_attrs = [a for a in node.special_attributes if a is not for_attr]
 
             # Check if we should split children for for-else
@@ -2325,10 +2433,12 @@ class TemplateCodegen:
             # Keyed loops ({$for ..., key=<expr>}) wrap every iteration in
             # a <div data-pw-region="{site}#{key}"> rendered under the
             # per-item render context. Keyless loops are untouched.
+            if keyed_root is not None:
+                del self._keyed_anchors[(keyed_root.line, keyed_root.column)]
             keyed_site_id: Optional[str] = None
             keyed_item_body = for_body
             if for_attr.key:
-                keyed_site_id = self._next_region_id()
+                keyed_site_id = anchored_site_id or self._next_region_id()
                 seen_var = f"_pw_seen_{keyed_site_id}"
                 seen_init = ast.Assign(
                     targets=[ast.Name(id=seen_var, ctx=ast.Store())],
@@ -2349,6 +2459,7 @@ class TemplateCodegen:
                     wire_vars,
                     node,
                     parts_var,
+                    anchored=keyed_root is not None,
                 )
 
             # Wrap iterable in ensure_async_iterator
@@ -2421,6 +2532,7 @@ class TemplateCodegen:
                         known_imports,
                         wire_vars,
                         node,
+                        anchored=keyed_root is not None,
                     )
                 )
             return
@@ -4368,6 +4480,18 @@ class TemplateCodegen:
 
             if region_id:
                 bindings["data-pw-region"] = ast.Constant(value=region_id)
+            keyed_site = self._keyed_anchors.get((node.line, node.column))
+            if keyed_site is not None:
+                # f"{site}#{key}" — the keyed item's region, on its root.
+                bindings["data-pw-region"] = ast.JoinedStr(
+                    values=[
+                        ast.Constant(value=f"{keyed_site}#"),
+                        ast.FormattedValue(
+                            value=ast.Name(id=f"_pw_k_{keyed_site}", ctx=ast.Load()),
+                            conversion=-1,
+                        ),
+                    ]
+                )
 
             show_attr = next(
                 (a for a in node.special_attributes if isinstance(a, ShowAttribute)),

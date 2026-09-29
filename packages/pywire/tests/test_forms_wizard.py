@@ -46,6 +46,9 @@ class Signup(BaseModel):
         return self
 
 
+SECRET = "wizard-test-secret-at-least-32-bytes"
+
+
 def post(w, data, handler=None, kind="submit"):
     asyncio.run(w._pw_submit(None, handler, {"type": kind, "formData": data}))
 
@@ -287,7 +290,7 @@ def client(request):
     pages.mkdir()
     (pages / "index.wire").write_text(PAGE)
     kwargs = {"stateless": True} if request.param == "stateless" else {}
-    app = PyWire(pages_dir=str(pages), secret_key="wizard-secret", **kwargs)
+    app = PyWire(pages_dir=str(pages), secret_key=SECRET, **kwargs)
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
     shutil.rmtree(root, ignore_errors=True)

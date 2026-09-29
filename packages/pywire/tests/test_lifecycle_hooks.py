@@ -125,8 +125,7 @@ def increment(self):
     self.counter += 1
 ---
 
-<p>{counter}</p>
-<button @click={increment}>+</button>
+<p>{counter}</p><button @click={increment}>+</button>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()
@@ -163,8 +162,7 @@ def fail(self):
     raise ValueError("test error")
 ---
 
-<p>Test</p>
-<button @click={fail}>fail</button>
+<p>Test</p><button @click={fail}>fail</button>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()
@@ -195,8 +193,7 @@ def fail(self):
     raise ValueError("test error")
 ---
 
-<p>Test</p>
-<button @click={fail}>fail</button>
+<p>Test</p><button @click={fail}>fail</button>
         """
         page_class = self.create_page_class(content)
         request = MagicMock()

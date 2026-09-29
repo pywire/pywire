@@ -75,25 +75,41 @@ export class StatelessTransport extends BaseTransport {
           snapshot: this.snapshot,
         }),
       })
+      // The snapshot is over the size cap (possibly rejected by a proxy with
+      // a body that isn't msgpack): every later event would fail the same way.
+      if (response.status === 413) {
+        this.reloadForFreshSnapshot('snapshot too large')
+        return
+      }
       const payload = decode(await response.arrayBuffer()) as StatelessResponse
       if (!response.ok) {
-        this.notifyHandlers({
-          type: 'error',
-          error:
-            typeof payload.error === 'string'
-              ? payload.error
-              : `stateless request failed: ${response.status}`,
-        })
+        const error =
+          typeof payload.error === 'string'
+            ? payload.error
+            : `stateless request failed: ${response.status}`
+        // Signed with a rotated key or before a deploy, or issued for another
+        // URL: this snapshot will never be accepted again.
+        if (response.status === 400 && error === 'invalid snapshot') {
+          this.reloadForFreshSnapshot(error)
+          return
+        }
+        this.notifyHandlers({ type: 'error', error, ack: msg.id })
         return
       }
       if (typeof payload.snapshot === 'string') {
         this.snapshot = payload.snapshot
       }
-      this.notifyHandlers(payload)
+      this.notifyHandlers({ ...payload, ack: msg.id })
     } catch (e) {
       logger.error('PyWire: stateless event failed', e)
-      this.notifyHandlers({ type: 'error', error: 'stateless request failed' })
+      this.notifyHandlers({ type: 'error', error: 'stateless request failed', ack: msg.id })
     }
+  }
+
+  /** Reload the page: its HTML embeds a snapshot the server will accept. */
+  private reloadForFreshSnapshot(reason: string): void {
+    logger.warn(`PyWire: ${reason}; reloading the page`)
+    this.notifyHandlers({ type: 'reload' })
   }
 
   private async relocate(msg: RelocateMessage): Promise<void> {

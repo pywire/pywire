@@ -399,9 +399,14 @@ class PyWire:
         # Stateless (client-held state) mode: signed snapshots replace the
         # server session; interactive transports (WS/long-poll) are not mounted.
         self.stateless = stateless
-        from pywire.compiler.tier_gate import set_stateless_tier
-
-        set_stateless_tier(stateless)
+        try:
+            from pywire.compiler.tier_gate import set_stateless_tier
+        except ImportError:
+            # No pywire-parser: a runtime-only install (FaaS bundles ship
+            # prebuilt pages) compiles nothing, so there is no tier to gate.
+            pass
+        else:
+            set_stateless_tier(stateless)
         secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
         # Signs state a page hands the browser to send back (wizard steps).
         # Processes that serve the same pages must share it.
@@ -416,6 +421,12 @@ class PyWire:
                     "PyWire(stateless=True) requires secret_key= or the "
                     "PYWIRE_SECRET_KEY env var — it signs client-held session "
                     "snapshots"
+                )
+            if len(secret.encode("utf-8")) < 32:
+                raise RuntimeError(
+                    "PYWIRE_SECRET_KEY must be at least 32 bytes — anyone who "
+                    "guesses it can forge page state. Generate one with: "
+                    "python -c 'import secrets; print(secrets.token_hex(32))'"
                 )
             self._stateless_secret = secret.encode("utf-8")
 
@@ -455,8 +466,12 @@ class PyWire:
             else LocalStore(self._runtime_dir / "uploads")
         )
 
-        # Compile and register all pages
-        self._load_pages()
+        # Compile and register all pages. Prebuilt deploy bundles (FaaS and
+        # Cloudflare) skip this: their entrypoint sets PYWIRE_PREBUILT, the
+        # bundle's _routes.py registers the precompiled pages, and there is
+        # usually no compiler to run.
+        if os.environ.get("PYWIRE_PREBUILT") != "1":
+            self._load_pages()
 
         # Prepare exception handlers
         exception_handlers: Dict[Any, Any] = {}
@@ -1779,12 +1794,13 @@ class PyWire:
             and response.media_type == "text/html"
         ):
             from pywire.runtime.page import _find_tag_outside_raw_text
-            from pywire.runtime.snapshot_codec import encode_snapshot
+            from pywire.runtime.snapshot_codec import encode_snapshot, snapshot_route
 
             body = cast(bytes, response.body).decode("utf-8")
             blob = encode_snapshot(
                 page,
                 secret=self._stateless_secret,
+                route=snapshot_route(request.url.path, request.url.query),
                 warn_size=self.session_warn_size,
             )
             tag = f'<script id="_pywire_snapshot" type="text/plain">{blob}</script>'

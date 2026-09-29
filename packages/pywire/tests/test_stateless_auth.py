@@ -19,7 +19,7 @@ from pywire.auth import Claim, ClaimsPrincipal
 from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import decode_snapshot
 
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 
 # $then form: the authorizing body is distinct from the resolved body so the
 # payload proves WHICH view shipped. ``{ok}`` renders True/False.

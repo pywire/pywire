@@ -9,6 +9,7 @@ compile-time ``__event_handlers__`` allowlist), then re-snapshotted.
 
 import logging
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import msgpack
 from starlette.requests import Request
@@ -22,6 +23,7 @@ from pywire.runtime.snapshot_codec import (
     SnapshotError,
     decode_snapshot,
     encode_snapshot,
+    snapshot_route,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,18 @@ class StatelessHandler:
         return page
 
     async def handle_event(self, request: Request) -> Response:
+        # CSRF: snapshots aren't bound to a user, so a cross-site page could
+        # mint one and make a victim's browser post it with their cookies.
+        # A form or no-cors fetch can't send this content type, and a CORS
+        # fetch that does needs a preflight this endpoint never answers.
+        content_type = request.headers.get("content-type", "")
+        if content_type.split(";")[0].strip().lower() != "application/x-msgpack":
+            return self._err(415, "expected application/x-msgpack")
+        if request.headers.get("sec-fetch-site", "same-origin") not in (
+            "same-origin",
+            "none",
+        ):
+            return self._err(403, "cross-site request")
         # Defense in depth: a declared length over the snapshot cap cannot
         # hold a valid request — reject before buffering the body at all.
         declared = request.headers.get("content-length", "")
@@ -74,6 +88,15 @@ class StatelessHandler:
         path = data.get("path", "/")
         if not isinstance(path, str):
             return self._err(400, "invalid path")
+        # The snapshot only rebuilds the page it was rendered for. Replayed
+        # against another path or query, it would run that page's handlers
+        # with @before_load/@init skipped (they don't re-run on events),
+        # bypassing any authorization they perform.
+        parts = urlsplit(path)
+        route = snapshot_route(parts.path, parts.query)
+        if snapshot.get("route") != route:
+            logger.warning("stateless: snapshot not issued for %r", path)
+            return self._err(400, "invalid snapshot")
         event_data = data.get("data", {})
         if not isinstance(event_data, dict):
             return self._err(400, "invalid data")
@@ -125,6 +148,7 @@ class StatelessHandler:
         payload["snapshot"] = encode_snapshot(
             page,
             secret=self.app._stateless_secret,
+            route=route,
             warn_size=self.app.session_warn_size,
         )
         return self._msg(payload)
@@ -134,7 +158,9 @@ class StatelessHandler:
         """True when dispatch must be refused per ``__event_handlers__``.
 
         Mirrors ``BasePage._dispatch_handler`` allowlist semantics (None =
-        permissive hand-rolled) for both page-level and ``_comp:`` names.
+        permissive hand-rolled) for both page-level and ``_comp:`` names,
+        walking nested components (``_comp:<layout>:_comp:<Nav>:bump``) the
+        same way ``_handle_component_event`` dispatches them.
         """
         if handler_name.startswith("_comp:"):
             comp_key, sep, remainder = handler_name[len("_comp:") :].partition(":")
@@ -145,8 +171,7 @@ class StatelessHandler:
             )
             if component is None:
                 return True
-            allowed = component.__class__.__event_handlers__
-            return allowed is not None and remainder not in allowed
+            return StatelessHandler._refused(component, remainder)
         allowed = page.__class__.__event_handlers__
         return allowed is not None and handler_name not in allowed
 

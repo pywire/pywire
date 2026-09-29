@@ -13,7 +13,7 @@ from pywire.compiler.exceptions import PyWireSyntaxError
 from pywire.runtime.app import PyWire
 from pywire.runtime.loader import PageLoader
 
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 _MSGPACK = {"Content-Type": "application/x-msgpack"}
 
 READS_QUERY = """---
@@ -61,6 +61,7 @@ def test_signed_snapshot_cannot_overwrite_request_query(tmp_path) -> None:
             "attrs": {"seen": "", "query": {"q": "forged"}, "_region_cache": {}},
             "wire_tags": {"seen": "primitive"},
             "page_class": "IndexPage",
+            "route": "/?q=real",
         }
         forged = _sign(snapshot)
         assert forged != blob.split("</script>")[0]

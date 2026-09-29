@@ -1,8 +1,8 @@
 """Fail-fast stateless config checks for `pywire build` on pure-FaaS platforms.
 
 Pure-FaaS targets (cloudflare-edge, aws-lambda, azure-functions, gcp-functions)
-only work with `PyWire(stateless=True)` + a signing secret. gcp-cloudrun and
-cloudflare (Durable Objects) accept either mode.
+only work with `PyWire(stateless=True)` + a signing secret. gcp-cloudrun
+accepts either mode; cloudflare (Durable Objects) is stateful only.
 """
 
 import sys
@@ -62,7 +62,7 @@ def _isolate_app_module():
 def test_build_faas_rejects_stateful_app(
     platform: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret-at-least-32-bytes-long")
     runner = CliRunner()
     with runner.isolated_filesystem():
         _write_app(stateless=False)
@@ -79,7 +79,7 @@ def test_build_faas_rejects_stateful_app(
 def test_build_aws_lambda_accepts_stateless_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret-at-least-32-bytes-long")
     runner = CliRunner()
     with runner.isolated_filesystem():
         _write_app(stateless=True)
@@ -105,7 +105,25 @@ def test_build_faas_missing_secret_names_provider_env(
             mock_build.return_value = _build_summary()
             result = runner.invoke(cli, ["build", "--platform", "aws-lambda"])
     assert result.exit_code != 0
-    assert "set PYWIRE_SECRET_KEY in your provider environment" in _norm(result.output)
+    assert "must be set for the build as well as in your provider environment" in _norm(
+        result.output
+    )
+
+
+@pytest.mark.parametrize("platform", ["aws-lambda", "gcp-cloudrun"])
+def test_build_short_secret_is_explained(
+    monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "too-short")
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _write_app(stateless=True)
+        result = runner.invoke(cli, ["build", "--platform", platform])
+    assert result.exit_code == 1
+    output = _norm(result.output)
+    assert "at least 32 bytes" in output
+    assert "secrets.token_hex(32)" in output
+    assert "Traceback" not in output
 
 
 @pytest.mark.parametrize("platform", ["gcp-cloudrun", "cloudflare"])
@@ -121,7 +139,7 @@ def test_build_dual_mode_platforms_accept_stateful_app(platform: str) -> None:
 
 def test_deploy_faas_rejects_stateful_app(monkeypatch: pytest.MonkeyPatch) -> None:
     """`pywire deploy` must hit the same pure-FaaS stateless gate as `build`."""
-    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret-at-least-32-bytes-long")
     runner = CliRunner()
     with runner.isolated_filesystem():
         _write_app(stateless=False)
@@ -133,3 +151,18 @@ def test_deploy_faas_rejects_stateful_app(monkeypatch: pytest.MonkeyPatch) -> No
             result = runner.invoke(cli, ["deploy", "--platform", "aws-lambda"])
     assert result.exit_code != 0
     assert "stateless=True" in _norm(result.output)
+
+
+def test_build_durable_objects_rejects_stateless_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The DO entry builds the app where Workers expose no secrets."""
+    monkeypatch.setenv("PYWIRE_SECRET_KEY", "test-secret-at-least-32-bytes-long")
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _write_app(stateless=True)
+        with patch("pywire.compiler.build.build_project") as mock_build:
+            mock_build.return_value = _build_summary()
+            result = runner.invoke(cli, ["build", "--platform", "cloudflare"])
+    assert result.exit_code != 0
+    assert "--platform cloudflare-edge" in _norm(result.output)

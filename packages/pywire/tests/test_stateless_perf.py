@@ -22,7 +22,7 @@ from pywire.runtime.app import PyWire
 from pywire.runtime.loader import PageLoader
 
 FIXTURE_PAGES = Path(__file__).parent / "fixtures" / "stateless_app" / "pages"
-SECRET = "test-secret-key"
+SECRET = "test-secret-key-at-least-32-bytes"
 
 COUNTER_ROUND_TRIP_MS = 50.0
 COUNTER_SNAPSHOT_B = 500

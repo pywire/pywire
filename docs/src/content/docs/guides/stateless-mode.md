@@ -15,10 +15,14 @@ Stateless mode replaces server-held page sessions with a signed client-carried s
 ## Security notes
 
 - Invalid signatures, corrupt data, and non-snapshot payloads fail with HTTP 400 before state mutation.
-- Handler dispatch uses a compile-time allowlist.
-- Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. Never auto-generate or commit it.
+- When the server rejects the page's snapshot (for example after a deploy or a key rotation) or it is over the size limit, the browser reloads the page, which embeds a fresh snapshot.
+- Handler dispatch uses a compile-time allowlist: the functions a template wires by name (`@click={save}`) plus the wrappers generated for expressions (`@click={charge(price)}`). A function reached only through an expression can't be called directly with arguments the client chose.
+- The endpoint only accepts `Content-Type: application/x-msgpack` from the same origin. Content types an HTML form can send are refused with HTTP 415, and requests the browser marks as cross-site with HTTP 403, so another site can't make a visitor's browser post a snapshot with their cookies.
+- Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. It must be at least 32 bytes; generate one with `python -c 'import secrets; print(secrets.token_hex(32))'`. Never auto-generate or commit it.
 - Snapshot integrity is not authorization. A bearer of a valid snapshot can replay its non-identity page state; authorization must still be enforced in handlers and request-derived identity.
-- The snapshot's `path` field is unsigned: a valid snapshot can be transplanted to another route (cross-page). Impact is bounded — identity is stripped and re-resolved per request, and page guards re-run on every request. (Known accepted gap.)
+- Each snapshot is bound to the URL (path and query) it was rendered for. Posting it with any other path is rejected with HTTP 400.
+- `@before_load` and `@init` run on the page load that issues the snapshot, not on events. A check that must hold on every event belongs in the handler, or in `{$auth}` and `!auth`, which re-run on every request.
+- The snapshot is signed, not encrypted. Anyone who can load the page can decode every public page attribute, including plain frontmatter values like `api_key = os.environ["API_KEY"]`. Keep secrets and server-only data in locked wires: `api_key = wire(os.environ["API_KEY"]).lock()`.
 
 `{$auth}` works in stateless mode, but **verdicts are never snapshotted**. Each request re-evaluates the policy, so revocation takes effect on the next request.
 
