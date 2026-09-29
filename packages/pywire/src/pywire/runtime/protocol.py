@@ -72,7 +72,9 @@ def for_another_page(page: Any, path: Any) -> bool:
     if not isinstance(path, str) or not path:
         return False
     scope = getattr(getattr(page, "request", None), "scope", None)
-    current = scope.get("path") if isinstance(scope, Mapping) else None
+    if not isinstance(scope, Mapping):
+        return False
+    current = scope.get("path")
     if not isinstance(current, str):
         return False
     sent = unquote(urlsplit(path).path)
