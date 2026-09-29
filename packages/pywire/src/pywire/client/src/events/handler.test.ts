@@ -302,6 +302,35 @@ describe('UnifiedEventHandler', () => {
       expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
     })
 
+    it('flushes waiting events in the order they happened', () => {
+      document.body.innerHTML =
+        '<div id="s" data-on-scroll="moved"></div><input id="q" data-on-input="search">' +
+        '<button id="b" data-on-click="save"></button>'
+      handler.init()
+      const s = document.getElementById('s')!
+      fire(s, 'scroll') // sent at once, opens the window
+      fire(s, 'scroll') // trailing, waiting
+      fire(document.getElementById('q')!, 'input') // debounced, waiting
+      ;(document.getElementById('b') as HTMLButtonElement).click()
+      expect(appMock.sendEvent.mock.calls.map((c) => c[0])).toEqual([
+        'moved',
+        'moved',
+        'search',
+        'save',
+      ])
+    })
+
+    it('waits 250ms for a configured timing without a duration', () => {
+      appMock.getConfig.mockReturnValue({ eventDefaults: { keyup: 'debounce' } })
+      document.body.innerHTML = '<input id="q" data-on-keyup="typed">'
+      handler.init()
+      fire(document.getElementById('q')!, 'keyup')
+      vi.advanceTimersByTime(200)
+      expect(appMock.sendEvent).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(100)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
     it('throttles scroll with a trailing send', () => {
       document.body.innerHTML = '<div id="s" data-on-scroll="moved"></div>'
       handler.init()

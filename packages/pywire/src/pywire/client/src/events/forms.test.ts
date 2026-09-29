@@ -103,6 +103,36 @@ describe('bound forms', () => {
     expect(sent().filter(([, d]) => d.type === 'submit')).toHaveLength(2)
   })
 
+  it('stays busy until the answer to its own submit arrives', () => {
+    let id = 0
+    app.sendEvent.mockImplementation(() => ++id)
+    const submit = (): void => {
+      $('signup').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    }
+    submit()
+    const mine = id
+    // A poll's update, and the reply to some other event, are not it.
+    settleForms(null)
+    settleForms(mine + 1)
+    submit()
+    expect(sent().filter(([, d]) => d.type === 'submit')).toHaveLength(1)
+    expect($('signup').getAttribute('aria-busy')).toBe('true')
+
+    settleForms(mine)
+    expect($('signup').hasAttribute('aria-busy')).toBe(false)
+  })
+
+  it('does not check a field again after a submit until it is typed in', () => {
+    $<HTMLInputElement>('email').value = 'a@b.co'
+    fire('email', 'input')
+    $('signup').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    settleForms()
+    // The handler reset the form: the field is empty again.
+    $<HTMLInputElement>('email').value = ''
+    fire('email', 'focusout')
+    expect(sent().filter(([, d]) => d.type === 'validate')).toHaveLength(0)
+  })
+
   it('sends the button that submitted, as a browser post would', () => {
     const add = document.createElement('button')
     add.type = 'submit'

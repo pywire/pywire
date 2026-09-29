@@ -8,7 +8,8 @@
 
 const SUBMITTING = 'data-pw-submitting'
 
-const submitting = new Set<HTMLFormElement>()
+// Busy forms, with the id of the event that submitted each (null until sent).
+const submitting = new Map<HTMLFormElement, number | null>()
 
 /** The name and value of the button that submitted a form, if it has a name. */
 export function submitterField(submitter: HTMLElement | null | undefined): [string, string] | null {
@@ -30,8 +31,13 @@ export function beginSubmit(form: HTMLFormElement): boolean {
   if (form.hasAttribute(SUBMITTING)) return false
   form.setAttribute(SUBMITTING, '')
   form.setAttribute('aria-busy', 'true')
-  submitting.add(form)
+  submitting.set(form, null)
   return true
+}
+
+/** The busy `form`'s submit went out as event `id`: its reply settles it. */
+export function submitSent(form: HTMLFormElement, id: number): void {
+  if (submitting.has(form)) submitting.set(form, id)
 }
 
 function release(form: HTMLFormElement): void {
@@ -40,9 +46,15 @@ function release(form: HTMLFormElement): void {
   submitting.delete(form)
 }
 
-/** The server answered: release busy forms and focus the first invalid field. */
-export function settleForms(): void {
-  for (const form of Array.from(submitting)) {
+/**
+ * The server answered: release busy forms and focus the first invalid field.
+ * With `ack`, only the form whose submit that answers; any other reply (a
+ * live check, a poll) leaves a submit in flight busy. Without, every form
+ * (an HTTP submit's response).
+ */
+export function settleForms(ack?: number | null): void {
+  for (const [form, id] of Array.from(submitting)) {
+    if (ack !== undefined && (ack === null || id !== ack)) continue
     release(form)
     if (!form.isConnected) continue
     const invalid = form.querySelector<HTMLElement>('[aria-invalid="true"]')
@@ -50,7 +62,12 @@ export function settleForms(): void {
   }
 }
 
-/** The request failed: release busy forms without moving focus. */
-export function releaseForms(): void {
-  for (const form of Array.from(submitting)) release(form)
+/**
+ * The request failed: release busy forms without moving focus. With `ack`,
+ * only the form whose submit failed.
+ */
+export function releaseForms(ack?: number | null): void {
+  for (const [form, id] of Array.from(submitting)) {
+    if (ack == null || id === ack) release(form)
+  }
 }

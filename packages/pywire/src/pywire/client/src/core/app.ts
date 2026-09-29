@@ -696,7 +696,7 @@ export class PyWireApp {
         // reconciled in-region markers/classes; settle the predictions of the
         // event it answers that the morph never reached.
         clearPending(msg.ack)
-        settleForms()
+        settleForms(msg.ack ?? null)
         // Same signal for @poll: a response arrived (even an empty one), so
         // clear the per-element in-flight overlap guard.
         clearPollInFlight()
@@ -750,7 +750,7 @@ export class PyWireApp {
         // No morph is coming — revert the optimistic prediction so a failed
         // control is never left stuck disabled (review focus #8).
         revertPending(msg.ack)
-        releaseForms()
+        releaseForms(msg.ack)
         // A poll dispatch that errored is no longer in flight — let the next
         // tick retry.
         clearPollInFlight()
@@ -760,7 +760,7 @@ export class PyWireApp {
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
         revertPending(msg.ack)
-        releaseForms()
+        releaseForms(msg.ack)
         clearPollInFlight()
         break
 
