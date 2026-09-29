@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.7...pywire-language-server-v0.8.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** model-bound forms with $bind ([#338](https://github.com/pywire/pywire/issues/338)) ([e5c76f7](https://github.com/pywire/pywire/commit/e5c76f7e9ad7535dc15dd5b6468c478d1e6d2d5f))
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump floors to pywire 0.17.0 ([#375](https://github.com/pywire/pywire/issues/375)) ([ae86a7e](https://github.com/pywire/pywire/commit/ae86a7e2f58bb495dad3277c3468f2f05f89e39b))
+
 ## [0.7.7](https://github.com/pywire/pywire/compare/pywire-language-server-v0.7.6...pywire-language-server-v0.7.7) (2026-09-29)
 
 
