@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.7.0...pywire-docs-v0.8.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** live validation, uploads, wizards and list rows for bound forms ([#345](https://github.com/pywire/pywire/issues/345)) ([ff5f95b](https://github.com/pywire/pywire/commit/ff5f95bd0f899d6e5295ff2388d27f677a7c5d73))
+* **pywire:** serve apps under a URL prefix with base_path ([#379](https://github.com/pywire/pywire/issues/379)) ([bbc41b6](https://github.com/pywire/pywire/commit/bbc41b6558fc44cbf1311126804b9c7d3919ecd6))
+
 ## [0.6.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.6.0...pywire-docs-v0.6.1) (2026-09-28)
 
 
