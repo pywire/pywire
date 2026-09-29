@@ -219,3 +219,29 @@ def test_enter_submits_rather_than_adding_or_removing(client):
     buttons = re.findall(r"<button[^>]*>", form)
     assert "data-pw-default-submit" in buttons[0]
     assert "name=" not in buttons[0] and 'type="submit"' in buttons[0]
+
+
+def test_remove_moves_rendered_names_and_nested_rows():
+    class Part(BaseModel):
+        sku: str = ""
+
+    class Line(BaseModel):
+        name: str = ""
+        parts: list[Part] = []
+
+    class Build(BaseModel):
+        lines: list[Line] = []
+
+    f = form(Build)
+    act(f, {"lines.0.name": "a", "lines.1.name": "b", ACTION: "add:lines.1.parts"})
+    assert len(f.lines[1].parts) == 1
+    act(f, {"lines.0.name": "a", "lines.1.name": "b", ACTION: "remove:lines.0"})
+    assert [line.name.raw for line in f.lines] == ["b"]
+    assert len(f.lines[0].parts) == 1
+    assert "lines.1.name" not in f._editable
+
+
+def test_row_indexes_must_be_ascii_digits():
+    f = form(Order)
+    act(f, {"customer": "A", ACTION: "remove:items.²"})
+    assert f.errors == {}

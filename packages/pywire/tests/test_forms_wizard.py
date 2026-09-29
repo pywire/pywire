@@ -352,3 +352,86 @@ def test_a_wizard_works_without_javascript(client):
     )
     assert r.status_code == 200
     assert ">a@b.co/Al</p>" in r.text
+
+
+def test_removing_a_row_moves_its_files_with_it():
+    class Doc(BaseModel):
+        title: str
+        file: Optional[Upload] = None
+
+    class Docs(BaseModel):
+        items: list[Doc] = []
+
+    class Done(BaseModel):
+        ok: bool = True
+
+    class Claim(BaseModel):
+        docs: Docs
+        done: Done
+
+    staging = staging_for(None)
+
+    async def stage(name: str) -> Upload:
+        async def body():
+            yield name.encode()
+
+        upload_id = await staging.stage(
+            body(), filename=name, content_type="text/plain", limit=100
+        )
+        upload = await staging.get(upload_id)
+        assert upload is not None
+        return upload
+
+    a, b, c = (asyncio.run(stage(n)) for n in ("a.txt", "b.txt", "c.txt"))
+    w = wizard(Claim)
+    post(
+        w,
+        {
+            "docs.items.0.title": "A",
+            "docs.items.0.file": a,
+            "docs.items.1.title": "B",
+            "docs.items.1.file": b,
+            "docs.items.2.title": "C",
+            "docs.items.2.file": c,
+            ACTION: "remove:docs.items.1",
+        },
+    )
+    assert [r.title.raw for r in w.docs.items] == ["A", "C"]
+    assert "docs.items.2.title" not in w._editable
+
+    post(w, {"docs.items.0.title": "A", "docs.items.1.title": "C"})
+    assert w.step == "done", w.errors
+    got = []
+    post(w, {"done.ok": "true"}, handler=got.append)
+    assert [(d.title, d.file.filename) for d in got[0].docs.items] == [
+        ("A", "a.txt"),
+        ("C", "c.txt"),
+    ]
+
+
+def test_an_error_the_handler_sets_shows_on_its_step():
+    w = wizard(Signup)
+
+    def create(data):
+        w.account.email.error = "That email is taken"
+
+    post(w, {"account.email": "a@b.co"})
+    post(w, {"about.name": "Al"})
+    post(w, {"confirm.code": "1"}, handler=create)
+    assert w.step == "account"
+    assert w.errors == {"account.email": "That email is taken"}
+
+
+def test_a_list_of_secrets_is_a_secret():
+    class Keys(BaseModel):
+        api_keys: list[SecretStr]
+
+    class Done(BaseModel):
+        ok: bool = True
+
+    class Setup(BaseModel):
+        keys: Keys
+        done: Done
+
+    with pytest.raises(TypeError, match="keys.api_keys is a secret"):
+        wizard(Setup)

@@ -107,7 +107,10 @@ FIELD_MEMBERS = frozenset(
 
 
 def _is_secret(spec: FieldSpec) -> bool:
-    return spec.kind == "secret"
+    # ``list[SecretStr]`` is a secret too: its items are.
+    return spec.kind == "secret" or (
+        spec.item is not None and spec.item.kind == "secret"
+    )
 
 
 def _to_html(value: Any) -> str:
@@ -757,7 +760,7 @@ class Form(Generic[M]):
         elif verb == "remove":
             list_name, _, index = name.rpartition(".")
             path = self._list_path(list_name)
-            if path is None or not index.isdigit():
+            if path is None or not _is_index(index):
                 return
             count = self._row_count(path, self._spec_at(path))
             row = int(index)
@@ -767,6 +770,13 @@ class Form(Generic[M]):
             self._raw = {
                 new: v for k, v in self._raw.items() if (new := html(k)) is not None
             }
+            self._editable = {new for n in self._editable if (new := html(n))}
+            self._owned = {new for n in self._owned if (new := html(n))}
+            # Row counts of lists inside the rows move with them.
+            self._rows = {
+                new: v for k, v in self._rows.items() if (new := html(k)) is not None
+            }
+            self._rows_removed(html)
             key = _shift_rows(self._path_key(path) + ".", row)
             self._errors = {
                 new: v for k, v in self._errors.items() if (new := key(k)) is not None
@@ -774,6 +784,10 @@ class Form(Generic[M]):
             self._touched = {new for t in self._touched if (new := key(t)) is not None}
             self._rows[list_name] = count - 1
         self._touch()
+
+    def _rows_removed(self, rename: Callable[[str], Optional[str]]) -> None:
+        """A row was removed: ``rename`` maps each HTML name to its new one
+        (None for the removed row's). For state a subclass keeps by name."""
 
     def _list_path(self, name: str) -> Optional[Path]:
         path, spec = self._lookup(name)
@@ -1102,7 +1116,7 @@ def _shift_rows(prefix: str, removed: int) -> Callable[[str], Optional[str]]:
         if not key.startswith(prefix):
             return key
         head, dot, rest = key[len(prefix) :].partition(".")
-        if not head.isdigit():
+        if not _is_index(head):
             return key
         row = int(head)
         if row == removed:

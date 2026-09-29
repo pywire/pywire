@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Tuple
 
 from pywire.forms.form import (
     MAX_ROWS,
@@ -50,6 +50,7 @@ from pywire.forms.form import (
     _pop_action,
     _takes_arg,
 )
+from pywire.forms.form import _secret as _secret  # the key wizard state is signed with
 from pywire.forms.schema import FieldSpec
 from pywire.forms.shape import Flat, normalize, shape
 from pywire.runtime.uploads import PREFIX, Upload, resolve_uploads, staging_for
@@ -212,6 +213,14 @@ class Wizard(Form[M]):
             if inspect.isawaitable(result):
                 await result
         if self._errors:
+            # An error the handler set on an earlier step's field shows there.
+            here = self._steps[self._index]
+            if not self._has_errors(here):
+                self._index = next(
+                    (i for i, s in enumerate(self._steps) if self._has_errors(s)),
+                    self._index,
+                )
+                self._touch()
             _mark_invalid(page)
 
     # -- internals ---------------------------------------------------------
@@ -253,6 +262,12 @@ class Wizard(Form[M]):
                 for name, ids in files.items()
                 if isinstance(ids, list) and self._lookup(str(name))[1] is not None
             }
+
+    def _rows_removed(self, rename: Callable[[str], Optional[str]]) -> None:
+        # Files picked on this step move with their rows too.
+        self._carried = {
+            new: ids for k, ids in self._carried.items() if (new := rename(k))
+        }
 
     def _carry_files(self, mine: Flat) -> None:
         """Remember this step's files; a step shown again keeps its files."""
