@@ -1,0 +1,37 @@
+---
+from typing import Literal, Optional
+
+from pydantic import BaseModel
+from pywire import form
+
+
+class Pick(BaseModel):
+    title: str
+    size: Literal["s", "m", "l"] = "s"
+    owner: Optional[str] = None
+
+
+picker = form(Pick)
+saved = wire("")
+
+
+def save(data: Pick):
+    saved.value = f"{data.title}/{data.size}/{data.owner}"
+    picker.reset()
+
+
+def load():
+    picker.load(Pick(title="loaded", size="l", owner="bob"))
+---
+<form $bind={picker} @submit={save}>
+    <input $bind={picker.title} id="pick-title" />
+    <select $bind={picker.size} id="pick-size"></select>
+    <select $bind={picker.owner} id="pick-owner">
+        <option value="">Nobody</option>
+        <option value="ada">Ada</option>
+        <option value="bob">Bob</option>
+    </select>
+    <button type="submit" id="pick-save">Save</button>
+</form>
+<button id="pick-load" @click={load}>Load</button>
+<p id="pick-saved">{saved}</p>

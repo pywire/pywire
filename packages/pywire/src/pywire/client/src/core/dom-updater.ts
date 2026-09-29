@@ -65,6 +65,14 @@ function keepClientValue(
   return server !== '' && (client.startsWith(server) || server.startsWith(client))
 }
 
+/** The options the server rendered as `selected`: its intent for a select. */
+function serverSelection(select: HTMLSelectElement): string {
+  return Array.from(select.options)
+    .filter((o) => o.defaultSelected)
+    .map((o) => o.value)
+    .join('\u0000')
+}
+
 export class DOMUpdater {
   /**
    * Flag to indicate DOM is being updated.
@@ -539,8 +547,14 @@ export class DOMUpdater {
                 toEl.value = fromEl.value
               }
 
-              // Select: preserve selected option
-              if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement) {
+              // Select: preserve the user's choice unless the server changed
+              // which options it renders `selected` (a form reset or load),
+              // the same rule as text inputs above.
+              if (
+                fromEl instanceof HTMLSelectElement &&
+                toEl instanceof HTMLSelectElement &&
+                serverSelection(fromEl) === serverSelection(toEl)
+              ) {
                 // Preserve by value (more robust than index)
                 if (
                   fromEl.value &&
@@ -553,6 +567,15 @@ export class DOMUpdater {
                 ) {
                   toEl.selectedIndex = fromEl.selectedIndex
                 }
+              } else if (
+                fromEl instanceof HTMLSelectElement &&
+                toEl instanceof HTMLSelectElement &&
+                !toEl.multiple
+              ) {
+                // The server changed its selection: show it now, even over a
+                // choice the user made (a browser keeps a user's choice when
+                // only the `selected` attributes change).
+                fromEl.value = toEl.value
               }
 
               // An upload's progress bar keeps what the client drew.
