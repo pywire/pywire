@@ -28,6 +28,7 @@ class Session:
 
     def __init__(self, ws: Any, path: str) -> None:
         self.ws = ws
+        self.path = path
         assert self.recv()["type"] == "init"
         self.send({"type": "init", "path": path})
         assert self.recv()["type"] == "init_ack"
@@ -69,7 +70,10 @@ class Session:
         ``@click={cast(option)}``.
         """
         payload = {"args": {f"arg{i}": arg for i, arg in enumerate(args)}, **data}
-        self.send({"type": "event", "handler": handler, "data": payload})
+        # The browser stamps each event with its page's path.
+        self.send(
+            {"type": "event", "handler": handler, "path": self.path, "data": payload}
+        )
         return self.html()
 
 
