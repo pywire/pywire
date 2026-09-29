@@ -1,0 +1,43 @@
+/* Colors from the pywire design system: "The Lab" (light), "The Void" (dark). */
+:root {
+  color-scheme: light dark;
+  --bg: oklch(99% 0.005 250);
+  --surface: oklch(97.5% 0.006 250);
+  --border: oklch(89% 0.01 250);
+  --fg: oklch(20% 0.04 250);
+  --muted: oklch(48% 0.025 250);
+  --link: oklch(55% 0.13 195);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(11% 0.01 250);
+    --surface: oklch(15% 0.012 250);
+    --border: oklch(28% 0.018 250);
+    --fg: oklch(92% 0.012 250);
+    --muted: oklch(66% 0.02 250);
+    --link: oklch(89% 0.13 195);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.6 "Atkinson Hyperlegible", system-ui, sans-serif;
+}
+main { max-width: 44rem; margin: 0 auto; padding: 3rem 1rem 4rem; }
+a { color: var(--link); }
+.brand { margin: 0 0 1.5rem; font-weight: 700; }
+.brand a { color: var(--fg); text-decoration: none; }
+h1 { font-size: 2rem; margin: 0 0 0.5rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+.demos { list-style: none; padding: 0; margin: 2rem 0; display: grid; gap: 1rem; }
+.demos li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+.demos h2 { margin: 0 0 0.25rem; }
+.demos p { margin: 0.25rem 0; }
+.meta { color: var(--muted); font-size: 0.9rem; }
