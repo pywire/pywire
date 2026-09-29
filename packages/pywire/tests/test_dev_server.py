@@ -65,3 +65,39 @@ class TestImportApp:
                 import_app("__nonexistent_pywire_mod2__:app")
 
         assert any("__nonexistent_pywire_mod2__" in r.message for r in caplog.records)
+
+
+class TestResolveApps:
+    """``pywire dev`` serves a PyWire app, or a host app with one mounted."""
+
+    def _pywire(self, tmp_path):
+        from pywire import PyWire
+
+        pages = tmp_path / "pages"
+        pages.mkdir()
+        (pages / "index.wire").write_text("<p>hi</p>")
+        return PyWire(pages_dir=str(pages))
+
+    def test_pywire_app_serves_its_starlette_app(self, tmp_path):
+        from pywire.runtime.dev_server import _resolve_apps
+
+        app = self._pywire(tmp_path)
+        assert _resolve_apps(app) == (app, app.app)
+
+    def test_host_app_is_served_whole(self, tmp_path):
+        from starlette.applications import Starlette
+        from starlette.routing import Mount
+
+        from pywire.runtime.dev_server import _resolve_apps
+
+        ui = self._pywire(tmp_path)
+        host = Starlette(routes=[Mount("/", app=ui.as_asgi())])
+        pywire_app, served = _resolve_apps(host)
+        assert pywire_app is ui
+        assert served is host
+
+    def test_anything_else_exits(self):
+        from pywire.runtime.dev_server import _resolve_apps
+
+        with pytest.raises(SystemExit):
+            _resolve_apps(object())
