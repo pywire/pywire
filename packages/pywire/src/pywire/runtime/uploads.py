@@ -228,7 +228,7 @@ def machine_key(path: Path) -> bytes:
     Falls back to a key for this process alone when the file can't be used
     (a read-only or missing filesystem, as in some Pyodide builds).
     """
-    for _ in range(50):
+    for attempt in range(50):
         try:
             key = path.read_bytes()
         except FileNotFoundError:
@@ -238,8 +238,19 @@ def machine_key(path: Path) -> bytes:
         if len(key) == 32:
             return key
         if key:
-            # Another process is still writing it.
-            time.sleep(0.01)
+            # Another process may still be writing it; a file that stays
+            # short was left by one that died, so replace it.
+            if attempt < 5:
+                time.sleep(0.01)
+                continue
+            temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
+            try:
+                temp.write_bytes(secrets.token_bytes(32))
+                temp.chmod(0o600)
+                os.replace(temp, path)
+            except OSError:
+                temp.unlink(missing_ok=True)
+                break
             continue
         try:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

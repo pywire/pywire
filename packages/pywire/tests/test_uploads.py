@@ -385,3 +385,11 @@ def test_machine_key_falls_back_when_the_folder_is_unusable(tmp_path):
     key = machine_key(tmp_path / "missing" / "k.key")
     assert len(key) == 32
     assert machine_key(tmp_path / "missing" / "k.key") == key
+
+
+def test_machine_key_repairs_a_short_file_left_by_a_dead_process(tmp_path):
+    path = tmp_path / "k.key"
+    path.write_bytes(b"short")
+    key = machine_key(path)
+    assert len(key) == 32
+    assert path.read_bytes() == key
