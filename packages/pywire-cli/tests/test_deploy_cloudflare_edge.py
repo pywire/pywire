@@ -138,8 +138,13 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         def __init__(self, body, status=200, headers=None):
             self.body, self.status, self.headers = body, status, headers
 
+    class WorkerEntrypoint:
+        def __init__(self, env):
+            self.env = env
+
     workers = types.ModuleType("workers")
     workers.Response = Response  # type: ignore[attr-defined]
+    workers.WorkerEntrypoint = WorkerEntrypoint  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "workers", workers)
     # The entry sets PYWIRE_PREBUILT, so PyWire() compiles nothing and the
     # bundle's _routes.py registers the pages; this one compiles them instead.
@@ -153,7 +158,7 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         .get_template("entry.py.j2")
         .render(app_module="edge_fixture_app", app_attr="app")
     )
-    ns: dict = {}
+    ns: dict = {"__file__": str(tmp_path / "entry.py")}
     # Python Workers only expose the secret on `env`, so importing the app
     # here (before any request) would raise for want of one.
     exec(compile(source, "entry.py", "exec"), ns)
@@ -183,7 +188,7 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
     )
 
     def fetch(*args, **kwargs):
-        return asyncio.run(ns["on_fetch"](Request(*args, **kwargs), env))
+        return asyncio.run(ns["Default"](env).fetch(Request(*args, **kwargs)))
 
     try:
         get = fetch("GET", "https://edge.test/")
@@ -222,3 +227,33 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
     finally:
         sys.modules.pop("edge_fixture_app", None)
+
+
+def test_edge_entry_imports_a_src_layout_app(tmp_path: Path, monkeypatch) -> None:
+    """src.main:app can import its sibling packages, as under `pywire dev`."""
+    (tmp_path / "src" / "helpers").mkdir(parents=True)
+    (tmp_path / "src" / "helpers" / "__init__.py").write_text("VALUE = 7\n")
+    (tmp_path / "src" / "edge_src_app.py").write_text("from helpers import VALUE\n")
+    workers = types.ModuleType("workers")
+    workers.Response = object  # type: ignore[attr-defined]
+    workers.WorkerEntrypoint = object  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "workers", workers)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    for name in ("helpers", "src.edge_src_app"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    source = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(EDGE_TEMPLATES))
+        .get_template("entry.py.j2")
+        .render(app_module="src.edge_src_app", app_attr="app")
+    )
+    exec(compile(source, "entry.py", "exec"), {"__file__": str(tmp_path / "entry.py")})
+
+    assert sys.path[:2] == [str(tmp_path), str(tmp_path / "src")]
+    import importlib
+
+    try:
+        assert importlib.import_module("src.edge_src_app").VALUE == 7
+    finally:
+        for name in ("helpers", "src", "src.edge_src_app"):
+            sys.modules.pop(name, None)
