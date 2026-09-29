@@ -268,7 +268,8 @@ class Wizard(Form[M]):
             name: [{"_upload_id": i} for i in ids]
             for name, ids in self._carried.items()
         }
-        resolved = await resolve_uploads(staging_for(page), refs)
+        # The ids come from state this server signed.
+        resolved = await resolve_uploads(staging_for(page), refs, trusted=True)
         return {name: list(files) for name, files in resolved.items()}
 
     def _move(self, index: int) -> None:

@@ -956,44 +956,41 @@ class PyWire:
             if bound_session_id is None and session_id:
                 self._store_upload_token(token, session_id, issued_ts)
 
-            # Fail-fast: Check Content-Length header
-            content_length = request.headers.get("content-length")
-            if content_length:
-                try:
-                    length = int(content_length)
-                    if length > self.max_upload_size:
-                        logger.warning(
-                            "Upload rejected. Content-Length %s exceeds configured limit %s.",
-                            length,
-                            self.max_upload_size,
+            # The body is counted as it arrives (a chunked request declares
+            # no length) and holds at most _MAX_FORM_FILES files; each file is
+            # held to max_upload_size as it is staged.
+            try:
+                form = await _read_form(request, self.max_upload_size)
+            except _FormBodyError as exc:
+                error = "Payload Too Large" if exc.status_code == 413 else exc.message
+                return JSONResponse({"error": error}, status_code=exc.status_code)
+            try:
+                response_data: Dict[str, List[str]] = {}
+                for field_name, file in form.multi_items():
+                    if isinstance(file, str):
+                        continue
+                    upload_id = await self.uploads.stage(
+                        part_chunks(file),
+                        filename=file.filename or "",
+                        content_type=file.content_type or "application/octet-stream",
+                        limit=self.max_upload_size,
+                        owner=token,
+                    )
+                    if upload_id is None:
+                        await self.uploads.discard(
+                            [i for ids in response_data.values() for i in ids]
                         )
                         return JSONResponse(
-                            {"error": "Payload Too Large"}, status_code=413
+                            {"error": "Payload Too Large", "field": field_name},
+                            status_code=413,
                         )
-                except ValueError:
-                    pass
-
-            form = await request.form()
-            response_data: Dict[str, List[str]] = {}
-            for field_name, file in form.multi_items():
-                if isinstance(file, str):
-                    continue
-                upload_id = await self.uploads.stage(
-                    part_chunks(file),
-                    filename=file.filename or "",
-                    content_type=file.content_type or "application/octet-stream",
-                    limit=self.max_upload_size,
-                )
-                if upload_id is None:
-                    return JSONResponse(
-                        {"error": "Payload Too Large", "field": field_name},
-                        status_code=413,
-                    )
-                response_data.setdefault(field_name, []).append(upload_id)
+                    response_data.setdefault(field_name, []).append(upload_id)
+            finally:
+                await form.close()
             return JSONResponse(response_data)
-        except Exception as e:
-            logger.error(f"Upload failed: {e}", exc_info=True)
-            return JSONResponse({"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("Upload failed")
+            return JSONResponse({"error": "Upload failed"}, status_code=500)
 
     async def _handle_debug_snapshot(self, request: Request) -> Response:
         """Decode and pretty-print a client-held snapshot (debug mode only).
@@ -2024,6 +2021,7 @@ class PyWire:
             # Only now are file parts read into memory: a request for a
             # handler that does not exist costs no more than its text fields.
             fields: Dict[str, List[Any]] = {}
+            staged: List[str] = []
             for key, value in form_data.multi_items():
                 if key == "__pywire_handler":
                     continue
@@ -2037,9 +2035,11 @@ class PyWire:
                         limit=self.max_upload_size,
                     )
                     if upload_id is None:
+                        await self.uploads.discard(staged)
                         return PlainTextResponse(
                             "PyWire: uploaded file too large", status_code=413
                         )
+                    staged.append(upload_id)
                     value = {"_upload_id": upload_id}
                 fields.setdefault(str(key), []).append(value)
             # Same shape the JS client sends: repeated names become lists.

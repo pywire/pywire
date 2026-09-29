@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UnifiedEventHandler } from './handler'
 import { releaseForms } from './forms'
-import { checkFiles, formatSize, keepUploadProgress } from './uploads'
+import { checkFiles, formatSize, keepUploadProgress, REUSE_MS } from './uploads'
 import { PyWireApp } from '../core/app'
 
 class FakeXHR {
@@ -118,7 +118,7 @@ describe('uploads', () => {
     expect(sent()[0][1]).toMatchObject({
       type: 'validate',
       field: 'avatar',
-      formData: { name: 'Al', avatar: { _upload_id: 'id1' } },
+      formData: { name: 'Al', avatar: { _upload_id: 'id1', _upload_token: 'tok' } },
     })
   })
 
@@ -136,10 +136,34 @@ describe('uploads', () => {
     expect(submits).toHaveLength(1)
     expect(submits[0][1].formData).toEqual({
       name: 'Al',
-      avatar: { _upload_id: 'a1' },
-      docs: [{ _upload_id: 'd1' }, { _upload_id: 'd2' }],
+      avatar: { _upload_id: 'a1', _upload_token: 'tok' },
+      docs: [
+        { _upload_id: 'd1', _upload_token: 'tok' },
+        { _upload_id: 'd2', _upload_token: 'tok' },
+      ],
     })
     expect(FakeXHR.all).toHaveLength(2) // nothing uploaded twice
+  })
+
+  it('uploads again rather than send an id that may have expired', async () => {
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    pick('avatar', [png()])
+    FakeXHR.all[0].respond(200, { avatar: ['old'] })
+    await flush()
+
+    clock.mockReturnValue(now + REUSE_MS + 1)
+    submit()
+    await flush()
+    expect(FakeXHR.all).toHaveLength(2)
+    FakeXHR.all[1].respond(200, { avatar: ['new'] })
+    await flush()
+    const submits = sent().filter(([, data]) => data.type === 'submit')
+    expect((submits[0][1].formData as Record<string, unknown>).avatar).toEqual({
+      _upload_id: 'new',
+      _upload_token: 'tok',
+    })
+    clock.mockRestore()
   })
 
   it('picking again cancels the running upload', () => {

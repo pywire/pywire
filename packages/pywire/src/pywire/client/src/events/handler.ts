@@ -571,11 +571,11 @@ export class UnifiedEventHandler {
   /** Upload references by field name: a list for `multiple` or repeated names. */
   private uploadRefs(
     inputs: HTMLInputElement[],
-    idsOf: (input: HTMLInputElement) => string[]
+    refsOf: (input: HTMLInputElement) => UploadRef[]
   ): Record<string, UploadRef | UploadRef[]> {
     const out: Record<string, UploadRef | UploadRef[]> = {}
     for (const input of inputs) {
-      const refs = idsOf(input).map((id) => ({ _upload_id: id }))
+      const refs = refsOf(input)
       if (!refs.length) continue
       const existing = out[input.name]
       if (existing === undefined && !input.multiple) {

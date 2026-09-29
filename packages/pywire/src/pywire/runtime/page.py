@@ -775,12 +775,6 @@ class BasePage:
     ) -> None:
         self._sync_ref_data(event_data)
 
-        form_data = event_data.get("formData")
-        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
-            # Files arrive as ids of staged uploads; handlers get Uploads.
-            event_data = dict(event_data)
-            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
-
         # Framework-generated handlers are always allowed (form wrappers, bindings)
         is_framework_handler = event_name.startswith(
             "_handle_bind_"
@@ -812,6 +806,13 @@ class BasePage:
                 event_name,
             )
             return
+
+        form_data = event_data.get("formData")
+        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
+            # Files arrive as ids of staged uploads; handlers get Uploads.
+            # Only for a handler that may run, so a refused one costs no reads.
+            event_data = dict(event_data)
+            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
         if event_name.startswith("_handle_bind_"):
             if inspect.iscoroutinefunction(handler):

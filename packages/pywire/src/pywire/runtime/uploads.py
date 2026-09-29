@@ -11,6 +11,8 @@ Staged files expire (an hour by default), so a handler keeps what it needs.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -191,8 +193,13 @@ class Staging:
         filename: str,
         content_type: str,
         limit: int,
+        owner: Optional[str] = None,
     ) -> Optional[str]:
-        """Store one file; its id, or None when it is larger than ``limit``."""
+        """Store one file; its id, or None when it is larger than ``limit``.
+
+        ``owner`` is the upload token of the page that sent it: a reference
+        to the file then resolves only when it carries the same token.
+        """
         self._cleanup_soon()
         upload_id = f"{int(time.time()):x}-{secrets.token_hex(16)}"
         key = PREFIX + upload_id
@@ -213,14 +220,26 @@ class Staging:
             if size > limit:
                 return None
             raise
-        meta = {"filename": filename, "content_type": content_type, "size": size}
+        meta: Dict[str, Any] = {
+            "filename": filename,
+            "content_type": content_type,
+            "size": size,
+        }
+        if owner is not None:
+            meta["owner"] = _owner_hash(owner)
         await self.store.put(
             key + ".json", json.dumps(meta).encode(), content_type="application/json"
         )
         return upload_id
 
-    async def get(self, upload_id: object) -> Optional[Upload]:
-        """The staged file, or None for an unknown, malformed or expired id."""
+    async def get(
+        self, upload_id: object, token: object = None, *, trusted: bool = False
+    ) -> Optional[Upload]:
+        """The staged file, or None for an unknown, malformed or expired id.
+
+        A file uploaded with a page's token needs that token too, unless the
+        id is ``trusted`` (it came from state the server signed).
+        """
         if not isinstance(upload_id, str) or not _ID.fullmatch(upload_id):
             return None
         if int(upload_id.split("-", 1)[0], 16) + self.ttl < time.time():
@@ -241,7 +260,20 @@ class Staging:
             and isinstance(size, int)
         ):
             return None
+        owner = meta.get("owner")
+        if owner is not None and not trusted:
+            if not isinstance(token, str) or not hmac.compare_digest(
+                str(owner), _owner_hash(token)
+            ):
+                return None
         return Upload(filename, content_type, size, self.store, key)
+
+    async def discard(self, upload_ids: List[str]) -> None:
+        """Delete staged files no handler will get (the request failed)."""
+        for upload_id in upload_ids:
+            if _ID.fullmatch(upload_id):
+                await self.store.delete(PREFIX + upload_id)
+                await self.store.delete(PREFIX + upload_id + ".json")
 
     async def cleanup(self) -> int:
         """Delete expired files; how many were removed."""
@@ -279,8 +311,12 @@ async def part_chunks(part: Any) -> AsyncIterator[bytes]:
         yield chunk
 
 
+def _owner_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _ref(value: Any) -> Optional[str]:
-    if isinstance(value, Mapping) and len(value) == 1:
+    if isinstance(value, Mapping) and set(value) <= {"_upload_id", "_upload_token"}:
         upload_id = value.get("_upload_id")
         if isinstance(upload_id, str):
             return upload_id
@@ -296,11 +332,13 @@ def has_upload_refs(form_data: Mapping[str, Any]) -> bool:
 
 
 async def resolve_uploads(
-    staging: Staging, form_data: Mapping[str, Any]
+    staging: Staging, form_data: Mapping[str, Any], *, trusted: bool = False
 ) -> Dict[str, Any]:
-    """Replace ``{"_upload_id": ...}`` references in submitted data with Uploads.
+    """Replace ``{"_upload_id": ..., "_upload_token": ...}`` references in
+    submitted data with Uploads.
 
-    Unknown or expired ids are dropped, as if no file had been chosen.
+    Unknown or expired ids, and ids sent without the token of the page that
+    uploaded them, are dropped, as if no file had been chosen.
     """
     budget = MAX_REFS
     out: Dict[str, Any] = {}
@@ -315,7 +353,9 @@ async def resolve_uploads(
             if upload_id is None or budget <= 0:
                 continue
             budget -= 1
-            upload = await staging.get(upload_id)
+            upload = await staging.get(
+                upload_id, v.get("_upload_token"), trusted=trusted
+            )
             if upload is not None:
                 files.append(upload)
         if isinstance(value, list):

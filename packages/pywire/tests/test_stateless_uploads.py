@@ -6,6 +6,7 @@ carries the returned upload id and the handler gets an ``Upload``. Both
 halves must work in a ``stateless=True`` app.
 """
 
+import asyncio
 from pathlib import Path
 
 import msgpack
@@ -13,6 +14,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
+from pywire.storage import MemoryStore
 
 FIXTURE_PAGES = Path(__file__).parent / "fixtures" / "stateless_app" / "pages"
 SECRET = "test-secret-key-at-least-32-bytes"
@@ -62,7 +64,9 @@ def test_upload_reaches_handler(client):
                 "handler": "save",
                 "data": {
                     "type": "submit",
-                    "formData": {"doc": {"_upload_id": upload_id}},
+                    "formData": {
+                        "doc": {"_upload_id": upload_id, "_upload_token": token}
+                    },
                 },
                 "snapshot": _blob(r.text),
             }
@@ -72,6 +76,104 @@ def test_upload_reaches_handler(client):
     assert r.status_code == 200
     msg = msgpack.unpackb(r.content, raw=False)
     assert any("hello.txt:hello world" in reg["html"] for reg in msg.get("regions", []))
+
+
+def _submit(client, html, ref):
+    return client.post(
+        "/_pywire/stateless",
+        content=msgpack.packb(
+            {
+                "path": "/upload",
+                "handler": "save",
+                "data": {"type": "submit", "formData": {"doc": ref}},
+                "snapshot": _blob(html),
+            }
+        ),
+        headers=_MSGPACK,
+    )
+
+
+def test_an_upload_id_only_resolves_with_the_token_it_was_sent_with(client):
+    page = client.get("/upload").text
+    token = _token(page)
+    up = client.post(
+        "/_pywire/upload",
+        files={"doc": ("secret.txt", b"mine", "text/plain")},
+        headers={"X-Upload-Token": token},
+    )
+    (upload_id,) = up.json()["doc"]
+
+    # Another browser has its own page, and its own token.
+    other = client.get("/upload").text
+    for ref in (
+        {"_upload_id": upload_id},
+        {"_upload_id": upload_id, "_upload_token": _token(other)},
+    ):
+        r = _submit(client, other, ref)
+        assert b"secret.txt:mine" not in r.content
+
+
+def _staged(app) -> int:
+    async def count() -> int:
+        return len([k async for k in app.uploads.store.list("")])
+
+    return asyncio.run(count())
+
+
+def test_upload_limits_count_the_body_as_it_arrives():
+    app = PyWire(
+        pages_dir=str(FIXTURE_PAGES),
+        stateless=True,
+        secret_key=SECRET,
+        max_upload_size=1000,
+        upload_store=MemoryStore(),
+    )
+    with TestClient(app, raise_server_exceptions=False) as c:
+        token = _token(c.get("/upload").text)
+        headers = {"X-Upload-Token": token}
+
+        # Several files each under the limit: fine, even though together
+        # they are over it.
+        up = c.post(
+            "/_pywire/upload",
+            files=[("doc", (f"{i}.txt", b"x" * 600, "text/plain")) for i in range(3)],
+            headers=headers,
+        )
+        assert up.status_code == 200 and len(up.json()["doc"]) == 3
+
+        # One file over the limit is refused, and nothing it sent is kept.
+        before = _staged(app)
+        up = c.post(
+            "/_pywire/upload",
+            files=[
+                ("doc", ("ok.txt", b"x" * 10, "text/plain")),
+                ("doc", ("big.txt", b"x" * 1001, "text/plain")),
+            ],
+            headers=headers,
+        )
+        assert up.status_code == 413
+        assert _staged(app) == before
+
+        # Too many files: a 400, not a 500.
+        up = c.post(
+            "/_pywire/upload",
+            files=[("doc", (f"{i}.txt", b"x", "text/plain")) for i in range(11)],
+            headers=headers,
+        )
+        assert up.status_code == 400
+
+        # A chunked body declares no length; it is counted as it arrives.
+        def chunks():
+            yield b"--b\r\nContent-Disposition: form-data; name=doc; filename=a\r\n\r\n"
+            for _ in range(200):
+                yield b"x" * 65536
+
+        up = c.post(
+            "/_pywire/upload",
+            content=chunks(),
+            headers={**headers, "content-type": "multipart/form-data; boundary=b"},
+        )
+        assert up.status_code == 413
 
 
 def test_traversal_upload_token_cannot_delete_outside_dir(client):

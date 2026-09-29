@@ -310,7 +310,7 @@ async def save(data: Profile):
 | ----------- | -------------------------------------------------------------------------------------- | -------------- |
 | `accept`    | Types and extensions, as in HTML: `"image/*"`, `"image/png"`, `".pdf, .docx"`          | `fileType`     |
 | `max_size`  | Bytes, or a string like `"500 KB"`, `"2 MB"` or `"1 MiB"` (KB is 1000 bytes, KiB 1024) | `fileTooLarge` |
-| `max_files` | The most files a `list[Upload]` takes                                                  | `tooManyFiles` |
+| `max_files` | The most files a `list[Upload]` takes (a post carries at most 10)                      | `tooManyFiles` |
 
 `accept` is checked against the declared content type and the filename, as the browser does. It says nothing about what the bytes really are, so check the content yourself before you trust it (for example, open an image with Pillow).
 
@@ -436,7 +436,7 @@ The values and errors come from the submitted fields themselves, so a no-JavaScr
 - Only fields the page rendered with `$bind` are read. Other model fields keep their initial or default value, and names outside the model never reach it, even on a model with `extra="allow"`.
 - Native form posts from another site are refused with a 403 (checked with `Sec-Fetch-Site` and `Origin`). A post runs the page's `@before_load` hooks and auth checks first, exactly like a GET, and nothing is dispatched if they stop the page.
 - Secrets (`SecretStr`) are never echoed back into the page, kept in a snapshot or carried between wizard steps. Binding a plain `str` field to `type="password"` is an error in debug mode, so a password can't slip through as ordinary text.
-- An upload reference only resolves to a file this app staged in the last hour. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload. A native post's body is limited to 1 MB of fields plus 10 files of `max_upload_size` each, counted as it arrives.
+- An upload reference only resolves to a file this app staged in the last hour, for the page that uploaded it. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload. A native post, and each upload, carries at most 10 files and 1 MB of other fields, and its size is counted as it arrives.
 - List fields are capped, and add and remove buttons only act on lists the model declares.
 - Wizard state that doesn't carry this app's signature is ignored.
 

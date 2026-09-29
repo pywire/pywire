@@ -19,6 +19,7 @@ def resolve_page(
     path: str,
     *,
     base_scope: Optional[dict[str, Any]] = None,
+    app: Any = None,
 ) -> Optional[tuple[Any, dict[str, Any], str]]:
     """Match a URL path against the router and instantiate the page.
 
@@ -28,6 +29,8 @@ def resolve_page(
         base_scope: ASGI scope to extend (e.g. from an existing WebSocket).
             If ``None``, a minimal synthetic scope is created — used by
             environments without a real HTTP connection (CF Workers DO).
+        app: The ``PyWire`` app, for a synthetic scope: pages reach its
+            settings (upload staging, signing secret) through the request.
 
     Returns:
         ``(page, params, variant_name)`` on success, or ``None`` if no
@@ -55,6 +58,8 @@ def resolve_page(
             "query_string": qs.encode("ascii") if qs else b"",
         }
     )
+    if app is not None:
+        scope.setdefault("app", getattr(app, "app", app))
     scope.setdefault("headers", [(b"host", b"localhost")])
     scope.setdefault("method", "GET")
     scope.setdefault("scheme", "https")

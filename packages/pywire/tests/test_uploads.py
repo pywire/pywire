@@ -295,3 +295,42 @@ def test_upload_field_rejects_bad_rules():
         UploadField(max_files=0)
     with pytest.raises(ValueError):
         UploadField(max_size="lots")
+
+
+def test_an_owned_upload_needs_its_token():
+    staging = Staging(MemoryStore())
+    upload_id = asyncio.run(
+        staging.stage(
+            _chunks(b"x"),
+            filename="a.png",
+            content_type="image/png",
+            limit=10,
+            owner="tok",
+        )
+    )
+    assert asyncio.run(staging.get(upload_id)) is None
+    assert asyncio.run(staging.get(upload_id, "other")) is None
+    assert asyncio.run(staging.get(upload_id, "tok")) is not None
+    # Ids from state the server signed (a wizard's earlier steps).
+    assert asyncio.run(staging.get(upload_id, trusted=True)) is not None
+
+    data = asyncio.run(
+        resolve_uploads(
+            staging, {"a": {"_upload_id": upload_id, "_upload_token": "tok"}}
+        )
+    )
+    assert isinstance(data["a"], Upload)
+
+
+def test_pages_built_without_a_request_use_the_apps_staging(tmp_path):
+    from pywire.runtime.app import PyWire
+    from pywire.runtime.page_resolver import resolve_page
+    from pywire.runtime.uploads import staging_for
+
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "index.wire").write_text("<p>x</p>\n")
+    app = PyWire(pages_dir=str(pages), upload_store=MemoryStore())
+    # How the Cloudflare Durable Object template builds pages.
+    page, _, _ = resolve_page(app.router, "/", app=app)
+    assert staging_for(page) is app.uploads
