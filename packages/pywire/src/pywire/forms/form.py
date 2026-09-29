@@ -57,8 +57,10 @@ ACTION = "__pywire_action"
 # wizard, the earlier steps), signed, so a native POST with no session reads
 # the same fields the live page would.
 STATE = "__pywire_form"
-# How long a posted form state is accepted, in seconds.
-STATE_TTL = 24 * 60 * 60
+# How long a posted form state is accepted, in seconds: the hour staged
+# uploads are kept. Every render signs a fresh one, so it runs from the last
+# time the form was shown, and it bounds how long an old one can be replayed.
+STATE_TTL = 60 * 60
 
 # Names on Form itself. A model field with one of these names is still
 # reachable as ``form.fields.<name>`` or ``form["<name>"]``.

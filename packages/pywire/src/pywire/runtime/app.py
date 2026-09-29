@@ -7,6 +7,7 @@ import secrets
 import traceback
 import inspect
 import hashlib
+import hmac
 import json
 import tempfile
 import time
@@ -24,7 +25,13 @@ from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
-from pywire.runtime.uploads import Staging, part_chunks, private_dir, runtime_parent
+from pywire.runtime.uploads import (
+    Staging,
+    machine_key,
+    part_chunks,
+    private_dir,
+    runtime_parent,
+)
 from pywire.runtime.websocket import WebSocketHandler
 from pywire.storage import FileStore, LocalStore
 
@@ -382,7 +389,7 @@ class PyWire:
         )
         self._upload_token_dir = self._runtime_dir / "upload_tokens"
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
-        self._tokens_swept = 0.0
+        self._upload_token_key: Optional[bytes] = None
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
@@ -946,7 +953,10 @@ class PyWire:
             self._cleanup_upload_tokens()
             token_binding = self._load_upload_token(token)
             if token_binding is None:
-                if token in self.upload_tokens:
+                issued = self._signed_upload_token_ts(token)
+                if issued is not None:
+                    token_binding = (None, issued)
+                elif token in self.upload_tokens:
                     token_binding = (None, time.time())
                     self._store_upload_token(token, None, token_binding[1])
                 else:
@@ -1914,14 +1924,9 @@ class PyWire:
             if getattr(page, "__has_uploads__", False) or getattr(
                 page, "_pw_has_uploads", False
             ):
-                token = secrets.token_urlsafe(32)
-                now = time.time()
-                if now - self._tokens_swept > 60:
-                    # Every page view writes a token: sweep old ones here too,
-                    # not only when someone uploads.
-                    self._tokens_swept = now
-                    self._cleanup_upload_tokens()
-                self._store_upload_token(token, None, now)
+                # Signed, so a page view stores nothing; a token is only
+                # written down when an upload binds it to a session.
+                token = self._issue_upload_token()
                 # Token meta tag
                 injections.append(
                     f'<meta name="pywire-upload-token" content="{token}">'
@@ -2089,6 +2094,43 @@ class PyWire:
             return response
         finally:
             await form_data.close()
+
+    def _upload_key(self) -> bytes:
+        """The key page upload tokens are signed with.
+
+        Derived from ``secret_key`` when there is one. Otherwise a random key
+        kept in the private runtime folder, so every process serving these
+        pages on this machine accepts the others' tokens.
+        """
+        if self._upload_token_key is None:
+            if self.signing_secret_shared:
+                self._upload_token_key = hmac.new(
+                    self.signing_secret, b"pywire.upload", hashlib.sha256
+                ).digest()
+            else:
+                self._upload_token_key = machine_key(
+                    self._runtime_dir / "upload_token.key"
+                )
+        return self._upload_token_key
+
+    def _issue_upload_token(self) -> str:
+        body = f"{int(time.time()):x}_{secrets.token_hex(16)}"
+        mac = hmac.new(self._upload_key(), body.encode(), hashlib.sha256)
+        return f"{body}_{mac.hexdigest()}"
+
+    def _signed_upload_token_ts(self, token: str) -> Optional[float]:
+        """When a signed page token was issued, or None if it isn't one."""
+        parts = token.split("_")
+        if len(parts) != 3:
+            return None
+        body = f"{parts[0]}_{parts[1]}"
+        mac = hmac.new(self._upload_key(), body.encode(), hashlib.sha256)
+        if not hmac.compare_digest(mac.hexdigest(), parts[2]):
+            return None
+        try:
+            return float(int(parts[0], 16))
+        except ValueError:
+            return None
 
     def _cleanup_upload_tokens(self) -> None:
         cutoff = time.time() - self.upload_token_ttl_seconds

@@ -221,6 +221,28 @@ def private_dir(path: Path) -> Path:
     return path
 
 
+def machine_key(path: Path) -> bytes:
+    """A random 32-byte key kept at ``path`` (in a private folder), created
+    by whichever process asks first, so processes on one machine share it."""
+    for _ in range(50):
+        try:
+            key = path.read_bytes()
+        except FileNotFoundError:
+            key = b""
+        if len(key) == 32:
+            return key
+        temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
+        temp.write_bytes(secrets.token_bytes(32))
+        temp.chmod(0o600)
+        try:
+            os.link(temp, path)  # fails if another process got there first
+        except FileExistsError:
+            pass
+        finally:
+            temp.unlink(missing_ok=True)
+    raise RuntimeError(f"PyWire: can't read the key at {path}")
+
+
 class _TooLarge(Exception):
     pass
 

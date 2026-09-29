@@ -378,7 +378,8 @@ class TestAppExhaustive:
             body = bytes(response.body).decode()
             assert "window.PYWIRE_CERT_HASH = [10, 20]" in body
             assert 'name="pywire-upload-token"' in body
-            assert len(app.upload_tokens) > 0
+            token = body.split('name="pywire-upload-token" content="')[1]
+            assert app._signed_upload_token_ts(token.split('"')[0]) is not None
 
     @pytest.mark.asyncio
     async def test_asgi_call(self) -> None:

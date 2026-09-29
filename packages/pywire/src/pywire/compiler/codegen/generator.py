@@ -85,6 +85,8 @@ class CodeGenerator:
         self._wired_handler_names: Set[str] = set()
         # Submit handlers of bound forms -> the <form> node, for errors.
         self._bound_submits: Dict[str, TemplateNode] = {}
+        # Generated wrappers of bound forms' submits (``_handler_N``).
+        self._bound_wrappers: Set[str] = set()
         self._wire_vars_from_decorators: Set[str] = set()
         self._collected_props: Optional[PropsDirective] = None
         module_body = []
@@ -615,6 +617,26 @@ class CodeGenerator:
                     value=ast.Constant(value=True),
                 )
             )
+            # The fields a plain @submit handler may get files under.
+            names = self.template_codegen.file_input_names
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__file_fields__", ctx=ast.Store())],
+                    value=ast.parse(
+                        "None" if names is None else f"frozenset({sorted(names)!r})",
+                        mode="eval",
+                    ).body,
+                )
+            )
+        if self._bound_wrappers:
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__bound_handlers__", ctx=ast.Store())],
+                    value=ast.parse(
+                        f"frozenset({sorted(self._bound_wrappers)!r})", mode="eval"
+                    ).body,
+                )
+            )
 
         # Determine base class
         base_id = "BasePage"
@@ -918,6 +940,7 @@ class CodeGenerator:
                 bind = self._bind_attr(node)
                 tag = (node.tag or "").lower()
                 if bind is not None and tag == "form":
+                    self._bound_wrappers.add(f"_handler_{handler_count}")
                     handlers.append(
                         self._bound_form_handler(
                             node,

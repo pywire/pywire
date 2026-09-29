@@ -232,6 +232,25 @@ def test_a_forged_state_is_ignored():
     assert fresh.step == "account"
 
 
+def test_a_state_is_accepted_for_an_hour(monkeypatch):
+    import time
+
+    w = wizard(Signup)
+    post(w, {"account.email": "a@b.co"})
+    blob = hidden_state(w)
+    now = time.time()
+
+    monkeypatch.setattr(time, "time", lambda: now + 59 * 60)
+    fresh = wizard(Signup)
+    post(fresh, {STATE: blob, "about.name": "Al"})
+    assert fresh.step == "confirm"
+
+    monkeypatch.setattr(time, "time", lambda: now + 61 * 60)
+    fresh = wizard(Signup)
+    post(fresh, {STATE: blob, "about.name": "Al"})
+    assert fresh.step == "account"
+
+
 def test_files_travel_to_the_last_step():
     staging = staging_for(None)
 

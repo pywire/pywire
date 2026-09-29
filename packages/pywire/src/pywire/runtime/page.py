@@ -770,6 +770,23 @@ class BasePage:
             raise ValueError(f"Malformed component event '{event_name}'")
         return comp_key, remainder
 
+    def _pw_file_fields(self) -> Optional[Set[str]]:
+        """Names of the plain file inputs in this page and its components,
+        or None when one has a name only known at render time."""
+        root: BasePage = self
+        while root._parent_page is not None:
+            root = root._parent_page
+        names: Set[str] = set()
+        pending: List[BasePage] = [root]
+        while pending:
+            page = pending.pop()
+            fields = getattr(page, "__file_fields__", frozenset())
+            if fields is None:
+                return None
+            names |= fields
+            pending.extend(page._components.values())
+        return names
+
     async def _dispatch_handler(
         self, event_name: str, event_data: Dict[str, Any]
     ) -> None:
@@ -811,6 +828,10 @@ class BasePage:
         if isinstance(form_data, Mapping) and has_upload_refs(form_data):
             # Files arrive as ids of staged uploads; handlers get Uploads.
             # Only for a handler that may run, so a refused one costs no reads.
+            # A bound form keeps only its model's file fields; a plain handler
+            # gets files only under the names of file inputs the page has.
+            if event_name not in getattr(self, "__bound_handlers__", ()):
+                form_data = _only_file_fields(form_data, self._pw_file_fields())
             event_data = dict(event_data)
             event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
@@ -1946,3 +1967,16 @@ class ErrorBasePage(BasePage):
     error_code: int
     error_message: str
     error_trace: str
+
+
+def _only_file_fields(
+    form_data: Mapping[str, Any], names: Optional[Set[str]]
+) -> Mapping[str, Any]:
+    """``form_data`` without upload references under other names."""
+    if names is None:
+        return form_data
+    return {
+        key: value
+        for key, value in form_data.items()
+        if key in names or not has_upload_refs({key: value})
+    }

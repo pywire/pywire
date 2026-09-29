@@ -95,6 +95,8 @@ class TemplateCodegen:
         self.interpolation_parser = BraceInterpolationParser()
         self.auxiliary_functions: List[ast.AsyncFunctionDef] = []
         self.has_file_inputs = False
+        # Names of the plain file inputs, or None when one isn't a literal.
+        self.file_input_names: Optional[Set[str]] = set()
         # ``$bind`` codegen: a counter for the per-element local that holds
         # the bound form/field, and the stack of enclosing bound <select>
         # sites so their hand-written <option>s can be marked selected.
@@ -189,6 +191,7 @@ class TemplateCodegen:
     def _reset_state(self) -> None:
         self.auxiliary_functions = []
         self.has_file_inputs = False
+        self.file_input_names = set()
         self._bind_counter = 0
         self._bind_select_sites = []
         self._region_counter = 0
@@ -5430,6 +5433,11 @@ class TemplateCodegen:
                 _input_type = node.attributes.get("type")
                 if isinstance(_input_type, str) and _input_type.lower() == "file":
                     self.has_file_inputs = True
+                    _name = node.attributes.get("name")
+                    if not isinstance(_name, str):
+                        self.file_input_names = None
+                    elif self.file_input_names is not None:
+                        self.file_input_names.add(_name)
 
             # Generate opening tag
             # header_parts = [] ...
