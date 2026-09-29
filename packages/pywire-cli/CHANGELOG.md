@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.4...pywire-cli-v0.4.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** edge stateless mode — stateless snapshots, keyed regions, optimistic UI ([#282](https://github.com/pywire/pywire/issues/282)) ([6bf40d7](https://github.com/pywire/pywire/commit/6bf40d72c3311003b94976bd26ef13ff77ce5f7f))
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump pywire floor to 0.16.0 ([#356](https://github.com/pywire/pywire/issues/356)) ([4881b8a](https://github.com/pywire/pywire/commit/4881b8aa47417bc22f93486ad6e1867155d42850))
+* **pywire,pywire-cli,pywire-language-server,create-pywire-app:** bump pywire-parser and pywire-templates floors ([#352](https://github.com/pywire/pywire/issues/352)) ([1402a78](https://github.com/pywire/pywire/commit/1402a781bc4cc85e6fcbff9ef263a743d1ae9930))
+
 ## [0.3.4](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.3...pywire-cli-v0.3.4) (2026-09-28)
 
 
