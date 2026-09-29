@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/pywire/pywire/compare/pywire-auth-v0.3.5...pywire-auth-v0.3.6) (2026-09-29)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump floors to pywire 0.18.0 ([#388](https://github.com/pywire/pywire/issues/388)) ([2219550](https://github.com/pywire/pywire/commit/221955013d40c81709fc87253d19e42d5c9400e5))
+
 ## [0.3.5](https://github.com/pywire/pywire/compare/pywire-auth-v0.3.4...pywire-auth-v0.3.5) (2026-09-29)
 
 

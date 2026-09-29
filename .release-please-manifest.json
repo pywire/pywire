@@ -2,7 +2,7 @@
   "packages/pywire-language-server": "0.8.0",
   "packages/pywire": "0.18.0",
   "packages/pywire-parser": "0.8.0",
-  "packages/pywire-auth": "0.3.5",
+  "packages/pywire-auth": "0.3.6",
   "packages/pywire-cli": "0.4.1",
   "packages/pywire-templates": "0.3.0",
   "packages/tree-sitter-pywire": "0.6.0",
