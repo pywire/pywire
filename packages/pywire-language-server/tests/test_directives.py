@@ -44,6 +44,11 @@ def test_validate_directives(mock_ls, clean_documents):
         ("!unknown", ["Unknown directive '!unknown'"]),
         ("!no_spa", []),
         ("!no_spa args", ["!no_spa directive does not accept arguments"]),
+        ("!no_interactive", []),
+        ("!live 2s", []),
+        ("!live 500ms", []),
+        ("!live off", []),
+        ("!live soon", ["!live takes an interval"]),
     ]
 
     for text, expected_msgs in test_cases:

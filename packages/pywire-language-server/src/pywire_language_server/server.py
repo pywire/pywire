@@ -82,7 +82,8 @@ OPTIONAL_CLOSE = {"render"}
 # Valid attribute keywords: used as $keyword on HTML elements
 KNOWN_ATTRIBUTES = {"if", "show", "for", "key", "ref", "permanent", "reload"}
 
-KNOWN_DIRECTIVES = {"!layout", "!path", "!no_spa", "!auth"}
+KNOWN_DIRECTIVES = {"!layout", "!path", "!no_spa", "!no_interactive", "!auth", "!live"}
+_LIVE_DIRECTIVE = re.compile(r"^!live\s+(?:off|\d+(?:\.\d+)?(?:ms|s))\s*(?:#.*)?$")
 
 
 class VirtualFileManager:
@@ -1197,6 +1198,26 @@ def validate(ls: LanguageServer, uri: str):
                         severity=DiagnosticSeverity.Error,
                     )
                 )
+
+        # Validate !live
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not re.match(r"^!live\b", stripped) or _LIVE_DIRECTIVE.match(stripped):
+                continue
+            start = line.find("!live")
+            diagnostics.append(
+                Diagnostic(
+                    range=Range(
+                        start=Position(line=idx, character=start),
+                        end=Position(line=idx, character=len(line)),
+                    ),
+                    message=(
+                        "!live takes an interval like `!live 2s` or "
+                        "`!live 500ms`, or `!live off`"
+                    ),
+                    severity=DiagnosticSeverity.Error,
+                )
+            )
 
         # Validate fences
         start_fence, end_fence = _find_fences(lines)
@@ -2624,6 +2645,13 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                     kind=CompletionItemKind.Keyword,
                     insert_text="!no_spa",
                     detail="Disable SPA navigation for this page",
+                ),
+                CompletionItem(
+                    label="!live",
+                    kind=CompletionItemKind.Keyword,
+                    insert_text="!live ${1:2s}",
+                    insert_text_format=InsertTextFormat.Snippet,
+                    detail="How often a stateless page re-reads shared state",
                 ),
             ]
             # Filter if user already typed prefix
