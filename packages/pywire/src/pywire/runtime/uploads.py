@@ -225,8 +225,11 @@ def machine_key(path: Path) -> bytes:
     """A random 32-byte key kept at ``path`` (in a private folder), created
     by whichever process asks first, so processes on one machine share it.
 
-    Falls back to a key for this process alone when the file can't be used
-    (a read-only or missing filesystem, as in some Pyodide builds).
+    The key is written to a temp file and linked into place, so the file
+    appears whole or not at all. Where ``os.link`` doesn't exist (Pyodide,
+    which is a single process) it is created exclusively instead. Falls back
+    to a key for this process alone when the file can't be used (a read-only
+    or missing filesystem) with a warning.
     """
     for attempt in range(50):
         try:
@@ -238,9 +241,8 @@ def machine_key(path: Path) -> bytes:
         if len(key) == 32:
             return key
         if key:
-            # Another process may still be writing it; a file that stays
-            # short was left by one that died, so replace it.
-            if attempt < 5:
+            # Not something this code writes: repair it, then read what won.
+            if attempt < 2:
                 time.sleep(0.01)
                 continue
             temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
@@ -251,17 +253,27 @@ def machine_key(path: Path) -> bytes:
             except OSError:
                 temp.unlink(missing_ok=True)
                 break
+            time.sleep(0.05)
             continue
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            if hasattr(os, "link"):
+                temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
+                try:
+                    temp.write_bytes(secrets.token_bytes(32))
+                    temp.chmod(0o600)
+                    os.link(temp, path)
+                finally:
+                    temp.unlink(missing_ok=True)
+            else:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    os.write(fd, secrets.token_bytes(32))
+                finally:
+                    os.close(fd)
         except FileExistsError:
             continue
         except OSError:
             break
-        try:
-            os.write(fd, secrets.token_bytes(32))
-        finally:
-            os.close(fd)
     global _process_key
     if _process_key is None:
         logger.warning(
