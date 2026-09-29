@@ -362,3 +362,62 @@ def test_ty_reports_unknown_form_fields(tmp_path):
     assert "`Signup` has no attribute `emial`" in result.stdout
     # signup.email (template and handler) type-checks: only the typo fails.
     assert result.stdout.count("unresolved-attribute") == 1
+
+
+WIZARD_PAGE = textwrap.dedent("""
+    ---
+    from pydantic import BaseModel
+    from pywire import wizard
+
+    class Account(BaseModel):
+        email: str
+
+    class Signup(BaseModel):
+        account: Account
+
+    signup = wizard(Signup)
+    ---
+    <form $bind={signup}>
+      <input $if={signup.step == "account"} $bind={signup.account.email}>
+      <button $if={not signup.on_first_step} {**signup.back_button}>Back</button>
+      <p>{signup.acount.email}</p>
+    </form>
+""").strip()
+
+
+def test_wizard_paths_are_rewritten_and_members_left_alone():
+    code, _ = Transpiler(WIZARD_PAGE).transpile()
+    assert (
+        "signup._pw_field(signup._pw_field(signup._pw_shape.account)"
+        "._pw_shape.email)" in code
+    )
+    assert "signup.step" in code and "signup.on_first_step" in code
+    assert "signup.back_button" in code
+
+
+def test_ty_checks_wizard_steps(tmp_path):
+    probe = subprocess.run(
+        [sys.executable, "-c", "import pydantic, pywire.forms"], capture_output=True
+    )
+    if probe.returncode != 0:
+        pytest.skip("needs pywire[forms] installed")
+    code, _ = Transpiler(WIZARD_PAGE).transpile()
+    target = tmp_path / "page_wire.py"
+    target.write_text(code)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ty",
+            "check",
+            "--python",
+            sys.executable,
+            "--output-format",
+            "concise",
+            str(target),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert "`Signup` has no attribute `acount`" in result.stdout
+    assert result.stdout.count("unresolved-attribute") == 1

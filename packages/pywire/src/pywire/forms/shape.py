@@ -9,10 +9,10 @@ unticked checkbox is ``False``, and an empty text box counts as not filled in
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Dict, List, Mapping, Set, Tuple
 
 from pywire.forms.schema import TEXT_KINDS, FieldSpec
-from pywire.runtime.files import FileUpload
+from pywire.runtime.uploads import Upload
 
 Flat = Dict[str, List[Any]]
 
@@ -35,35 +35,19 @@ def _is_empty(value: Any) -> bool:
     return value is None or (isinstance(value, str) and value == "")
 
 
-def _files(values: List[Any], resolve: Optional[Callable[[Any], Any]]) -> List[Any]:
-    out = []
-    for v in values:
-        if isinstance(v, FileUpload):
-            if v.size > 0 or v.filename:
-                out.append(v)
-        elif resolve is not None and isinstance(v, dict):
-            f = resolve(v)
-            if f is not None:
-                out.append(f)
-    return out
+def shape(spec: FieldSpec, flat: Flat) -> Dict[str, Any]:
+    """Build the ``model_validate`` input for a model spec.
+
+    File fields take only ``Upload`` objects, which the server builds from
+    staged files (``pywire.runtime.uploads``); anything else is no file.
+    """
+    return _shape_model(spec, flat, "")
 
 
-def shape(
-    spec: FieldSpec,
-    flat: Flat,
-    *,
-    resolve_upload: Optional[Callable[[Any], Any]] = None,
-) -> Dict[str, Any]:
-    """Build the ``model_validate`` input for a model spec."""
-    return _shape_model(spec, flat, "", resolve_upload)
-
-
-def _shape_model(
-    spec: FieldSpec, flat: Flat, prefix: str, resolve: Optional[Callable[[Any], Any]]
-) -> Dict[str, Any]:
+def _shape_model(spec: FieldSpec, flat: Flat, prefix: str) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for child in spec.children.values():
-        present, value = _shape_field(child, flat, prefix + child.data_key, resolve)
+        present, value = _shape_field(child, flat, prefix + child.data_key)
         if present:
             out[child.data_key] = value
     return out
@@ -84,15 +68,13 @@ def row_indices(flat: Flat, prefix: str) -> List[int]:
     return sorted(found)[:MAX_ROWS]
 
 
-def _shape_field(
-    spec: FieldSpec, flat: Flat, name: str, resolve: Optional[Callable[[Any], Any]]
-) -> Tuple[bool, Any]:
+def _shape_field(spec: FieldSpec, flat: Flat, name: str) -> Tuple[bool, Any]:
     kind = spec.kind
 
     if kind == "model":
         if not _has_prefix(flat, name + "."):
             return False, None
-        sub = _shape_model(spec, flat, name + ".", resolve)
+        sub = _shape_model(spec, flat, name + ".")
         if spec.nullable and all(
             _is_empty(v)
             for k, vs in flat.items()
@@ -109,9 +91,7 @@ def _shape_field(
         if spec.max_items is not None:
             rows = rows[: spec.max_items + 1]  # one extra so Pydantic reports it
         assert spec.item is not None
-        return True, [
-            _shape_model(spec.item, flat, f"{name}.{i}.", resolve) for i in rows
-        ]
+        return True, [_shape_model(spec.item, flat, f"{name}.{i}.") for i in rows]
 
     values = flat.get(name)
 
@@ -137,7 +117,7 @@ def _shape_field(
         return True, picked[:MAX_ROWS]
 
     if kind in ("file", "files"):
-        files = _files(values or [], resolve)
+        files = [v for v in values or [] if isinstance(v, Upload)]
         if kind == "files":
             return True, files[:MAX_ROWS]
         if files:

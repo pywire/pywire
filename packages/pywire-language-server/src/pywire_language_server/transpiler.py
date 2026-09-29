@@ -56,6 +56,11 @@ FORM_MEMBERS = frozenset(
         "fields",
         "load",
         "reset",
+        "step",
+        "steps",
+        "on_first_step",
+        "on_last_step",
+        "back_button",
     }
 )
 FIELD_MEMBERS = frozenset(
@@ -73,6 +78,8 @@ FIELD_MEMBERS = frozenset(
         "errors",
         "attrs",
         "fields",
+        "add_button",
+        "remove_button",
     }
 )
 _CHAIN_STEP = re.compile(r"\.([A-Za-z_]\w*)|\[\s*(\d+)\s*\]|\[[^\[\]]*\]")
@@ -83,7 +90,7 @@ Piece = Tuple[str, Optional[int]]
 
 
 def _form_vars(python_ast: Optional[ast.Module]) -> List[str]:
-    """Top-level names assigned from ``form(...)`` / ``pywire.form(...)``."""
+    """Top-level names assigned from ``form(...)`` or ``wizard(...)``."""
     names: List[str] = []
     for node in python_ast.body if python_ast else []:
         if isinstance(node, ast.Assign):
@@ -102,7 +109,7 @@ def _form_vars(python_ast: Optional[ast.Module]) -> List[str]:
             if isinstance(func, ast.Attribute)
             else None
         )
-        if called != "form":
+        if called not in ("form", "wizard"):
             continue
         names.extend(t.id for t in targets if isinstance(t, ast.Name))
     return names

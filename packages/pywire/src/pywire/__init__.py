@@ -10,7 +10,7 @@ except PackageNotFoundError:
 
 if TYPE_CHECKING:
     from pywire.runtime.app import PyWire as _PyWireType
-    from pywire.forms import BoundField, FieldError, Form, form
+    from pywire.forms import BoundField, FieldError, Form, Wizard, form, wizard
 
 from pywire.runtime.app import PyWire
 from pywire.runtime.page import BasePage
@@ -47,7 +47,9 @@ install_import_hook()
 # request.app on its own requests.
 app: Optional["_PyWireType"] = None
 
-_FORMS_EXPORTS = frozenset({"form", "Form", "BoundField", "FieldError"})
+_FORMS_EXPORTS = frozenset(
+    {"form", "Form", "wizard", "Wizard", "BoundField", "FieldError"}
+)
 
 
 def __getattr__(name: str):
@@ -85,6 +87,8 @@ __all__ = [
     "Children",
     "form",
     "Form",
+    "wizard",
+    "Wizard",
     "BoundField",
     "FieldError",
 ]

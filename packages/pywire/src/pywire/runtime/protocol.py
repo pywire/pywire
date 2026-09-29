@@ -6,7 +6,8 @@ template (CF Workers) to avoid duplicating message construction logic.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
+from urllib.parse import unquote, urlsplit
 
 
 def build_update_payload(update: Any) -> dict[str, Any]:
@@ -59,3 +60,28 @@ def with_ack(payload: dict[str, Any], ack: int | None) -> dict[str, Any]:
     if ack is not None:
         payload["ack"] = ack
     return payload
+
+
+def for_another_page(page: Any, path: Any) -> bool:
+    """Whether a client event was sent from a page other than ``page``.
+
+    The client stamps each event with the path of the page it came from. An
+    event still in flight when the user navigates must not reach the next
+    page, whose handlers of the same name do something else.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    scope = getattr(getattr(page, "request", None), "scope", None)
+    if not isinstance(scope, Mapping):
+        return False
+    current = scope.get("path")
+    if not isinstance(current, str):
+        return False
+    sent = unquote(urlsplit(path).path)
+    root = scope.get("root_path") or ""
+    return sent not in (current, root + current)
+
+
+def dropped(ack: int | None) -> dict[str, Any]:
+    """The reply to an event that was dropped: an empty update."""
+    return with_ack({"type": "update", "regions": []}, ack)

@@ -16,6 +16,7 @@ from typing import (
     FrozenSet,
     Iterable,
     List,
+    Mapping,
     Optional,
     Set,
     Tuple,
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 
 from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
 from pywire.runtime.style_collector import StyleCollector
+from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
 from pywire.core.snippet import HeadBuffer, Snippet
 
 logger = logging.getLogger(__name__)
@@ -353,8 +355,14 @@ class BasePage:
         self._pending_navigation: Optional[str] = None
         # Set by a bound form's submit pipeline: a native POST answers 422.
         self._pw_form_invalid = False
-        # Set when a bound form renders a file input (upload token needed).
+        # Set when the page, or a component in it, renders a file input: the
+        # page then carries an upload token.
         self._pw_has_uploads = False
+        if self._parent_page is not None and getattr(self, "__has_uploads__", False):
+            root = self._parent_page
+            while root._parent_page is not None:
+                root = root._parent_page
+            root._pw_has_uploads = True
         self._pending_dispatches: List[Dict[str, Any]] = []
         self._pending_intercepted_handlers: List[tuple[str, dict]] = []
         self._components: Dict[str, "BasePage"] = {}
@@ -774,6 +782,23 @@ class BasePage:
             raise ValueError(f"Malformed component event '{event_name}'")
         return comp_key, remainder
 
+    def _pw_file_fields(self) -> Optional[Set[str]]:
+        """Names of the plain file inputs in this page and its components,
+        or None when one has a name only known at render time."""
+        root: BasePage = self
+        while root._parent_page is not None:
+            root = root._parent_page
+        names: Set[str] = set()
+        pending: List[BasePage] = [root]
+        while pending:
+            page = pending.pop()
+            fields = getattr(page, "__file_fields__", frozenset())
+            if fields is None:
+                return None
+            names |= fields
+            pending.extend(page._components.values())
+        return names
+
     async def _dispatch_handler(
         self, event_name: str, event_data: Dict[str, Any]
     ) -> None:
@@ -810,6 +835,17 @@ class BasePage:
                 event_name,
             )
             return
+
+        form_data = event_data.get("formData")
+        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
+            # Files arrive as ids of staged uploads; handlers get Uploads.
+            # Only for a handler that may run, so a refused one costs no reads.
+            # A bound form keeps only its model's file fields; a plain handler
+            # gets files only under the names of file inputs the page has.
+            if event_name not in getattr(self, "__bound_handlers__", ()):
+                form_data = _only_file_fields(form_data, self._pw_file_fields())
+            event_data = dict(event_data)
+            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
         if event_name.startswith("_handle_bind_"):
             if inspect.iscoroutinefunction(handler):
@@ -1241,6 +1277,7 @@ class BasePage:
                 # Reconnect overlay config from PyWire app
                 reconnect_max_attempts = 10
                 reconnect_overlay_enabled = True
+                event_defaults: Dict[str, str] = {}
                 try:
                     pywire_app = self.request.app.state.pywire
                     _rma = getattr(pywire_app, "reconnect_max_attempts", 10)
@@ -1249,6 +1286,9 @@ class BasePage:
                     _roe = getattr(pywire_app, "reconnect_overlay", True)
                     if isinstance(_roe, bool):
                         reconnect_overlay_enabled = _roe
+                    _ed = getattr(pywire_app, "event_defaults", None)
+                    if isinstance(_ed, dict):
+                        event_defaults = _ed
                 except (AttributeError, KeyError):
                     pass
 
@@ -1294,6 +1334,7 @@ class BasePage:
                     "mount_path": root_path,
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
+                    "event_defaults": event_defaults,
                     "interactive": interactive_mode,
                     "stateless": stateless_mode,
                     # Per-page !no_interactive: WebSocket stays connected,
@@ -1938,3 +1979,16 @@ class ErrorBasePage(BasePage):
     error_code: int
     error_message: str
     error_trace: str
+
+
+def _only_file_fields(
+    form_data: Mapping[str, Any], names: Optional[Set[str]]
+) -> Mapping[str, Any]:
+    """``form_data`` without upload references under other names."""
+    if names is None:
+        return form_data
+    return {
+        key: value
+        for key, value in form_data.items()
+        if key in names or not has_upload_refs({key: value})
+    }

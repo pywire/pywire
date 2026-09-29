@@ -19,7 +19,8 @@ from pydantic.json_schema import SkipJsonSchema
 
 from pywire import form
 from pywire.forms.form import FORM_MEMBERS, FIELD_MEMBERS
-from pywire.runtime.files import FileUpload
+from pywire.forms import Upload
+from pywire.storage import MemoryStore
 
 
 class Address(BaseModel):
@@ -244,6 +245,20 @@ def test_validator_message_wins_on_an_email_field():
     )
 
 
+def test_password_length_is_counted_in_characters():
+    class Login(BaseModel):
+        password: SecretStr = Field(min_length=12, max_length=64)
+
+    f = form(Login)
+    submit(f, {"password": "short"})
+    assert (f.password.error, f.password.errors[0].code) == (
+        "Use at least 12 characters",
+        "tooShort",
+    )
+    submit(f, {"password": "x" * 65})
+    assert f.password.error == "Use 64 characters or fewer"
+
+
 def test_validator_messages_are_shown_as_written():
     class Name(BaseModel):
         name: str
@@ -353,6 +368,20 @@ def test_initial_values_and_load_and_reset():
     )
 
 
+def test_reset_tells_the_browser_to_drop_typed_values():
+    from pywire.forms.render import form_attrs
+
+    f = form(Signup)
+    assert "data-pw-reset" not in form_attrs(f, "_handler_0", {}, None)
+    f.reset()
+    f.load({"email": "c@d.co"})
+    assert form_attrs(f, "_handler_0", {}, None)["data-pw-reset"] == "2"
+    g = form(Signup)
+    g.__pw_restore__(f.__pw_snapshot__())
+    g.reset()
+    assert form_attrs(g, "_handler_0", {}, None)["data-pw-reset"] == "3"
+
+
 def test_server_owned_fields_keep_the_server_value():
     got = []
     f = form(Signup, initial={"email": "owner@b.co"})
@@ -436,13 +465,13 @@ def test_rows_of_another_list_do_not_count():
 
 
 def test_files_only_come_from_the_server():
-    class Upload(BaseModel):
-        avatar: Optional[FileUpload] = None
-        docs: list[FileUpload] = []
+    class Files(BaseModel):
+        avatar: Optional[Upload] = None
+        docs: list[Upload] = []
 
     got = []
-    f = form(Upload)
-    real = FileUpload("a.png", "image/png", 3, b"abc")
+    f = form(Files)
+    real = Upload("a.png", "image/png", 3, MemoryStore(), "a")
     submit(
         f,
         {"avatar": "data:image/png;base64,AAAA", "docs": [real, {"content": "x"}]},
@@ -452,11 +481,11 @@ def test_files_only_come_from_the_server():
     assert got[-1].docs == [real]
 
 
-def test_unknown_upload_ids_are_ignored():
-    class Upload(BaseModel):
-        avatar: FileUpload
+def test_unresolved_upload_ids_are_no_file():
+    class Files(BaseModel):
+        avatar: Upload
 
-    f = form(Upload)
+    f = form(Files)
     submit(f, {"avatar": {"_upload_id": "../../etc/passwd"}})
     assert f.avatar.error == "Choose a file"
 

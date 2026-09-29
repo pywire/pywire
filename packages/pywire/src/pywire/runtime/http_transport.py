@@ -14,6 +14,7 @@ from starlette.responses import Response
 
 from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.page import BasePage
+from pywire.runtime.protocol import dropped, event_ack, for_another_page
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -216,6 +217,12 @@ class HTTPTransportHandler:
                 )
 
                 # (Legacy on_load removed — use @init hooks in .wire files)
+
+            if for_another_page(session.page, data.get("path")):
+                return Response(
+                    msgpack.packb(dropped(event_ack(data))),
+                    media_type="application/x-msgpack",
+                )
 
             # Dispatch event
             update = await session.page.handle_event(handler_name, event_data)

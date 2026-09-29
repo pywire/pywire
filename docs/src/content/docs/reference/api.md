@@ -208,7 +208,10 @@ class PyWire(
     static_route: str | None = None,
     static_dir: str = "static",
     max_upload_size: int = 10_485_760,
+    upload_store: FileStore | None = None,
     upload_token_ttl_seconds: int = 600,
+    event_defaults: Mapping[str, str] | None = None,
+    secret_key: str | None = None,
     enable_webtransport: bool = False,
     base_path: str | None = None,
 )
@@ -232,7 +235,13 @@ class PyWire(
 
 - **`max_upload_size`** (`int`): Maximum file upload size in bytes. Defaults to 10 MB.
 
+- **`upload_store`** (`FileStore | None`): Where uploaded files wait for a form handler (for an hour at most). Defaults to a folder in the system temp directory. Processes that serve the same app must share one, such as an `ObjectStore`. See [File uploads](/docs/guides/forms/#where-files-are-kept).
+
 - **`upload_token_ttl_seconds`** (`int`): How long an upload token remains valid. Defaults to 600 seconds.
+
+- **`event_defaults`** (`Mapping[str, str] | None`): Per-event timing that replaces the built-in defaults, e.g. `{"input": "debounce.400ms", "scroll": "throttle.50ms"}`. See [Default timing](/docs/syntax/event-modifiers/#default-timing).
+
+- **`secret_key`** (`str | None`): Signs state the browser carries back: stateless-mode snapshots and [multi-step form](/docs/guides/forms/#multi-step-forms) steps. Falls back to the `PYWIRE_SECRET_KEY` environment variable. Required with `stateless=True`; otherwise a random key is made per process, so processes behind a load balancer must share one.
 
 - **`base_path`** (`str | None`): The URL prefix the app is served under when a proxy in front strips it, like `"/demo"`. Defaults to the `PYWIRE_BASE_PATH` environment variable, or none. A host app's mount path is detected without it. See [Serving under a path prefix](/docs/guides/framework-integration/#serving-under-a-path-prefix).
 

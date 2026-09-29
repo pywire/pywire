@@ -11,8 +11,12 @@ import datetime as _dt
 import decimal
 import difflib
 import enum
+import hashlib
+import hmac
 import inspect
 import logging
+import secrets
+import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -21,6 +25,7 @@ from typing import (
     Generic,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Tuple,
@@ -34,7 +39,8 @@ from pywire.core.wire import WirePrimitive
 from pywire.forms.errors import FieldError, Messages, error_path, map_error
 from pywire.forms.schema import FieldSpec, Option, root_spec
 from pywire.forms.shape import MAX_ROWS, Flat, normalize, row_indices, shape
-from pywire.runtime.files import FileUpload
+from pywire.runtime.escape import escape_html
+from pywire.runtime.snapshot_codec import SnapshotError, sign, verify
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,19 @@ M = TypeVar("M", bound=BaseModel)
 T = TypeVar("T")
 
 Path = Tuple[Union[str, int], ...]
+
+# A submit button's name for form actions that aren't a submit: adding or
+# removing a list row ("add:items", "remove:items.2"), a wizard's "back".
+ACTION = "__pywire_action"
+
+# A hidden input every bound form posts: what the page rendered (and, for a
+# wizard, the earlier steps), signed, so a native POST with no session reads
+# the same fields the live page would.
+STATE = "__pywire_form"
+# How long a posted form state is accepted, in seconds: the hour staged
+# uploads are kept. Every render signs a fresh one, so it runs from the last
+# time the form was shown, and it bounds how long an old one can be replayed.
+STATE_TTL = 60 * 60
 
 # Names on Form itself. A model field with one of these names is still
 # reachable as ``form.fields.<name>`` or ``form["<name>"]``.
@@ -57,6 +76,12 @@ FORM_MEMBERS = frozenset(
         "fields",
         "load",
         "reset",
+        # Wizard (pywire.forms.wizard)
+        "step",
+        "steps",
+        "on_first_step",
+        "on_last_step",
+        "back_button",
     }
 )
 # Names on BoundField. Same rule: a nested model's field with one of these
@@ -77,12 +102,17 @@ FIELD_MEMBERS = frozenset(
         "errors",
         "attrs",
         "fields",
+        "add_button",
+        "remove_button",
     }
 )
 
 
 def _is_secret(spec: FieldSpec) -> bool:
-    return spec.kind == "secret"
+    # ``list[SecretStr]`` is a secret too: its items are.
+    return spec.kind == "secret" or (
+        spec.item is not None and spec.item.kind == "secret"
+    )
 
 
 def _to_html(value: Any) -> str:
@@ -142,19 +172,47 @@ def _takes_arg(fn: Callable[..., Any]) -> bool:
     )
 
 
-def _resolve_upload(value: Any) -> Optional[FileUpload]:
-    upload_id = value.get("_upload_id") if isinstance(value, Mapping) else None
-    if not isinstance(upload_id, str):
-        return None
-    from pywire.runtime.upload_manager import upload_manager
-
-    return upload_manager.get(upload_id)
-
-
 def _root_page(page: Any) -> Any:
     while getattr(page, "_parent_page", None) is not None:
         page = page._parent_page
     return page
+
+
+_process_secret = secrets.token_bytes(32)
+_warned_secret = False
+
+
+def _secret(page: Any) -> bytes:
+    """The key form state is signed with.
+
+    Derived from the app's secret rather than the secret itself, which also
+    signs stateless snapshots, so neither kind of blob passes for the other.
+    """
+    global _warned_secret
+    try:
+        app = _root_page(page).request.app.state.pywire
+        secret = app.signing_secret
+    except (AttributeError, KeyError):
+        app = secret = None
+    if not (isinstance(secret, bytes) and secret):
+        secret = _process_secret
+    if app is not None and not getattr(app, "signing_secret_shared", True):
+        if not _warned_secret:
+            _warned_secret = True
+            logger.warning(
+                "PyWire: no secret_key, so forms posted without JavaScript are "
+                "only accepted by the process that rendered them. Set "
+                "PyWire(secret_key=...) (32+ bytes) when several processes "
+                "serve the app."
+            )
+    return hmac.new(secret, b"pywire.form", hashlib.sha256).digest()
+
+
+def _page_path(page: Any) -> Optional[str]:
+    try:
+        return str(_root_page(page).request.url.path)
+    except AttributeError:
+        return None
 
 
 def _current_page() -> Any:
@@ -272,8 +330,12 @@ class BoundField(Generic[T]):
 
     @property
     def errors(self) -> List[FieldError]:
+        """Current errors, once the field was filled in and left, or submitted."""
         self._form._track()
-        return list(self._form._errors.get(self._form._path_key(self._path), ()))
+        key = self._form._path_key(self._path)
+        if not self._form._shown(key):
+            return []
+        return list(self._form._errors.get(key, ()))
 
     @property
     def error(self) -> Optional[str]:
@@ -297,6 +359,24 @@ class BoundField(Generic[T]):
         if self._spec.kind == "multichoice":
             tag = "select"
         return self._pw_render_attrs(tag, {}, None)
+
+    @property
+    def add_button(self) -> Dict[str, Any]:
+        """Attributes for a button that adds a row to this list field.
+
+        ``<button {**signup.items.add_button}>Add item</button>``: a submit
+        button, so what the user typed is kept, with or without JavaScript.
+        """
+        if self._spec.kind != "list":
+            raise TypeError(f"{self.html_name!r} is not a list field")
+        return _action_button(f"add:{self.html_name}")
+
+    @property
+    def remove_button(self) -> Dict[str, Any]:
+        """Attributes for a button that removes this row from its list."""
+        if not self._path or not isinstance(self._path[-1], int):
+            raise TypeError(f"{self.html_name!r} is not a list row")
+        return _action_button(f"remove:{self.html_name}")
 
     # -- nesting -----------------------------------------------------------
 
@@ -363,14 +443,18 @@ class Form(Generic[M]):
         context: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None] = None,
         messages: Optional[Messages] = None,
         id: Optional[str] = None,
+        validate: Literal["blur", "submit"] = "blur",
     ) -> None:
         if not (isinstance(model, type) and issubclass(model, BaseModel)):
             raise TypeError(
                 f"form() takes a Pydantic model class, got {model!r}. "
                 "Define `class MyForm(BaseModel): ...` and pass MyForm."
             )
+        if validate not in ("blur", "submit"):
+            raise ValueError(f"validate={validate!r}: use 'blur' or 'submit'")
         object.__setattr__(self, "_spec", root_spec(model))
         self.model = model
+        self._live = validate == "blur"
         self._initial = initial
         self._context = context
         self._messages: Dict[str, Any] = dict(messages or {})
@@ -381,11 +465,19 @@ class Form(Generic[M]):
         self._errors: Dict[str, List[FieldError]] = {}
         self._value: Optional[M] = None
         self._submitted = False
+        # Fields the user has been through (path keys): their errors show
+        # before the form is submitted.
+        self._touched: set[str] = set()
+        # Bumped by reset(): the page shows it, so the browser drops typed text.
+        self._resets = 0
         # HTML names ``$bind`` has rendered on this page, editable or
         # read-only. Only editable ones are read from a submit; see
         # ``_keep_unrendered`` for every other field.
         self._editable: set[str] = set()
         self._owned: set[str] = set()
+        # Row counts from add/remove buttons, by list HTML name.
+        self._rows: Dict[str, int] = {}
+        self._focus_claimed = False
         self._cache: Dict[Path, BoundField[Any]] = {}
         self._adapters: Dict[int, TypeAdapter[Any]] = {}
 
@@ -447,6 +539,7 @@ class Form(Generic[M]):
 
     @property
     def valid(self) -> bool:
+        """True when the last check (live or submit) found no errors."""
         self._track()
         return not self._errors
 
@@ -475,7 +568,7 @@ class Form(Generic[M]):
     def error(self) -> Optional[str]:
         """Form-level error: model validators, or one the handler sets."""
         self._track()
-        errs = self._errors.get("")
+        errs = self._errors.get("") if self._submitted else None
         return errs[0].message if errs else None
 
     @error.setter
@@ -486,7 +579,11 @@ class Form(Generic[M]):
     def errors(self) -> Dict[str, str]:
         """Every field error as ``{dotted path: message}``."""
         self._track()
-        return {k: v[0].message for k, v in self._errors.items() if k and v}
+        return {
+            k: v[0].message
+            for k, v in self._errors.items()
+            if k and v and self._shown(k)
+        }
 
     def load(self, obj: Any) -> None:
         """Fill the form from a model instance or mapping (edit forms)."""
@@ -500,9 +597,12 @@ class Form(Generic[M]):
         self._errors = {}
         self._value = None
         self._submitted = False
+        self._touched = set()
+        self._rows = {}
         # The re-render this triggers registers the fields shown from now on.
         self._editable = set()
         self._owned = set()
+        self._resets += 1
         self._touch()
 
     # -- snapshot hooks (session_serializer) --------------------------------
@@ -515,8 +615,11 @@ class Form(Generic[M]):
             "has_raw": self._has_raw,
             "errors": {k: [e.to_dict() for e in v] for k, v in self._errors.items()},
             "submitted": self._submitted,
+            "touched": sorted(self._touched),
+            "resets": self._resets,
             "editable": sorted(self._editable),
             "owned": sorted(self._owned),
+            "rows": dict(self._rows),
         }
 
     def __pw_restore__(self, state: Mapping[str, Any]) -> None:
@@ -542,9 +645,76 @@ class Form(Generic[M]):
             if isinstance(v, list)
         }
         self._submitted = bool(state.get("submitted"))
+        self._touched = _names(state.get("touched"))
+        resets = state.get("resets")
+        self._resets = resets if isinstance(resets, int) and resets >= 0 else 0
         self._editable = _names(state.get("editable"))
         self._owned = _names(state.get("owned"))
+        rows = state.get("rows")
+        self._rows = {
+            str(k): v
+            for k, v in (rows if isinstance(rows, Mapping) else {}).items()
+            if isinstance(v, int) and 0 <= v <= MAX_ROWS
+        }
         self._touch()
+
+    def _pw_hidden_inputs(self) -> str:
+        """The signed state this form posts back, rendered last in the form
+        so it covers every field the render registered."""
+        self._track()
+        page = _current_page()
+        blob = sign(
+            {
+                "form": self.model.__qualname__,
+                "path": _page_path(page),
+                "t": int(time.time()),
+                **self._state(),
+            },
+            secret=_secret(page),
+        )
+        return f'<input type="hidden" name="{STATE}" value="{escape_html(blob)}">'
+
+    def _state(self) -> Dict[str, Any]:
+        return {
+            "editable": sorted(self._editable),
+            "owned": sorted(self._owned),
+            "rows": dict(self._rows),
+        }
+
+    def _restore_posted(self, blob: str, page: Any) -> bool:
+        """Take the state the form posted back, if this server signed it for
+        this form on this page recently."""
+        try:
+            state = verify(blob, secret=_secret(page))
+        except SnapshotError:
+            return False
+        issued = state.get("t")
+        now = time.time()
+        if (
+            state.get("form") != self.model.__qualname__
+            or state.get("path") != _page_path(page)
+            or not isinstance(issued, int)
+            or not now - STATE_TTL <= issued <= now + 60
+        ):
+            return False
+        self._load(state)
+        return True
+
+    def _load(self, state: Mapping[str, Any]) -> None:
+        """Add what a posted state says was rendered to what this page knows."""
+        for key, names in (("editable", self._editable), ("owned", self._owned)):
+            posted = state.get(key)
+            if isinstance(posted, list):
+                names.update(
+                    n
+                    for n in posted[:MAX_ROWS]
+                    if isinstance(n, str) and self._lookup(n)[1] is not None
+                )
+        self._editable -= self._owned
+        rows = state.get("rows")
+        for name, count in (rows if isinstance(rows, Mapping) else {}).items():
+            if isinstance(count, int) and 0 <= count <= MAX_ROWS:
+                self._rows[str(name)] = max(self._rows.get(str(name), 0), count)
 
     # -- the pipeline ------------------------------------------------------
 
@@ -554,15 +724,22 @@ class Form(Generic[M]):
         Generated for ``<form $bind={f} @submit={handler}>``: the only way a
         client reaches ``handler``, which never sees unvalidated data.
         """
-        form_data = getattr(event, "form_data", None)
-        if form_data is None and isinstance(event, Mapping):
-            form_data = event.get("formData")
-        flat = self._rendered_input(
-            normalize(form_data if isinstance(form_data, Mapping) else {})
-        )
+        form_data = _event_value(event, "formData")
+        flat = normalize(form_data if isinstance(form_data, Mapping) else {})
+        action = _pop_action(flat)
+        posted = flat.pop(STATE, None)
+        if posted and isinstance(posted[-1], str):
+            self._restore_posted(posted[-1], page)
+        flat = self._rendered_input(flat)
         self._capture(flat)
-        data = shape(self._spec, flat, resolve_upload=_resolve_upload)
+        if action is not None:
+            self._apply_action(action)
+            return
+        data = shape(self._spec, flat)
         self._keep_unrendered(self._spec, (), flat, data)
+        if _event_value(event, "type") == "validate":
+            self._validate_live(data, _event_value(event, "field"))
+            return
         self._submitted = True
         instance = self._validate(data)
         self._touch()
@@ -575,6 +752,77 @@ class Form(Generic[M]):
                 await result
         if self._errors:
             _mark_invalid(page)
+
+    def _validate_live(self, data: Dict[str, Any], field: Any) -> None:
+        """A field was left (or changed): check the whole form, show its errors."""
+        if not self._live:
+            return
+        if isinstance(field, str):
+            path, _ = self._lookup(field)
+            if path:
+                self._touched.add(self._path_key(path))
+        value = self._value
+        self._validate(data)
+        self._value = value  # .value is the last *submitted* valid model
+        self._touch()
+
+    def _apply_action(self, action: str) -> None:
+        """Add or remove a list row, keeping what the user typed."""
+        verb, _, name = action.partition(":")
+        if verb == "add":
+            path = self._list_path(name)
+            if path is None:
+                return
+            spec = self._spec_at(path)
+            count = self._row_count(path, spec)
+            if count < min(spec.max_items or MAX_ROWS, MAX_ROWS):
+                self._rows[name] = count + 1
+        elif verb == "remove":
+            list_name, _, index = name.rpartition(".")
+            path = self._list_path(list_name)
+            if path is None or not _is_index(index):
+                return
+            count = self._row_count(path, self._spec_at(path))
+            row = int(index)
+            if row >= count:
+                return
+            html = _shift_rows(list_name + ".", row)
+            self._raw = {
+                new: v for k, v in self._raw.items() if (new := html(k)) is not None
+            }
+            self._editable = {new for n in self._editable if (new := html(n))}
+            self._owned = {new for n in self._owned if (new := html(n))}
+            # Row counts of lists inside the rows move with them.
+            self._rows = {
+                new: v for k, v in self._rows.items() if (new := html(k)) is not None
+            }
+            self._rows_removed(html)
+            key = _shift_rows(self._path_key(path) + ".", row)
+            self._errors = {
+                new: v for k, v in self._errors.items() if (new := key(k)) is not None
+            }
+            self._touched = {new for t in self._touched if (new := key(t)) is not None}
+            self._rows[list_name] = count - 1
+        self._touch()
+
+    def _rows_removed(self, rename: Callable[[str], Optional[str]]) -> None:
+        """A row was removed: ``rename`` maps each HTML name to its new one
+        (None for the removed row's). For state a subclass keeps by name."""
+
+    def _list_path(self, name: str) -> Optional[Path]:
+        path, spec = self._lookup(name)
+        if spec is None and path and self._spec_at(path).kind == "list":
+            return path
+        return None
+
+    def _shown(self, key: str) -> bool:
+        """Errors show after a submit, or for fields the user has been through."""
+        if self._submitted:
+            return True
+        if not key:
+            return False
+        prefix = key + "."
+        return any(t == key or t.startswith(prefix) for t in self._touched)
 
     def _validate(self, data: Dict[str, Any]) -> Optional[M]:
         ctx = self._context
@@ -665,6 +913,8 @@ class Form(Generic[M]):
     def _set_error(self, key: str, message: Optional[str]) -> None:
         if message:
             self._errors[key] = [FieldError(code="customError", message=str(message))]
+            if key:
+                self._touched.add(key)
         else:
             self._errors.pop(key, None)
         self._touch()
@@ -836,7 +1086,8 @@ class Form(Generic[M]):
         return annotation
 
     def _row_count(self, path: Path, spec: FieldSpec) -> int:
-        prefix = self._html_name(path) + "."
+        name = self._html_name(path)
+        prefix = name + "."
         # Rows the user submitted, and rows rendered read-only (not posted
         # when disabled): both were rendered, so this never exceeds that.
         heads = (
@@ -849,7 +1100,52 @@ class Form(Generic[M]):
         initial = self._initial_value(path)
         from_initial = len(initial) if isinstance(initial, (list, tuple)) else 0
         count = from_raw if self._has_raw else max(from_raw, from_initial)
-        return min(count, MAX_ROWS)
+        # A row whose inputs send nothing (unticked boxes) still counts.
+        return min(max(count, self._rows.get(name, 0)), MAX_ROWS)
+
+
+def _event_value(event: Any, key: str) -> Any:
+    """``event.<key>`` for event objects, ``event[key]`` for plain mappings."""
+    if isinstance(event, Mapping):
+        return event.get(key)
+    raw = getattr(event, "_raw_data", None)
+    if isinstance(raw, Mapping):
+        return raw.get(key)
+    return None
+
+
+def _action_button(value: str) -> Dict[str, Any]:
+    return {
+        "type": "submit",
+        "name": ACTION,
+        "value": value,
+        "formnovalidate": True,
+    }
+
+
+def _pop_action(flat: Flat) -> Optional[str]:
+    values = flat.pop(ACTION, None)
+    last = values[-1] if values else None
+    return last if isinstance(last, str) else None
+
+
+def _shift_rows(prefix: str, removed: int) -> Callable[[str], Optional[str]]:
+    """Rename keys under ``prefix`` as if row ``removed`` were deleted."""
+
+    def shift(key: str) -> Optional[str]:
+        if not key.startswith(prefix):
+            return key
+        head, dot, rest = key[len(prefix) :].partition(".")
+        if not _is_index(head):
+            return key
+        row = int(head)
+        if row == removed:
+            return None
+        if row < removed:
+            return key
+        return f"{prefix}{row - 1}{dot}{rest}"
+
+    return shift
 
 
 def _is_index(text: str) -> bool:
@@ -875,6 +1171,7 @@ def form(
     context: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None] = None,
     messages: Optional[Messages] = None,
     id: Optional[str] = None,
+    validate: Literal["blur", "submit"] = "blur",
 ) -> Form[M]:
     """Bind a Pydantic model to a ``<form $bind={...}>``.
 
@@ -887,5 +1184,15 @@ def form(
             field and code (``"name.tooShort"``). ``{min_length}`` style
             placeholders are filled from the error.
         id: DOM id prefix. Defaults to the variable name on the page.
+        validate: ``"blur"`` (default) checks a field when the user leaves
+            it, then as they type while it shows an error; ``"submit"``
+            checks on submit only.
     """
-    return Form(model, initial=initial, context=context, messages=messages, id=id)
+    return Form(
+        model,
+        initial=initial,
+        context=context,
+        messages=messages,
+        id=id,
+        validate=validate,
+    )

@@ -1,0 +1,25 @@
+---
+from typing import Annotated
+from pydantic import BaseModel
+from pywire import form, wire
+from pywire.forms import Upload, UploadField
+
+class Profile(BaseModel):
+    name: str
+    avatar: Annotated[Upload, UploadField(max_size="1 KB", accept=".txt")]
+
+profile = form(Profile)
+saved = wire("")
+
+async def save(data: Profile):
+    body = (await data.avatar.read()).decode()
+    saved.value = f"{data.name}:{data.avatar.filename}:{body}"
+---
+<form $bind={profile} @submit={save}>
+  <input $bind={profile.name}>
+  <input $bind={profile.avatar}>
+  <progress data-pw-progress-for={profile.avatar.html_id} value="0"></progress>
+  <p id="avatar-error">{profile.avatar.error or ""}</p>
+  <button id="save" type="submit">Save</button>
+</form>
+<p id="saved">{saved}</p>

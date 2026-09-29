@@ -33,6 +33,10 @@ dependencies = [
 forms = [
     "pydantic[email]>=2.0.0",
 ]
+# pywire.storage.ObjectStore: uploads and files in S3, R2, GCS or Azure.
+storage = [
+    "obstore>=0.8.0",
+]
 # pywire-parser is required for compiling .wire files (dev mode hot
 # reload, `pywire build`, syntax-error pages). Production deployments
 # that ship pre-compiled artifacts (e.g. Cloudflare Workers via Pyodide
@@ -49,7 +53,7 @@ cli = [
     "jinja2>=3.1.0",
 ]
 dev = [
-    "pywire[cli,forms]",
+    "pywire[cli,forms,storage]",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",

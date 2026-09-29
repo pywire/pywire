@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping
 
+from pywire.runtime.bind import BindError
 from pywire.runtime.escape import escape_html
 
 if TYPE_CHECKING:
@@ -51,10 +52,6 @@ _APPLIES = {
     "step": frozenset({"number", "range", "date", "datetime-local", "time"}),
     "inputmode": frozenset({"number", "text"}),
 }
-
-
-class BindError(TypeError):
-    """A ``$bind`` that can't mean what it says."""
 
 
 def _is_debug(page: Any) -> bool:
@@ -191,11 +188,23 @@ def field_attrs(
         elif itype == "file":
             if spec.kind == "files":
                 base["multiple"] = True
+                if spec.max_items is not None:
+                    base["data-pw-max-files"] = str(spec.max_items)
             if spec.required:
                 base["required"] = True
+            # accept= and data-pw-max-size, from UploadField: the client
+            # checks them before uploading.
+            base.update(spec.attrs)
             if page is not None:
                 _root(page)._pw_has_uploads = True
         else:
+            if itype == "password" and kind != "secret":
+                _complain(
+                    page,
+                    f'{field.html_name}: type="password" on a plain str field. '
+                    "Type it SecretStr so its value is never echoed back, kept in "
+                    "a snapshot or carried between wizard steps.",
+                )
             if spec.required:
                 base["required"] = True
             for key, value in spec.attrs.items():
@@ -217,6 +226,11 @@ def field_attrs(
         if field.error_id not in described:
             described.append(field.error_id)
         base["aria-describedby"] = " ".join(described)
+        if form._submitted and not form._focus_claimed:
+            # After a submit without JS the browser lands on the first
+            # invalid field; with JS the client moves focus itself.
+            form._focus_claimed = True
+            base["autofocus"] = True
 
     return _merge(page, field, base, hand)
 
@@ -285,7 +299,13 @@ def form_attrs(
     method = str(hand.get("method", "post")).lower()
     if method != "post":
         _complain(page, "A bound form always posts; drop method= from the <form>.")
+    form._focus_claimed = False
     base: Dict[str, Any] = {"method": "post", "data-pw-form": form._dom_id_value()}
+    if form._live:
+        base["data-pw-validate"] = "blur"
+    if form._resets:
+        # A change tells the browser to show the server's values, not typing.
+        base["data-pw-reset"] = str(form._resets)
     if "id" not in hand:
         base["id"] = form._dom_id_value()
     if _has_files(form._spec):
@@ -310,11 +330,30 @@ def _has_files(spec: Any, depth: int = 0) -> bool:
     return False
 
 
-def handler_input(handler_name: str) -> str:
+# Pressing Enter in a field clicks the form's first submit button. Rendered
+# first, this one makes that a plain submit, never Back or Remove.
+_DEFAULT_SUBMIT = (
+    '<button type="submit" tabindex="-1" aria-hidden="true" data-pw-default-submit'
+    ' style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;'
+    'overflow:hidden;clip:rect(0,0,0,0);border:0"></button>'
+)
+
+
+def handler_input(form: Any, handler_name: str) -> str:
+    """What a bound form starts with: its handler, for native POSTs, and the
+    button Enter presses.
+
+    ``form_attrs`` has already checked that ``form`` is a Form.
+    """
     return (
         '<input type="hidden" name="__pywire_handler" value="'
-        f'{escape_html(handler_name)}">'
+        f'{escape_html(handler_name)}">{_DEFAULT_SUBMIT}'
     )
+
+
+def state_input(form: Any) -> str:
+    """What a bound form ends with: the signed state of what it rendered."""
+    return str(form._pw_hidden_inputs())
 
 
 def textarea_text(field: Any) -> str:
@@ -343,26 +382,3 @@ def select_options(field: Any) -> str:
             f"{escape_html(option.label)}</option>"
         )
     return "".join(parts)
-
-
-def bind_select(page: Any, site: str, field: Any) -> None:
-    """Remember which field a bound ``<select>`` holds, for its options."""
-    selects: Optional[Dict[str, Any]] = getattr(page, "_pw_bound_selects", None)
-    if selects is None:
-        selects = page._pw_bound_selects = {}
-    selects[site] = field
-
-
-def option_attrs(page: Any, site: str, attrs: Dict[str, Any]) -> Dict[str, Any]:
-    """Mark a hand-written ``<option>`` selected when the field holds it."""
-    field = (getattr(page, "_pw_bound_selects", None) or {}).get(site)
-    if field is None or "value" not in attrs:
-        return attrs
-    raw = field.raw
-    chosen = raw if isinstance(raw, list) else [raw]
-    out = dict(attrs)
-    if str(attrs["value"]) in chosen:
-        out["selected"] = True
-    else:
-        out.pop("selected", None)
-    return out
