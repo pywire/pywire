@@ -8,7 +8,7 @@ hot-reload state migration pattern from websocket.py broadcast_reload.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 
 from pywire.core.signals import Derived
 from pywire.core.wire import (
@@ -53,6 +53,21 @@ _WIRE_TAG_TO_FACTORY: Dict[str, Any] = {
     "set": lambda v: wire(set(v) if isinstance(v, list) else v),
     "namespace": lambda v: wire(**v) if isinstance(v, dict) else wire(v),
 }
+
+
+def _owned_by(page: Any) -> Callable[[WireBase], bool]:
+    """Whether a wire is state of this page tree (see BasePage._owning).
+
+    A module-level wire aliased into the frontmatter (``votes = shared.votes``)
+    is shared by every user: it is not this page's state, and restoring it from
+    a snapshot would roll everyone back.
+    """
+    owner_tokens = getattr(page, "_owner_tokens", None)
+    if owner_tokens is None:
+        # Duck-typed page without ownership tracking: every wire is its own.
+        return lambda _wire: True
+    tokens = owner_tokens()
+    return lambda w: w._owner in tokens
 
 
 def _peek_wire(obj: WireBase) -> Any:
@@ -107,6 +122,7 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {}
     attrs: Dict[str, Any] = {}
     wire_tags: Dict[str, str] = {}
+    owned = _owned_by(page)
 
     for name, value in page.__dict__.items():
         # Skip private/framework attributes
@@ -127,7 +143,7 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
 
         # Handle wire types
         if isinstance(value, WireBase):
-            if value._locked:
+            if value._locked or not owned(value):
                 continue
             tag = _get_wire_tag(value)
             if tag:
@@ -190,7 +206,7 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
             if attr in {"request", "params", "query", "path", "url"}:
                 continue
             if isinstance(value, WireBase):
-                if value._locked:
+                if value._locked or not owned(value):
                     continue
                 tag = _get_wire_tag(value)
                 if tag:
@@ -243,6 +259,7 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
     """
     attrs = snapshot.get("attrs", {})
     wire_tags = snapshot.get("wire_tags", {})
+    owned = _owned_by(page)
 
     for name, value in attrs.items():
         # Snapshots never contain these (snapshot_page_state skips them), but a
@@ -252,9 +269,12 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
             continue
         try:
             current = getattr(page, name, None)
-            if isinstance(current, WireBase) and current._locked:
-                # Stale signed snapshot (attr locked after it was signed):
-                # the fresh frontmatter value always wins, never the client's.
+            if isinstance(current, WireBase) and (
+                current._locked or not owned(current)
+            ):
+                # Stale signed snapshot (attr locked, or now aliasing shared
+                # state, after it was signed): the fresh frontmatter value
+                # always wins, never the client's.
                 continue
             if name in wire_tags:
                 # Current page has a wire attribute — update its value
@@ -280,7 +300,9 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
                     tag = wire_tags[name]
                     factory = _WIRE_TAG_TO_FACTORY.get(tag)
                     if factory:
-                        setattr(page, name, factory(value))
+                        restored_wire = factory(value)
+                        restored_wire._owner = getattr(page, "_owner_token", None)
+                        setattr(page, name, restored_wire)
             else:
                 # Plain attribute
                 setattr(page, name, value)

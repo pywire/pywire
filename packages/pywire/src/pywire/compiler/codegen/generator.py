@@ -1220,6 +1220,17 @@ class CodeGenerator:
             )
         )
 
+        # !live <interval> — how often a stateless page re-reads shared
+        # state (ms, 0 = off). Matched by name: older parsers don't know it.
+        live = next((d for d in parsed.directives if d.name == "live"), None)
+        if live is not None:
+            stmts.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__live_every__", ctx=ast.Store())],
+                    value=ast.Constant(value=int(getattr(live, "every_ms", 0))),
+                )
+            )
+
         # __sibling_paths__ = ['/path1', '/path2', ...]
         if path_directive and not path_directive.is_simple_string:
             paths = list(path_directive.routes.values())

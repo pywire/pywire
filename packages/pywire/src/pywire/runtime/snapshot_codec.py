@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import logging
 import zlib
+from typing import Dict, Optional
 from urllib.parse import unquote
 
 import msgpack
@@ -36,16 +37,27 @@ def snapshot_route(path: str, query: str = "") -> str:
     return f"{path}?{query}" if query else path
 
 
-def encode_snapshot(page, *, secret: bytes, route: str, warn_size: int = 0) -> str:
+def encode_snapshot(
+    page,
+    *,
+    secret: bytes,
+    route: str,
+    warn_size: int = 0,
+    live: Optional[Dict[str, str]] = None,
+) -> str:
     """base64(HMAC-SHA256(body) + body), body = zlib(msgpack(snapshot)).
 
     ``route`` (from ``snapshot_route``) is signed into the body so the
     stateless endpoint only rebuilds the page the snapshot was rendered for.
+    ``live`` maps each shared-state region to a digest of the HTML the client
+    shows for it, so a poll can skip regions that haven't changed.
     """
     snap = snapshot_page_state(page)
     # Never trust the client with identity — re-resolved per request.
     snap.pop("user", None)
     snap["route"] = route
+    if live:
+        snap["live"] = live
     raw = msgpack.packb(snap)
     if warn_size > 0 and len(raw) > warn_size:
         logger.warning(

@@ -135,6 +135,7 @@ class PyWire:
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
         stateless: bool = False,
+        live_every: Optional[float] = None,
         secret_key: Optional[str] = None,
         compress: bool = True,
     ) -> None:
@@ -330,6 +331,13 @@ class PyWire:
             set_stateless_tier(stateless)
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
+        # Seconds between re-reads of shared state on stateless pages (see
+        # _live_every_ms). None = not decided yet; 0 = never.
+        if live_every is not None and live_every != 0 and not live_every >= 0.1:
+            # Same floor as `!live` and `@poll`: every open tab polls.
+            raise ValueError("live_every must be 0 (off) or at least 0.1 seconds")
+        self.live_every = live_every
+        self._live_warned: Set[str] = set()
         if stateless:
             secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
             if not secret:
@@ -1586,6 +1594,42 @@ class PyWire:
 
         return page_class(request, params, query, path=path_info, url=url_helper)
 
+    def _live_every_ms(self, page: Any, *, strict: bool = True) -> int:
+        """How often (ms) a stateless page re-reads shared state; 0 = never.
+
+        Only pages whose last render read shared state (a module-level wire,
+        a producer, or a derived of either) poll: nothing else can change
+        without the page's own events. The page's ``!live`` directive wins
+        over ``PyWire(live_every=...)``. Stateful pages never poll, since
+        shared writes push to them. With neither set, ``pywire dev`` raises
+        on a page load (``strict``) and anything else logs once.
+        """
+        if not self.stateless or not page._live_regions():
+            return 0
+        page_ms = getattr(type(page), "__live_every__", None)
+        if page_ms is not None:
+            return int(page_ms)
+        if self.live_every is not None:
+            return round(self.live_every * 1000)
+
+        name = getattr(page, "__file_path__", None) or type(page).__qualname__
+        sources = ", ".join(page._describe_shared_sources()) or "shared state"
+        message = (
+            f"{name} shows {sources}, which other users can change, but a "
+            "stateless app has no way to push the change to this page. Set "
+            "how often stateless pages re-read shared state with "
+            "PyWire(stateless=True, live_every=<seconds>), or per page with "
+            "`!live 2s` (`!live off` to opt out)."
+        )
+        if strict and self._is_dev_mode:
+            from pywire.compiler.exceptions import PyWireSyntaxError
+
+            raise PyWireSyntaxError(message, file_path=page.__file_path__)
+        if name not in self._live_warned:
+            self._live_warned.add(name)
+            logger.warning("%s This page will not refresh on its own.", message)
+        return 0
+
     def _resolve_user_for_request(self, request: Request) -> Any:
         """Resolve page.user from the request (middleware/session scope).
 
@@ -1727,7 +1771,12 @@ class PyWire:
                 route=snapshot_route(request.url.path, request.url.query),
                 warn_size=self.session_warn_size,
             )
-            tag = f'<script id="_pywire_snapshot" type="text/plain">{blob}</script>'
+            live_ms = self._live_every_ms(page)
+            live_attr = f' data-live-every="{live_ms}"' if live_ms else ""
+            tag = (
+                f'<script id="_pywire_snapshot" type="text/plain"{live_attr}>'
+                f"{blob}</script>"
+            )
             idx = _find_tag_outside_raw_text(body, "</body>", from_end=True)
             if idx >= 0:
                 body = body[:idx] + tag + body[idx:]
