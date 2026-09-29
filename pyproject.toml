@@ -22,6 +22,7 @@ workspace = { members = [
     "examples/realtime",
     "examples/edge-stateless",
     "examples/taskboard",
+    "examples/form-builder",
 ] }
 
 [tool.uv.sources]
