@@ -33,6 +33,8 @@ as staged upload ids.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import inspect
 import re
 import secrets
@@ -65,11 +67,18 @@ _process_secret = secrets.token_bytes(32)
 
 
 def _secret(page: Any) -> bytes:
+    """The key wizard state is signed with.
+
+    Derived from the app's secret rather than the secret itself, which also
+    signs stateless snapshots, so neither kind of blob passes for the other.
+    """
     try:
         secret = _root_page(page).request.app.state.pywire.signing_secret
     except (AttributeError, KeyError):
         secret = None
-    return secret if isinstance(secret, bytes) and secret else _process_secret
+    if not (isinstance(secret, bytes) and secret):
+        secret = _process_secret
+    return hmac.new(secret, b"pywire.wizard", hashlib.sha256).digest()
 
 
 def _secret_in(spec: FieldSpec, depth: int = 0) -> Optional[str]:

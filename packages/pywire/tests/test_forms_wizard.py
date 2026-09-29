@@ -216,6 +216,19 @@ def test_a_forged_state_is_ignored():
     post(other, {STATE: blob})
     assert other.step == "account"
 
+    # Signed with the app's own key (not the derived one), as a stateless
+    # snapshot is: refused.
+    from pywire.forms.wizard import _process_secret
+    from pywire.runtime.snapshot_codec import sign
+
+    snapshot_like = sign(
+        {"form": Signup.__qualname__, "step": 2, "raw": {}, "files": {}},
+        secret=_process_secret,
+    )
+    fresh = wizard(Signup)
+    post(fresh, {STATE: snapshot_like})
+    assert fresh.step == "account"
+
 
 def test_files_travel_to_the_last_step():
     staging = staging_for(None)
