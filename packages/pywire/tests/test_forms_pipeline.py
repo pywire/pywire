@@ -436,6 +436,20 @@ def test_sparse_row_indexes_render_only_the_rendered_rows():
     assert f.errors == {}
 
 
+def test_rows_of_another_list_do_not_count():
+    class Row(BaseModel):
+        name: str = ""
+
+    class Two(BaseModel):
+        items: list[Row] = []
+        notes: list[Row] = []
+
+    f = form(Two)
+    submit(f, {"notes.4.name": "x"})
+    assert len(f.notes) == 5
+    assert len(f.items) == 0
+
+
 def test_files_only_come_from_the_server():
     class Files(BaseModel):
         avatar: Optional[Upload] = None
