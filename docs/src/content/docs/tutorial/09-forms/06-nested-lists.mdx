@@ -1,0 +1,144 @@
+---
+title: Nested models and lists
+tutorial: Basic PyWire
+section: Forms
+description: Bind a form to a model that contains another model and a list of rows.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Address(BaseModel):
+        street: str = Field(min_length=3)
+        city: str = Field(min_length=2)
+
+      class Item(BaseModel):
+        name: str = Field(min_length=1)
+        qty: int = Field(ge=1)
+
+      class Order(BaseModel):
+        address: Address
+        items: list[Item]
+
+      order = form(
+        Order,
+        initial={
+          "address": {"street": "", "city": ""},
+          "items": [{"name": "Tea", "qty": 1}, {"name": "Biscuits", "qty": 2}],
+        },
+      )
+      result = wire("")
+
+      def place(data: Order):
+        total = sum(item.qty for item in data.items)
+        result.value = f"{total} items to {data.address.city}"
+      ---
+      <div>
+        <h1>Order</h1>
+
+        <form $bind={order} @submit={place} novalidate>
+          <h2>Address</h2>
+          <div>
+            <label>Street</label>
+            <input name="street" />
+            <span $if={order.address.street.error} style="color: red;">{order.address.street.error}</span>
+          </div>
+          <div>
+            <label>City</label>
+            <input name="city" />
+            <span $if={order.address.city.error} style="color: red;">{order.address.city.error}</span>
+          </div>
+
+          <h2>Items</h2>
+          <!-- 2. Render one fieldset per row of order.items -->
+
+          <button type="submit">Place order</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Address(BaseModel):
+        street: str = Field(min_length=3)
+        city: str = Field(min_length=2)
+
+      class Item(BaseModel):
+        name: str = Field(min_length=1)
+        qty: int = Field(ge=1)
+
+      class Order(BaseModel):
+        address: Address
+        items: list[Item]
+
+      order = form(
+        Order,
+        initial={
+          "address": {"street": "", "city": ""},
+          "items": [{"name": "Tea", "qty": 1}, {"name": "Biscuits", "qty": 2}],
+        },
+      )
+      result = wire("")
+
+      def place(data: Order):
+        total = sum(item.qty for item in data.items)
+        result.value = f"{total} items to {data.address.city}"
+      ---
+      <div>
+        <h1>Order</h1>
+
+        <form $bind={order} @submit={place} novalidate>
+          <h2>Address</h2>
+          <div>
+            <label>Street</label>
+            <input $bind={order.address.street} />
+            <span $if={order.address.street.error} style="color: red;">{order.address.street.error}</span>
+          </div>
+          <div>
+            <label>City</label>
+            <input $bind={order.address.city} />
+            <span $if={order.address.city.error} style="color: red;">{order.address.city.error}</span>
+          </div>
+
+          <h2>Items</h2>
+          <fieldset $for={row in order.items}>
+            <input $bind={row.name} />
+            <input $bind={row.qty} />
+            <span $if={row.qty.error} style="color: red;">{row.qty.error}</span>
+          </fieldset>
+
+          <button type="submit">Place order</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Bind the street with $bind={order.address.street}'
+    target: pages/index.wire
+    pattern: '$bind={order.address.street}'
+  - type: file_contains
+    description: 'Loop over the rows with $for'
+    target: pages/index.wire
+    pattern: 'row in order.items'
+  - type: browser_route_text
+    route: '/'
+    description: 'Fill in the address and place the order'
+    pattern: ' items to '
+pagesDir: pages
+---
+
+A model can hold other models and lists of them. The form follows the same shape: `order.address.street` is the street field of the nested `Address`, and `order.items` is a list you can loop over.
+
+### Your Task
+
+1.  Bind the two address inputs: `<input $bind={order.address.street} />` and `<input $bind={order.address.city} />`. Drop their `name` attributes; PyWire posts them as `address.street` and `address.city`.
+2.  Under "Items", loop over the rows with `<fieldset $for={row in order.items}>`. Inside it, bind `row.name` and `row.qty`, and show `row.qty.error`.
+3.  Place the order with an empty address to see the errors, fill it in, then try a quantity of 0.
+
+The form starts with two rows because `initial` has two. Only rows the page rendered are read, so a request can't add rows by posting extra ones. If the list has a `max_length`, the server reports rows past it.
