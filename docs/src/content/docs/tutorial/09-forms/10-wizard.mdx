@@ -1,0 +1,138 @@
+---
+title: Multi-step forms
+tutorial: Basic PyWire
+section: Forms
+description: Split a long form into steps with wizard().
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from typing import Literal
+      from pydantic import BaseModel, Field, SecretStr
+      from pywire import wizard
+
+      class Account(BaseModel):
+        name: str = Field(min_length=2)
+
+      class Plan(BaseModel):
+        plan: Literal["free", "pro"] = "free"
+
+      class Finish(BaseModel):
+        password: SecretStr = Field(min_length=8)
+
+      class Signup(BaseModel):
+        account: Account
+        plan: Plan
+        finish: Finish
+
+      signup = wizard(Signup)
+      result = wire("")
+
+      def create(data: Signup):
+        result.value = f"Welcome, {data.account.name}! Plan: {data.plan.plan}"
+      ---
+      <div>
+        <h1>Sign up</h1>
+
+        <form $bind={signup} @submit={create} novalidate>
+          <ol>
+            <li $for={step in signup.steps}>{step.label}</li>
+          </ol>
+
+          <!-- 1. Show only the fields of the current step -->
+          <input $bind={signup.account.name} />
+          <span $if={signup.account.name.error} style="color: red;">{signup.account.name.error}</span>
+
+          <select $bind={signup.plan.plan}></select>
+
+          <input $bind={signup.finish.password} />
+          <span $if={signup.finish.password.error} style="color: red;">{signup.finish.password.error}</span>
+
+          <!-- 2. Add a Back button -->
+          <button type="submit">Next</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from typing import Literal
+      from pydantic import BaseModel, Field, SecretStr
+      from pywire import wizard
+
+      class Account(BaseModel):
+        name: str = Field(min_length=2)
+
+      class Plan(BaseModel):
+        plan: Literal["free", "pro"] = "free"
+
+      class Finish(BaseModel):
+        password: SecretStr = Field(min_length=8)
+
+      class Signup(BaseModel):
+        account: Account
+        plan: Plan
+        finish: Finish
+
+      signup = wizard(Signup)
+      result = wire("")
+
+      def create(data: Signup):
+        result.value = f"Welcome, {data.account.name}! Plan: {data.plan.plan}"
+      ---
+      <div>
+        <h1>Sign up</h1>
+
+        <form $bind={signup} @submit={create} novalidate>
+          <ol>
+            <li $for={step in signup.steps}>{step.label}</li>
+          </ol>
+
+          <div $if={signup.step == "account"}>
+            <input $bind={signup.account.name} />
+            <span $if={signup.account.name.error} style="color: red;">{signup.account.name.error}</span>
+          </div>
+
+          <div $if={signup.step == "plan"}>
+            <select $bind={signup.plan.plan}></select>
+          </div>
+
+          <div $if={signup.step == "finish"}>
+            <input $bind={signup.finish.password} />
+            <span $if={signup.finish.password.error} style="color: red;">{signup.finish.password.error}</span>
+          </div>
+
+          <button $if={not signup.on_first_step} {**signup.back_button}>Back</button>
+          <button type="submit">{"Create account" if signup.on_last_step else "Next"}</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Show one step at a time with signup.step'
+    target: pages/index.wire
+    pattern: 'signup.step =='
+  - type: file_contains
+    description: 'Add a Back button'
+    target: pages/index.wire
+    pattern: '{**signup.back_button}'
+  - type: browser_route_text
+    route: '/'
+    description: 'Go through all three steps and create the account'
+    pattern: 'Welcome, '
+pagesDir: pages
+---
+
+`wizard(Model)` fills a model one step at a time. Each field of the model is a step, and each step is a model of its own. Here `Signup` has three: `account`, `plan` and `finish`.
+
+### Your Task
+
+1.  Wrap each step's fields in an element that only shows on that step: `<div $if={signup.step == "account"}>`, then `"plan"`, then `"finish"`. `signup.step` is the name of the current step's field.
+2.  Add a Back button before the submit button: `<button $if={not signup.on_first_step} {**signup.back_button}>Back</button>`.
+3.  Change the submit button's text to `{"Create account" if signup.on_last_step else "Next"}`.
+4.  Try Next with a one-letter name, then go through all three steps and use Back once.
+
+Submitting a step checks that step only and moves on. The last step checks the whole model and calls your handler with it, so a `model_validator` that compares fields from different steps runs there. If a field on an earlier step fails at that point, the wizard goes back to it. Back doesn't validate, and it keeps what was typed.
+
+What earlier steps held travels with the form in a hidden field, signed so it can't be changed. It is signed, not encrypted, so the browser can read it. That is why a `SecretStr` must be on the last step: `wizard()` raises a `TypeError` if one sits earlier. The signed state is accepted for an hour after the step was shown. If several processes serve the same app, give them all the same `PyWire(secret_key=...)`.
