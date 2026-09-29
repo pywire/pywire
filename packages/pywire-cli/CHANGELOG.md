@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/pywire/pywire/compare/pywire-cli-v0.4.0...pywire-cli-v0.4.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump floors to pywire 0.17.0 ([#375](https://github.com/pywire/pywire/issues/375)) ([ae86a7e](https://github.com/pywire/pywire/commit/ae86a7e2f58bb495dad3277c3468f2f05f89e39b))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/pywire-cli-v0.3.4...pywire-cli-v0.4.0) (2026-09-29)
 
 
