@@ -43,9 +43,10 @@ def _page(tmp_path):
 
 
 def test_allowlist_is_what_the_template_wires(tmp_path):
-    # @click={increment()} wires the generated wrapper, not increment itself.
+    # @click={increment} wires increment by name; the inline statement gets
+    # a generated wrapper. reset_everything is wired nowhere.
     allowed = type(_page(tmp_path)).__event_handlers__
-    assert allowed == frozenset({"_handler_0"})
+    assert allowed == frozenset({"increment", "_handler_0"})
 
 
 @pytest.mark.parametrize(

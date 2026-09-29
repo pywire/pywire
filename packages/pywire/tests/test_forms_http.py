@@ -13,7 +13,7 @@ from starlette.testclient import TestClient
 from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import decode_snapshot
 
-SECRET = "forms-test-secret"
+SECRET = "forms-test-secret-at-least-32-bytes"
 
 PAGE = """---
 from typing import Annotated, Literal, Optional
