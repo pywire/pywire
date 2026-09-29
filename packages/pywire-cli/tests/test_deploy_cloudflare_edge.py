@@ -1,6 +1,7 @@
 """Tests for the cloudflare-edge target (stateless plain Worker, no DOs)."""
 
 import asyncio
+import os
 import re
 import sys
 import types
@@ -62,6 +63,36 @@ class TestBuildCloudflareEdge:
             # edge bundle carries no Durable Object class
             assert not Path("pywire_do.py").exists()
 
+    @patch("pywire.compiler.build.build_project")
+    def test_assets_go_under_base_path(self, mock_build: MagicMock) -> None:
+        """Behind a Worker route like /demo/*, the assets binding sees
+        /demo/static/app.css, so the files have to live under public/demo/."""
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, static_assets=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            _make_app_dir()
+            Path("static").mkdir()
+            Path("static/app.css").write_text("body {}")
+            Path("main.py").write_text(
+                Path("main.py").read_text()
+                + "app.static_dir = 'static'\n"
+                + "app.static_url_path = '/static'\n"
+                + "app.base_path = '/demo'\n"
+            )
+            # Earlier tests imported another main.py under the same name.
+            sys.modules.pop("main", None)
+            try:
+                result = runner.invoke(cli, ["build", "--platform", "cloudflare-edge"])
+            finally:
+                sys.modules.pop("main", None)
+            assert result.exit_code == 0, result.output
+
+            public = Path(".pywire/deploy/public")
+            assert (public / "demo/static/app.css").read_text() == "body {}"
+            assert not (public / "static").exists()
+
 
 class TestDeployCloudflareEdge:
     @patch("pywire.compiler.build.build_project")
@@ -107,8 +138,13 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         def __init__(self, body, status=200, headers=None):
             self.body, self.status, self.headers = body, status, headers
 
+    class WorkerEntrypoint:
+        def __init__(self, env):
+            self.env = env
+
     workers = types.ModuleType("workers")
     workers.Response = Response  # type: ignore[attr-defined]
+    workers.WorkerEntrypoint = WorkerEntrypoint  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "workers", workers)
     # The entry sets PYWIRE_PREBUILT, so PyWire() compiles nothing and the
     # bundle's _routes.py registers the pages; this one compiles them instead.
@@ -122,34 +158,36 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         .get_template("entry.py.j2")
         .render(app_module="edge_fixture_app", app_attr="app")
     )
-    ns: dict = {}
+    ns: dict = {"__file__": str(tmp_path / "entry.py")}
     # Python Workers only expose the secret on `env`, so importing the app
     # here (before any request) would raise for want of one.
     exec(compile(source, "entry.py", "exec"), ns)
-
-    class Buffer:
-        def __init__(self, data):
-            self.data = data
-
-        def to_py(self):
-            return self.data
 
     class Request:
         def __init__(self, method, url, body=b"", headers=None):
             self.method, self.url, self._body = method, url, body
             self.headers = {"accept-encoding": "gzip", **(headers or {})}
 
-        async def arrayBuffer(self):
-            return Buffer(self._body)
+        async def bytes(self):
+            return self._body
 
-    env = types.SimpleNamespace(PYWIRE_SECRET_KEY="edge-test-secret-at-least-32-bytes")
+    monkeypatch.delenv("EDGE_FIXTURE_SETTING", raising=False)
+    env = types.SimpleNamespace(
+        PYWIRE_SECRET_KEY="edge-test-secret-at-least-32-bytes",
+        # A Worker var or secret the app reads from os.environ.
+        EDGE_FIXTURE_SETTING="on",
+        # A binding that isn't a string stays out of os.environ.
+        ASSETS=object(),
+    )
 
     def fetch(*args, **kwargs):
-        return asyncio.run(ns["on_fetch"](Request(*args, **kwargs), env))
+        return asyncio.run(ns["Default"](env).fetch(Request(*args, **kwargs)))
 
     try:
         get = fetch("GET", "https://edge.test/")
         assert get.status == 200
+        assert os.environ["EDGE_FIXTURE_SETTING"] == "on"
+        assert "ASSETS" not in os.environ
         # The Workers runtime compresses by itself; the app must not have.
         assert "content-encoding" not in dict(get.headers)
         match = re.search(
@@ -182,3 +220,33 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         assert sorted(c.split("=", 1)[0] for c in cookies) == ["a", "b"]
     finally:
         sys.modules.pop("edge_fixture_app", None)
+
+
+def test_edge_entry_imports_a_src_layout_app(tmp_path: Path, monkeypatch) -> None:
+    """src.main:app can import its sibling packages, as under `pywire dev`."""
+    (tmp_path / "src" / "helpers").mkdir(parents=True)
+    (tmp_path / "src" / "helpers" / "__init__.py").write_text("VALUE = 7\n")
+    (tmp_path / "src" / "edge_src_app.py").write_text("from helpers import VALUE\n")
+    workers = types.ModuleType("workers")
+    workers.Response = object  # type: ignore[attr-defined]
+    workers.WorkerEntrypoint = object  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "workers", workers)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    for name in ("helpers", "src.edge_src_app"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    source = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(EDGE_TEMPLATES))
+        .get_template("entry.py.j2")
+        .render(app_module="src.edge_src_app", app_attr="app")
+    )
+    exec(compile(source, "entry.py", "exec"), {"__file__": str(tmp_path / "entry.py")})
+
+    assert sys.path[:2] == [str(tmp_path), str(tmp_path / "src")]
+    import importlib
+
+    try:
+        assert importlib.import_module("src.edge_src_app").VALUE == 7
+    finally:
+        for name in ("helpers", "src", "src.edge_src_app"):
+            sys.modules.pop(name, None)
