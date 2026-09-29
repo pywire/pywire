@@ -1,6 +1,7 @@
 import { BaseTransport, ServerMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
 import { logger } from '../logger'
+import { getMountPath } from '../mount-path'
 
 const DEBUG_CONNECTION = false
 
@@ -18,7 +19,7 @@ export class HTTPTransport extends BaseTransport {
 
   constructor(baseUrl?: string) {
     super()
-    this.baseUrl = baseUrl || `${window.location.origin}/_pywire`
+    this.baseUrl = baseUrl || `${window.location.origin}${getMountPath()}/_pywire`
   }
 
   async connect(): Promise<void> {

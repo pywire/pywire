@@ -34,6 +34,7 @@ _FRAMEWORK_ATTRS: Set[str] = {
     "loading",
     "user",
     "attrs",
+    "base_path",
 }
 
 # Wire type tags for reconstruction
@@ -236,7 +237,7 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
         for attr, value in comp.__dict__.items():
             if attr.startswith("_"):
                 continue
-            if attr in {"request", "params", "query", "path", "url"}:
+            if attr in {"request", "params", "query", "path", "url", "base_path"}:
                 continue
             state = _hook_snapshot(value, attr)
             if state is not None:
