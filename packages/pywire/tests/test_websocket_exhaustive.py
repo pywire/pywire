@@ -31,7 +31,9 @@ class MockPage(BasePage):
 class TestWebSocketExhaustive:
     def setup_method(self) -> None:
         # Use spec=object so it doesn't have every attribute
-        self.app = MagicMock(spec=["router", "get_user", "_get_dispatch_target"])
+        self.app = MagicMock(
+            spec=["router", "get_user", "_get_dispatch_target", "_dispatch_scope"]
+        )
         self.handler = WebSocketHandler(self.app)
 
     def create_mock_ws(self) -> AsyncMock:

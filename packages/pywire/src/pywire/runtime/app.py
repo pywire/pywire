@@ -21,6 +21,13 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
 from pywire import __version__
+from pywire.runtime.base_path import (
+    BasePathHeaders,
+    apply_base_path,
+    normalize_base_path,
+    prefix_of,
+    strip_base,
+)
 from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
@@ -283,6 +290,7 @@ class PyWire:
         stateless: bool = False,
         secret_key: Optional[str] = None,
         compress: bool = True,
+        base_path: Optional[str] = None,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -401,6 +409,12 @@ class PyWire:
         # Gzip text responses (pages, client runtime, JSON, msgpack updates).
         # Turn off when a CDN or reverse proxy in front already compresses.
         self.compress = compress
+
+        # URL prefix the app is served under when a proxy strips it (see
+        # runtime/base_path.py). A host mount's root_path needs no setting.
+        self.base_path = normalize_base_path(
+            base_path if base_path is not None else os.environ.get("PYWIRE_BASE_PATH")
+        )
         self._gzip_static_cache: Dict[str, Tuple[bytes, bytes]] = {}
 
         # Custom reconnect overlay from the user's __reconnect__.wire, injected
@@ -820,7 +834,18 @@ class PyWire:
 
     def _get_dispatch_target(self) -> Any:
         """Return the ASGI app for internal request dispatch."""
-        return self._root_app or self.app
+        return self._root_app or BasePathHeaders(self.app)
+
+    def _dispatch_scope(self, scope: Any) -> Dict[str, Any]:
+        """Base scope for an internal request made from ``scope``.
+
+        A host app sits above PyWire's mount, so a replay dispatched to it
+        starts from the host's root path, not PyWire's.
+        """
+        base = dict(scope)
+        if self._root_app is not None and "app_root_path" in scope:
+            base["root_path"] = scope["app_root_path"]
+        return base
 
     def as_asgi(self, host: Any = None) -> "PyWire":
         """Return this app as an ASGI application for mounting.
@@ -1756,12 +1781,9 @@ class PyWire:
         """
         is_internal_relocate = request.headers.get("x-pywire-internal") == "relocate"
 
-        path = request.url.path
-        # When mounted at a prefix (e.g. /app), strip the root_path
-        # so PyWire's router matches against local paths (/ not /app/)
-        root_path = request.scope.get("root_path", "")
-        if root_path and path.startswith(root_path):
-            path = path[len(root_path) :] or "/"
+        # Under a prefix (mounted at /app, or base_path) the router matches
+        # app-relative paths: /app/x -> /x.
+        path = strip_base(request.url.path, prefix_of(request.scope))
         match = self.router.match(path)
         if not match:
             # Fallthrough mode: return bare 404 so host framework tries next
@@ -2191,6 +2213,8 @@ class PyWire:
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""
         logger.debug("Scope type: %s", scope["type"])
+        if self.base_path:
+            scope = apply_base_path(scope, self.base_path)
         if (
             scope["type"] == "webtransport"
             and self.interactive_server_mode
@@ -2199,13 +2223,12 @@ class PyWire:
             await self.web_transport_handler.handle(scope, receive, send)
             return
 
+        app: Any = BasePathHeaders(self.app)
         if self.compress:
             # Outermost HTTP layer, so middleware added later still sees
             # uncompressed bodies. Internal relocate replays target self.app.
-            await CompressionMiddleware(self.app)(scope, receive, send)
-            return
-
-        await self.app(scope, receive, send)
+            app = CompressionMiddleware(app)
+        await app(scope, receive, send)
 
     # --- Extensible Hooks ---
 

@@ -261,4 +261,34 @@ describe('PyWireApp', () => {
       expect(sent().slice(-1)[0]).toMatchObject({ type: 'relocate' })
     })
   })
+
+  it.each([
+    ['/demo', true],
+    ['/demo/', true],
+    ['/demo/about', true],
+    ['/', false],
+    ['/other', false],
+  ])('under a URL prefix, link to %s is intercepted: %s', async (href, intercepted) => {
+    const meta = document.createElement('script')
+    meta.id = '_pywire_spa_meta'
+    meta.textContent = JSON.stringify({
+      enable_pjax: true,
+      mount_path: '/demo',
+      all_paths: ['/demo/', '/demo/about'],
+    })
+    document.head.appendChild(meta)
+
+    await app.init()
+
+    const link = document.createElement('a')
+    link.href = href
+    document.body.appendChild(link)
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    const navigateToSpy = vi.spyOn(app, 'navigateTo').mockImplementation(() => {})
+
+    link.dispatchEvent(event)
+
+    expect(navigateToSpy).toHaveBeenCalledTimes(intercepted ? 1 : 0)
+  })
 })

@@ -6,11 +6,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import msgpack
 from starlette.requests import Request
 from starlette.responses import Response
 
+from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.page import BasePage
 from pywire.runtime.protocol import dropped, event_ack, for_another_page
 from pywire import __version__
@@ -84,7 +86,9 @@ class HTTPTransportHandler:
         session = HTTPSession(session_id=session_id, path=path)
 
         # Try to instantiate the page for this session
-        match = self.app.router.match(path)
+        match = self.app.router.match(
+            strip_base(urlparse(path).path, prefix_of(request.scope))
+        )
         if match:
             page_class, params, variant_name = match
             query = dict(request.query_params)

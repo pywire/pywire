@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/pywire/pywire/compare/pywire-v0.16.0...pywire-v0.17.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** model-bound forms with $bind ([#338](https://github.com/pywire/pywire/issues/338)) ([e5c76f7](https://github.com/pywire/pywire/commit/e5c76f7e9ad7535dc15dd5b6468c478d1e6d2d5f))
+
 ## [0.16.0](https://github.com/pywire/pywire/compare/pywire-v0.15.1...pywire-v0.16.0) (2026-09-29)
 
 

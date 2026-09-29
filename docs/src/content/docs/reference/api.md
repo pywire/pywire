@@ -213,6 +213,7 @@ class PyWire(
     event_defaults: Mapping[str, str] | None = None,
     secret_key: str | None = None,
     enable_webtransport: bool = False,
+    base_path: str | None = None,
 )
 ```
 
@@ -241,6 +242,8 @@ class PyWire(
 - **`event_defaults`** (`Mapping[str, str] | None`): Per-event timing that replaces the built-in defaults, e.g. `{"input": "debounce.400ms", "scroll": "throttle.50ms"}`. See [Default timing](/docs/syntax/event-modifiers/#default-timing).
 
 - **`secret_key`** (`str | None`): Signs state the browser carries back: stateless-mode snapshots and [multi-step form](/docs/guides/forms/#multi-step-forms) steps. Falls back to the `PYWIRE_SECRET_KEY` environment variable. Required with `stateless=True`; otherwise a random key is made per process, so processes behind a load balancer must share one.
+
+- **`base_path`** (`str | None`): The URL prefix the app is served under when a proxy in front strips it, like `"/demo"`. Defaults to the `PYWIRE_BASE_PATH` environment variable, or none. A host app's mount path is detected without it. See [Serving under a path prefix](/docs/guides/framework-integration/#serving-under-a-path-prefix).
 
 **Extensible Hooks:**
 
@@ -300,16 +303,17 @@ def handle_error(exc):
 
 These properties are available on every page and component instance, accessible in the Python block.
 
-| Property   | Type              | Description                                                                                                         |
-| ---------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `params`   | `DotDict`         | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`)                                            |
-| `query`    | `DotDict`         | Query string parameters (e.g., `query.search` for `?search=foo`)                                                    |
-| `path`     | `DotDict`         | Route path flags for multi-route components using `!path` dictionaries                                              |
-| `url`      | `URLHelper`       | URL helper for the current request                                                                                  |
-| `user`     | `Any`             | User object populated by the `get_user` hook                                                                        |
-| `attrs`    | `dict`            | Fallthrough attributes not captured by `@props`                                                                     |
-| `loading`  | `dict`            | Loading state for async operations                                                                                  |
-| `children` | `Snippet \| None` | Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`. |
+| Property    | Type              | Description                                                                                                                     |
+| ----------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `params`    | `DotDict`         | URL parameters from the route (e.g., `params.id` for `/users/[id].wire`)                                                        |
+| `query`     | `DotDict`         | Query string parameters (e.g., `query.search` for `?search=foo`)                                                                |
+| `path`      | `DotDict`         | Route path flags for multi-route components using `!path` dictionaries                                                          |
+| `url`       | `URLHelper`       | URL helper for the current request                                                                                              |
+| `user`      | `Any`             | User object populated by the `get_user` hook                                                                                    |
+| `base_path` | `str`             | URL prefix the app is served under, `""` at the site root. For URLs built in scripts; links and redirects get it automatically. |
+| `attrs`     | `dict`            | Fallthrough attributes not captured by `@props`                                                                                 |
+| `loading`   | `dict`            | Loading state for async operations                                                                                              |
+| `children`  | `Snippet \| None` | Implicit snippet holding the markup a parent wrote between this component's tags. Render with `{$render children}`.             |
 
 ## Runtime Helpers
 
