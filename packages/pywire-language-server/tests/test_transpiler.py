@@ -300,6 +300,29 @@ def test_form_paths_in_template_and_python():
     assert "signup = form(Signup)" in code
 
 
+def test_a_local_name_that_matches_a_form_is_left_alone():
+    page = """---
+from pydantic import BaseModel
+from pywire import form
+
+class Signup(BaseModel):
+    email: str
+
+signup = form(Signup)
+
+async def create(signup: Signup):
+    print(signup.email)
+
+def touch():
+    signup.email.error = "taken"
+---
+<form $bind={signup} @submit={create}></form>
+"""
+    code, _ = Transpiler(page).transpile()
+    assert "    print(signup.email)\n" in code
+    assert 'signup._pw_field(signup._pw_shape.email).error = "taken"' in code
+
+
 def test_form_path_tokens_map_back_to_the_source():
     code, sm = Transpiler(FORM_PAGE).transpile()
     gen = code.splitlines()
