@@ -2082,7 +2082,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.7.1"
+version = "0.8.0"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
@@ -2106,7 +2106,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-templates"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/pywire-templates" }
 dependencies = [
     { name = "jinja2" },
