@@ -1,6 +1,7 @@
 """Tests for the cloudflare-edge target (stateless plain Worker, no DOs)."""
 
 import asyncio
+import os
 import re
 import sys
 import types
@@ -61,6 +62,36 @@ class TestBuildCloudflareEdge:
 
             # edge bundle carries no Durable Object class
             assert not Path("pywire_do.py").exists()
+
+    @patch("pywire.compiler.build.build_project")
+    def test_assets_go_under_base_path(self, mock_build: MagicMock) -> None:
+        """Behind a Worker route like /demo/*, the assets binding sees
+        /demo/static/app.css, so the files have to live under public/demo/."""
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, static_assets=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            _make_app_dir()
+            Path("static").mkdir()
+            Path("static/app.css").write_text("body {}")
+            Path("main.py").write_text(
+                Path("main.py").read_text()
+                + "app.static_dir = 'static'\n"
+                + "app.static_url_path = '/static'\n"
+                + "app.base_path = '/demo'\n"
+            )
+            # Earlier tests imported another main.py under the same name.
+            sys.modules.pop("main", None)
+            try:
+                result = runner.invoke(cli, ["build", "--platform", "cloudflare-edge"])
+            finally:
+                sys.modules.pop("main", None)
+            assert result.exit_code == 0, result.output
+
+            public = Path(".pywire/deploy/public")
+            assert (public / "demo/static/app.css").read_text() == "body {}"
+            assert not (public / "static").exists()
 
 
 class TestDeployCloudflareEdge:
@@ -142,7 +173,14 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
         async def arrayBuffer(self):
             return Buffer(self._body)
 
-    env = types.SimpleNamespace(PYWIRE_SECRET_KEY="edge-test-secret-at-least-32-bytes")
+    monkeypatch.delenv("EDGE_FIXTURE_SETTING", raising=False)
+    env = types.SimpleNamespace(
+        PYWIRE_SECRET_KEY="edge-test-secret-at-least-32-bytes",
+        # A Worker var or secret the app reads from os.environ.
+        EDGE_FIXTURE_SETTING="on",
+        # A binding that isn't a string stays out of os.environ.
+        ASSETS=object(),
+    )
 
     def fetch(*args, **kwargs):
         return asyncio.run(ns["on_fetch"](Request(*args, **kwargs), env))
@@ -150,6 +188,8 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
     try:
         get = fetch("GET", "https://edge.test/")
         assert get.status == 200
+        assert os.environ["EDGE_FIXTURE_SETTING"] == "on"
+        assert "ASSETS" not in os.environ
         # The Workers runtime compresses by itself; the app must not have.
         assert "content-encoding" not in dict(get.headers)
         match = re.search(
