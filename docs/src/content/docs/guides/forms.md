@@ -432,6 +432,8 @@ A bound form always renders `method="post"` and a hidden field naming its submit
 
 The values and errors come from the submitted fields themselves, so a no-JavaScript submit in stateless mode re-renders correctly even without a snapshot. Files take one path in every mode: they are staged in [the upload store](#where-files-are-kept) as they arrive, and the handler reads them from there.
 
+In non-interactive mode the session keeps page state, forms included, for the last page served only. Leaving `/signup` for another page and coming back starts the form fresh.
+
 ## What the server enforces
 
 - Only the generated submit handler can be reached from a request. Your handler is called with a validated model and is never directly dispatchable.

@@ -1,7 +1,7 @@
 """Static analysis of event handler functions to determine which event fields they access."""
 
 import ast
-from typing import Optional, Set
+from typing import Dict, Optional, Set
 
 # Mapping from Python snake_case field names to JS camelCase field names.
 # This must stay in sync with the field names used in runtime/events.py
@@ -46,6 +46,9 @@ def analyze_event_fields(handler_source: str) -> Optional[Set[str]]:
         return None  # Can't analyze, send everything
 
     visitor = _EventFieldVisitor()
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            visitor.parents[child] = parent
     visitor.visit(tree)
 
     if visitor.needs_full_event:
@@ -60,6 +63,7 @@ class _EventFieldVisitor(ast.NodeVisitor):
         self.needs_full_event = False
         self._event_names = {"event", "event_data"}
         self._seen_handler = False
+        self.parents: Dict[ast.AST, ast.AST] = {}
 
     def visit_Assign(self, node: ast.Assign) -> None:
         # Track aliases: `e = event` adds 'e' to _event_names
@@ -67,6 +71,9 @@ class _EventFieldVisitor(ast.NodeVisitor):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self._event_names.add(target.id)
+                else:
+                    # a, *b = event: unpacks it, so send everything
+                    self.needs_full_event = True
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
@@ -160,6 +167,13 @@ class _EventFieldVisitor(ast.NodeVisitor):
             self.needs_full_event = True
         self.generic_visit(node)
 
+    def visit_Name(self, node: ast.Name) -> None:
+        # Any use not handled above (return event, f"{event}", a tuple of
+        # it...) lets the whole event escape, so send everything.
+        if node.id in self._event_names and isinstance(node.ctx, ast.Load):
+            if not _understood(node, self.parents.get(node)):
+                self.needs_full_event = True
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_handler(node)
 
@@ -179,6 +193,24 @@ class _EventFieldVisitor(ast.NodeVisitor):
             if event_param:
                 self._event_names.add(event_param)
         self.generic_visit(node)
+
+
+def _understood(node: ast.Name, parent: Optional[ast.AST]) -> bool:
+    """Whether the visitor above accounts for this use of the event name."""
+    if isinstance(parent, (ast.Attribute, ast.Subscript)):
+        return parent.value is node
+    if isinstance(parent, (ast.For, ast.comprehension)):
+        return parent.iter is node
+    if isinstance(parent, ast.Compare):
+        return any(
+            right is node and isinstance(op, (ast.In, ast.NotIn))
+            for op, right in zip(parent.ops, parent.comparators)
+        )
+    if isinstance(parent, ast.Dict):
+        return any(k is None and v is node for k, v in zip(parent.keys, parent.values))
+    if isinstance(parent, (ast.Assign, ast.AnnAssign)):
+        return parent.value is node
+    return False
 
 
 def _first_required_param(args: ast.arguments) -> Optional[str]:
