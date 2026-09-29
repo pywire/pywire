@@ -28,6 +28,7 @@ from starlette.responses import Response
 if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
+from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
 from pywire.runtime.style_collector import StyleCollector
 from pywire.core.snippet import HeadBuffer, Snippet
 
@@ -154,6 +155,8 @@ class BasePage:
     # loops. Set by the .wire codegen; ``None`` (hand-rolled pages) means no
     # keyed regions — dirty ``{site}#{key}`` ids fall back to a full render.
     __keyed_region_renderers__: ClassVar[Optional[Dict[str, str]]] = None
+    # URL prefix the app is served under; set per instance from the request.
+    base_path: str = ""
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
         "params",
@@ -198,6 +201,10 @@ class BasePage:
         **kwargs: Any,
     ) -> None:
         self.request = request
+        # URL prefix the app is served under ("" at the site root). Links,
+        # redirects and cookie paths get it added automatically; use it for
+        # URLs built in scripts.
+        self.base_path: str = prefix_of(getattr(request, "scope", None))
         self.params = DotDict(params or {})  # URL params from route
         self.query = DotDict(query or {})  # Query string params
         self.path = DotDict(path or {})
@@ -359,7 +366,7 @@ class BasePage:
         """Return a callable that sets the pending navigation path."""
 
         def _navigate(path: str) -> None:
-            self._pending_navigation = path
+            self._pending_navigation = with_base(path, self.base_path)
 
         return _navigate
 
@@ -392,7 +399,7 @@ class BasePage:
                 "value": value,
                 "max_age": max_age,
                 "expires": expires,
-                "path": path,
+                "path": cookie_path(path, self.base_path),
                 "domain": domain,
                 "secure": secure,
                 "httponly": httponly,
@@ -412,7 +419,7 @@ class BasePage:
             {
                 "action": "delete",
                 "key": key,
-                "path": path,
+                "path": cookie_path(path, self.base_path),
                 "domain": domain,
             }
         )
@@ -446,7 +453,12 @@ class BasePage:
         - Dev: ?v={mtime} for instant invalidation
         - Prod with build: filename-based (logo.a1b2c3d4.png) for CDN caching
         - Prod without build: ?v={content_hash} fallback
+
+        The URL includes the app's URL prefix, so it also works in scripts.
         """
+        return with_base(self._asset_url(path), self.base_path)
+
+    def _asset_url(self, path: str) -> str:
         import hashlib
         import os
 
@@ -1164,6 +1176,10 @@ class BasePage:
         # Flush {$head} contributions into the document head.
         html = self._inject_head_into(html)
 
+        # Under a URL prefix, root-relative links and assets point into the
+        # app: href="/chat" -> href="/demo/chat".
+        html = rewrite_html(html, self.base_path)
+
         # Inject styles. On init=True the document has a real ``</head>`` and
         # we target the first one that is not inside a <script>/<style> (user
         # JS often contains ``'</head>'`` as a string). On init=False the
@@ -1214,21 +1230,12 @@ class BasePage:
             except (AttributeError, KeyError):
                 pass  # no router available; SPA navigation will use sibling paths only
 
-            # ASGI mount prefix — when PyWire is mounted under e.g. /app on a
-            # host FastAPI/Starlette app, every URL we emit must be prefixed
-            # with it. Starlette sets scope["root_path"] on mounted sub-apps.
-            root_path: str = ""
-            try:
-                root_path = str(self.request.scope.get("root_path", "") or "")
-            except (AttributeError, KeyError):
-                pass
+            # URL prefix (host mount's root_path, or base_path): every URL
+            # the client uses must carry it.
+            root_path = self.base_path
 
             def _prefix(p: str) -> str:
-                if not root_path or not isinstance(p, str) or not p.startswith("/"):
-                    return p
-                if p.startswith(root_path + "/") or p == root_path:
-                    return p
-                return root_path + p
+                return with_base(p, root_path)
 
             if not no_spa and not is_component:
                 # Reconnect overlay config from PyWire app
@@ -1704,7 +1711,12 @@ class BasePage:
                         )
                         continue
                     self._region_output_cache[region_id] = region_html
-                    updates.append({"region": region_id, "html": region_html})
+                    updates.append(
+                        {
+                            "region": region_id,
+                            "html": rewrite_html(region_html, self.base_path),
+                        }
+                    )
 
                 if not has_root_dirty:
                     self._dirty_regions.clear()

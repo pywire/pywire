@@ -802,6 +802,7 @@ class CodeGenerator:
             "navigate",
             "set_cookie",
             "delete_cookie",
+            "base_path",
         }
         async_methods = set()
 

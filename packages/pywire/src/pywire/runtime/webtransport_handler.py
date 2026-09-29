@@ -7,7 +7,9 @@ import json
 import logging
 import uuid
 from typing import Any, Dict, Set, cast
+from urllib.parse import urlparse
 
+from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.page import BasePage
 from pywire.runtime.protocol import event_ack, with_ack
 from pywire.runtime.session_serializer import restore_page_state
@@ -159,7 +161,9 @@ class WebTransportHandler:
             # Initialize page for this connection (similar to WS)
             # Parse path and instantiate page
             path = data.get("path", "/")
-            match = self.app.router.match(path)
+            match = self.app.router.match(
+                strip_base(urlparse(path).path, prefix_of(scope))
+            )
             if match:
                 page_class, params, variant_name = match
                 # Mock request object? Or extract from scope
