@@ -36,6 +36,10 @@ from pywire.core.snippet import HeadBuffer, Snippet
 logger = logging.getLogger(__name__)
 
 
+# Strong refs to async @unmount hooks still running after their page left.
+_unmount_tasks: Set["asyncio.Future[Any]"] = set()
+
+
 def _on_loop(loop: asyncio.AbstractEventLoop) -> bool:
     try:
         return asyncio.get_running_loop() is loop
@@ -218,7 +222,7 @@ class BasePage:
     ] = []  # @mount — after first render delivered to client
     UNMOUNT_HOOKS: ClassVar[
         List[str]
-    ] = []  # @unmount — component removed from render tree
+    ] = []  # @unmount — component removed, or page closed / navigated away
     BEFORE_UPDATE_HOOKS: ClassVar[
         List[str]
     ] = []  # @before_update — before re-render (can cancel)
@@ -1616,6 +1620,29 @@ class BasePage:
         self._push_task = None
         if task is not None and not task.done():
             task.cancel()
+
+    def _unmount(self) -> None:
+        """The page left its client: the connection closed or navigated away.
+
+        Stops server pushes and runs ``@unmount`` hooks on the page and its
+        components, so shared state a page registered itself in (presence
+        lists, subscriptions) can be cleaned up.
+        """
+        self._detach_push()
+        targets = [*getattr(self, "_components", {}).values(), self]
+        for target in targets:
+            for hook_name in target.UNMOUNT_HOOKS:
+                hook = getattr(target, hook_name, None)
+                if hook is None:
+                    continue
+                try:
+                    result = hook()
+                    if inspect.isawaitable(result):
+                        task = asyncio.ensure_future(result)
+                        _unmount_tasks.add(task)
+                        task.add_done_callback(_unmount_tasks.discard)
+                except Exception:
+                    logger.exception("@unmount hook %s failed", hook_name)
 
     def _update_cycle(self) -> "_UpdateCycle":
         """Serialize a render-and-send with server pushes for this page.

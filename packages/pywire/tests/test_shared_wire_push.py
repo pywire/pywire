@@ -19,6 +19,22 @@ from starlette.testclient import TestClient
 from pywire.runtime.app import PyWire
 
 
+def _presence(module: str) -> str:
+    return f"""---
+from {module} import online
+
+@mount
+def join():
+    online.value += 1
+
+@unmount
+def leave():
+    online.value -= 1
+---
+<p id="online">online={{online}}</p>
+"""
+
+
 def _page(module: str) -> str:
     return f"""---
 from {module} import votes, ticks
@@ -39,6 +55,7 @@ SHARED = """
 from pywire import producer, wire
 
 votes = wire(0)
+online = wire(0)
 _set = []
 
 
@@ -62,6 +79,7 @@ def app_and_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     pages = tmp_path / "pages"
     pages.mkdir()
     (pages / "index.wire").write_text(_page(module))
+    (pages / "presence.wire").write_text(_presence(module))
     yield PyWire(pages_dir=str(pages)), module
     sys.modules.pop(module, None)
 
@@ -88,9 +106,9 @@ def _nothing_within(ws: Any, timeout: float = 0.3) -> bool:
     return False
 
 
-def _connect(ws: Any) -> None:
+def _connect(ws: Any, path: str = "/") -> None:
     assert _recv(ws)["type"] == "init"
-    ws.send_bytes(msgpack.packb({"type": "init", "path": "/"}))
+    ws.send_bytes(msgpack.packb({"type": "init", "path": path}))
     assert _recv(ws)["type"] == "init_ack"
 
 
@@ -167,3 +185,17 @@ def test_closed_connection_stops_receiving_pushes(app_and_module):
             # B is gone; A's write must not try to push to B's page.
             assert "votes=1" in _html(_click(a, "vote"))
             assert _nothing_within(a)
+
+
+def test_unmount_runs_when_a_connection_closes(app_and_module):
+    app, module = app_and_module
+    with TestClient(app) as client:
+        with client.websocket_connect("/_pywire/ws") as a:
+            _connect(a, "/presence")
+            # @mount runs after the first render; its write is pushed.
+            assert "online=1" in _html(_recv(a))
+            with client.websocket_connect("/_pywire/ws") as b:
+                _connect(b, "/presence")
+                assert "online=2" in _html(_recv(a))
+            assert "online=1" in _html(_recv(a))
+            assert sys.modules[module].online.value == 1

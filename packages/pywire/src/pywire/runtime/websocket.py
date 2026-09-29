@@ -237,7 +237,7 @@ class WebSocketHandler:
         self.active_connections.discard(websocket)
         page = self.connection_pages.pop(websocket, None)
         if page is not None:
-            page._detach_push()
+            page._unmount()
         self._connection_in_error.discard(websocket)
         # Keep session in store (TTL handles cleanup) — enables reconnect.
         # Write state the throttle is still holding so a reconnect sees it.
@@ -489,7 +489,7 @@ class WebSocketHandler:
 
             previous = self.connection_pages.get(websocket)
             if previous is not None and previous is not page:
-                previous._detach_push()
+                previous._unmount()
             self.connection_pages[websocket] = page
             self.session_ids[websocket] = session_id
 
@@ -762,7 +762,7 @@ class WebSocketHandler:
 
                 # Replace page instance for this connection
                 if old_page is not None:
-                    old_page._detach_push()
+                    old_page._unmount()
                 self.connection_pages[websocket] = new_page
 
                 # Set update hook for async state changes
