@@ -14,7 +14,7 @@ from starlette.testclient import TestClient
 from pywire.forms import Upload, Wizard, wizard
 from pywire.forms.form import ACTION
 from pywire.forms.wizard import STATE
-from pywire.forms.wizard import _secret
+from pywire.forms.form import _secret
 from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import verify
 from pywire.runtime.uploads import staging_for
@@ -50,6 +50,8 @@ SECRET = "wizard-test-secret-at-least-32-bytes"
 
 
 def post(w, data, handler=None, kind="submit"):
+    """Post ``data`` as if the page had rendered every posted field."""
+    w._editable.update(n for n in data if n not in (ACTION, STATE))
     asyncio.run(w._pw_submit(None, handler, {"type": kind, "formData": data}))
 
 
@@ -218,7 +220,7 @@ def test_a_forged_state_is_ignored():
 
     # Signed with the app's own key (not the derived one), as a stateless
     # snapshot is: refused.
-    from pywire.forms.wizard import _process_secret
+    from pywire.forms.form import _process_secret
     from pywire.runtime.snapshot_codec import sign
 
     snapshot_like = sign(
@@ -227,6 +229,25 @@ def test_a_forged_state_is_ignored():
     )
     fresh = wizard(Signup)
     post(fresh, {STATE: snapshot_like})
+    assert fresh.step == "account"
+
+
+def test_a_state_is_accepted_for_an_hour(monkeypatch):
+    import time
+
+    w = wizard(Signup)
+    post(w, {"account.email": "a@b.co"})
+    blob = hidden_state(w)
+    now = time.time()
+
+    monkeypatch.setattr(time, "time", lambda: now + 59 * 60)
+    fresh = wizard(Signup)
+    post(fresh, {STATE: blob, "about.name": "Al"})
+    assert fresh.step == "confirm"
+
+    monkeypatch.setattr(time, "time", lambda: now + 61 * 60)
+    fresh = wizard(Signup)
+    post(fresh, {STATE: blob, "about.name": "Al"})
     assert fresh.step == "account"
 
 
@@ -350,3 +371,86 @@ def test_a_wizard_works_without_javascript(client):
     )
     assert r.status_code == 200
     assert ">a@b.co/Al</p>" in r.text
+
+
+def test_removing_a_row_moves_its_files_with_it():
+    class Doc(BaseModel):
+        title: str
+        file: Optional[Upload] = None
+
+    class Docs(BaseModel):
+        items: list[Doc] = []
+
+    class Done(BaseModel):
+        ok: bool = True
+
+    class Claim(BaseModel):
+        docs: Docs
+        done: Done
+
+    staging = staging_for(None)
+
+    async def stage(name: str) -> Upload:
+        async def body():
+            yield name.encode()
+
+        upload_id = await staging.stage(
+            body(), filename=name, content_type="text/plain", limit=100
+        )
+        upload = await staging.get(upload_id)
+        assert upload is not None
+        return upload
+
+    a, b, c = (asyncio.run(stage(n)) for n in ("a.txt", "b.txt", "c.txt"))
+    w = wizard(Claim)
+    post(
+        w,
+        {
+            "docs.items.0.title": "A",
+            "docs.items.0.file": a,
+            "docs.items.1.title": "B",
+            "docs.items.1.file": b,
+            "docs.items.2.title": "C",
+            "docs.items.2.file": c,
+            ACTION: "remove:docs.items.1",
+        },
+    )
+    assert [r.title.raw for r in w.docs.items] == ["A", "C"]
+    assert "docs.items.2.title" not in w._editable
+
+    post(w, {"docs.items.0.title": "A", "docs.items.1.title": "C"})
+    assert w.step == "done", w.errors
+    got = []
+    post(w, {"done.ok": "true"}, handler=got.append)
+    assert [(d.title, d.file.filename) for d in got[0].docs.items] == [
+        ("A", "a.txt"),
+        ("C", "c.txt"),
+    ]
+
+
+def test_an_error_the_handler_sets_shows_on_its_step():
+    w = wizard(Signup)
+
+    def create(data):
+        w.account.email.error = "That email is taken"
+
+    post(w, {"account.email": "a@b.co"})
+    post(w, {"about.name": "Al"})
+    post(w, {"confirm.code": "1"}, handler=create)
+    assert w.step == "account"
+    assert w.errors == {"account.email": "That email is taken"}
+
+
+def test_a_list_of_secrets_is_a_secret():
+    class Keys(BaseModel):
+        api_keys: list[SecretStr]
+
+    class Done(BaseModel):
+        ok: bool = True
+
+    class Setup(BaseModel):
+        keys: Keys
+        done: Done
+
+    with pytest.raises(TypeError, match="keys.api_keys is a secret"):
+        wizard(Setup)

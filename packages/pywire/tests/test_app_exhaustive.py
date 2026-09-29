@@ -100,27 +100,39 @@ class TestAppExhaustive:
         content_length: int = 100,
         files: Optional[Dict[str, Any]] = None,
     ) -> Any:
+        from starlette.datastructures import FormData
+
         request = AsyncMock(spec=Request)
         request.headers = {
             "X-Upload-Token": token,
             "content-length": str(content_length),
+            "content-type": "multipart/form-data; boundary=x",
         }
-        request.form = AsyncMock(return_value=files or {})
         request.url = MagicMock()
-        return await app._handle_upload(request)
+        if files is None:
+            # The real reader: a declared length over the limit is refused
+            # before anything is read.
+            return await app._handle_upload(request)
+        with patch(
+            "pywire.runtime.app._read_form", AsyncMock(return_value=FormData(files))
+        ):
+            return await app._handle_upload(request)
 
     @pytest.mark.asyncio
     async def test_handle_upload_exception(self) -> None:
         app = PyWire(str(self.pages_dir))
         app.upload_tokens.add("tok")
 
-        # Trigger an exception during await request.form()
+        # Trigger an exception while the body is read
         request = AsyncMock(spec=Request)
         request.headers = {"X-Upload-Token": "tok"}
-        request.form.side_effect = Exception("Upload error")
 
-        response = await app._handle_upload(request)
+        with patch(
+            "pywire.runtime.app._read_form", side_effect=Exception("Upload error")
+        ):
+            response = await app._handle_upload(request)
         assert response.status_code == 500
+        assert b"Upload error" not in response.body
 
     def test_scan_directory_complex(self) -> None:
         # 1. Hidden file
@@ -211,10 +223,10 @@ class TestAppExhaustive:
         response = await self._async_test_upload(app, "invalid")
         assert response.status_code == 403
 
-        # 3. Valid token but too large
+        # 3. Valid token but too large (over 10 files of max_upload_size)
         app.upload_tokens.add("valid_token")
         response = await self._async_test_upload(
-            app, "valid_token", content_length=20 * 1024 * 1024
+            app, "valid_token", content_length=200 * 1024 * 1024
         )
         assert response.status_code == 413
 
@@ -242,7 +254,7 @@ class TestAppExhaustive:
 
         assert response.status_code == 200
         (upload_id,) = json.loads(response.body)["avatar"]
-        upload = await app.uploads.get(upload_id)
+        upload = await app.uploads.get(upload_id, "tok")
         assert upload is not None and upload.filename == "avatar.png"
 
     @pytest.mark.asyncio
@@ -366,7 +378,8 @@ class TestAppExhaustive:
             body = bytes(response.body).decode()
             assert "window.PYWIRE_CERT_HASH = [10, 20]" in body
             assert 'name="pywire-upload-token"' in body
-            assert len(app.upload_tokens) > 0
+            token = body.split('name="pywire-upload-token" content="')[1]
+            assert app._signed_upload_token_ts(token.split('"')[0]) is not None
 
     @pytest.mark.asyncio
     async def test_asgi_call(self) -> None:

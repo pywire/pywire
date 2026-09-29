@@ -2,7 +2,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from pywire_parser import PyWireParser
 from pywire_parser.ast_nodes import (
@@ -115,6 +115,39 @@ def _form_vars(python_ast: Optional[ast.Module]) -> List[str]:
     return names
 
 
+def _local_form_names(
+    python_ast: Optional[ast.Module], form_vars: List[str]
+) -> Dict[int, Set[str]]:
+    """Lines (1-based) of functions that bind a form's name locally, such as
+    a handler parameter ``signup: Signup``, and which names they bind there.
+    Those names mean the local value on those lines, not the form."""
+    wanted = set(form_vars)
+    out: Dict[int, Set[str]] = {}
+    if python_ast is None or not wanted:
+        return out
+    for node in ast.walk(python_ast):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        a = node.args
+        params = [*a.posonlyargs, *a.args, *a.kwonlyargs, a.vararg, a.kwarg]
+        bound = {p.arg for p in params if p is not None}
+        declared: Set[str] = set()
+        body: List[ast.AST] = (
+            [node.body] if isinstance(node, ast.Lambda) else list(node.body)
+        )
+        for sub in body:
+            for n in ast.walk(sub):
+                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+                    bound.add(n.id)
+                elif isinstance(n, (ast.Global, ast.Nonlocal)):
+                    declared.update(n.names)
+        hit = (bound - declared) & wanted
+        for line in range(node.lineno, (node.end_lineno or node.lineno) + 1):
+            if hit:
+                out.setdefault(line, set()).update(hit)
+    return out
+
+
 def rewrite_form_chain(var: str, tail: str) -> List[Piece]:
     """Rewrite ``var<tail>`` so ty checks each field step against the model.
 
@@ -168,6 +201,9 @@ class Transpiler:
 
         self.parser = PyWireParser()
         self.form_chain_re: Optional[re.Pattern[str]] = None
+        # Original line index -> form names bound locally on that line.
+        self.local_form_names: Dict[int, Set[str]] = {}
+        self.shadowed: Set[str] = set()
 
     def transpile(self) -> Tuple[str, SourceMap]:
         """Convert .wire source to virtual .py source with source map."""
@@ -222,6 +258,12 @@ class Transpiler:
                 raw_lines = parsed.python_code.splitlines(keepends=True)
                 for i, line in enumerate(raw_lines):
                     python_lines.append((start_fence + 1 + i, line))
+                self.local_form_names = {
+                    start_fence + line: names
+                    for line, names in _local_form_names(
+                        parsed.python_ast, form_vars
+                    ).items()
+                }
 
         import_lines, body_lines = self._split_import_block(python_lines)
 
@@ -702,9 +744,13 @@ class Transpiler:
         self.generated_line_idx += 1
 
     def _emit_python_line_with_rewrites(self, line: str, orig_line_idx: int):
-        text = self._emit_rewritten_segment(
-            line.rstrip("\r\n"), orig_line_idx, 0, self.generated_line_idx, 0
-        )
+        self.shadowed = self.local_form_names.get(orig_line_idx, set())
+        try:
+            text = self._emit_rewritten_segment(
+                line.rstrip("\r\n"), orig_line_idx, 0, self.generated_line_idx, 0
+            )
+        finally:
+            self.shadowed = set()
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
@@ -771,6 +817,8 @@ class Transpiler:
         pieces: List[Piece] = []
         pos = 0
         for match in self.form_chain_re.finditer(text):
+            if match.group(1) in self.shadowed:
+                continue
             if match.start() > pos:
                 pieces.append((text[pos : match.start()], pos))
             for piece, offset in rewrite_form_chain(match.group(1), match.group(2)):

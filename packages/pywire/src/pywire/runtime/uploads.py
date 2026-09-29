@@ -11,8 +11,11 @@ Staged files expire (an hour by default), so a handler keeps what it needs.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
+import mimetypes
 import os
 import re
 import secrets
@@ -40,6 +43,18 @@ MAX_REFS = 100
 
 _ID = re.compile(r"[0-9a-f]{8,12}-[0-9a-f]{32}")
 _EXT = re.compile(r"\.[A-Za-z0-9]{1,10}")
+# Types a browser renders or runs when a store serves them.
+_ACTIVE_TYPES = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "image/svg+xml",
+        "text/xml",
+        "application/xml",
+        "text/javascript",
+        "application/javascript",
+    }
+)
 
 
 class Upload:
@@ -76,6 +91,20 @@ class Upload:
         ext = os.path.splitext(self.filename)[1]
         return ext.lower() if _EXT.fullmatch(ext) else ""
 
+    def _stored_extension(self) -> str:
+        """The extension a random key gets: the filename's, unless it names a
+        type browsers run (a page, SVG, a script) and the file was declared
+        as something else. ``evil.html`` sent as ``image/png`` (which passes
+        ``accept="image/*"``) is kept as ``.png``, so a store served to
+        browsers never serves it as a page."""
+        ext = self.extension
+        named = mimetypes.guess_type("x" + ext)[0] if ext else None
+        declared = self.content_type.split(";", 1)[0].strip().lower()
+        if named not in _ACTIVE_TYPES or named == declared:
+            return ext
+        guessed = mimetypes.guess_extension(declared) if declared else None
+        return guessed if guessed and _EXT.fullmatch(guessed) else ""
+
     async def read(self) -> bytes:
         """The whole file."""
         return await self._store.get(self._key)
@@ -105,7 +134,7 @@ class Upload:
             return str(path)
         name = check_key(key) if key is not None else secrets.token_hex(16)
         if key is None:
-            name += self.extension
+            name += self._stored_extension()
         await to.put(name, self.stream(), content_type=self.content_type)
         return name
 
@@ -167,6 +196,53 @@ def format_size(size: int) -> str:
     return f"{size} B"
 
 
+def runtime_parent() -> str:
+    """One runtime folder per user, so users never share one in /tmp."""
+    getuid = getattr(os, "getuid", None)
+    return f"pywire_runtime-{getuid()}" if getuid is not None else "pywire_runtime"
+
+
+def private_dir(path: Path) -> Path:
+    """``path``, created readable by this user only (staged uploads and
+    upload tokens live in it). Refuses a folder someone else made first."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = path.resolve()
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None:
+        for folder in (path.parent, path):
+            info = folder.stat()
+            if info.st_uid != getuid():
+                raise RuntimeError(
+                    f"PyWire: {folder} belongs to another user; remove it or "
+                    "set TMPDIR to a private folder."
+                )
+            if info.st_mode & 0o077:
+                folder.chmod(0o700)
+    return path
+
+
+def machine_key(path: Path) -> bytes:
+    """A random 32-byte key kept at ``path`` (in a private folder), created
+    by whichever process asks first, so processes on one machine share it."""
+    for _ in range(50):
+        try:
+            key = path.read_bytes()
+        except FileNotFoundError:
+            key = b""
+        if len(key) == 32:
+            return key
+        temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
+        temp.write_bytes(secrets.token_bytes(32))
+        temp.chmod(0o600)
+        try:
+            os.link(temp, path)  # fails if another process got there first
+        except FileExistsError:
+            pass
+        finally:
+            temp.unlink(missing_ok=True)
+    raise RuntimeError(f"PyWire: can't read the key at {path}")
+
+
 class _TooLarge(Exception):
     pass
 
@@ -191,8 +267,13 @@ class Staging:
         filename: str,
         content_type: str,
         limit: int,
+        owner: Optional[str] = None,
     ) -> Optional[str]:
-        """Store one file; its id, or None when it is larger than ``limit``."""
+        """Store one file; its id, or None when it is larger than ``limit``.
+
+        ``owner`` is the upload token of the page that sent it: a reference
+        to the file then resolves only when it carries the same token.
+        """
         self._cleanup_soon()
         upload_id = f"{int(time.time()):x}-{secrets.token_hex(16)}"
         key = PREFIX + upload_id
@@ -213,14 +294,26 @@ class Staging:
             if size > limit:
                 return None
             raise
-        meta = {"filename": filename, "content_type": content_type, "size": size}
+        meta: Dict[str, Any] = {
+            "filename": filename,
+            "content_type": content_type,
+            "size": size,
+        }
+        if owner is not None:
+            meta["owner"] = _owner_hash(owner)
         await self.store.put(
             key + ".json", json.dumps(meta).encode(), content_type="application/json"
         )
         return upload_id
 
-    async def get(self, upload_id: object) -> Optional[Upload]:
-        """The staged file, or None for an unknown, malformed or expired id."""
+    async def get(
+        self, upload_id: object, token: object = None, *, trusted: bool = False
+    ) -> Optional[Upload]:
+        """The staged file, or None for an unknown, malformed or expired id.
+
+        A file uploaded with a page's token needs that token too, unless the
+        id is ``trusted`` (it came from state the server signed).
+        """
         if not isinstance(upload_id, str) or not _ID.fullmatch(upload_id):
             return None
         if int(upload_id.split("-", 1)[0], 16) + self.ttl < time.time():
@@ -241,7 +334,20 @@ class Staging:
             and isinstance(size, int)
         ):
             return None
+        owner = meta.get("owner")
+        if owner is not None and not trusted:
+            if not isinstance(token, str) or not hmac.compare_digest(
+                str(owner), _owner_hash(token)
+            ):
+                return None
         return Upload(filename, content_type, size, self.store, key)
+
+    async def discard(self, upload_ids: List[str]) -> None:
+        """Delete staged files no handler will get (the request failed)."""
+        for upload_id in upload_ids:
+            if _ID.fullmatch(upload_id):
+                await self.store.delete(PREFIX + upload_id)
+                await self.store.delete(PREFIX + upload_id + ".json")
 
     async def cleanup(self) -> int:
         """Delete expired files; how many were removed."""
@@ -279,8 +385,12 @@ async def part_chunks(part: Any) -> AsyncIterator[bytes]:
         yield chunk
 
 
+def _owner_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _ref(value: Any) -> Optional[str]:
-    if isinstance(value, Mapping) and len(value) == 1:
+    if isinstance(value, Mapping) and set(value) <= {"_upload_id", "_upload_token"}:
         upload_id = value.get("_upload_id")
         if isinstance(upload_id, str):
             return upload_id
@@ -296,11 +406,13 @@ def has_upload_refs(form_data: Mapping[str, Any]) -> bool:
 
 
 async def resolve_uploads(
-    staging: Staging, form_data: Mapping[str, Any]
+    staging: Staging, form_data: Mapping[str, Any], *, trusted: bool = False
 ) -> Dict[str, Any]:
-    """Replace ``{"_upload_id": ...}`` references in submitted data with Uploads.
+    """Replace ``{"_upload_id": ..., "_upload_token": ...}`` references in
+    submitted data with Uploads.
 
-    Unknown or expired ids are dropped, as if no file had been chosen.
+    Unknown or expired ids, and ids sent without the token of the page that
+    uploaded them, are dropped, as if no file had been chosen.
     """
     budget = MAX_REFS
     out: Dict[str, Any] = {}
@@ -315,7 +427,9 @@ async def resolve_uploads(
             if upload_id is None or budget <= 0:
                 continue
             budget -= 1
-            upload = await staging.get(upload_id)
+            upload = await staging.get(
+                upload_id, v.get("_upload_token"), trusted=trusted
+            )
             if upload is not None:
                 files.append(upload)
         if isinstance(value, list):
@@ -342,7 +456,8 @@ def staging_for(page: Any) -> Staging:
     if _default is None:
         import tempfile
 
-        _default = Staging(LocalStore(Path(tempfile.gettempdir()) / "pywire_uploads"))
+        folder = Path(tempfile.gettempdir()) / runtime_parent() / "uploads"
+        _default = Staging(LocalStore(private_dir(folder)))
     return _default
 
 

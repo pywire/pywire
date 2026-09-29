@@ -27,10 +27,12 @@ async def _chunks(*parts: bytes):
 
 def _stores(tmp_path: Path):
     obstore = pytest.importorskip("obstore.store")
+    (tmp_path / "obj").mkdir()
     return [
         LocalStore(tmp_path / "files"),
         MemoryStore(),
         ObjectStore(obstore.MemoryStore()),
+        ObjectStore(obstore.LocalStore(tmp_path / "obj")),
     ]
 
 
@@ -44,7 +46,7 @@ def test_stores_share_one_interface(tmp_path):
         assert b"".join([c async for c in store.stream("a/two.txt")]) == b"world"
         assert await store.exists("a/one.txt")
         assert not await store.exists("a/nope.txt")
-        assert [k async for k in store.list("a/")] == ["a/one.txt", "a/two.txt"]
+        assert sorted([k async for k in store.list("a/")]) == ["a/one.txt", "a/two.txt"]
         await store.delete("a/one.txt")
         await store.delete("a/one.txt")  # missing: no error
         with pytest.raises(FileNotFoundError):
@@ -57,7 +59,8 @@ def test_stores_share_one_interface(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "key", ["", "/abs", "../up", "a/../b", "a//b", "a/./b", "a\\b", "a/", 7]
+    "key",
+    ["", "/abs", "../up", "a/../b", "a//b", "a/./b", "a\\b", "a/", "C:/x", "C:x", 7],
 )
 def test_unsafe_keys_are_refused(tmp_path, key):
     async def run(store: FileStore) -> None:
@@ -245,6 +248,7 @@ def _upload(name: str, ctype: str, size: int) -> Upload:
 
 def _errors(**files):
     f = form(Profile)
+    f._editable.update(["avatar", "papers"])  # as if rendered
     got = []
 
     async def run():
@@ -278,6 +282,7 @@ def test_upload_field_checks_size_type_and_count():
 
 def test_upload_field_error_codes():
     f = form(Profile)
+    f._editable.add("avatar")
     asyncio.run(
         f._pw_submit(
             None,
@@ -293,3 +298,72 @@ def test_upload_field_rejects_bad_rules():
         UploadField(max_files=0)
     with pytest.raises(ValueError):
         UploadField(max_size="lots")
+
+
+def test_an_owned_upload_needs_its_token():
+    staging = Staging(MemoryStore())
+    upload_id = asyncio.run(
+        staging.stage(
+            _chunks(b"x"),
+            filename="a.png",
+            content_type="image/png",
+            limit=10,
+            owner="tok",
+        )
+    )
+    assert asyncio.run(staging.get(upload_id)) is None
+    assert asyncio.run(staging.get(upload_id, "other")) is None
+    assert asyncio.run(staging.get(upload_id, "tok")) is not None
+    # Ids from state the server signed (a wizard's earlier steps).
+    assert asyncio.run(staging.get(upload_id, trusted=True)) is not None
+
+    data = asyncio.run(
+        resolve_uploads(
+            staging, {"a": {"_upload_id": upload_id, "_upload_token": "tok"}}
+        )
+    )
+    assert isinstance(data["a"], Upload)
+
+
+def test_pages_built_without_a_request_use_the_apps_staging(tmp_path):
+    from pywire.runtime.app import PyWire
+    from pywire.runtime.page_resolver import resolve_page
+    from pywire.runtime.uploads import staging_for
+
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "index.wire").write_text("<p>x</p>\n")
+    app = PyWire(pages_dir=str(pages), upload_store=MemoryStore())
+    # How the Cloudflare Durable Object template builds pages.
+    page, _, _ = resolve_page(app.router, "/", app=app)
+    assert staging_for(page) is app.uploads
+
+
+def test_save_never_keeps_a_page_extension_on_another_type():
+    store = MemoryStore()
+
+    def saved(name: str, ctype: str) -> str:
+        staging = Staging(MemoryStore())
+        upload_id = asyncio.run(
+            staging.stage(_chunks(b"x"), filename=name, content_type=ctype, limit=9)
+        )
+        upload = asyncio.run(staging.get(upload_id))
+        assert upload is not None
+        return asyncio.run(upload.save(store))
+
+    assert saved("evil.html", "image/png").endswith(".png")
+    assert saved("evil.svg", "image/png").endswith(".png")
+    assert saved("page.html", "text/html").endswith(".html")
+    assert saved("a.zip", "application/octet-stream").endswith(".zip")
+    assert saved("photo.JPG", "image/jpeg").endswith(".jpg")
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "getuid"), reason="POSIX only")
+def test_staged_files_are_private(tmp_path):
+    from pywire.runtime.app import PyWire
+
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    app = PyWire(pages_dir=str(pages))
+    assert app._runtime_dir.stat().st_mode & 0o077 == 0
+    assert app._runtime_dir.parent.stat().st_mode & 0o077 == 0

@@ -52,9 +52,11 @@ def results():
 </ul>
 ```
 
-The value is converted to the type the wire holds: a wire holding an `int` gets an `int`, a lone checkbox bound to a `bool` wire gets `True` or `False`, and checkboxes or a `<select multiple>` bound to a list wire get a list. Radios and a plain `<select>` set one value. Text boxes send after the user pauses typing ([the default `@input` debounce](/syntax/event-modifiers/#default-timing)); everything else sends on change.
+The value is converted to the type the wire holds: a wire holding an `int` gets an `int`, an enum gets the member with that value, a date gets a date, a lone checkbox bound to a `bool` wire gets `True` or `False`, and checkboxes or a `<select multiple>` bound to a list wire get a list. A value that doesn't convert (text in a number box, `NaN`) leaves the wire as it was. Radios and a plain `<select>` set one value. Text boxes send after the user pauses typing ([the default `@input` debounce](/syntax/event-modifiers/#default-timing)); everything else sends on change.
 
-Binding a wire needs no Pydantic, and nothing is validated. Use a bound form when the value has rules.
+The server only writes a wire through an element the page rendered, and not one rendered `disabled`, `readonly` or `type="hidden"`. A `<select>` or a checkbox only sets the values it offered. A `$for` variable can't be bound to a wire; bind the wire by its own name.
+
+Binding a wire needs no Pydantic, and nothing else is validated. Use a bound form when the value has rules.
 
 ## Bound forms
 
@@ -230,7 +232,7 @@ def on_load():
     profile.load(fetch_profile())  # replace the initial values
 ```
 
-A field rendered `disabled` or `readonly` is owned by the server: on submit it keeps the value the server rendered, whatever the request says. A field marked `SkipJsonSchema` never renders and is never read from the request, which suits values like `owner_id` that only the server sets.
+A submit only reads the fields the page rendered with `$bind`. A field the page has not rendered, because the template leaves it out or an `$if` around it has stayed false, keeps its initial value (or the model default), whatever the request says. So an edit form can leave `id`, `owner_id` or `role` out of the template, and the handler still gets them from `initial`. A field rendered `disabled` or `readonly` is owned by the server the same way: on submit it keeps the value the server rendered.
 
 ### Nested models and lists
 
@@ -245,7 +247,7 @@ Nested models use dotted names, and list rows use their index:
 </div>
 ```
 
-These post as `address.street`, `items.0.name` and `items.0.qty`. The server stops reading rows past the model's `max_length` and reports the excess, so a client can't send a thousand of them.
+These post as `address.street`, `items.0.name` and `items.0.qty`. Only the rows the page rendered are read, so a client can't add rows by posting them, and the server reports rows past the model's `max_length`.
 
 To let people add and remove rows, spread `add_button` onto a button for the list and `remove_button` onto one in each row:
 
@@ -310,7 +312,7 @@ async def save(data: Profile):
 | ----------- | -------------------------------------------------------------------------------------- | -------------- |
 | `accept`    | Types and extensions, as in HTML: `"image/*"`, `"image/png"`, `".pdf, .docx"`          | `fileType`     |
 | `max_size`  | Bytes, or a string like `"500 KB"`, `"2 MB"` or `"1 MiB"` (KB is 1000 bytes, KiB 1024) | `fileTooLarge` |
-| `max_files` | The most files a `list[Upload]` takes                                                  | `tooManyFiles` |
+| `max_files` | The most files a `list[Upload]` takes (a post carries at most 10)                      | `tooManyFiles` |
 
 `accept` is checked against the declared content type and the filename, as the browser does. It says nothing about what the bytes really are, so check the content yourself before you trust it (for example, open an image with Pillow).
 
@@ -404,7 +406,7 @@ async def create(data: Signup):
 
 Submitting a step validates that step only and moves to the next. The last step validates the whole model and calls the handler with it, so a `model_validator` that compares fields on different steps runs there; if a field on an earlier step fails, the wizard goes back to that step. `back_button` goes back a step without validating and keeps what was typed.
 
-A wizard works with JavaScript off and in stateless mode. What earlier steps held travels with the form in a hidden input, signed so it can't be altered; processes that serve the same app must share `PyWire(secret_key=...)` to accept each other's forms. It is signed, not encrypted, so the browser can read it. That's why secret fields (`SecretStr`) are never carried: they must be on the last step, where they are posted with the final submit, and `wizard()` raises a `TypeError` for a model that puts one earlier. Files picked on earlier steps travel as upload references and reach the handler as `Upload`s.
+A wizard works with JavaScript off and in stateless mode. What earlier steps held travels with the form in a hidden input, signed so it can't be altered; processes that serve the same app must share `PyWire(secret_key=...)` to accept each other's forms. It is signed, not encrypted, so the browser can read it, and it is accepted for an hour after the step was shown, like a staged upload. That's why secret fields (`SecretStr`) are never carried: they must be on the last step, where they are posted with the final submit, and `wizard()` raises a `TypeError` for a model that puts one earlier. Files picked on earlier steps travel as upload references and reach the handler as `Upload`s.
 
 | Wizard member          | Description                                          |
 | ---------------------- | ---------------------------------------------------- |
@@ -430,13 +432,15 @@ A bound form always renders `method="post"` and a hidden field naming its submit
 
 The values and errors come from the submitted fields themselves, so a no-JavaScript submit in stateless mode re-renders correctly even without a snapshot. Files take one path in every mode: they are staged in [the upload store](#where-files-are-kept) as they arrive, and the handler reads them from there.
 
+In non-interactive mode the session keeps page state, forms included, for the last page served only. Leaving `/signup` for another page and coming back starts the form fresh.
+
 ## What the server enforces
 
 - Only the generated submit handler can be reached from a request. Your handler is called with a validated model and is never directly dispatchable.
-- Only fields in the model's schema are read. Extra fields, even on a model with `extra="allow"`, never reach it.
-- Native form posts from another site are refused with a 403 (checked with `Sec-Fetch-Site` and `Origin`).
+- Only fields the page rendered with `$bind` are read. Other model fields keep their initial or default value, and names outside the model never reach it, even on a model with `extra="allow"`.
+- Native form posts from another site are refused with a 403 (checked with `Sec-Fetch-Site` and `Origin`). A post runs the page's `@before_load` hooks and auth checks first, exactly like a GET, and nothing is dispatched if they stop the page.
 - Secrets (`SecretStr`) are never echoed back into the page, kept in a snapshot or carried between wizard steps. Binding a plain `str` field to `type="password"` is an error in debug mode, so a password can't slip through as ordinary text.
-- An upload reference only resolves to a file this app staged in the last hour. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload.
+- An upload reference only resolves to a file this app staged in the last hour, for the page that uploaded it. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload. A native post, and each upload, carries at most 10 files and 1 MB of other fields, and its size is counted as it arrives.
 - List fields are capped, and add and remove buttons only act on lists the model declares.
 - Wizard state that doesn't carry this app's signature is ignored.
 

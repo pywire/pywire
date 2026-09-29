@@ -91,6 +91,12 @@ export class PyWireApp {
    * update is applied so we can dispatch `pywire:navigate`.
    */
   protected pendingNavigationPath: string | null = null
+  /**
+   * Path (and query) of the page the DOM shows. Events are stamped with it,
+   * not with `location`, which changes before the new page arrives.
+   */
+  protected pagePath: string =
+    typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/'
 
   constructor(config: Partial<PyWireConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -362,6 +368,10 @@ export class PyWireApp {
    * Setup SPA navigation for sibling paths.
    */
   protected setupSPANavigation(): void {
+    // Leaving for another document (a plain link, closing the tab): send
+    // what the page still owes while the connection is up.
+    window.addEventListener('pagehide', () => this.eventHandler?.flushPending())
+
     // Handle browser back/forward — dispatch beforenavigate then request new page
     window.addEventListener('popstate', () => {
       const targetPath = window.location.pathname + window.location.search
@@ -373,6 +383,7 @@ export class PyWireApp {
           detail: { from: targetPath, to: targetPath },
         })
       )
+      this.leavePage()
       if (this.config.interactive === false) {
         this.httpNavigate(targetPath)
       } else {
@@ -462,6 +473,7 @@ export class PyWireApp {
       })
     )
 
+    this.leavePage()
     history.pushState({}, '', path)
 
     if (this.config.interactive === false) {
@@ -469,6 +481,15 @@ export class PyWireApp {
     } else {
       this.sendRelocate(path)
     }
+  }
+
+  /**
+   * Send what the current page still owes (debounced input, trailing
+   * throttled events) while the server is still on it. Anything sent after
+   * this, until the next page arrives, is dropped (see `sendEvent`).
+   */
+  protected leavePage(): void {
+    this.eventHandler?.flushPending()
   }
 
   /**
@@ -516,6 +537,7 @@ export class PyWireApp {
 
       const html = await response.text()
       this.updater.update(html)
+      this.pagePath = window.location.pathname + window.location.search
       this.eventHandler?.refreshListeners()
       // The new page may have a different `!no_interactive` setting —
       // re-read the meta script so the per-page flag is current.
@@ -570,12 +592,14 @@ export class PyWireApp {
         redirect: 'follow',
       })
 
-      // A 422 is a bound form that failed validation: the body is this page
-      // with the submitted values and errors, so it morphs like a success.
-      // Other 4xx/5xx responses carry the error page — a different document.
-      // Morphing it into the current DOM would leak its styles into the
-      // host app. Fall back to a full navigation.
-      if (!response.ok && response.status !== 422) {
+      // A 422 marked by pywire is a bound form that failed validation: the
+      // body is this page with the submitted values and errors, so it morphs
+      // like a success. Other 4xx/5xx responses carry the error page — a
+      // different document. Morphing it into the current DOM would leak its
+      // styles into the host app. Fall back to a full navigation.
+      const invalidForm =
+        response.status === 422 && response.headers.get('X-PyWire-Form') === 'invalid'
+      if (!response.ok && !invalidForm) {
         window.location.href = path
         return
       }
@@ -612,10 +636,16 @@ export class PyWireApp {
    */
   sendEvent(handler: string, data: EventData): number {
     const id = ++this.lastEventId
+    if (this.pendingNavigationPath !== null) {
+      // The page this came from is on its way out: its handler names mean
+      // something else on the next page.
+      logger.log('PyWire: dropped an event sent during navigation', handler)
+      return id
+    }
     const message: ClientMessage = {
       type: 'event',
       handler,
-      path: window.location.pathname + window.location.search,
+      path: this.pagePath,
       data,
       id,
     }
@@ -630,9 +660,13 @@ export class PyWireApp {
     switch (msg.type) {
       case 'update': {
         // Capture and clear pending navigation before applying the update,
-        // so we can dispatch pywire:navigate after the DOM settles.
-        const navPath = this.pendingNavigationPath
-        this.pendingNavigationPath = null
+        // so we can dispatch pywire:navigate after the DOM settles. A reply
+        // to an event (it carries `ack`) sent before navigating isn't it.
+        const navPath = msg.ack == null ? this.pendingNavigationPath : null
+        if (navPath !== null) {
+          this.pendingNavigationPath = null
+          this.pagePath = window.location.pathname + window.location.search
+        }
 
         if (msg.commands && msg.commands.length > 0) {
           msg.commands.forEach((cmd: Command) => {
@@ -662,7 +696,7 @@ export class PyWireApp {
         // reconciled in-region markers/classes; settle the predictions of the
         // event it answers that the morph never reached.
         clearPending(msg.ack)
-        settleForms()
+        settleForms(msg.ack ?? null)
         // Same signal for @poll: a response arrived (even an empty one), so
         // clear the per-element in-flight overlap guard.
         clearPollInFlight()
@@ -716,7 +750,7 @@ export class PyWireApp {
         // No morph is coming — revert the optimistic prediction so a failed
         // control is never left stuck disabled (review focus #8).
         revertPending(msg.ack)
-        releaseForms()
+        releaseForms(msg.ack)
         // A poll dispatch that errored is no longer in flight — let the next
         // tick retry.
         clearPollInFlight()
@@ -726,7 +760,7 @@ export class PyWireApp {
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
         revertPending(msg.ack)
-        releaseForms()
+        releaseForms(msg.ack)
         clearPollInFlight()
         break
 

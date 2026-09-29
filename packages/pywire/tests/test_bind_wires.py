@@ -154,6 +154,7 @@ def test_selects_and_textarea(page):
         ('<input type="checkbox" $bind={colors}>', "needs a value="),
         ("<select $bind={search}></select>", "<option>s written out"),
         ("{$for q in [search]}<input $bind={q}>{/for}", "by its name"),
+        ("{$for search in [search]}<input $bind={search}>{/for}", "by its own name"),
     ],
 )
 def test_mistakes_are_explained(tmp_path, markup, message):
@@ -161,3 +162,75 @@ def test_mistakes_are_explained(tmp_path, markup, message):
     page = _load(tmp_path, src + markup + "\n")
     with pytest.raises(BindError, match=message):
         _render(page)
+
+
+GUARDED = """---
+import datetime, decimal, enum
+
+class Role(enum.Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+is_admin = False
+role = wire(Role.USER)
+plan = wire("free")
+note = wire("n")
+ratio = wire(1.0)
+price = wire(decimal.Decimal("9.99"))
+day = wire(datetime.date(2026, 1, 1))
+secret = wire("s")
+---
+<select id="role" $bind={role}><option value="user">User</option><option value="admin">Admin</option></select>
+<select id="plan" $bind={plan} disabled={not is_admin}><option value="free">Free</option></select>
+<select id="pick" $bind={plan}><option value="free">Free</option><option value="pro">Pro</option></select>
+<input id="note" $bind={note} readonly>
+<input id="ratio" $if={is_admin} $bind={ratio}>
+<input id="price" $bind={price}>
+<input id="day" type="date" $bind={day}>
+<input id="secret" type="hidden" $bind={secret}>
+"""
+
+
+def test_only_what_the_page_rendered_editable_is_written(tmp_path):
+    page = _load(tmp_path, GUARDED)
+    html = _render(page)
+    _send(page, html, r'<select[^>]*id="plan"[^>]*>', "change", value="enterprise")
+    _send(page, html, r'<input[^>]*id="note"[^>]*>', "input", value="forged")
+    _send(page, html, r'<input[^>]*id="secret"[^>]*>', "change", value="x")
+    assert (page.plan.value, page.note.value, page.secret.value) == ("free", "n", "s")
+
+    # The $if never rendered its box, so its handler takes nothing.
+    names = sorted(n for n in type(page).__event_handlers__ if "_bind_" in n)
+    shown = set(re.findall(r'data-on-\w+="([^"]+)"', html))
+    for hidden in set(names) - shown:
+        asyncio.run(page.handle_event(hidden, {"type": "input", "value": "2"}))
+    assert page.ratio.value == 1.0
+
+    # A select takes only the options it offered.
+    pick = r'<select[^>]*id="pick"[^>]*>'
+    _send(page, html, pick, "change", value="enterprise")
+    assert page.plan.value == "free"
+    _send(page, html, pick, "change", value="pro")
+    assert page.plan.value == "pro"
+
+
+def test_wires_keep_their_type(tmp_path):
+    page = _load(tmp_path, GUARDED)
+    html = _render(page)
+    assert re.search(r'<option value="user" selected>', html)
+    role = r'<select[^>]*id="role"[^>]*>'
+    _send(page, html, role, "change", value="admin")
+    assert page.role.value is type(page.role.value).ADMIN
+
+    price = r'<input[^>]*id="price"[^>]*>'
+    for bad in ("NaN", "sNaN", "Infinity", "abc"):
+        _send(page, html, price, "input", value=bad)
+    assert str(page.price.value) == "9.99"
+    _send(page, html, price, "input", value="12.50")
+    assert str(page.price.value) == "12.50"
+
+    day = r'<input[^>]*id="day"[^>]*>'
+    _send(page, html, day, "change", value="2026-02-03")
+    assert page.day.value.isoformat() == "2026-02-03"
+    _send(page, html, day, "change", value="not a date")
+    assert page.day.value.isoformat() == "2026-02-03"

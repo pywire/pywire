@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: "0 0 * * 1" # Weekly on Monday
 
+permissions:
+  contents: read
+
 # New pushes to a PR supersede older runs; main runs are never cancelled.
 concurrency:
   group: codeql-${{ github.ref }}
@@ -17,14 +20,17 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
-    # Skip release-please: PR branches and merge commits to main
+    # Skip release-please: PR branches and merge commits to main (only this
+    # repo's own branches; a fork PR can pick any branch name)
     if: >-
       github.event_name == 'schedule'
       || (github.event_name == 'pull_request'
-          && !startsWith(github.head_ref, 'release-please--'))
+          && !(startsWith(github.head_ref, 'release-please--')
+               && github.event.pull_request.head.repo.full_name == github.repository))
       || (github.event_name == 'push'
           && !startsWith(github.event.head_commit.message, 'chore(main): release'))
     permissions:
+      contents: read
       security-events: write
     strategy:
       fail-fast: false
@@ -35,11 +41,11 @@ jobs:
           - language: python
             build-mode: none
     steps:
-      - uses: actions/checkout@v7
-      - uses: github/codeql-action/init@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: "/language:${{ matrix.language }}"

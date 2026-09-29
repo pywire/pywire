@@ -195,6 +195,40 @@ def test_disabled_fields_are_server_owned(page):
     assert page.signup.value.note is None
 
 
+def test_fields_the_page_never_rendered_keep_their_value(tmp_path):
+    src = """---
+from pydantic import BaseModel
+from pywire import form
+
+class Profile(BaseModel):
+    name: str
+    role: str = "user"
+    note: str = ""
+
+profile = form(Profile, initial={"role": "editor"})
+show = wire(False)
+got = wire(None)
+
+def save(data: Profile):
+    got.value = data
+---
+<form $bind={profile} @submit={save}>
+  <input $bind={profile.name}>
+  <div $if={show}><input $bind={profile.note}></div>
+</form>
+"""
+    p = _page(_load(tmp_path, src))
+    _render(p)
+    forged = {"name": "Al", "role": "admin", "note": "hi"}
+    asyncio.run(p.handle_event("_handler_0", {"formData": forged}))
+    assert (p.got.value.role, p.got.value.note) == ("editor", "")
+    # Once rendered, a field is read.
+    p.show.value = True
+    asyncio.run(p.render_update())
+    asyncio.run(p.handle_event("_handler_0", {"formData": forged}))
+    assert (p.got.value.role, p.got.value.note) == ("editor", "hi")
+
+
 def test_bind_on_other_tags_is_a_compile_error(tmp_path):
     src = (
         "---" + MODEL + "signup = form(Signup)\n---\n<div $bind={signup.email}></div>\n"
@@ -208,7 +242,34 @@ def test_bound_form_must_be_page_level(tmp_path):
         "---" + MODEL + "forms = [form(Signup)]\n---\n"
         "{$for f in forms}<form $bind={f}></form>{/for}\n"
     )
-    with pytest.raises(PyWireSyntaxError, match="must name a form defined"):
+    with pytest.raises(PyWireSyntaxError, match="is a \\$for loop variable"):
+        _load(tmp_path, src)
+    # Also when the loop variable shadows a page-level form.
+    src = (
+        "---" + MODEL + "forms = [form(Signup)]\nf = form(Signup)\n---\n"
+        "{$for f in forms}<form $bind={f}></form>{/for}\n"
+    )
+    with pytest.raises(PyWireSyntaxError, match="is a \\$for loop variable"):
+        _load(tmp_path, src)
+
+
+def test_generated_handler_names_are_reserved(tmp_path):
+    src = (
+        "---" + MODEL + "signup = form(Signup)\n"
+        "def _handler_0(event=None):\n    pass\n---\n"
+        "<form $bind={signup}></form>\n"
+    )
+    with pytest.raises(PyWireSyntaxError, match="reserved for the event handlers"):
+        _load(tmp_path, src)
+
+
+def test_bound_submit_handler_cannot_be_wired_elsewhere(tmp_path):
+    src = (
+        "---" + MODEL + "signup = form(Signup)\ndef save(data):\n    pass\n---\n"
+        "<form $bind={signup} @submit={save}></form>\n"
+        "<button @click={save}>Save</button>\n"
+    )
+    with pytest.raises(PyWireSyntaxError, match="only ever gets a validated model"):
         _load(tmp_path, src)
 
 
@@ -300,9 +361,55 @@ saved = wire("")
 def create(data: Signup):
     saved.value = data.name
 ---
-<form $bind={signup} @submit={create}><input $bind={signup.name}></form>
+<form $bind={signup} @submit={create}>
+  <input $bind={signup.email}><input $bind={signup.name}>
+  <input $bind={signup.age}><input $bind={signup.terms}>
+</form>
 """
 )
+
+
+def test_bound_submit_can_be_a_callback_prop(tmp_path, monkeypatch):
+    from pywire.runtime.importer import install_import_hook
+
+    install_import_hook()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "save_box.wire").write_text(
+        "---"
+        + MODEL
+        + """
+from typing import Optional
+from pywire import EventHandler, props
+
+@props
+class Props:
+    on_save: Optional[EventHandler] = None
+
+signup = form(Signup)
+---
+<form $bind={signup} @submit={on_save}>
+  <input $bind={signup.email}><input $bind={signup.name}>
+  <input $bind={signup.age}><input $bind={signup.terms}>
+</form>
+"""
+    )
+    parent = """---
+from save_box import SaveBox
+got = wire("")
+
+def saved(data):
+    got.value = data.name
+---
+<SaveBox on_save={saved} />
+"""
+    try:
+        p = _page(_load(tmp_path, parent, "parent"))
+        html = _render(p)
+        handler = re.search(r'data-on-submit="([^"]+)"', html).group(1)
+        asyncio.run(p.handle_event(handler, {"formData": VALID}))
+        assert p.got.value == "Al"
+    finally:
+        sys.modules.pop("save_box", None)
 
 
 def test_bound_form_inside_a_component(tmp_path, monkeypatch):

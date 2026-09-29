@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pywire/pywire/compare/pywire-templates-v0.2.0...pywire-templates-v0.3.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** edge stateless mode — stateless snapshots, keyed regions, optimistic UI ([#282](https://github.com/pywire/pywire/issues/282)) ([6bf40d7](https://github.com/pywire/pywire/commit/6bf40d72c3311003b94976bd26ef13ff77ce5f7f))
+
 ## [0.2.0](https://github.com/pywire/pywire/compare/pywire-templates-v0.1.0...pywire-templates-v0.2.0) (2026-04-21)
 
 

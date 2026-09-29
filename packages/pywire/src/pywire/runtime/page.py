@@ -686,6 +686,11 @@ class BasePage:
         dep_versions: Dict[Tuple[Any, str], int] = {
             key: getattr(key[0], "_write_seq", 0) for key in captured
         }
+        # A nested component's output is part of this one's, so its wires
+        # invalidate this cache too (its own memo already includes its
+        # children's).
+        for child in comp._components.values():
+            dep_versions.update(getattr(child, "_pw_memo_dep_versions", None) or {})
 
         comp._pw_memo_props = props_snapshot  # type: ignore[attr-defined]
         comp._pw_memo_html = html  # type: ignore[attr-defined]
@@ -813,16 +818,27 @@ class BasePage:
             raise ValueError(f"Malformed component event '{event_name}'")
         return comp_key, remainder
 
+    def _pw_file_fields(self) -> Optional[Set[str]]:
+        """Names of the plain file inputs in this page and its components,
+        or None when one has a name only known at render time."""
+        root: BasePage = self
+        while root._parent_page is not None:
+            root = root._parent_page
+        names: Set[str] = set()
+        pending: List[BasePage] = [root]
+        while pending:
+            page = pending.pop()
+            fields = getattr(page, "__file_fields__", frozenset())
+            if fields is None:
+                return None
+            names |= fields
+            pending.extend(page._components.values())
+        return names
+
     async def _dispatch_handler(
         self, event_name: str, event_data: Dict[str, Any]
     ) -> None:
         self._sync_ref_data(event_data)
-
-        form_data = event_data.get("formData")
-        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
-            # Files arrive as ids of staged uploads; handlers get Uploads.
-            event_data = dict(event_data)
-            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
         # Framework-generated handlers are always allowed (form wrappers, bindings)
         is_framework_handler = event_name.startswith(
@@ -855,6 +871,17 @@ class BasePage:
                 event_name,
             )
             return
+
+        form_data = event_data.get("formData")
+        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
+            # Files arrive as ids of staged uploads; handlers get Uploads.
+            # Only for a handler that may run, so a refused one costs no reads.
+            # A bound form keeps only its model's file fields; a plain handler
+            # gets files only under the names of file inputs the page has.
+            if event_name not in getattr(self, "__bound_handlers__", ()):
+                form_data = _only_file_fields(form_data, self._pw_file_fields())
+            event_data = dict(event_data)
+            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
         if event_name.startswith("_handle_bind_"):
             if inspect.iscoroutinefunction(handler):
@@ -1596,11 +1623,14 @@ class BasePage:
         # written by the user's handler — UI freezes despite the wire
         # change. Marking the parent's root (None) dirty triggers a full
         # re-render, which is the safe outcome since the parent has no
-        # finer-grained subscription for this wire.
+        # finer-grained subscription for this wire. Every ancestor, not just
+        # the parent: a component nested in a component is re-rendered only
+        # when the page at the top is.
         parent = getattr(self, "_parent_page", None)
-        if parent is not None:
+        while parent is not None:
             parent._dirty_regions.add(None)
             parent._wire_write_seq += 1
+            parent = getattr(parent, "_parent_page", None)
 
         root: Any = self
         while (up := getattr(root, "_parent_page", None)) is not None:
@@ -2072,3 +2102,16 @@ class ErrorBasePage(BasePage):
     error_code: int
     error_message: str
     error_trace: str
+
+
+def _only_file_fields(
+    form_data: Mapping[str, Any], names: Optional[Set[str]]
+) -> Mapping[str, Any]:
+    """``form_data`` without upload references under other names."""
+    if names is None:
+        return form_data
+    return {
+        key: value
+        for key, value in form_data.items()
+        if key in names or not has_upload_refs({key: value})
+    }

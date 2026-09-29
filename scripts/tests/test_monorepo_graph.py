@@ -261,6 +261,75 @@ def test_check_floors_flags_compat_entry_without_pyproject_floor(tmp_path):
     assert any("ghost" in v for v in violations), violations
 
 
+def test_check_floors_can_skip_stale_but_keeps_compat_rule(tmp_path):
+    root = make_repo(tmp_path)
+    compat = '_FLOORS = {\n    "upstream": "0.9.0",\n}\n'
+    make_unit(root, "packages/mid", MID_PYPROJECT, compat)
+    mono = mg.load(root)
+    violations = mg.check_floors(mono, {"upstream": "2.0.0", "mid": "2.0.0"}, include_stale=False)
+    assert violations and all("_FLOORS" in v for v in violations), violations
+
+
+# --- bump-floors ---
+
+EXTRAS_PYPROJECT = """
+[project]
+name = "down"
+version = "0.1.0"
+dependencies = [
+    "mid[build] >= 1.0.0",
+    "upstream>=1.2.3",
+    "upstream-plugin>=1.2.3",
+]
+
+[project.optional-dependencies]
+extra = ["upstream>=1.2.3"]
+"""
+
+
+def test_bump_floors_rewrites_every_spelling_and_compat(tmp_path):
+    root = make_repo(tmp_path)
+    compat = '_FLOORS = {\n    "mid": "1.0.0",\n    "upstream": "1.2.3",\n}\n'
+    make_unit(root, "packages/down", EXTRAS_PYPROJECT, compat)
+    mono = mg.load(root)
+    edits = mg.bump_floors(mono, {"upstream": "1.3.0", "mid": "1.1.0"})
+    assert ("packages/down", "upstream", "1.2.3", "1.3.0") in edits
+    assert ("packages/down", "mid", "1.0.0", "1.1.0") in edits
+
+    text = (root / "packages/down/pyproject.toml").read_text()
+    assert '"mid[build] >= 1.1.0"' in text
+    assert text.count('"upstream>=1.3.0"') == 2
+    assert '"upstream-plugin>=1.2.3"' in text  # a different dist, untouched
+    compat_text = (root / "packages/down/src/down/_compat.py").read_text()
+    assert '"mid": "1.1.0"' in compat_text and '"upstream": "1.3.0"' in compat_text
+
+    mono = mg.load(root)
+    assert mg.check_floors(mono, {"upstream": "1.3.0", "mid": "1.1.0"}) == []
+
+
+def test_bump_floors_noop_when_current(tmp_path):
+    mono = mg.load(make_repo(tmp_path))
+    assert mg.bump_floors(mono, {"upstream": "1.2.3", "mid": "1.0.0"}) == []
+
+
+def test_check_publishable_fresh_flags_pending_bump(tmp_path):
+    mono = mg.load(make_repo(tmp_path))
+    published = {"upstream": "1.3.0", "mid": "1.0.0"}
+    assert mg.check_publishable(mono, "down", published) == []
+    violations = mg.check_publishable(mono, "down", published, fresh=True)
+    assert len(violations) == 1 and "below published" in violations[0], violations
+
+
+def test_wait_published_ignores_names_without_dependents(tmp_path, monkeypatch):
+    mono = mg.load(make_repo(tmp_path))
+    seen = []
+    monkeypatch.setattr(mg, "fetch_published", lambda name, registry, cached=True: seen.append(name) or "1.3.0")
+    missing = mg.wait_published(mono, {"upstream": "1.3.0", "down": "9.9.9"}, timeout=0)
+    assert missing == [] and seen == ["upstream"]
+    missing = mg.wait_published(mono, {"upstream": "2.0.0"}, timeout=0)
+    assert missing == ["upstream 2.0.0"]
+
+
 # --- check-ci ---
 
 

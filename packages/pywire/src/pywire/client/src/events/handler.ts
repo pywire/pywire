@@ -2,7 +2,7 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
-import { beginSubmit, isBoundForm, releaseForms, submitterField } from './forms'
+import { beginSubmit, isBoundForm, releaseForms, submitSent, submitterField } from './forms'
 import { applyOptimistic, bindPending, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
 import { checkFiles, UploadError, Uploader, UploadRef } from './uploads'
@@ -57,8 +57,13 @@ export class UnifiedEventHandler {
   // Pending debounced sends and throttle windows, keyed per element, event
   // and handler. Both flush before any event that sends at once, in order,
   // so a handler never reads state from before the user's last keystroke.
-  private debouncers = new Map<string, { timer: number; run: () => void }>()
-  private throttlers = new Map<string, { timer: number; trailing: (() => void) | null }>()
+  private debouncers = new Map<string, { timer: number; run: () => void; seq: number }>()
+  private throttlers = new Map<
+    string,
+    { timer: number; trailing: (() => void) | null; seq: number }
+  >()
+  // Queue order of pending sends, across both maps.
+  private seq = 0
   private firedOnce = new Set<string>()
   // Fields the user has typed in, per bound form: they validate on blur.
   private dirtyFields = new WeakMap<HTMLFormElement, Set<string>>()
@@ -460,7 +465,7 @@ export class UnifiedEventHandler {
       }, timing.ms)
       // Re-insert so flush order follows the latest keystroke.
       this.debouncers.delete(key)
-      this.debouncers.set(key, { timer, run: send })
+      this.debouncers.set(key, { timer, run: send, seq: ++this.seq })
       return
     }
 
@@ -468,6 +473,7 @@ export class UnifiedEventHandler {
       const window_ = this.throttlers.get(key)
       if (window_) {
         window_.trailing = send
+        window_.seq = ++this.seq
         return
       }
       send()
@@ -571,11 +577,11 @@ export class UnifiedEventHandler {
   /** Upload references by field name: a list for `multiple` or repeated names. */
   private uploadRefs(
     inputs: HTMLInputElement[],
-    idsOf: (input: HTMLInputElement) => string[]
+    refsOf: (input: HTMLInputElement) => UploadRef[]
   ): Record<string, UploadRef | UploadRef[]> {
     const out: Record<string, UploadRef | UploadRef[]> = {}
     for (const input of inputs) {
-      const refs = idsOf(input).map((id) => ({ _upload_id: id }))
+      const refs = refsOf(input)
       if (!refs.length) continue
       const existing = out[input.name]
       if (existing === undefined && !input.multiple) {
@@ -620,7 +626,7 @@ export class UnifiedEventHandler {
   }
 
   private openThrottleWindow(key: string, ms: number): void {
-    const state = { timer: 0, trailing: null as (() => void) | null }
+    const state = { timer: 0, trailing: null as (() => void) | null, seq: 0 }
     state.timer = window.setTimeout(() => {
       this.throttlers.delete(key)
       const trailing = state.trailing
@@ -632,19 +638,22 @@ export class UnifiedEventHandler {
     this.throttlers.set(key, state)
   }
 
-  /** Send every pending debounced and trailing throttled event now. */
+  /** Send every pending debounced and trailing throttled event now, in the
+   * order they were queued. */
   flushPending(): void {
-    const debounced = Array.from(this.debouncers.values())
-    this.debouncers.clear()
-    for (const pending of debounced) {
+    const queued: Array<{ seq: number; run: () => void }> = []
+    for (const pending of this.debouncers.values()) {
       window.clearTimeout(pending.timer)
-      pending.run()
+      queued.push(pending)
     }
+    this.debouncers.clear()
     for (const state of this.throttlers.values()) {
       const trailing = state.trailing
       state.trailing = null
-      if (trailing) trailing()
+      if (trailing) queued.push({ seq: state.seq, run: trailing })
     }
+    queued.sort((a, b) => a.seq - b.seq)
+    for (const pending of queued) pending.run()
   }
 
   private timingFor(eventType: string, modifiers: string[], target: EventTarget | null): Timing {
@@ -657,7 +666,7 @@ export class UnifiedEventHandler {
     const configured = this.app.getConfig().eventDefaults?.[eventType]
     const spec = configured ?? DEFAULT_TIMING[eventType]
     if (!spec) return { kind: 'immediate' }
-    return this.timingFromModifiers(spec.split('.'), 100) ?? { kind: 'immediate' }
+    return this.timingFromModifiers(spec.split('.'), 250) ?? { kind: 'immediate' }
   }
 
   private timingFromModifiers(modifiers: string[], fallbackMs: number): Timing | null {
@@ -819,6 +828,9 @@ export class UnifiedEventHandler {
       if (!this.checkFileInputs(element)) return
       // A bound form waits for the server's answer before it submits again.
       if (isBoundForm(element) && !beginSubmit(element)) return
+      // Everything typed so far goes with this submit. If the handler resets
+      // the form, leaving a field it emptied must not check it again.
+      this.dirtyFields.delete(element)
 
       const data = this.formFields(element)
       const pressed = submitterField((e as SubmitEvent).submitter)
@@ -860,6 +872,9 @@ export class UnifiedEventHandler {
 
     const eventId = this.app.sendEvent(handler, eventData)
     bindPending(element, eventId)
+    if (eventType === 'submit' && element instanceof HTMLFormElement) {
+      submitSent(element, eventId)
+    }
   }
 
   private parseDuration(modifiers: string[], defaultDuration: number): number {

@@ -12,13 +12,23 @@
  * from `UploadField`); the server checks them again on submit.
  */
 
-export type UploadRef = { _upload_id: string }
+/** A staged file, with the token it was uploaded with: the server resolves
+ * an id only alongside the token of the page that uploaded it. */
+export type UploadRef = { _upload_id: string; _upload_token: string }
+
+/**
+ * How long an upload is reused. The server keeps staged files for an hour;
+ * past this, a submit uploads the file again rather than send an id that may
+ * have expired.
+ */
+export const REUSE_MS = 30 * 60 * 1000
 
 type Entry = {
   files: File[]
   xhr: XMLHttpRequest
-  ids: Promise<string[]>
-  done: string[] | null
+  ids: Promise<UploadRef[]>
+  done: UploadRef[] | null
+  at: number
 }
 
 const UPLOADING = 'data-pw-uploading'
@@ -139,22 +149,31 @@ export class Uploader {
     this.start(input, files).catch(() => undefined)
   }
 
-  /** Ids for the files the input holds now, uploading them if needed. */
-  async ids(input: HTMLInputElement): Promise<string[]> {
+  /** References to the files the input holds now, uploading them if needed. */
+  async ids(input: HTMLInputElement): Promise<UploadRef[]> {
     const files = Array.from(input.files ?? [])
     if (!files.length) return []
-    const entry = this.entries.get(input)
-    if (entry && sameFiles(entry.files, files)) return entry.ids
+    const entry = this.fresh(input, files)
+    if (entry) return entry.ids
     const problem = checkFiles(input, files)
     if (problem) throw new UploadError(problem)
     return this.start(input, files)
   }
 
-  /** Ids of the input's files once uploaded; none while still uploading. */
-  uploaded(input: HTMLInputElement): string[] {
+  /** References to the input's files once uploaded; none while uploading. */
+  uploaded(input: HTMLInputElement): UploadRef[] {
+    return this.fresh(input, Array.from(input.files ?? []))?.done ?? []
+  }
+
+  /** The upload of exactly these files, unless it is old enough to expire. */
+  private fresh(input: HTMLInputElement, files: File[]): Entry | undefined {
     const entry = this.entries.get(input)
-    const files = Array.from(input.files ?? [])
-    return entry?.done && sameFiles(entry.files, files) ? entry.done : []
+    if (!entry || !sameFiles(entry.files, files)) return undefined
+    if (entry.done && Date.now() - entry.at > REUSE_MS) {
+      this.entries.delete(input)
+      return undefined
+    }
+    return entry
   }
 
   cancel(input: HTMLInputElement): void {
@@ -167,7 +186,7 @@ export class Uploader {
     }
   }
 
-  private start(input: HTMLInputElement, files: File[]): Promise<string[]> {
+  private start(input: HTMLInputElement, files: File[]): Promise<UploadRef[]> {
     const token = document.querySelector<HTMLMetaElement>(
       'meta[name="pywire-upload-token"]'
     )?.content
@@ -179,7 +198,7 @@ export class Uploader {
     const body = new FormData()
     for (const file of files) body.append(input.name, file)
     const xhr = new XMLHttpRequest()
-    const entry: Entry = { files, xhr, ids: Promise.resolve([]), done: null }
+    const entry: Entry = { files, xhr, ids: Promise.resolve([]), done: null, at: Date.now() }
 
     const fail = (message: string): UploadError => {
       if (this.entries.get(input) === entry) this.entries.delete(input)
@@ -189,7 +208,7 @@ export class Uploader {
       return new UploadError(message)
     }
 
-    entry.ids = new Promise<string[]>((resolve, reject) => {
+    entry.ids = new Promise<UploadRef[]>((resolve, reject) => {
       xhr.open('POST', this.url())
       xhr.setRequestHeader('X-Upload-Token', token)
       const session = (window as Window & { __PYWIRE_HTTP_SESSION?: string | null })
@@ -218,7 +237,8 @@ export class Uploader {
           )
           return
         }
-        entry.done = ids.map(String)
+        entry.done = ids.map((id) => ({ _upload_id: String(id), _upload_token: token }))
+        entry.at = Date.now()
         showProgress(input, null)
         for (const bar of progressBars(input)) bar.value = 1
         resolve(entry.done)

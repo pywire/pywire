@@ -12,8 +12,11 @@ package when a form field is bound.
 
 from __future__ import annotations
 
+import datetime as _dt
 import decimal
-from typing import Any, Dict, List, Mapping, Optional
+import enum
+import math
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 from pywire.core.wire import WireBase, WireList, WireSet
 from pywire.runtime.escape import escape_html
@@ -45,7 +48,33 @@ def _text(value: Any) -> str:
         return ""
     if isinstance(value, bool):
         return "true" if value else ""
+    if isinstance(value, enum.Enum):
+        return _text(value.value)
+    if isinstance(value, _dt.datetime):
+        return value.isoformat(timespec="minutes")
     return str(value)
+
+
+def _on(value: Any) -> bool:
+    """Whether a boolean HTML attribute renders (``disabled={False}`` doesn't)."""
+    return value is not None and value is not False
+
+
+def _record(page: Any, handler: str, writable: bool, options: Any) -> None:
+    """Remember what the element bound through ``handler`` accepts.
+
+    A wire is written only through an element the page rendered editable,
+    with a value among the ones it offered: the server never takes the
+    client's word that a disabled box, a hidden ``$if`` or a missing option
+    is editable.
+    """
+    if page is None or not handler:
+        return
+    state = page.__dict__.get("_pw_bind_state")
+    if state is None:
+        state = page.__dict__["_pw_bind_state"] = {}
+    # Components prefix handler names; the page dispatches the bare name.
+    state[handler.rsplit(":", 1)[-1]] = {"writable": writable, "options": options}
 
 
 def field_attrs(
@@ -59,7 +88,8 @@ def field_attrs(
     if not handler:
         raise BindError(
             f"$bind on <{tag}> binds a wire defined in this page's frontmatter "
-            '(e.g. term = wire("")) by its name, or a form field.'
+            '(e.g. term = wire("")) by its name, or a form field. A $for '
+            "variable can't be bound to a wire: bind the wire by its own name."
         )
     current = _current(obj)
     out = dict(hand)
@@ -77,6 +107,18 @@ def field_attrs(
             f"<{tag}> has $bind and @{event}: the binding already handles "
             f"{event}. Read the wire in code instead, or use another event."
         )
+    itype = str(out.get("type", "")).lower()
+    writable = not (
+        _on(out.get("disabled")) or _on(out.get("readonly")) or itype == "hidden"
+    )
+    options: Optional[Set[str]] = None
+    if tag == "select":
+        options = set()  # filled by option_attrs as the options render
+    elif itype in ("checkbox", "radio") and not (
+        isinstance(current, bool) and itype == "checkbox"
+    ):
+        options = {str(out["value"])}
+    _record(page, handler, writable, options)
     out[f"data-on-{event}"] = handler
     out[f"data-pw-fields-{event}"] = _FIELD_MASK
     return out
@@ -155,12 +197,16 @@ def select_options(obj: Any) -> str:
     )
 
 
-def bind_select(page: Any, site: str, obj: Any) -> None:
+def bind_select(page: Any, site: str, obj: Any, handler: str = "") -> None:
     """Remember what a bound ``<select>`` holds, for its options."""
     selects: Optional[Dict[str, Any]] = getattr(page, "_pw_bound_selects", None)
     if selects is None:
         selects = page._pw_bound_selects = {}
     selects[site] = obj
+    sites: Optional[Dict[str, str]] = page.__dict__.get("_pw_bind_sites")
+    if sites is None:
+        sites = page.__dict__["_pw_bind_sites"] = {}
+    sites[site] = handler
 
 
 def option_attrs(page: Any, site: str, attrs: Dict[str, Any]) -> Dict[str, Any]:
@@ -168,6 +214,14 @@ def option_attrs(page: Any, site: str, attrs: Dict[str, Any]) -> Dict[str, Any]:
     obj = (getattr(page, "_pw_bound_selects", None) or {}).get(site)
     if obj is None or "value" not in attrs:
         return attrs
+    handler = (page.__dict__.get("_pw_bind_sites") or {}).get(site)
+    entry = (page.__dict__.get("_pw_bind_state") or {}).get(handler or "")
+    if (
+        entry is not None
+        and entry["options"] is not None
+        and not _on(attrs.get("disabled"))
+    ):
+        entry["options"].add(str(attrs["value"]))
     if _is_wire(obj):
         current = _current(obj)
         values = current if _is_many(current) else [current]
@@ -183,17 +237,34 @@ def option_attrs(page: Any, site: str, attrs: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def apply_bind_event(target: Any, event: Mapping[str, Any]) -> None:
+def apply_bind_event(
+    target: Any, event: Mapping[str, Any], page: Any = None, handler: str = ""
+) -> None:
     """Write what the user entered into a bound wire (generated handlers).
 
     The value is coerced to the type the wire holds. A number box that
-    doesn't hold a number leaves the wire as it was.
+    doesn't hold a number leaves the wire as it was, and so does a write
+    through an element the page rendered disabled, read-only or not at all,
+    or a value the element didn't offer.
     """
     if not _is_wire(target) or not isinstance(event, Mapping):
         return
     value = event.get("value")
     checked = event.get("checked")
     values = event.get("values")
+    state = page.__dict__.get("_pw_bind_state") if page is not None else None
+    if state is not None and handler:
+        # (A page that never rendered here, like the HTTP fallback transport's,
+        # has no state to check against.)
+        entry = state.get(handler)
+        if entry is None or not entry["writable"]:
+            return
+        options = entry["options"]
+        if options is not None:
+            if isinstance(values, list):
+                values = [v for v in values if v in options]
+            if isinstance(value, str) and value not in options:
+                return
     current = target.peek()
 
     if isinstance(target, (WireList, WireSet)):
@@ -238,12 +309,27 @@ def _coerce(current: Any, value: str) -> Any:
             return int(number) if number.is_integer() else _UNCHANGED
     if isinstance(current, float):
         try:
-            return float(value)
+            number = float(value)
         except ValueError:
             return _UNCHANGED
+        return number if math.isfinite(number) else _UNCHANGED
     if isinstance(current, decimal.Decimal):
         try:
-            return decimal.Decimal(value)
+            amount = decimal.Decimal(value)
         except decimal.InvalidOperation:
             return _UNCHANGED
-    return value
+        return amount if amount.is_finite() else _UNCHANGED
+    if isinstance(current, enum.Enum):
+        for member in type(current):
+            if _text(member) == value:
+                return member
+        return _UNCHANGED
+    if isinstance(current, (_dt.datetime, _dt.date, _dt.time)):
+        try:
+            return type(current).fromisoformat(value)
+        except ValueError:
+            return _UNCHANGED
+    if current is None or isinstance(current, str):
+        return value
+    # A type the box can't hold (a list, a model): leave it.
+    return _UNCHANGED

@@ -81,12 +81,14 @@ class TestAppRuntime:
             filename="test.txt",
             headers=Headers({"content-type": "text/plain"}),
         )
-        request.form = AsyncMock(return_value=FormData([("file", part)]))
-
-        response = await self.app._handle_upload(request)
+        with patch(
+            "pywire.runtime.app._read_form",
+            AsyncMock(return_value=FormData([("file", part)])),
+        ):
+            response = await self.app._handle_upload(request)
         assert response.status_code == 200
         (upload_id,) = json.loads(response.body)["file"]
-        upload = await self.app.uploads.get(upload_id)
+        upload = await self.app.uploads.get(upload_id, "valid-token")
         assert upload is not None
         assert (upload.filename, upload.content_type, upload.size) == (
             "test.txt",

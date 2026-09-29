@@ -541,7 +541,7 @@ toml = [
 
 [[package]]
 name = "create-pywire-app"
-version = "0.13.0"
+version = "0.13.1"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
@@ -1846,7 +1846,7 @@ wheels = [
 
 [[package]]
 name = "pywire"
-version = "0.15.1"
+version = "0.16.0"
 source = { editable = "packages/pywire" }
 dependencies = [
     { name = "msgpack" },
@@ -1933,7 +1933,7 @@ dev = [{ name = "mypy", specifier = ">=1.19.1" }]
 
 [[package]]
 name = "pywire-auth"
-version = "0.3.3"
+version = "0.3.4"
 source = { editable = "packages/pywire-auth" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -1977,7 +1977,7 @@ provides-extras = ["google", "github", "microsoft", "facebook", "apple", "auth0"
 
 [[package]]
 name = "pywire-cli"
-version = "0.3.4"
+version = "0.4.0"
 source = { editable = "packages/pywire-cli" }
 dependencies = [
     { name = "jinja2" },
@@ -2017,7 +2017,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.7.6"
+version = "0.7.7"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
@@ -2076,7 +2076,7 @@ requires-dist = [
 
 [[package]]
 name = "pywire-parser"
-version = "0.7.1"
+version = "0.8.0"
 source = { editable = "packages/pywire-parser" }
 dependencies = [
     { name = "tree-sitter" },
@@ -2100,7 +2100,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-templates"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/pywire-templates" }
 dependencies = [
     { name = "jinja2" },

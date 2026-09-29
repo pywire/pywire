@@ -54,7 +54,11 @@ def _decode(message):
 
 
 def _resolve_page(path):
-    result = resolve_page({{ app_attr }}.router, path)
+    try:
+        # The app gives pages its upload staging and signing secret.
+        result = resolve_page({{ app_attr }}.router, path, app={{ app_attr }})
+    except TypeError:  # pywire before resolve_page(app=...)
+        result = resolve_page({{ app_attr }}.router, path)
     if result is None:
         return None
     page, _params, _variant_name = result

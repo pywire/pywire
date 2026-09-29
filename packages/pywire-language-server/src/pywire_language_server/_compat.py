@@ -7,8 +7,8 @@ CLAUDE.md "Version Floors" for the bump protocol.
 from importlib.metadata import PackageNotFoundError, version
 
 _FLOORS = {
-    "pywire": "0.15.1",
-    "pywire-parser": "0.7.1",
+    "pywire": "0.16.0",
+    "pywire-parser": "0.8.0",
 }
 
 

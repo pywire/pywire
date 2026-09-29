@@ -54,9 +54,10 @@ Verify by running code rather than guessing: throwaway scripts go in `scratch/` 
 
 The dependency graph is **derived, not declared**: `python3 scripts/monorepo_graph.py` parses every `pyproject.toml` (plus a small side-table for `examples`/docs) and is the source of truth for floors, `ci.yml` fan-outs, and root orchestrator order.
 
-- `check-floors` — every floor must be ≥ the latest **published** upstream version, and `_FLOORS` in the downstream `src/<pkg>/_compat.py` must equal the pyproject floor. Run it after touching any floor; it's also an always-on CI job.
+- `check-floors` — every floor must be ≥ the latest **published** upstream version, and `_FLOORS` in the downstream `src/<pkg>/_compat.py` must equal the pyproject floor. Run it after touching any floor; it's also an always-on CI job, where a floor below published is only a warning (`--warn-stale`): it appears the moment an upstream publishes, and release.yml fixes it.
+- `bump-floors [--expect NAME=VERSION ...]` — raises every stale floor to the published version, in each pyproject spelling (extras included) and in `_FLOORS`; run `uv lock` after. After every publish, release.yml's `bump-floors` job runs it and lands the result as an auto-merging `fix(<downstream>): bump floors to …` PR, so nobody opens floor-bump PRs by hand.
 - `check-ci` — `ci.yml` `if:` fan-outs must match the graph-derived sets (a job runs for its own package + all transitive upstream packages).
-- `check-publishable <pkg>` — a release PR for `<pkg>` is mergeable only when every floor it declares is already published (upstream merged + published).
+- `check-publishable [--fresh] <pkg>` — a release PR for `<pkg>` is mergeable only when every floor it declares is already published (upstream merged + published). `--fresh` also waits for any pending floor bump; the `Release Floors Gate` uses it and stays **pending** (not red) until both hold.
 - `release-order [pkgs...]` — topological merge order for release PRs (auto-detects open `release-please--*` PRs with no args).
 - `units` / `affected [base-ref]` — what the root orchestrators and `--changed` iterate.
 
@@ -85,11 +86,11 @@ Releases are automated by release-please (one PR per package; merge it to publis
 - Conventional commits. Scopes: `pywire`, `pywire-auth`, `pywire-cli`, `pywire-language-server`, `pywire-parser`, `pywire-templates`, `tree-sitter-pywire`, `vscode-pywire`, `prettier-plugin-pywire`, `create-pywire-app`, `pywire-docs`.
 - release-please attributes commits to packages by **file path**, not scope. To release a package, change a real file inside it. Never use `--allow-empty` (it attributes to every package).
 - `chore:` commits are ignored by release-please — use for CI/infra/deps.
-- PR titles must not contain parentheses beyond the scope: squash-merge appends ` (#NN)`, and an extra `(` makes release-please silently drop the commit. Put `Closes #N` in the body; use `feat!:` + a `BREAKING CHANGE:` footer for breaking changes.
+- PR titles must not contain parentheses beyond the scope: squash-merge appends ` (#NN)`, and an extra `(` makes release-please silently drop the commit. Put `Closes #N` in the body; use `feat!:` + a `BREAKING CHANGE:` footer for breaking changes. The `PR Title` check (`scripts/check_pr_title.py`) enforces this.
 
 Release ordering:
 1. Feature PRs bump floors for any new upstream feature they use (same commit; `check-floors` verifies).
 2. Merge release PRs upstream-first — `release-order` prints the order; the `Release Floors Gate` status check enforces it.
-3. If the gate is red, the blocker is upstream: an unmerged release PR or a failed publish job — fix that, not the gate.
+3. If the gate is pending, the blocker is upstream: an unmerged release PR, a failed publish job, or the auto floor-bump PR still in CI — fix that, not the gate. It is re-evaluated after every publish and every push to main.
 
 CI (`.github/workflows/ci.yml`) path-filters jobs per package; `check-ci` verifies the fan-outs match the graph.

@@ -14,7 +14,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
-from pywire.runtime.protocol import event_ack, with_ack
+from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
 from pywire.runtime.session_serializer import restore_page_state
 from pywire import __version__
 
@@ -588,6 +588,10 @@ class WebSocketHandler:
                 await page.render(init=True)
             else:
                 page = self.connection_pages[websocket]
+                if for_another_page(page, path):
+                    logger.debug("Dropped an event for %s: page has changed", path)
+                    await websocket.send_bytes(msgpack.packb(dropped(ack)))
+                    return
 
             # Define update broadcaster
             async def broadcast_update() -> None:

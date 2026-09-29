@@ -257,7 +257,7 @@ describe('UnifiedEventHandler — optimistic prediction', () => {
     uploads[0].onload?.()
     await vi.waitFor(() => expect(appMock.sendEvent).toHaveBeenCalledTimes(1))
     const sent = appMock.sendEvent.mock.calls[0][1] as { formData: Record<string, unknown> }
-    expect(sent.formData).toEqual({ title: 'hello', doc: { _upload_id: 'u1' } })
+    expect(sent.formData).toMatchObject({ title: 'hello', doc: { _upload_id: 'u1' } })
     vi.unstubAllGlobals()
   })
 })

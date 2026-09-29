@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from starlette.testclient import TestClient
 
 from pywire import form
-from pywire.forms.form import ACTION
+from pywire.forms.form import ACTION, STATE
 from pywire.runtime.app import PyWire
 
 
@@ -25,8 +25,10 @@ class Order(BaseModel):
     items: list[Item] = Field(default_factory=list, max_length=3)
 
 
-def act(f, data):
-    asyncio.run(f._pw_submit(None, None, {"formData": data}))
+def act(f, data, handler=None):
+    """Submit ``data`` as if the page had rendered every posted field."""
+    f._editable.update(n for n in data if n != ACTION and n not in f._owned)
+    asyncio.run(f._pw_submit(None, handler, {"formData": data}))
 
 
 def test_buttons_are_submit_buttons_that_skip_validation():
@@ -58,19 +60,15 @@ def test_add_keeps_what_was_typed():
     assert not f.submitted and f.errors == {}
 
     # A real submit reads the rows the form rendered.
-    asyncio.run(
-        f._pw_submit(
-            None,
-            got.append,
-            {
-                "formData": {
-                    "customer": "Ann",
-                    "items.0.name": "pen",
-                    "items.1.name": "ink",
-                    "items.1.qty": "2",
-                }
-            },
-        )
+    act(
+        f,
+        {
+            "customer": "Ann",
+            "items.0.name": "pen",
+            "items.1.name": "ink",
+            "items.1.qty": "2",
+        },
+        handler=got.append,
     )
     assert [(i.name, i.qty) for i in got[0].items] == [("pen", 1), ("ink", 2)]
 
@@ -189,16 +187,61 @@ def test_rows_work_without_javascript(client):
     r = client.post(
         "/", data={"__pywire_handler": handler, "customer": "Ann", ACTION: "add:items"}
     )
+    added = r.text
     assert r.status_code == 200
     assert 'name="items.0.name"' in r.text and 'value="Ann"' in r.text
 
+    # Without the state the page posted, the added row was never rendered by
+    # this request, so it isn't read.
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, "customer": "Ann", "items.0.name": "pen"},
+    )
+    assert ">pen</p>" not in r.text
+
+    state = re.search(rf'name="{STATE}" value="([^"]+)"', added).group(1)
     r = client.post(
         "/",
         data={
             "__pywire_handler": handler,
+            STATE: state,
             "customer": "Ann",
             "items.0.name": "pen",
         },
     )
     assert r.status_code == 200
     assert '<p id="done"' in r.text and ">pen</p>" in r.text
+
+
+def test_enter_submits_rather_than_adding_or_removing(client):
+    html = client.get("/").text
+    form = html[html.index("<form") :]
+    buttons = re.findall(r"<button[^>]*>", form)
+    assert "data-pw-default-submit" in buttons[0]
+    assert "name=" not in buttons[0] and 'type="submit"' in buttons[0]
+
+
+def test_remove_moves_rendered_names_and_nested_rows():
+    class Part(BaseModel):
+        sku: str = ""
+
+    class Line(BaseModel):
+        name: str = ""
+        parts: list[Part] = []
+
+    class Build(BaseModel):
+        lines: list[Line] = []
+
+    f = form(Build)
+    act(f, {"lines.0.name": "a", "lines.1.name": "b", ACTION: "add:lines.1.parts"})
+    assert len(f.lines[1].parts) == 1
+    act(f, {"lines.0.name": "a", "lines.1.name": "b", ACTION: "remove:lines.0"})
+    assert [line.name.raw for line in f.lines] == ["b"]
+    assert len(f.lines[0].parts) == 1
+    assert "lines.1.name" not in f._editable
+
+
+def test_row_indexes_must_be_ascii_digits():
+    f = form(Order)
+    act(f, {"customer": "A", ACTION: "remove:items.²"})
+    assert f.errors == {}
