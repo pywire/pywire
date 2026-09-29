@@ -36,6 +36,36 @@ from pywire.core.snippet import HeadBuffer, Snippet
 logger = logging.getLogger(__name__)
 
 
+def _on_loop(loop: asyncio.AbstractEventLoop) -> bool:
+    try:
+        return asyncio.get_running_loop() is loop
+    except RuntimeError:
+        return False
+
+
+class _UpdateCycle:
+    """``async with page._update_cycle():`` (see BasePage._update_cycle)."""
+
+    def __init__(self, page: "BasePage") -> None:
+        self.page = page
+
+    async def __aenter__(self) -> None:
+        page = self.page
+        if page._push_lock is None:
+            page._push_lock = asyncio.Lock()
+        await page._push_lock.acquire()
+        page._push_busy += 1
+
+    async def __aexit__(self, *exc: Any) -> None:
+        page = self.page
+        page._push_busy -= 1
+        if page._push_lock is not None:
+            page._push_lock.release()
+        # A write that landed mid-cycle after the render (e.g. while the
+        # reply was being sent) still needs to reach the client.
+        page._request_push()
+
+
 class DotDict(dict):
     """Dict that allows dot-access to keys. Returns None for missing keys."""
 
@@ -147,6 +177,16 @@ def _rewrite_snippet_typeerror(err: TypeError, site_id: str) -> TypeError:
 
 class BasePage:
     """Base class for all compiled pages."""
+
+    # Server push for writes made outside this page's own update cycle (a
+    # shared module-level wire written by another session, a producer, a
+    # background task); see _request_push. Class-level defaults, set per
+    # instance once a live connection attaches.
+    _on_update: Optional[Callable[[], Awaitable[None]]] = None
+    _push_loop: Optional[asyncio.AbstractEventLoop] = None
+    _push_lock: Optional[asyncio.Lock] = None
+    _push_busy: int = 0
+    _push_task: Optional["asyncio.Task[None]"] = None
 
     __file_path__: ClassVar[str]
     # Compile-time allowlist of names ``_dispatch_handler`` may invoke. Set by
@@ -1510,6 +1550,13 @@ class BasePage:
         return self._region_sets.setdefault(regions, regions)
 
     def _invalidate_wire(self, wire_obj: Any, field: str) -> None:
+        loop = self._push_loop
+        if loop is not None and not _on_loop(loop):
+            # Written from another thread (e.g. a producer fed by a worker
+            # thread). Page state belongs to the event loop; replay there.
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(self._invalidate_wire, wire_obj, field)
+            return
         # Bump the global wire-write counter. Components snapshot this on
         # render and use it to invalidate their cache when ANY wire write
         # happens, even one that doesn't go through region tracking
@@ -1546,6 +1593,63 @@ class BasePage:
         if parent is not None:
             parent._dirty_regions.add(None)
             parent._wire_write_seq += 1
+
+        root: Any = self
+        while (up := getattr(root, "_parent_page", None)) is not None:
+            root = up
+        request_push = getattr(root, "_request_push", None)
+        if request_push is not None:
+            request_push()
+
+    def _attach_push(self, on_update: Callable[[], Awaitable[None]]) -> None:
+        """Connect this page to a live connection that can take server pushes.
+
+        Must be called on the event loop that owns the connection.
+        """
+        self._on_update = on_update
+        self._push_loop = asyncio.get_running_loop()
+
+    def _detach_push(self) -> None:
+        """Stop pushing: the connection closed or moved to another page."""
+        self._on_update = None
+        task = self._push_task
+        self._push_task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _update_cycle(self) -> "_UpdateCycle":
+        """Serialize a render-and-send with server pushes for this page.
+
+        The transport wraps each client event in this, so a push never
+        renders mid-handler or sends a render older than one already sent.
+        """
+        return _UpdateCycle(self)
+
+    def _request_push(self) -> None:
+        """Schedule a push if a write landed outside the page's own cycle.
+
+        Writes made while the page handles its own event are rendered into
+        that event's reply. Anything else (another session writing a shared
+        wire, a producer, a background task) would otherwise sit in
+        ``_dirty_regions`` until this client's next event.
+        """
+        if self._on_update is None or self._push_loop is None:
+            return
+        if self._push_busy or not self._dirty_regions:
+            return
+        if self._push_task is not None and not self._push_task.done():
+            return
+        self._push_task = self._push_loop.create_task(self._push_pending())
+
+    async def _push_pending(self) -> None:
+        async with self._update_cycle():
+            self._push_task = None
+            if not self._dirty_regions or self._on_update is None:
+                return
+            try:
+                await self._on_update()
+            except Exception:
+                logger.debug("server push failed", exc_info=True)
 
     async def handle_event(
         self, event_name: str, event_data: dict[str, Any]
