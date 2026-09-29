@@ -24,7 +24,7 @@ from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
-from pywire.runtime.uploads import Staging, part_chunks
+from pywire.runtime.uploads import Staging, part_chunks, private_dir, runtime_parent
 from pywire.runtime.websocket import WebSocketHandler
 from pywire.storage import FileStore, LocalStore
 
@@ -377,12 +377,12 @@ class PyWire:
         runtime_key = hashlib.sha256(str(self.pages_dir).encode("utf-8")).hexdigest()[
             :16
         ]
-        self._runtime_dir = (
-            Path(tempfile.gettempdir()) / "pywire_runtime" / runtime_key
-        ).resolve()
-        self._runtime_dir.mkdir(parents=True, exist_ok=True)
+        self._runtime_dir = private_dir(
+            Path(tempfile.gettempdir()) / runtime_parent() / runtime_key
+        )
         self._upload_token_dir = self._runtime_dir / "upload_tokens"
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
+        self._tokens_swept = 0.0
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
@@ -1915,7 +1915,13 @@ class PyWire:
                 page, "_pw_has_uploads", False
             ):
                 token = secrets.token_urlsafe(32)
-                self._store_upload_token(token, None, time.time())
+                now = time.time()
+                if now - self._tokens_swept > 60:
+                    # Every page view writes a token: sweep old ones here too,
+                    # not only when someone uploads.
+                    self._tokens_swept = now
+                    self._cleanup_upload_tokens()
+                self._store_upload_token(token, None, now)
                 # Token meta tag
                 injections.append(
                     f'<meta name="pywire-upload-token" content="{token}">'

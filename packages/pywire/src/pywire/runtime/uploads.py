@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import logging
+import mimetypes
 import os
 import re
 import secrets
@@ -42,6 +43,18 @@ MAX_REFS = 100
 
 _ID = re.compile(r"[0-9a-f]{8,12}-[0-9a-f]{32}")
 _EXT = re.compile(r"\.[A-Za-z0-9]{1,10}")
+# Types a browser renders or runs when a store serves them.
+_ACTIVE_TYPES = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "image/svg+xml",
+        "text/xml",
+        "application/xml",
+        "text/javascript",
+        "application/javascript",
+    }
+)
 
 
 class Upload:
@@ -78,6 +91,20 @@ class Upload:
         ext = os.path.splitext(self.filename)[1]
         return ext.lower() if _EXT.fullmatch(ext) else ""
 
+    def _stored_extension(self) -> str:
+        """The extension a random key gets: the filename's, unless it names a
+        type browsers run (a page, SVG, a script) and the file was declared
+        as something else. ``evil.html`` sent as ``image/png`` (which passes
+        ``accept="image/*"``) is kept as ``.png``, so a store served to
+        browsers never serves it as a page."""
+        ext = self.extension
+        named = mimetypes.guess_type("x" + ext)[0] if ext else None
+        declared = self.content_type.split(";", 1)[0].strip().lower()
+        if named not in _ACTIVE_TYPES or named == declared:
+            return ext
+        guessed = mimetypes.guess_extension(declared) if declared else None
+        return guessed if guessed and _EXT.fullmatch(guessed) else ""
+
     async def read(self) -> bytes:
         """The whole file."""
         return await self._store.get(self._key)
@@ -107,7 +134,7 @@ class Upload:
             return str(path)
         name = check_key(key) if key is not None else secrets.token_hex(16)
         if key is None:
-            name += self.extension
+            name += self._stored_extension()
         await to.put(name, self.stream(), content_type=self.content_type)
         return name
 
@@ -167,6 +194,31 @@ def format_size(size: int) -> str:
             text = f"{size / factor:.1f}".removesuffix(".0")
             return f"{text} {unit}"
     return f"{size} B"
+
+
+def runtime_parent() -> str:
+    """One runtime folder per user, so users never share one in /tmp."""
+    getuid = getattr(os, "getuid", None)
+    return f"pywire_runtime-{getuid()}" if getuid is not None else "pywire_runtime"
+
+
+def private_dir(path: Path) -> Path:
+    """``path``, created readable by this user only (staged uploads and
+    upload tokens live in it). Refuses a folder someone else made first."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = path.resolve()
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None:
+        for folder in (path.parent, path):
+            info = folder.stat()
+            if info.st_uid != getuid():
+                raise RuntimeError(
+                    f"PyWire: {folder} belongs to another user; remove it or "
+                    "set TMPDIR to a private folder."
+                )
+            if info.st_mode & 0o077:
+                folder.chmod(0o700)
+    return path
 
 
 class _TooLarge(Exception):
@@ -382,7 +434,8 @@ def staging_for(page: Any) -> Staging:
     if _default is None:
         import tempfile
 
-        _default = Staging(LocalStore(Path(tempfile.gettempdir()) / "pywire_uploads"))
+        folder = Path(tempfile.gettempdir()) / runtime_parent() / "uploads"
+        _default = Staging(LocalStore(private_dir(folder)))
     return _default
 
 

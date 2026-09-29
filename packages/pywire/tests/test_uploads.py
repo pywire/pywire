@@ -337,3 +337,33 @@ def test_pages_built_without_a_request_use_the_apps_staging(tmp_path):
     # How the Cloudflare Durable Object template builds pages.
     page, _, _ = resolve_page(app.router, "/", app=app)
     assert staging_for(page) is app.uploads
+
+
+def test_save_never_keeps_a_page_extension_on_another_type():
+    store = MemoryStore()
+
+    def saved(name: str, ctype: str) -> str:
+        staging = Staging(MemoryStore())
+        upload_id = asyncio.run(
+            staging.stage(_chunks(b"x"), filename=name, content_type=ctype, limit=9)
+        )
+        upload = asyncio.run(staging.get(upload_id))
+        assert upload is not None
+        return asyncio.run(upload.save(store))
+
+    assert saved("evil.html", "image/png").endswith(".png")
+    assert saved("evil.svg", "image/png").endswith(".png")
+    assert saved("page.html", "text/html").endswith(".html")
+    assert saved("a.zip", "application/octet-stream").endswith(".zip")
+    assert saved("photo.JPG", "image/jpeg").endswith(".jpg")
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "getuid"), reason="POSIX only")
+def test_staged_files_are_private(tmp_path):
+    from pywire.runtime.app import PyWire
+
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    app = PyWire(pages_dir=str(pages))
+    assert app._runtime_dir.stat().st_mode & 0o077 == 0
+    assert app._runtime_dir.parent.stat().st_mode & 0o077 == 0
