@@ -177,6 +177,15 @@ html {
   scroll-padding-top: calc(var(--sl-nav-height) + 1rem);
 }
 
+/* While a view transition runs, the page is hidden and the browser paints
+   the ::view-transition tree in its place. Safari (and every iOS browser)
+   can paint white behind that tree instead of the html background, and it
+   shows through while the old and new page snapshots cross-fade. Give the
+   tree the theme's background so the gap matches the page. */
+::view-transition {
+  background-color: var(--sl-color-bg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

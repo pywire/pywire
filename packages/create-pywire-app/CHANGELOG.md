@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/pywire/pywire/compare/create-pywire-app-v0.13.0...create-pywire-app-v0.13.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **pywire,pywire-cli,pywire-language-server,create-pywire-app:** bump pywire-parser and pywire-templates floors ([#352](https://github.com/pywire/pywire/issues/352)) ([1402a78](https://github.com/pywire/pywire/commit/1402a781bc4cc85e6fcbff9ef263a743d1ae9930))
+
 ## [0.13.0](https://github.com/pywire/pywire/compare/create-pywire-app-v0.12.1...create-pywire-app-v0.13.0) (2026-09-27)
 
 
