@@ -1794,8 +1794,9 @@ class PyWire:
             # here too, so every bound form has the same no-JS floor.
             response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
-            # Internal ASGI replay from WS handler — body-only, no client scripts
-            response = await page.render(init=False)
+            # Internal ASGI replay from WS handler — body-only, no client
+            # scripts, but a fresh page all the same: run @before_load/@init.
+            response = await page.render(init=False, run_hooks=True)
         else:
             # Normal render
             response = await page.render()

@@ -772,25 +772,21 @@ class WebSocketHandler:
 
                 new_page._attach_push(broadcast_update)
 
-                # Run @mount hooks
-                await new_page._run_hooks(new_page.MOUNT_HOOKS)
-
-                # Prime wire-subscriber tracking on this local instance.
-                # The internal dispatch rendered a DIFFERENT page instance
-                # to produce the HTML we just sent; this local one is what
-                # handles subsequent events. Without a render call here,
-                # `register_read` never fires for its wires → no region
-                # subscriptions → handler writes invalidate nothing →
-                # `render_update` returns empty regions → UI looks frozen.
+                # Prime this local instance. The internal dispatch rendered a
+                # DIFFERENT page instance to produce the HTML we just sent;
+                # this one handles subsequent events, so it runs the page's
+                # @before_load/@init hooks too (as the WS init does after a
+                # full load), and renders once so `register_read` records
+                # which regions read which wires. Without that, handler
+                # writes invalidate nothing and the UI looks frozen.
                 try:
                     async with new_page._update_cycle():
-                        await new_page.render(init=False)
+                        await new_page.render(init=False, run_hooks=True)
                 except Exception:
-                    logger.debug(
-                        "relocate: priming render on %s failed",
-                        path,
-                        exc_info=True,
-                    )
+                    logger.exception("relocate: priming render on %s failed", path)
+
+                # Run @mount hooks, after @init as on a full load
+                await new_page._run_hooks(new_page.MOUNT_HOOKS)
 
                 # Persist session state
                 session_id = self.session_ids.get(websocket)
