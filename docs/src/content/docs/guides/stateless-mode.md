@@ -56,6 +56,48 @@ Locked wires such as `page_size` and `rows` are skipped by the snapshot encoder.
 
 The value of `.lock()` is that it is client-invisible, not encrypted. Locked values can still exist in process memory during the request; do not put a value there that the frontmatter cannot reconstruct safely.
 
+## Shared state
+
+A module-level wire, a `producer()`, or a `derived()` that reads either is shared state: it can change without this page doing anything. A stateful app pushes those changes to every open page. A stateless app has no connection to push on, so the browser re-reads shared state on an interval instead.
+
+Set the interval for the whole app, in seconds:
+
+```python
+app = PyWire(stateless=True, live_every=5)
+```
+
+Override it on a page:
+
+```pywire
+!live 1s
+```
+
+`!live 500ms` also works, and `!live off` turns refreshing off for that page. `live_every=0` turns it off for the app.
+
+- Only pages whose render read shared state refresh. A page that shows only its own wires never polls.
+- Every stateless request, whether an event or a refresh, re-renders the regions that read shared state and sends only the ones that changed since the browser last saw them.
+- Refreshes pause while the tab is hidden and run as soon as it is visible again.
+- Stateful apps ignore `live_every` and `!live`.
+
+If a stateless page reads shared state and neither `live_every` nor `!live` is set, `pywire dev` shows an error naming the page and the value. Outside dev, PyWire logs a warning once and the page doesn't refresh on its own.
+
+:::caution[Module state is per instance]
+Each server instance, and each FaaS isolate, has its own copy of a module-level wire. It resets on a cold start and differs between instances, so a refresh shows whatever the instance that answered holds. PyWire logs a warning the first time a stateless event writes one. Keep state that users share in a database or key-value store, and read it through a producer, which counts as shared state and runs again on every request:
+
+```pywire
+---
+import db
+from pywire import producer
+
+latest = producer([], lambda set_value: set_value(db.latest_messages()))
+---
+<ul><li $for={m in latest.value}>{m}</li></ul>
+```
+
+:::
+
+A module-level wire assigned to a page attribute (`votes = shared.votes`) stays shared. It is not written into the snapshot, and a snapshot never overwrites it.
+
 ## The no-JS floor
 
 With `!no_interactive`, a form POST still runs its declared handler without JavaScript. In stateless mode, that form does **not** carry the interactive snapshot, so non-persisted page state resets for that request. The handler still runs and the response still renders. Persist continuity in the form's target store when the no-JS path must retain it.

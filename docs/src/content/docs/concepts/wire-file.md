@@ -49,13 +49,14 @@ The HTML block supports:
 
 Directives are line-level metadata declared above the Python block. They configure how the page is routed, rendered, or wired up at runtime.
 
-| Directive         | Purpose                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------ |
-| `!path "..."`     | Sets the URL pattern this page handles.                                              |
-| `!layout "..."`   | Wraps the page in a parent layout.                                                   |
-| `!auth ...`       | Gates the page on an auth policy.                                                    |
-| `!no_spa`         | Opts the page out of SPA navigation; renders as a full-page reload.                  |
-| `!no_interactive` | Renders the page as static HTML — skips event handlers and ref wiring on the client. |
+| Directive         | Purpose                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `!path "..."`     | Sets the URL pattern this page handles.                                                |
+| `!layout "..."`   | Wraps the page in a parent layout.                                                     |
+| `!auth ...`       | Gates the page on an auth policy.                                                      |
+| `!no_spa`         | Opts the page out of SPA navigation; renders as a full-page reload.                    |
+| `!no_interactive` | Renders the page as static HTML — skips event handlers and ref wiring on the client.   |
+| `!live 2s`        | On a stateless app, how often the page re-reads shared state (`!live off` to opt out). |
 
 ### `!no_interactive`
 
