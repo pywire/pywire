@@ -1,13 +1,18 @@
 ---
 import time
-from pywire.components.form import Form
+from pydantic import BaseModel
+from pywire import form
 
 render_count = wire(0)
 
 # Native form state
 native_submit_count = wire(0)
 
-# Pywire form state
+# Bound form state
+class Note(BaseModel):
+    text: str = ""
+
+note = form(Note)
 pywire_submit_count = wire(0)
 
 # The render block executes on every render
@@ -16,7 +21,7 @@ render_count.value += 1
 def handle_native_submit():
     native_submit_count.value += 1
 
-def handle_pywire_submit(payload=None):
+def handle_pywire_submit():
     pywire_submit_count.value += 1
 ---
 <h1 id="form-title">Form Test</h1>
@@ -29,9 +34,9 @@ def handle_pywire_submit(payload=None):
     <button type="submit" id="native-submit-btn">Submit Native Form</button>
 </form>
 
-<h2>PyWire Form Component</h2>
+<h2>PyWire Bound Form</h2>
 <p id="pywire-submit-count">Submits: {pywire_submit_count}</p>
-<Form on_submit={handle_pywire_submit}>
-    <input type="text" id="pywire-input" name="pywire-input" value="" />
+<form $bind={note} @submit={handle_pywire_submit}>
+    <input $bind={note.text} id="pywire-input" />
     <button type="submit" id="pywire-submit-btn">Submit PyWire Form</button>
-</Form>
+</form>

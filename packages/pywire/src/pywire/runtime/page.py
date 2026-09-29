@@ -227,7 +227,6 @@ class BasePage:
             self.path["main"] = self.path.get("main", False)
 
         # Framework-managed state
-        self.errors: Dict[str, Any] = {}
         self.loading: Dict[str, bool] = {}
         self._pending_cookies: List[Dict[str, Any]] = []
 
@@ -345,6 +344,10 @@ class BasePage:
         self._refs_by_id: Dict[str, Any] = {}  # registry for ref instances
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
         self._pending_navigation: Optional[str] = None
+        # Set by a bound form's submit pipeline: a native POST answers 422.
+        self._pw_form_invalid = False
+        # Set when a bound form renders a file input (upload token needed).
+        self._pw_has_uploads = False
         self._pending_dispatches: List[Dict[str, Any]] = []
         self._pending_intercepted_handlers: List[tuple[str, dict]] = []
         self._components: Dict[str, "BasePage"] = {}
@@ -627,6 +630,11 @@ class BasePage:
         dep_versions: Dict[Tuple[Any, str], int] = {
             key: getattr(key[0], "_write_seq", 0) for key in captured
         }
+        # A nested component's output is part of this one's, so its wires
+        # invalidate this cache too (its own memo already includes its
+        # children's).
+        for child in comp._components.values():
+            dep_versions.update(getattr(child, "_pw_memo_dep_versions", None) or {})
 
         comp._pw_memo_props = props_snapshot  # type: ignore[attr-defined]
         comp._pw_memo_html = html  # type: ignore[attr-defined]
@@ -665,9 +673,16 @@ class BasePage:
         snapshot = self._component_state_snapshots.pop(key, None)
         if snapshot:
             from pywire.core.wire import WireBase  # noqa: PLC0415
+            from pywire.runtime.session_serializer import (  # noqa: PLC0415
+                HookedState,
+                restore_hooked,
+            )
 
             for attr, value in snapshot.items():
                 current = getattr(instance, attr, None)
+                if isinstance(value, HookedState):
+                    restore_hooked(current, value.state)
+                    continue
                 if isinstance(current, WireBase) and current._locked:
                     # Stale snapshot carrying an attr locked after signing:
                     # keep the fresh frontmatter wire (still locked).
@@ -1065,11 +1080,20 @@ class BasePage:
                     return True
         return False
 
-    async def render(self, init: bool = True) -> Response:
-        """Main render method - calls lifecycle hooks."""
+    async def render(
+        self, init: bool = True, *, run_hooks: Optional[bool] = None
+    ) -> Response:
+        """Main render method - calls lifecycle hooks.
+
+        ``init`` renders the full document (vs. a body fragment);
+        ``run_hooks`` (default: same as ``init``) runs @before_load/@init
+        and resets background work. A form POST renders the page once with
+        hooks, dispatches, then renders the result with ``run_hooks=False``.
+        """
+        hooks = init if run_hooks is None else run_hooks
 
         # Cleanup background tasks on new full load
-        if init:
+        if hooks:
             for task in self._background_tasks:
                 if not task.done():
                     task.cancel()
@@ -1096,11 +1120,11 @@ class BasePage:
                 return guard_response
 
         # Run @before_load hooks (pages only, before any page logic)
-        if init:
+        if hooks:
             await self._run_hooks(self.BEFORE_LOAD_HOOKS)
 
         # Run @init hooks only if requested (new page load — data fetching)
-        if init:
+        if hooks:
             await self._run_hooks(self.INIT_HOOKS)
 
         self._clear_wire_tracking()
@@ -1503,11 +1527,14 @@ class BasePage:
         # written by the user's handler — UI freezes despite the wire
         # change. Marking the parent's root (None) dirty triggers a full
         # re-render, which is the safe outcome since the parent has no
-        # finer-grained subscription for this wire.
+        # finer-grained subscription for this wire. Every ancestor, not just
+        # the parent: a component nested in a component is re-rendered only
+        # when the page at the top is.
         parent = getattr(self, "_parent_page", None)
-        if parent is not None:
+        while parent is not None:
             parent._dirty_regions.add(None)
             parent._wire_write_seq += 1
+            parent = getattr(parent, "_parent_page", None)
 
     async def handle_event(
         self, event_name: str, event_data: dict[str, Any]

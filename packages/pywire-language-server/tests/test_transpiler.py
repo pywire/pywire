@@ -1,5 +1,10 @@
+import subprocess
+import sys
 import textwrap
-from pywire_language_server.transpiler import Transpiler
+
+import pytest
+
+from pywire_language_server.transpiler import Transpiler, rewrite_form_chain
 
 
 def test_transpile_simple_interpolation():
@@ -238,3 +243,122 @@ def test_multiline_attribute_mapping():
     assert orig is not None
     assert orig[0] == 3  # line 3
     assert orig[1] == 10  # col 10
+
+
+FORM_PAGE = textwrap.dedent("""
+    ---
+    from pydantic import BaseModel
+    from pywire import form
+
+    class Signup(BaseModel):
+        email: str
+
+    signup = form(Signup)
+
+    def create(data: Signup):
+        signup.email.error = "taken"
+    ---
+    <form $bind={signup} @submit={create}>
+      <input $bind={signup.email}>
+      <p>{signup.emial.error} {other.signup.email}</p>
+    </form>
+""").strip()
+
+
+@pytest.mark.parametrize(
+    "tail,expected",
+    [
+        (".email", "f._pw_field(f._pw_shape.email)"),
+        (".email.error", "f._pw_field(f._pw_shape.email).error"),
+        (
+            ".addr.street",
+            "f._pw_field(f._pw_field(f._pw_shape.addr)._pw_shape.street)",
+        ),
+        (
+            ".items[0].name",
+            "f._pw_field(f._pw_field(f._pw_field(f._pw_shape.items)"
+            "._pw_shape[0])._pw_shape.name)",
+        ),
+        # A field named like a member is reached through .fields
+        (".fields.label", "f._pw_field(f._pw_shape.label)"),
+        (".value.email", "f.value.email"),
+        ('["email"]', 'f["email"]'),
+        (".items[i].name", "f._pw_field(f._pw_shape.items)[i].name"),
+        (".email._spec", "f._pw_field(f._pw_shape.email)._spec"),
+    ],
+)
+def test_form_paths_are_rewritten_for_ty(tail, expected):
+    assert "".join(text for text, _ in rewrite_form_chain("f", tail)) == expected
+
+
+def test_form_paths_in_template_and_python():
+    code, _ = Transpiler(FORM_PAGE).transpile()
+    assert 'signup._pw_field(signup._pw_shape.email).error = "taken"' in code
+    assert "_ = signup._pw_field(signup._pw_shape.email)\n" in code
+    assert "signup._pw_field(signup._pw_shape.emial).error" in code
+    assert "other.signup.email" in code  # not the form: left alone
+    assert "signup = form(Signup)" in code
+
+
+def test_a_local_name_that_matches_a_form_is_left_alone():
+    page = """---
+from pydantic import BaseModel
+from pywire import form
+
+class Signup(BaseModel):
+    email: str
+
+signup = form(Signup)
+
+async def create(signup: Signup):
+    print(signup.email)
+
+def touch():
+    signup.email.error = "taken"
+---
+<form $bind={signup} @submit={create}></form>
+"""
+    code, _ = Transpiler(page).transpile()
+    assert "    print(signup.email)\n" in code
+    assert 'signup._pw_field(signup._pw_shape.email).error = "taken"' in code
+
+
+def test_form_path_tokens_map_back_to_the_source():
+    code, sm = Transpiler(FORM_PAGE).transpile()
+    gen = code.splitlines()
+    line = next(i for i, text in enumerate(gen) if "emial" in text)
+    orig = sm.to_original(line, gen[line].index("emial"))
+    assert orig is not None
+    source = FORM_PAGE.splitlines()
+    assert source[orig[0]][orig[1] :].startswith("emial.error}")
+
+
+def test_ty_reports_unknown_form_fields(tmp_path):
+    # ty resolves imports from the interpreter's environment, so check there
+    # rather than in this process, whose sys.path can differ.
+    probe = subprocess.run(
+        [sys.executable, "-c", "import pydantic, pywire.forms"], capture_output=True
+    )
+    if probe.returncode != 0:
+        pytest.skip("needs pywire[forms] installed")
+    code, _ = Transpiler(FORM_PAGE).transpile()
+    target = tmp_path / "page_wire.py"
+    target.write_text(code)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ty",
+            "check",
+            "--python",
+            sys.executable,
+            "--output-format",
+            "concise",
+            str(target),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert "`Signup` has no attribute `emial`" in result.stdout
+    # signup.email (template and handler) type-checks: only the typo fails.
+    assert result.stdout.count("unresolved-attribute") == 1

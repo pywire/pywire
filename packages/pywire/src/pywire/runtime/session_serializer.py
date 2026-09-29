@@ -31,7 +31,6 @@ _FRAMEWORK_ATTRS: Set[str] = {
     "query",
     "path",
     "url",
-    "errors",
     "loading",
     "user",
     "attrs",
@@ -53,6 +52,50 @@ _WIRE_TAG_TO_FACTORY: Dict[str, Any] = {
     "set": lambda v: wire(set(v) if isinstance(v, list) else v),
     "namespace": lambda v: wire(**v) if isinstance(v, dict) else wire(v),
 }
+
+
+class HookedState:
+    """Snapshot state of an object with ``__pw_restore__`` (e.g. a Form),
+    carried to a component that is instantiated after the restore."""
+
+    __slots__ = ("state",)
+
+    def __init__(self, state: Any) -> None:
+        self.state = state
+
+
+def _hook_snapshot(value: Any, name: str) -> Any:
+    """``value.__pw_snapshot__()`` when the type defines it, else None.
+
+    Objects that are not wires but own client-visible state (a Form's typed
+    values and errors) opt in with ``__pw_snapshot__``/``__pw_restore__``.
+    """
+    hook = getattr(type(value), "__pw_snapshot__", None)
+    if hook is None:
+        return None
+    try:
+        state = hook(value)
+    except Exception:
+        logger.warning("Snapshot hook failed for attr '%s'", name, exc_info=True)
+        return None
+    if not _is_serializable(state):
+        logger.warning(
+            "Snapshot hook for attr '%s' returned non-serializable data", name
+        )
+        return None
+    return state
+
+
+def restore_hooked(current: Any, state: Any) -> bool:
+    """Feed snapshot state back through ``__pw_restore__``; False if absent."""
+    hook = getattr(type(current), "__pw_restore__", None)
+    if hook is None:
+        return False
+    try:
+        hook(current, state)
+    except Exception:
+        logger.warning("Restore hook failed on %r", current, exc_info=True)
+    return True
 
 
 def _peek_wire(obj: WireBase) -> Any:
@@ -96,7 +139,6 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     Returns a dict with:
     - "attrs": user-defined attributes (wire values peeked to raw)
     - "wire_tags": maps attr name to wire type tag for reconstruction
-    - "errors": page.errors dict
     - "loading": page.loading dict
     - "user": page.user (if serializable)
     - "await_states": page._await_states
@@ -107,6 +149,7 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {}
     attrs: Dict[str, Any] = {}
     wire_tags: Dict[str, str] = {}
+    hooked: Dict[str, Any] = {}
 
     for name, value in page.__dict__.items():
         # Skip private/framework attributes
@@ -123,6 +166,11 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
         if isinstance(value, Derived):
             continue
         if callable(value) and not isinstance(value, WireBase):
+            continue
+
+        state = _hook_snapshot(value, name)
+        if state is not None:
+            hooked[name] = state
             continue
 
         # Handle wire types
@@ -162,9 +210,10 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
 
     snapshot["attrs"] = attrs
     snapshot["wire_tags"] = wire_tags
+    if hooked:
+        snapshot["hooked"] = hooked
 
     # Framework-managed state that should persist
-    snapshot["errors"] = dict(page.errors) if page.errors else {}
     snapshot["loading"] = dict(page.loading) if page.loading else {}
 
     # User identity
@@ -188,6 +237,10 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
             if attr.startswith("_"):
                 continue
             if attr in {"request", "params", "query", "path", "url"}:
+                continue
+            state = _hook_snapshot(value, attr)
+            if state is not None:
+                comp_snap[attr] = {"value": state, "hook": True}
                 continue
             if isinstance(value, WireBase):
                 if value._locked:
@@ -292,9 +345,10 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
                 exc_info=True,
             )
 
+    for name, state in (snapshot.get("hooked") or {}).items():
+        restore_hooked(getattr(page, name, None), state)
+
     # Restore framework-managed state
-    if "errors" in snapshot:
-        page.errors.update(snapshot["errors"])
     if "loading" in snapshot:
         page.loading.update(snapshot["loading"])
     if "user" in snapshot:
@@ -313,7 +367,9 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
             comp_attrs: Dict[str, Any] = {}
             for attr, info in comp_data.items():
                 if isinstance(info, dict) and "value" in info:
-                    if "wire_tag" in info:
+                    if info.get("hook"):
+                        comp_attrs[attr] = HookedState(info["value"])
+                    elif "wire_tag" in info:
                         tag = info["wire_tag"]
                         factory = _WIRE_TAG_TO_FACTORY.get(tag)
                         if factory:

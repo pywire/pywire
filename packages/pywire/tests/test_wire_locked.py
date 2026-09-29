@@ -11,7 +11,6 @@ def make_page():
     p = _FakePage()
     p.public = wire(1)
     p.token = wire("sk-secret").lock()
-    p.errors = {}
     p.loading = {}
     p._components = {}
     p._await_states = {}

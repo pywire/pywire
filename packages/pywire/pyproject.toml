@@ -31,7 +31,7 @@ dependencies = [
 
 [project.optional-dependencies]
 forms = [
-    "pydantic>=2.0.0",
+    "pydantic[email]>=2.0.0",
 ]
 # pywire-parser is required for compiling .wire files (dev mode hot
 # reload, `pywire build`, syntax-error pages). Production deployments
@@ -123,10 +123,6 @@ rules = { no-matching-overload = "ignore", invalid-argument-type = "ignore" }
 [[tool.ty.overrides]]
 include = ["src/pywire/runtime/redis_store.py"]
 rules = { unresolved-import = "ignore", invalid-await = "ignore" }
-
-[[tool.ty.overrides]]
-include = ["src/pywire/runtime/pydantic_integration.py"]
-rules = { invalid-assignment = "ignore" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

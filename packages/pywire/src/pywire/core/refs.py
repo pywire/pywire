@@ -12,7 +12,6 @@ from typing import (
     Callable,
 )
 import logging
-from pywire.runtime.form_errors import MISSING_FIELD_ERROR
 from pywire.core.wire import WireBase
 
 if TYPE_CHECKING:
@@ -21,6 +20,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+class _Unbound:
+    """Falsy, absorbing stand-in for a component ref that isn't bound yet.
+
+    Any attribute, call or await on it returns itself, so a template can
+    read ``child_ref.anything`` before the child renders without raising.
+    """
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __str__(self) -> str:
+        return ""
+
+    def __repr__(self) -> str:
+        return "<unbound ref>"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> "_Unbound":
+        return self
+
+    def __await__(self) -> Any:
+        async def _self() -> "_Unbound":
+            return self
+
+        return _self().__await__()
+
+    def __getattr__(self, _name: str) -> "_Unbound":
+        return self
+
+    def get(self, _key: str, _default: Any = None) -> "_Unbound":
+        return self
+
+
+UNBOUND = _Unbound()
 
 
 class RefNotBoundError(Exception):
@@ -306,7 +340,7 @@ class ComponentRef(RefBase, Generic[T]):
         self._track_read()
         """Proxy calls to exposed methods."""
         if not self._instance:
-            return MISSING_FIELD_ERROR
+            return UNBOUND
 
         # 1. Check for manual exposure allowlist
         if name in getattr(self._instance, "_exposed_methods", set()):

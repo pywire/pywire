@@ -2,24 +2,28 @@
 title: Form validation
 tutorial: Basic PyWire
 section: Forms
-description: Add validation using HTML attributes and the Form component.
+description: Bind a form to a Pydantic model so the model writes the rules and the server enforces them.
 files:
   - path: pages/index.wire
     initial: |
       ---
-      from pywire import ref
-      from pywire.components import Form
+      from pydantic import BaseModel, Field
+      from pywire import form
 
-      form_ref = ref()
+      class Registration(BaseModel):
+        username: str = Field(min_length=3)
+        age: int = Field(ge=18)
+
+      # 1. Create a form for Registration here
       result = wire("")
 
-      def handle_submit(data):
-        result.value = f"Registered {data['username']} (age {data['age']})"
+      def register(data: Registration):
+        result.value = f"Registered {data.username} (age {data.age})"
       ---
       <div>
         <h1>Validation</h1>
 
-        <form @submit={handle_submit}>
+        <form>
           <div>
             <label>Username</label>
             <input name="username" />
@@ -35,62 +39,66 @@ files:
       </div>
     solution: |
       ---
-      from pywire import ref
-      from pywire.components import Form
+      from pydantic import BaseModel, Field
+      from pywire import form
 
-      form_ref = ref()
+      class Registration(BaseModel):
+        username: str = Field(min_length=3)
+        age: int = Field(ge=18)
+
+      registration = form(Registration)
       result = wire("")
 
-      def handle_submit(data):
-        result.value = f"Registered {data['username']} (age {data['age']})"
+      def register(data: Registration):
+        result.value = f"Registered {data.username} (age {data.age})"
       ---
       <div>
         <h1>Validation</h1>
 
-        <Form @submit={handle_submit} $ref={form_ref}>
+        <form $bind={registration} @submit={register} novalidate>
           <div>
-            <label>Username</label>
-            <input name="username" required minlength="3" />
-            <span $if={form_ref.errors.username} style="color: red;">
-              {form_ref.errors.username.message}
+            <label for={registration.username.html_id}>Username</label>
+            <input $bind={registration.username} />
+            <span $if={registration.username.error} style="color: red;">
+              {registration.username.error}
             </span>
           </div>
           <div>
-            <label>Age</label>
-            <input name="age" type="number" required min="18" />
-            <span $if={form_ref.errors.age} style="color: red;">
-              {form_ref.errors.age.message}
+            <label for={registration.age.html_id}>Age</label>
+            <input $bind={registration.age} />
+            <span $if={registration.age.error} style="color: red;">
+              {registration.age.error}
             </span>
           </div>
           <button type="submit">Register</button>
-        </Form>
+        </form>
 
         <p $if={result} style="color: green;">{result}</p>
       </div>
 successCriteria:
   - type: file_contains
-    description: 'Use the Form component instead of form'
+    description: 'Create the form with form(Registration)'
     target: pages/index.wire
-    pattern: '<Form'
+    pattern: 'form(Registration)'
   - type: file_contains
-    description: 'Add required attribute to username input'
+    description: 'Bind the form with $bind'
     target: pages/index.wire
-    pattern: 'required'
+    pattern: '$bind={registration}'
   - type: file_contains
     description: 'Display validation errors'
     target: pages/index.wire
-    pattern: 'form_ref.errors'
+    pattern: '.error}'
 pagesDir: pages
 ---
 
-PyWire's `Form` component automatically validates inputs based on HTML attributes like `required`, `minlength`, and `min`. Errors are collected on the form ref.
+A bound form takes its rules from a Pydantic model. The model writes the HTML attributes (`required`, `minlength`, `min`, the input type), and the server validates every submit against the same model, so the rules hold even if someone edits the HTML.
 
 ### Your Task
 
-1.  Change `<form>` to `<Form>` (the imported component) and add `$ref={form_ref}`.
-2.  Add `required minlength="3"` to the username input.
-3.  Add `required min="18"` to the age input.
-4.  Below each input, add an error display: `<span $if={form_ref.errors.username}>{form_ref.errors.username.message}</span>`.
-5.  Try submitting with an empty form to see validation errors.
+1.  Create the form: `registration = form(Registration)`.
+2.  On the `<form>`, add `$bind={registration} @submit={register} novalidate`. `novalidate` turns off the browser's own checks for this exercise so you can watch the server's.
+3.  Replace each input with a bound one: `<input $bind={registration.username} />` and `<input $bind={registration.age} />`. The model supplies the name and type, so drop them.
+4.  Below each input, show its error: `<span $if={registration.username.error}>{registration.username.error}</span>`.
+5.  Submit a two-letter username or an age under 18 to see the errors.
 
-The `Form` component intercepts submission, validates against the HTML rules, and only calls your handler if everything passes.
+`register` only runs when the submit is valid, and it receives a `Registration` instance rather than raw strings. In a real form, leave `novalidate` off: the browser then checks the same rules before sending, and the server checks them again.

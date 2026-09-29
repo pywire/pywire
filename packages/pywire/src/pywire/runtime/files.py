@@ -1,9 +1,14 @@
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
 class FileUpload:
-    """Represents an uploaded file."""
+    """A file received with a form submission.
+
+    ``size`` is always counted from the bytes the server received, never
+    taken from the client.
+    """
 
     filename: str
     content_type: str
@@ -11,30 +16,14 @@ class FileUpload:
     content: bytes
 
     @classmethod
-    def from_dict(cls, data: dict) -> "FileUpload":
-        """Create from dictionary (e.g. from JSON payload)."""
-        import base64
+    def __get_pydantic_core_schema__(cls, source: Any, handler: Any) -> Any:
+        from pydantic_core import core_schema
 
-        # content might be base64 encoded string from client
-        content_data = data.get("content", b"")
-        if isinstance(content_data, str):
-            # assume base64 if it's a string, or raw content?
-            # Client usually sends data URL: "data:image/png;base64,....."
-            if content_data.startswith("data:"):
-                header, encoded = content_data.split(",", 1)
-                content_bytes = base64.b64decode(encoded)
-            else:
-                # Fallback or raw base64
-                try:
-                    content_bytes = base64.b64decode(content_data)
-                except Exception:
-                    content_bytes = content_data.encode("utf-8")
-        else:
-            content_bytes = content_data
+        # Only the server builds FileUpload objects (from a multipart part or
+        # a verified upload id), so validation is an instance check: nothing
+        # a client sends as plain data can become a file.
+        return core_schema.is_instance_schema(cls)
 
-        return cls(
-            filename=data.get("name", "unknown"),
-            content_type=data.get("type", "application/octet-stream"),
-            size=data.get("size", 0),
-            content=content_bytes,
-        )
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> Any:
+        return {"type": "string", "format": "binary"}

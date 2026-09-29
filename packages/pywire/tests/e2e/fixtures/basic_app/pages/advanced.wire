@@ -1,12 +1,12 @@
 ---
-from pydantic import BaseModel
-from pywire.components.form import Form
-
-my_form = ref()
+from pydantic import BaseModel, Field
+from pywire import form
 
 class User(BaseModel):
     name: str = "Alice"
-    age: int = 30
+    age: int = Field(30, ge=0)
+
+user_form = form(User)
 
 prim = wire(0)
 lst = wire([1, 2, 3])
@@ -26,7 +26,7 @@ def update_all():
 
 submitted_data = wire(None)
 
-def handle_form_submit(data):
+def handle_form_submit(data: User):
     submitted_data.value = data
 
 ---
@@ -39,17 +39,17 @@ def handle_form_submit(data):
     <div id="lst-len">{len(lst)}</div>
     <div id="ns-val">{ns['a']}</div>
 
-    <!-- Exposed refs test -->
-    <h2>Dynamic Form Component</h2>
+    <!-- Fields rendered from the model -->
+    <h2>Dynamic Bound Form</h2>
     <div id="submitted-data">{json.dumps(submitted_data.value.model_dump()) if submitted_data else "None"}</div>
-    <Form model={User} $ref={my_form} on_submit={handle_form_submit}>
+    <form $bind={user_form} @submit={handle_form_submit}>
         <div id="form-fields">
-            <div $for={field in my_form.schema_fields()} reactive="exclude" class="dyn-field" data-name={field['name']}>
-                <label>{field['title']}</label>
-                <input type={field['input_type']} name={field['name']} />
-                <span class="error-msg" data-for={field['name']}>{my_form.errors[field['name']] if field['name'] in my_form.errors else ""}</span>
+            <div $for={field in user_form.fields} class="dyn-field" data-name={field.html_name}>
+                <label for={field.html_id}>{field.label}</label>
+                <input $bind={field} />
+                <span class="error-msg" data-for={field.html_name}>{field.error or ""}</span>
             </div>
         </div>
         <button type="submit" id="btn-submit-form">Submit</button>
-    </Form>
+    </form>
 </div>
