@@ -78,11 +78,12 @@ class TestResolveApps:
         (pages / "index.wire").write_text("<p>hi</p>")
         return PyWire(pages_dir=str(pages))
 
-    def test_pywire_app_serves_its_starlette_app(self, tmp_path):
+    def test_pywire_app_is_served_itself(self, tmp_path):
+        # Not its inner Starlette app: PyWire.__call__ applies base_path.
         from pywire.runtime.dev_server import _resolve_apps
 
         app = self._pywire(tmp_path)
-        assert _resolve_apps(app) == (app, app.app)
+        assert _resolve_apps(app) == (app, app)
 
     def test_host_app_is_served_whole(self, tmp_path):
         from starlette.applications import Starlette

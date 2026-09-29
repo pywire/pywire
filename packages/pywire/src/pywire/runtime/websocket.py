@@ -681,7 +681,7 @@ class WebSocketHandler:
                 dispatch_target,
                 path=path,
                 headers=headers,
-                base_scope=dict(websocket.scope),
+                base_scope=self.app._dispatch_scope(websocket.scope),
             )
 
             # 3. Sync cookies from the internal response

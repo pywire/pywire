@@ -99,6 +99,10 @@ export class UnifiedEventHandler {
     // focusout drives live validation of bound forms.
     this.attachListeners([...this.defaultEvents, 'focusout'])
     this.refreshListeners()
+    // The server reset a bound form: what was typed before no longer counts.
+    document.addEventListener('pywire:form-reset', (e) => {
+      if (e.target instanceof HTMLFormElement) this.dirtyFields.delete(e.target)
+    })
   }
 
   /**

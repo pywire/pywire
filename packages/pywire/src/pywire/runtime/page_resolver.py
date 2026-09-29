@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from starlette.requests import Request
 
+from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.router import URLHelper
 
 
@@ -40,7 +41,8 @@ def resolve_page(
     pathname = parsed.path
     qs = parsed.query
 
-    match = router.match(pathname)
+    # Browsers send the full path; the router matches the app-relative one.
+    match = router.match(strip_base(pathname, prefix_of(base_scope)))
     if not match:
         return None
 

@@ -1,0 +1,7 @@
+---
+def home():
+    navigate("/")
+---
+<link rel="stylesheet" href="/static/app.css">
+<h1 id="title">About</h1>
+<button id="go-home" @click={home}>Home</button>

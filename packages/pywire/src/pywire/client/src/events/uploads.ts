@@ -67,6 +67,9 @@ function accepts(tokens: string[], file: File): boolean {
 
 /** Why these files can't be sent from this input, or null. */
 export function checkFiles(input: HTMLInputElement, files: File[]): string | null {
+  // A `novalidate` form shows its own messages: the file goes up and the
+  // server's check puts the message where the page shows field errors.
+  if (input.form?.noValidate) return null
   const maxFiles = Number.parseInt(input.dataset.pwMaxFiles ?? '', 10)
   if (maxFiles > 0 && files.length > maxFiles) {
     return `Choose at most ${maxFiles} files`

@@ -40,9 +40,10 @@ def _copy_fixture_app(tmp_path_factory, fixture_name: str) -> Path:
 
 
 @contextlib.contextmanager
-def _run_pywire_server(app_dir: Path, port: int):
+def _run_pywire_server(app_dir: Path, port: int, extra_env: dict | None = None):
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    env.update(extra_env or {})
 
     cmd = [
         sys.executable,
@@ -193,4 +194,16 @@ def keyed_list_app_dir(tmp_path_factory):
 @pytest.fixture(scope="session")
 def keyed_list_server(keyed_list_app_dir):
     with _run_pywire_server(keyed_list_app_dir, _free_port()) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def base_path_app_dir(tmp_path_factory):
+    return _copy_fixture_app(tmp_path_factory, "base_path_app")
+
+
+@pytest.fixture(scope="session", params=["interactive", "stateless"])
+def base_path_server(request, base_path_app_dir):
+    env = {"E2E_STATELESS": "1" if request.param == "stateless" else "0"}
+    with _run_pywire_server(base_path_app_dir, _free_port(), env) as url:
         yield url

@@ -223,7 +223,7 @@ booking = form(Booking, context=lambda: {"left": seats_left()})
 
 ### Edit forms
 
-Prefill from a model instance or a mapping, and go back to it with `reset()`:
+Prefill from a model instance or a mapping, and go back to it with `reset()`. Both replace what the user has typed in the browser with the form's values:
 
 ```python
 profile = form(Profile, initial=current_user.profile)
@@ -316,7 +316,7 @@ async def save(data: Profile):
 
 `accept` is checked against the declared content type and the filename, as the browser does. It says nothing about what the bytes really are, so check the content yourself before you trust it (for example, open an image with Pillow).
 
-With JavaScript on, a file is uploaded as soon as it is picked, while the user fills in the rest. The browser checks `accept`, `max_size` and `max_files` first and shows the same message the server would. A `<progress data-pw-progress-for="...">` naming the input's id fills as the file goes up, and the input carries `data-pw-uploading` and `aria-busy` meanwhile so you can style it. Submitting waits for uploads still running. Without JavaScript, the files are posted with the form.
+With JavaScript on, a file is uploaded as soon as it is picked, while the user fills in the rest. The browser checks `accept`, `max_size` and `max_files` first and shows the same message the server would. On a form with `novalidate` it leaves them to the server, so the message appears wherever the page shows the field's error. A `<progress data-pw-progress-for="...">` naming the input's id fills as the file goes up, and the input carries `data-pw-uploading` and `aria-busy` meanwhile so you can style it. Submitting waits for uploads still running. Without JavaScript, the files are posted with the form.
 
 The handler receives each file as an `Upload`:
 

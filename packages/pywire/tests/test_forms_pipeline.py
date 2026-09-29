@@ -368,6 +368,20 @@ def test_initial_values_and_load_and_reset():
     )
 
 
+def test_reset_tells_the_browser_to_drop_typed_values():
+    from pywire.forms.render import form_attrs
+
+    f = form(Signup)
+    assert "data-pw-reset" not in form_attrs(f, "_handler_0", {}, None)
+    f.reset()
+    f.load({"email": "c@d.co"})
+    assert form_attrs(f, "_handler_0", {}, None)["data-pw-reset"] == "2"
+    g = form(Signup)
+    g.__pw_restore__(f.__pw_snapshot__())
+    g.reset()
+    assert form_attrs(g, "_handler_0", {}, None)["data-pw-reset"] == "3"
+
+
 def test_server_owned_fields_keep_the_server_value():
     got = []
     f = form(Signup, initial={"email": "owner@b.co"})

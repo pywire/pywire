@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pywire import form
 from pywire.forms import Upload, UploadField
 from pywire.runtime.uploads import (
+    machine_key,
     PREFIX,
     Staging,
     format_size,
@@ -367,3 +368,28 @@ def test_staged_files_are_private(tmp_path):
     app = PyWire(pages_dir=str(pages))
     assert app._runtime_dir.stat().st_mode & 0o077 == 0
     assert app._runtime_dir.parent.stat().st_mode & 0o077 == 0
+
+
+def test_machine_key_needs_no_hard_links(tmp_path, monkeypatch):
+    # Pyodide's os has no link().
+    import os
+
+    monkeypatch.delattr(os, "link", raising=False)
+    key = machine_key(tmp_path / "k.key")
+    assert len(key) == 32
+    assert machine_key(tmp_path / "k.key") == key
+    assert (tmp_path / "k.key").read_bytes() == key
+
+
+def test_machine_key_falls_back_when_the_folder_is_unusable(tmp_path):
+    key = machine_key(tmp_path / "missing" / "k.key")
+    assert len(key) == 32
+    assert machine_key(tmp_path / "missing" / "k.key") == key
+
+
+def test_machine_key_repairs_a_short_file_left_by_a_dead_process(tmp_path):
+    path = tmp_path / "k.key"
+    path.write_bytes(b"short")
+    key = machine_key(path)
+    assert len(key) == 32
+    assert path.read_bytes() == key

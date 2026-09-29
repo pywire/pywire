@@ -79,14 +79,14 @@ def _import_app(app_str: str) -> Any:
 def _resolve_apps(target: Any) -> Tuple[Any, Any]:
     """``(pywire_app, app_to_serve)`` for the object named on the command line.
 
-    A PyWire app is served as-is. A host app (FastAPI, Starlette) is served
+    A PyWire app is served itself, so base_path applies. A host app (FastAPI, Starlette) is served
     whole, so its own routes and middleware keep working, and the PyWire app
     mounted in it (``host.mount("/", pywire.as_asgi(host))``) drives reloads.
     """
     from pywire.runtime.app import PyWire
 
     if isinstance(target, PyWire):
-        return target, target.app
+        return target, target
 
     for route in getattr(target, "routes", []):
         mounted = getattr(route, "app", None)
@@ -517,7 +517,8 @@ async def run_dev_server(
                     f"🚀 PyWire: Running on [link=https://{display_host}:{port}][bold cyan]https://{display_host}:{port}[/][/link] (HTTP/3 + WebSocket)"
                 )
 
-                # Serve the starlette app wrapped in PyWire
+                # Serve through PyWire's own ASGI entry, as in production, so
+                # base_path, header rewriting and compression apply in dev.
                 tg.create_task(
                     serve(served_app, config, shutdown_trigger=shutdown_event.wait)
                 )

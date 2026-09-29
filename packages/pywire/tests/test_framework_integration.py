@@ -220,8 +220,8 @@ class TestAsAsgiHost:
         assert self.pywire._get_dispatch_target() is host
 
     def test_dispatch_target_without_host(self):
-        """Without host, _get_dispatch_target returns Starlette app."""
-        assert self.pywire._get_dispatch_target() is self.pywire.app
+        """Without host, _get_dispatch_target wraps the Starlette app."""
+        assert self.pywire._get_dispatch_target().app is self.pywire.app
 
     @pytest.mark.asyncio
     async def test_internal_dispatch_through_host_middleware(self):

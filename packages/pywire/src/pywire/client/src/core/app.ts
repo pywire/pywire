@@ -347,6 +347,9 @@ export class PyWireApp {
     regex = regex.replace(/:(\w+)(:\w+)?/g, '([^/]+)')
     // Replace {param:type} or {param} with capture groups
     regex = regex.replace(/\{(\w+)(:\w+)?\}/g, '([^/]+)')
+    // Under a URL prefix the index pattern is "/demo/"; the browser may be
+    // at "/demo" as well.
+    if (regex.length > 1 && regex.endsWith('/')) regex += '?'
     return new RegExp(`^${regex}$`)
   }
 

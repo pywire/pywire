@@ -58,6 +58,7 @@ function keepClientValue(
   fromEl: HTMLInputElement | HTMLTextAreaElement,
   toEl: HTMLInputElement | HTMLTextAreaElement
 ): boolean {
+  if (fromEl.form && resetForms.has(fromEl.form)) return false
   if (fromEl.defaultValue === toEl.defaultValue) return true
   if (fromEl !== document.activeElement) return false
   const server = toEl.value
@@ -71,6 +72,24 @@ function serverSelection(select: HTMLSelectElement): string {
     .filter((o) => o.defaultSelected)
     .map((o) => o.value)
     .join('\u0000')
+}
+
+/**
+ * Bound forms the server reset (`form.reset()` or `load()`) in the morph under
+ * way: it bumps `data-pw-reset`, and its fields then show the server's values
+ * rather than what the user typed.
+ */
+const resetForms = new Set<HTMLFormElement>()
+
+function noteReset(fromEl: Element, toEl: Element): void {
+  if (
+    fromEl instanceof HTMLFormElement &&
+    toEl.hasAttribute('data-pw-reset') &&
+    toEl.getAttribute('data-pw-reset') !== fromEl.getAttribute('data-pw-reset')
+  ) {
+    resetForms.add(fromEl)
+    fromEl.dispatchEvent(new CustomEvent('pywire:form-reset', { bubbles: true }))
+  }
 }
 
 export class DOMUpdater {
@@ -240,6 +259,7 @@ export class DOMUpdater {
       // was patched in place already holds the value the morph decided on.
       if (
         el !== state.element &&
+        !(el.form && resetForms.has(el.form)) &&
         !(el instanceof HTMLInputElement && el.type === 'file') &&
         state.value &&
         el.value !== state.value
@@ -484,6 +504,7 @@ export class DOMUpdater {
             },
 
             onBeforeElUpdated: (fromEl, toEl) => {
+              noteReset(fromEl, toEl)
               // Alpine.js integration — preserve reactive state across morph.
               // Alpine stashes its reactive proxy on `_x_dataStack`; morphdom's
               // attribute copy would discard it. Hand the subtree to
@@ -514,6 +535,8 @@ export class DOMUpdater {
               // If the server sends a completely different value, let it win.
               if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
                 if (fromEl.type === 'file' || toEl.type === 'file') {
+                  // A reset form drops the files picked so far.
+                  if (fromEl.form && resetForms.has(fromEl.form)) fromEl.value = ''
                   // Keep the existing file input node to avoid clearing selected files.
                   // morphdom's default property sync can assign fromEl.value = toEl.value ("")
                   // which clears browser file selections.
@@ -531,7 +554,10 @@ export class DOMUpdater {
                 }
                 if (fromEl.type === 'checkbox' || fromEl.type === 'radio') {
                   // Keep the user's toggle unless the server changed `checked`.
-                  if (fromEl.defaultChecked === toEl.defaultChecked) {
+                  if (
+                    fromEl.defaultChecked === toEl.defaultChecked &&
+                    !(fromEl.form && resetForms.has(fromEl.form))
+                  ) {
                     toEl.checked = fromEl.checked
                   }
                 } else if (keepClientValue(fromEl, toEl)) {
@@ -547,12 +573,13 @@ export class DOMUpdater {
                 toEl.value = fromEl.value
               }
 
-              // Select: preserve the user's choice unless the server changed
-              // which options it renders `selected` (a form reset or load),
-              // the same rule as text inputs above.
+              // Select: preserve the user's choice unless the server reset
+              // the form or changed which options it renders `selected`
+              // (a load), the same rule as text inputs above.
               if (
                 fromEl instanceof HTMLSelectElement &&
                 toEl instanceof HTMLSelectElement &&
+                !(fromEl.form && resetForms.has(fromEl.form)) &&
                 serverSelection(fromEl) === serverSelection(toEl)
               ) {
                 // Preserve by value (more robust than index)
@@ -576,6 +603,11 @@ export class DOMUpdater {
                 // choice the user made (a browser keeps a user's choice when
                 // only the `selected` attributes change).
                 fromEl.value = toEl.value
+              }
+
+              // An upload's progress bar keeps what the client drew.
+              if (fromEl instanceof HTMLProgressElement && toEl instanceof HTMLProgressElement) {
+                keepUploadProgress(fromEl, toEl)
               }
 
               // An upload's progress bar keeps what the client drew.
@@ -631,6 +663,7 @@ export class DOMUpdater {
 
         // Restore focus after morphdom completes
         this.restoreFocusState(focusState)
+        resetForms.clear()
 
         // Execute deferred scripts AFTER morphdom has updated the DOM and focus
         // is restored. This ensures inline scripts can reference newly-inserted

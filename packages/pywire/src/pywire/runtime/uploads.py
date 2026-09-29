@@ -223,24 +223,70 @@ def private_dir(path: Path) -> Path:
 
 def machine_key(path: Path) -> bytes:
     """A random 32-byte key kept at ``path`` (in a private folder), created
-    by whichever process asks first, so processes on one machine share it."""
-    for _ in range(50):
+    by whichever process asks first, so processes on one machine share it.
+
+    The key is written to a temp file and linked into place, so the file
+    appears whole or not at all. Where ``os.link`` doesn't exist (Pyodide,
+    which is a single process) it is created exclusively instead. Falls back
+    to a key for this process alone when the file can't be used (a read-only
+    or missing filesystem) with a warning.
+    """
+    for attempt in range(50):
         try:
             key = path.read_bytes()
         except FileNotFoundError:
             key = b""
+        except OSError:
+            break
         if len(key) == 32:
             return key
-        temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
-        temp.write_bytes(secrets.token_bytes(32))
-        temp.chmod(0o600)
+        if key:
+            # Not something this code writes: repair it, then read what won.
+            if attempt < 2:
+                time.sleep(0.01)
+                continue
+            temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
+            try:
+                temp.write_bytes(secrets.token_bytes(32))
+                temp.chmod(0o600)
+                os.replace(temp, path)
+            except OSError:
+                temp.unlink(missing_ok=True)
+                break
+            time.sleep(0.05)
+            continue
         try:
-            os.link(temp, path)  # fails if another process got there first
+            if hasattr(os, "link"):
+                temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
+                try:
+                    temp.write_bytes(secrets.token_bytes(32))
+                    temp.chmod(0o600)
+                    os.link(temp, path)
+                finally:
+                    temp.unlink(missing_ok=True)
+            else:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    os.write(fd, secrets.token_bytes(32))
+                finally:
+                    os.close(fd)
         except FileExistsError:
-            pass
-        finally:
-            temp.unlink(missing_ok=True)
-    raise RuntimeError(f"PyWire: can't read the key at {path}")
+            continue
+        except OSError:
+            break
+    global _process_key
+    if _process_key is None:
+        logger.warning(
+            "PyWire: can't keep the upload token key at %s; upload tokens are "
+            "only accepted by this process. Set PyWire(secret_key=...) to "
+            "share them.",
+            path,
+        )
+        _process_key = secrets.token_bytes(32)
+    return _process_key
+
+
+_process_key: Optional[bytes] = None
 
 
 class _TooLarge(Exception):
