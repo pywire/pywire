@@ -469,11 +469,22 @@ class PyWire:
         else:
             set_stateless_tier(stateless)
         secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
-        # Signs state a page hands the browser to send back (wizard steps).
-        # Processes that serve the same pages must share it.
+        # Signs state a page hands the browser to send back (what a bound
+        # form rendered, a wizard's steps). Processes that serve the same
+        # pages must share it, and a short one could be guessed, so it is
+        # only used when it is at least 32 bytes.
+        strong = bool(secret) and len(str(secret).encode("utf-8")) >= 32
+        if secret and not strong and not stateless:
+            logger.warning(
+                "PyWire: secret_key is shorter than 32 bytes, so it doesn't "
+                "sign form state; forms posted without JavaScript are only "
+                "accepted by the process that rendered them. Generate one "
+                "with: python -c 'import secrets; print(secrets.token_hex(32))'"
+            )
         self.signing_secret: bytes = (
-            secret.encode("utf-8") if secret else secrets.token_bytes(32)
+            str(secret).encode("utf-8") if strong else secrets.token_bytes(32)
         )
+        self.signing_secret_shared = strong
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
         if stateless:

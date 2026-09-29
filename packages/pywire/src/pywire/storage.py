@@ -75,7 +75,8 @@ def check_key(key: object) -> str:
     """``key`` when it is a safe store key; else ``ValueError``."""
     if not isinstance(key, str) or not key or len(key) > 1024:
         raise ValueError(f"Invalid storage key {key!r}")
-    if key.startswith("/") or "\\" in key or "\0" in key:
+    # ":" would let "C:/..." name a drive on Windows.
+    if key.startswith("/") or "\\" in key or "\0" in key or ":" in key:
         raise ValueError(f"Invalid storage key {key!r}")
     if any(part in ("", ".", "..") for part in key.split("/")):
         raise ValueError(f"Invalid storage key {key!r}")
@@ -234,11 +235,15 @@ class ObjectStore:
         payload: Any = (
             bytes(data) if isinstance(data, (bytearray, memoryview)) else data
         )
+        # obstore's file:// store keeps no attributes and refuses them.
+        local = type(self.store).__name__ == "LocalStore"
         await _obstore().put_async(
             self.store,
             check_key(key),
             payload,
-            attributes={"Content-Type": content_type} if content_type else None,
+            attributes=(
+                {"Content-Type": content_type} if content_type and not local else None
+            ),
         )
 
     async def get(self, key: str) -> bytes:

@@ -402,3 +402,12 @@ def test_form_state_stays_on_its_page_without_a_socket(tmp_path):
         assert r.status_code == 422
         html = c.get("/other").text
         assert "typed@@x" not in html and "ERR:" not in html
+
+
+def test_a_short_secret_never_signs_form_state(tmp_path, caplog):
+    app = _app(tmp_path, {"index": PAGE}, secret_key="short")
+    assert "shorter than 32 bytes" in caplog.text
+    assert app.signing_secret != b"short" and not app.signing_secret_shared
+    (tmp_path / "b").mkdir()
+    strong = _app(tmp_path / "b", {"index": PAGE}, secret_key=SECRET)
+    assert strong.signing_secret == SECRET.encode() and strong.signing_secret_shared

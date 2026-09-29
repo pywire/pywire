@@ -177,6 +177,7 @@ def _root_page(page: Any) -> Any:
 
 
 _process_secret = secrets.token_bytes(32)
+_warned_secret = False
 
 
 def _secret(page: Any) -> bytes:
@@ -185,12 +186,23 @@ def _secret(page: Any) -> bytes:
     Derived from the app's secret rather than the secret itself, which also
     signs stateless snapshots, so neither kind of blob passes for the other.
     """
+    global _warned_secret
     try:
-        secret = _root_page(page).request.app.state.pywire.signing_secret
+        app = _root_page(page).request.app.state.pywire
+        secret = app.signing_secret
     except (AttributeError, KeyError):
-        secret = None
+        app = secret = None
     if not (isinstance(secret, bytes) and secret):
         secret = _process_secret
+    if app is not None and not getattr(app, "signing_secret_shared", True):
+        if not _warned_secret:
+            _warned_secret = True
+            logger.warning(
+                "PyWire: no secret_key, so forms posted without JavaScript are "
+                "only accepted by the process that rendered them. Set "
+                "PyWire(secret_key=...) (32+ bytes) when several processes "
+                "serve the app."
+            )
     return hmac.new(secret, b"pywire.form", hashlib.sha256).digest()
 
 

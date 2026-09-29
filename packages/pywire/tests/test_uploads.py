@@ -27,10 +27,12 @@ async def _chunks(*parts: bytes):
 
 def _stores(tmp_path: Path):
     obstore = pytest.importorskip("obstore.store")
+    (tmp_path / "obj").mkdir()
     return [
         LocalStore(tmp_path / "files"),
         MemoryStore(),
         ObjectStore(obstore.MemoryStore()),
+        ObjectStore(obstore.LocalStore(tmp_path / "obj")),
     ]
 
 
@@ -44,7 +46,7 @@ def test_stores_share_one_interface(tmp_path):
         assert b"".join([c async for c in store.stream("a/two.txt")]) == b"world"
         assert await store.exists("a/one.txt")
         assert not await store.exists("a/nope.txt")
-        assert [k async for k in store.list("a/")] == ["a/one.txt", "a/two.txt"]
+        assert sorted([k async for k in store.list("a/")]) == ["a/one.txt", "a/two.txt"]
         await store.delete("a/one.txt")
         await store.delete("a/one.txt")  # missing: no error
         with pytest.raises(FileNotFoundError):
@@ -57,7 +59,8 @@ def test_stores_share_one_interface(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "key", ["", "/abs", "../up", "a/../b", "a//b", "a/./b", "a\\b", "a/", 7]
+    "key",
+    ["", "/abs", "../up", "a/../b", "a//b", "a/./b", "a\\b", "a/", "C:/x", "C:x", 7],
 )
 def test_unsafe_keys_are_refused(tmp_path, key):
     async def run(store: FileStore) -> None:
