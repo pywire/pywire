@@ -1,0 +1,25 @@
+name: PR Title
+
+# PRs squash-merge, so the title becomes the commit release-please parses.
+# A title it can't parse is dropped from changelogs and version bumps
+# without any error (#274), so check it before merge.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    name: "PR Title"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check title against release-please's rules
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python3 scripts/check_pr_title.py "$TITLE"

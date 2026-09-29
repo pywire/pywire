@@ -9,7 +9,8 @@ and root orchestrator scripts. Subcommands:
   print                       human-readable graph (units, edges, floors)
   units                       all checkable units, topological (upstream first)
   affected [base-ref]         units affected by working-tree / branch diff
-  check-floors                floors vs published versions + _FLOORS equality
+  check-floors [--warn-stale] floors vs published versions + _FLOORS equality
+  bump-floors [--expect N=V]  raise stale floors (pyproject + _FLOORS) to published
   check-ci                    ci.yml fan-out vs graph-derived fan-out
   check-publishable PKG       PKG's floors satisfiable by published versions
   release-order [PKGS...]     topological merge order (auto-detects release PRs)
@@ -24,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import tomllib
 import urllib.request
 from dataclasses import dataclass, field
@@ -299,10 +301,10 @@ def affected(mono: Monorepo, files: list[str]) -> set[str]:
 # --- checks -------------------------------------------------------------
 
 
-def check_floors(mono: Monorepo, published: dict[str, str]) -> list[str]:
-    """Floor(A -> B) must be >= the latest PUBLISHED version of B, and any
-    _FLOORS entry must equal the pyproject floor."""
-    violations: list[str] = []
+def stale_floors(mono: Monorepo, published: dict[str, str]) -> list[tuple[str, str, str, str]]:
+    """(unit path, dep, floor, latest published) for every monorepo floor
+    below the latest PUBLISHED version of its upstream."""
+    stale: list[tuple[str, str, str, str]] = []
     for path, unit in sorted(mono.units.items()):
         for dep, floor in sorted(unit.floors.items()):
             target = mono.by_name(dep)
@@ -310,9 +312,22 @@ def check_floors(mono: Monorepo, published: dict[str, str]) -> list[str]:
                 continue
             latest = published.get(dep)
             if latest and version_tuple(floor) < version_tuple(latest):
-                violations.append(
-                    f"{path}: floor {dep}>={floor} is below published {dep} {latest} — bump to >={latest}"
-                )
+                stale.append((path, dep, floor, latest))
+    return stale
+
+
+def _stale_message(path: str, dep: str, floor: str, latest: str) -> str:
+    return f"{path}: floor {dep}>={floor} is below published {dep} {latest} — bump to >={latest}"
+
+
+def check_floors(mono: Monorepo, published: dict[str, str], include_stale: bool = True) -> list[str]:
+    """Floor(A -> B) must be >= the latest PUBLISHED version of B, and any
+    _FLOORS entry must equal the pyproject floor. include_stale=False skips
+    the first rule: it depends on registry state, not on the commit."""
+    violations: list[str] = []
+    if include_stale:
+        violations.extend(_stale_message(*s) for s in stale_floors(mono, published))
+    for path, unit in sorted(mono.units.items()):
         for name, compat_floor in sorted(unit.compat_floors.items()):
             pyproject_floor = unit.floors.get(name)
             if pyproject_floor is None:
@@ -324,6 +339,35 @@ def check_floors(mono: Monorepo, published: dict[str, str]) -> list[str]:
                     f"{path}: _FLOORS {name}>={compat_floor} != pyproject floor {name}>={pyproject_floor}"
                 )
     return violations
+
+
+def _dist_name_pattern(name: str) -> str:
+    """Regex for a PEP 503-equivalent spelling of NAME (-, _ and . interchangeable)."""
+    return "[-_.]".join(re.escape(part) for part in re.split(r"[-_.]", name))
+
+
+def bump_floors(mono: Monorepo, published: dict[str, str]) -> list[tuple[str, str, str, str]]:
+    """Raise every stale floor to the latest published version, in the
+    downstream pyproject.toml (every spelling, extras included) and its
+    _compat.py _FLOORS. Returns the (path, dep, old, new) edits applied."""
+    edits = stale_floors(mono, published)
+    for path, dep, old, new in edits:
+        unit_dir = mono.root / path
+        name_re = _dist_name_pattern(dep)
+        pyproject = unit_dir / "pyproject.toml"
+        text = pyproject.read_text()
+        req_re = re.compile(
+            rf"""(["'])({name_re})(\[[^\]]*\])?(\s*>=\s*){re.escape(old)}(?![0-9A-Za-z.])""",
+            re.I,
+        )
+        text, count = req_re.subn(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3) or ''}{m.group(4)}{new}", text)
+        if not count:
+            raise SystemExit(f"{path}: could not find {dep}>={old} in pyproject.toml")
+        pyproject.write_text(text)
+        compat_re = re.compile(rf"""("{name_re}"\s*:\s*"){re.escape(old)}(")""", re.I)
+        for compat in unit_dir.glob("src/**/_compat.py"):
+            compat.write_text(compat_re.sub(lambda m: f"{m.group(1)}{new}{m.group(2)}", compat.read_text()))
+    return edits
 
 
 def parse_workflow(text: str) -> dict[str, dict]:
@@ -444,12 +488,15 @@ def check_ci(mono: Monorepo, ci_text: str) -> list[str]:
     return violations
 
 
-def check_publishable(mono: Monorepo, pkg: str, published: dict[str, str]) -> list[str]:
+def check_publishable(mono: Monorepo, pkg: str, published: dict[str, str], fresh: bool = False) -> list[str]:
     """Every monorepo floor of PKG must be satisfiable by a version already
-    published to PyPI/npm (the release-ordering invariant)."""
+    published to PyPI/npm (the release-ordering invariant). fresh=True also
+    requires each floor to be current (no floor bump still pending)."""
     path = _resolve_pkg(mono, pkg)
     unit = mono.units[path]
     violations: list[str] = []
+    if fresh:
+        violations.extend(_stale_message(*s) for s in stale_floors(mono, published) if s[0] == path)
     for dep, floor in sorted(unit.floors.items()):
         target = mono.by_name(dep)
         if not target or target == path:
@@ -534,9 +581,9 @@ def check_scripts(root: Path) -> list[str]:
 _REGISTRY_CACHE: dict[str, str] = {}
 
 
-def fetch_published(name: str, registry: str) -> str:
+def fetch_published(name: str, registry: str, cached: bool = True) -> str:
     """Latest published version of NAME on PyPI ('pypi') or npm ('npm')."""
-    if name in _REGISTRY_CACHE:
+    if cached and name in _REGISTRY_CACHE:
         return _REGISTRY_CACHE[name]
     if registry == "npm":
         url = f"https://registry.npmjs.org/{name}"
@@ -629,13 +676,67 @@ def _cmd_affected(mono: Monorepo, base_ref: str | None) -> int:
     return 0
 
 
-def _cmd_check_floors(mono: Monorepo) -> int:
+def _cmd_check_floors(mono: Monorepo, warn_stale: bool) -> int:
     published = _published_for(mono, _monorepo_dep_names(mono))
-    violations = check_floors(mono, published)
+    if warn_stale:
+        # Stale floors appear the moment an upstream publishes, on commits
+        # that did not change; release.yml's bump-floors job fixes them.
+        for s in stale_floors(mono, published):
+            prefix = "::warning::" if os.environ.get("GITHUB_ACTIONS") else "warning: "
+            print(f"{prefix}{_stale_message(*s)} (release.yml bump-floors raises it)")
+    violations = check_floors(mono, published, include_stale=not warn_stale)
     for v in violations:
         print(v)
     print(f"check-floors: {'FAIL' if violations else 'ok'} ({len(violations)} violations)")
     return 1 if violations else 0
+
+
+def wait_published(
+    mono: Monorepo, expected: dict[str, str], timeout: float, interval: float = 20.0
+) -> list[str]:
+    """Poll the registries until each monorepo upstream in EXPECTED shows at
+    least that version (PyPI's JSON API lags a publish by a minute or two).
+    Names nothing depends on are ignored. Returns the ones still missing."""
+    wanted = {n: v for n, v in expected.items() if n in _monorepo_dep_names(mono)}
+    deadline = time.monotonic() + timeout
+    while True:
+        missing = []
+        for name, version in sorted(wanted.items()):
+            target = mono.by_name(name)
+            registry = "npm" if target and mono.units[target].kind == "js" else "pypi"
+            try:
+                latest = fetch_published(name, registry, cached=False)
+            except Exception:  # noqa: BLE001 — transient registry errors: poll again
+                latest = "0"
+            if version_tuple(latest) < version_tuple(version):
+                missing.append(f"{name} {version}")
+            else:
+                _REGISTRY_CACHE[name] = latest
+        if not missing or time.monotonic() >= deadline:
+            return missing
+        print(f"waiting for {', '.join(missing)} on the registry…", file=sys.stderr)
+        time.sleep(interval)
+
+
+def _cmd_bump_floors(mono: Monorepo, expect: list[str], timeout: float) -> int:
+    expected: dict[str, str] = {}
+    for item in expect:
+        name, sep, version = item.partition("=")
+        if not sep or not version:
+            print(f"error: --expect takes NAME=VERSION, got {item!r}", file=sys.stderr)
+            return 2
+        expected[name] = version
+    missing = wait_published(mono, expected, timeout)
+    if missing:
+        print(f"error: not published after {timeout:.0f}s: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    published = _published_for(mono, _monorepo_dep_names(mono))
+    edits = bump_floors(mono, published)
+    for path, dep, old, new in edits:
+        print(f"{path}: {dep}>={old} -> >={new}")
+    if not edits:
+        print("bump-floors: all floors current")
+    return 0
 
 
 def _cmd_check_ci(mono: Monorepo, root: Path) -> int:
@@ -647,10 +748,10 @@ def _cmd_check_ci(mono: Monorepo, root: Path) -> int:
     return 1 if violations else 0
 
 
-def _cmd_check_publishable(mono: Monorepo, pkg: str) -> int:
+def _cmd_check_publishable(mono: Monorepo, pkg: str, fresh: bool) -> int:
     path = _resolve_pkg(mono, pkg)
     published = _published_for(mono, _monorepo_dep_names(mono, [path]))
-    violations = check_publishable(mono, pkg, published)
+    violations = check_publishable(mono, pkg, published, fresh=fresh)
     for v in violations:
         print(v)
     print(f"check-publishable {pkg}: {'FAIL' if violations else 'ok'}")
@@ -704,10 +805,16 @@ def main(argv: list[str] | None = None) -> int:
     subs.add_parser("units", help="all units, topological order")
     p = subs.add_parser("affected", help="units affected by the working tree / branch diff")
     p.add_argument("base_ref", nargs="?", default=None)
-    subs.add_parser("check-floors", help="floors vs published versions + _FLOORS equality")
+    p = subs.add_parser("check-floors", help="floors vs published versions + _FLOORS equality")
+    p.add_argument("--warn-stale", action="store_true", help="report floors below published as warnings")
+    p = subs.add_parser("bump-floors", help="raise stale floors to the published versions")
+    p.add_argument("--expect", action="append", default=[], metavar="NAME=VERSION",
+                   help="wait until NAME>=VERSION is on the registry first (repeatable)")
+    p.add_argument("--timeout", type=float, default=600.0, help="seconds to wait for --expect (default 600)")
     p = subs.add_parser("check-ci", help="ci.yml fan-out vs graph")
     p = subs.add_parser("check-publishable", help="floors satisfiable by published versions")
     p.add_argument("pkg")
+    p.add_argument("--fresh", action="store_true", help="also fail while a floor is below published")
     p = subs.add_parser("release-order", help="merge order (default: open release-please PRs)")
     p.add_argument("pkgs", nargs="*", default=[])
     subs.add_parser("check-scripts", help="local-tooling contract")
@@ -720,11 +827,13 @@ def main(argv: list[str] | None = None) -> int:
     if ns.command == "affected":
         return _cmd_affected(mono, ns.base_ref)
     if ns.command == "check-floors":
-        return _cmd_check_floors(mono)
+        return _cmd_check_floors(mono, ns.warn_stale)
+    if ns.command == "bump-floors":
+        return _cmd_bump_floors(mono, ns.expect, ns.timeout)
     if ns.command == "check-ci":
         return _cmd_check_ci(mono, root)
     if ns.command == "check-publishable":
-        return _cmd_check_publishable(mono, ns.pkg)
+        return _cmd_check_publishable(mono, ns.pkg, ns.fresh)
     if ns.command == "release-order":
         return _cmd_release_order(mono, ns.pkgs)
     if ns.command == "check-scripts":

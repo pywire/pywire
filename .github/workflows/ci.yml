@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, "feat/**"]
 
+permissions:
+  contents: read
+
 # New pushes to a PR supersede older runs; main runs are never cancelled.
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,6 +20,9 @@ jobs:
   # reruns every downstream package's tests, but nothing else.
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read  # paths-filter lists a PR's files through the API
     outputs:
       pywire: ${{ steps.filter.outputs.pywire }}
       parser: ${{ steps.filter.outputs.parser }}
@@ -37,12 +43,12 @@ jobs:
         env:
           MSG: ${{ github.event.head_commit.message }}
         run: |
-          if [[ "$MSG" == "chore(main): release"* ]] || [[ "$MSG" == *"release-please"* ]]; then
+          if [[ "$MSG" == "chore(main): release "* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           fi
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.release-check.outputs.is_release != 'true'
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: steps.release-check.outputs.is_release != 'true'
         id: filter
         with:
@@ -83,8 +89,8 @@ jobs:
     if: needs.changes.outputs.parser == 'true' || needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -97,8 +103,8 @@ jobs:
     if: needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -116,19 +122,19 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: pnpm
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
@@ -151,8 +157,8 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -169,8 +175,8 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -188,8 +194,8 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -202,11 +208,11 @@ jobs:
     if: needs.changes.outputs.vscode == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: pnpm
@@ -220,11 +226,11 @@ jobs:
     if: needs.changes.outputs.prettier == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: pnpm
@@ -238,9 +244,11 @@ jobs:
     if: needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: packages/tree-sitter-pywire
       - name: Cargo Tests
@@ -253,8 +261,8 @@ jobs:
     if: needs.changes.outputs.create-app == 'true' || needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -267,8 +275,8 @@ jobs:
     if: needs.changes.outputs.create-app-npm == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
       - name: Run Checks
@@ -285,8 +293,8 @@ jobs:
       needs.changes.outputs.treesitter == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
       - name: Run Checks
@@ -299,11 +307,11 @@ jobs:
     if: needs.changes.outputs.pywire-docs == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: pnpm
@@ -315,9 +323,14 @@ jobs:
   # Regular PRs get a pass-through success here so the required check
   # resolves; floors on feature PRs are governed by the AGENTS.md release
   # protocol. Release-please PRs also run this workflow (they are pushed with
-  # RELEASE_PAT), so skip them: a pass-through here would overwrite a red gate.
+  # RELEASE_PAT), so skip them: a pass-through here would overwrite the gate.
+  # Only this repo's own branches count as release-please ones; a fork PR
+  # can pick any branch name.
   floors-gate:
-    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-please--')
+    if: >-
+      github.event_name == 'pull_request'
+      && !(startsWith(github.head_ref, 'release-please--')
+           && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -336,16 +349,20 @@ jobs:
   # Always-on: the derived monorepo graph is the source of truth for
   # version floors, ci.yml fan-outs and the local-tooling contract.
   # Runs in seconds on the runner's system python3 (no uv sync, no
-  # paths filter — floors must hold on release PRs too).
+  # paths filter — floors must hold on release PRs too). A floor below
+  # the latest published version is only a warning here: it appears the
+  # moment an upstream publishes, on commits that did not change, and
+  # release.yml's bump-floors job raises it. The Release Floors Gate still
+  # holds a release PR until its floors are current.
   check-monorepo-graph:
     name: "Check Monorepo Graph"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Check floors, ci fan-out, tooling contract
         run: |
-          python3 scripts/monorepo_graph.py check-floors
+          python3 scripts/monorepo_graph.py check-floors --warn-stale
           python3 scripts/monorepo_graph.py check-ci
           python3 scripts/monorepo_graph.py check-scripts
       - name: Graph tool tests
