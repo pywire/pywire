@@ -19,6 +19,23 @@ class Route:
 
         # Compile pattern to regex
         self.regex = self._compile_pattern(pattern)
+        self.specificity = self._specificity(pattern)
+
+    @staticmethod
+    def _specificity(pattern: str) -> Tuple[int, ...]:
+        """Sort key: segment by segment, a literal beats an ``int`` param,
+        which beats any other param. ``/boards/new`` sorts before
+        ``/boards/{id}``, so neither shadows the other whatever order the
+        files were found in."""
+        key = []
+        for part in pattern.split("/"):
+            if not part:
+                continue
+            if part.startswith(":") or (part.startswith("{") and part.endswith("}")):
+                key.append(1 if part.strip("{}").endswith(":int") else 2)
+            else:
+                key.append(0)
+        return tuple(key)
 
     def _compile_pattern(self, pattern: str) -> re.Pattern:
         """Convert '/projects/:id:int' to regex."""
@@ -176,6 +193,8 @@ class Router:
     ) -> None:
         """Add route from compiled page."""
         self.routes.append(Route(pattern, page_class, name))
+        # Stable: routes equally specific keep the order they were added in.
+        self.routes.sort(key=lambda r: r.specificity)
 
     def add_page(self, page_class: Type[BasePage]) -> None:
         # Register all routes for a page class

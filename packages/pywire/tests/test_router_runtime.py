@@ -132,3 +132,42 @@ class TestRouterRuntime(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NewPage(BasePage):
+    pass
+
+
+class ItemPage(BasePage):
+    pass
+
+
+class IntPage(BasePage):
+    pass
+
+
+def test_literal_segment_wins_over_param_whatever_the_order() -> None:
+    # pages/boards/[id].wire must not shadow pages/boards/new.wire just
+    # because the directory scan found it first.
+    router = Router()
+    router.add_route("/boards/{id}", ItemPage)
+    router.add_route("/boards/new", NewPage)
+    match = router.match("/boards/new")
+    assert match is not None and match[0] is NewPage
+    match = router.match("/boards/7")
+    assert match is not None and match[0] is ItemPage
+
+
+def test_int_param_wins_over_str_param() -> None:
+    router = Router()
+    router.add_route("/{slug}", ItemPage)
+    router.add_route("/{id:int}", IntPage)
+    assert router.match("/42")[0] is IntPage  # type: ignore[index]
+    assert router.match("/about")[0] is ItemPage  # type: ignore[index]
+
+
+def test_equally_specific_routes_keep_their_order() -> None:
+    router = Router()
+    router.add_route("/{a}", ItemPage)
+    router.add_route("/{b}", NewPage)
+    assert router.match("/x")[0] is ItemPage  # type: ignore[index]
