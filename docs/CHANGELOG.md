@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.6.2...pywire-docs-v0.7.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** model-bound forms with $bind ([#338](https://github.com/pywire/pywire/issues/338)) ([e5c76f7](https://github.com/pywire/pywire/commit/e5c76f7e9ad7535dc15dd5b6468c478d1e6d2d5f))
+
+
+### Bug Fixes
+
+* **pywire-docs:** paint view-transition backdrop in the theme background ([#362](https://github.com/pywire/pywire/issues/362)) ([ed89324](https://github.com/pywire/pywire/commit/ed893246f5cbe7125ea9adfdbedec01c5e66616f))
+* **pywire-docs:** stop white flash on page change in Chromium on Linux ([#371](https://github.com/pywire/pywire/issues/371)) ([fd9362c](https://github.com/pywire/pywire/commit/fd9362c3492ea2bb76b3d87598677cb3542438b5))
+
 ## [0.6.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.6.0...pywire-docs-v0.6.1) (2026-09-28)
 
 
