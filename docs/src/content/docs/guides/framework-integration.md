@@ -120,9 +120,9 @@ user = self.request.state.user
 <h1>Welcome, {user.name}</h1>
 ```
 
-## Path Prefix Handling
+## Serving under a path prefix
 
-When mounted at a prefix (e.g., `/app`), PyWire automatically strips the prefix when matching routes. Your `.wire` pages define routes relative to the mount point:
+An app can live below the site root: mounted at `/app` in a host app, or behind a proxy that sends `example.com/demo/*` to it. Write the app as if it ran at `/`, and PyWire adds the prefix on the way out:
 
 ```
 pages/
@@ -131,8 +131,37 @@ pages/
   settings.wire  → /app/settings
 ```
 
-Links between PyWire pages should use relative paths:
-
 ```html
-<a href="/app/dashboard">Dashboard</a>
+<a href="/dashboard">Dashboard</a>
+<!-- sent as href="/app/dashboard" -->
+<link rel="stylesheet" href="/static/app.css" />
+<!-- sent as /app/static/app.css -->
 ```
+
+What gets the prefix:
+
+- Root-relative `href`, `src`, `action`, `formaction`, `poster` and `srcset` in rendered HTML.
+- `navigate("/x")`, `!auth` redirects, and the `Location` of any redirect the app returns.
+- Cookie paths: `Path=/` becomes `Path=/app`, so two apps on one domain keep their cookies apart.
+- The client's own URLs: the WebSocket, uploads, stateless posts and `asset()`.
+
+What doesn't:
+
+- Absolute (`https://…`) and relative (`page`, `?q=1`, `#top`) URLs.
+- URLs that already start with the prefix, so `href="/app/dashboard"` keeps working.
+- Anything inside `<script>` and `<style>`, and `url(...)` in CSS files. Use relative URLs in CSS. Pages have a `base_path` variable (`""` at the site root) to hand to scripts, for example `<main data-base={base_path}>` read by `fetch(main.dataset.base + "/api/items")`.
+- Elements marked `data-pw-no-base`, for links that leave the app: `<a href="/" data-pw-no-base>All demos</a>`.
+
+### Mounted in a host app
+
+A host mount sets the ASGI `root_path`, and PyWire reads the prefix from it. So does a server started with `--root-path` (`uvicorn --root-path /app`), which is how a host app behind a stripping proxy learns its prefix.
+
+### Behind a proxy that strips the prefix
+
+When a proxy forwards `example.com/demo/chat` as `/chat` and the server isn't told, set `base_path`:
+
+```python
+app = PyWire(base_path="/demo")
+```
+
+or `PYWIRE_BASE_PATH=/demo` in the environment, so the same code runs at `/` locally. Requests work with the prefix stripped or not. With a host mount too, `base_path` goes in front of the mount path: `base_path="/demo"` and a mount at `/app` serve pages at `/demo/app/`.
