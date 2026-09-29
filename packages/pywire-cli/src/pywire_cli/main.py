@@ -674,9 +674,15 @@ def build(
         # Copy static assets to .pywire/deploy/public/ for Cloudflare's
         # native static assets binding (served from edge CDN, not the Worker).
         # The wrangler.toml [assets] directive points to .pywire/deploy/public.
-        deploy_public = Path.cwd() / ".pywire" / "deploy" / "public"
-        if deploy_public.exists():
-            shutil.rmtree(deploy_public)
+        deploy_root = Path.cwd() / ".pywire" / "deploy" / "public"
+        if deploy_root.exists():
+            shutil.rmtree(deploy_root)
+        # Under base_path (a Worker route like example.com/demo/*) the browser
+        # asks for /demo/static/..., and the assets binding matches the full
+        # path, so the files go under public/demo/.
+        base = getattr(app_instance, "base_path", "")  # older pywire has none
+        base = base.strip().strip("/") if isinstance(base, str) else ""
+        deploy_public = deploy_root / base if base else deploy_root
 
         # PyWire framework JS — resolve from installed pywire package, not
         # from this file's location (pywire-cli now lives in its own package).

@@ -113,7 +113,7 @@ uv run pywrangler deploy
 **Current limitations:**
 
 - **Cold starts (2-4 seconds):** Cloudflare Python Workers have cold start latency from restoring the Pyodide (WebAssembly Python) snapshot. Only the first visitor in a region after its object starts waits for it; later page loads and sockets reuse the running object.
-- **No pydantic support:** The `pywire[forms]` extra (pydantic form validation) is excluded from Cloudflare deployments because `pydantic_core` (4.3 MiB WASM binary) would exceed the bundle size limit. Standard HTML form validation still works.
+- **Pydantic needs a recent compatibility date:** `pywire[forms]` (pydantic) runs on Python Workers from compatibility date 2026-09-01 (Pyodide 0.28), which the generated `wrangler.toml` sets. Older dates fail when `pywrangler` installs the dependencies.
 - **Platform maturity:** Cloudflare Python Workers launched in late 2024 and is actively being improved. Cold start performance is expected to improve as Cloudflare optimizes Pyodide snapshot restoration and Durable Object initialization. Follow [Cloudflare's Python Workers changelog](https://developers.cloudflare.com/changelog/) for updates.
 
 For latency-sensitive applications, container-based deployments (Docker, Railway, Render, Fly.io) provide sub-100ms WebSocket connections with no cold start penalty.

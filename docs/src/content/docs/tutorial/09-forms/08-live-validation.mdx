@@ -1,0 +1,95 @@
+---
+title: Live validation
+tutorial: Basic PyWire
+section: Forms
+description: Check fields as people fill them in, not only on submit.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Signup(BaseModel):
+        username: str = Field(min_length=3)
+        age: int = Field(ge=13)
+
+      # 1. Bound forms check fields as you go. This one is set to wait for submit.
+      signup = form(Signup, validate="submit")
+      result = wire("")
+
+      def join(data: Signup):
+        result.value = f"Welcome, {data.username}!"
+      ---
+      <div>
+        <h1>Live checks</h1>
+
+        <form $bind={signup} @submit={join} novalidate>
+          <div>
+            <label for={signup.username.html_id}>Username</label>
+            <input $bind={signup.username} />
+            <span $if={signup.username.error} style="color: red;">{signup.username.error}</span>
+          </div>
+          <div>
+            <label for={signup.age.html_id}>Age</label>
+            <input $bind={signup.age} />
+            <span $if={signup.age.error} style="color: red;">{signup.age.error}</span>
+          </div>
+          <button type="submit">Join</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Signup(BaseModel):
+        username: str = Field(min_length=3)
+        age: int = Field(ge=13)
+
+      signup = form(Signup)
+      result = wire("")
+
+      def join(data: Signup):
+        result.value = f"Welcome, {data.username}!"
+      ---
+      <div>
+        <h1>Live checks</h1>
+
+        <form $bind={signup} @submit={join} novalidate>
+          <div>
+            <label for={signup.username.html_id}>Username</label>
+            <input $bind={signup.username} />
+            <span $if={signup.username.error} style="color: red;">{signup.username.error}</span>
+          </div>
+          <div>
+            <label for={signup.age.html_id}>Age</label>
+            <input $bind={signup.age} />
+            <span $if={signup.age.error} style="color: red;">{signup.age.error}</span>
+          </div>
+          <button type="submit">Join</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: browser_route_text
+    route: '/'
+    description: 'Type "ab" in the username box and click away to see the error'
+    pattern: 'Use at least 3 characters'
+pagesDir: pages
+hints:
+  - 'Delete validate="submit" so the form uses its default.'
+---
+
+With JavaScript on, a bound form doesn't wait for the submit button. A text field is checked when the user leaves it. Once it shows an error, it is checked again as they type, so the message clears the moment the value is right. Checkboxes, radios and selects are checked when they change.
+
+### Your Task
+
+1.  This form was set to `validate="submit"`, which turns live checking off. Remove that argument so the line reads `signup = form(Signup)`.
+2.  Type `ab` in the username box and click the age box. The error appears before you press Join.
+3.  Type another letter. The error goes away as soon as the name has three.
+
+Each check runs the whole model on the server, so a rule that reads `context=` or compares two fields gives the same answer as it will on submit. Only fields the user has been through show errors, and a form-level error waits for a submit. While a submit is in flight the form is marked `aria-busy` and a second submit is ignored, and when the answer has errors, focus moves to the first invalid field.

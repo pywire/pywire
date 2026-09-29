@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2](https://github.com/pywire/pywire/compare/pywire-cli-v0.4.1...pywire-cli-v0.4.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **create-pywire-app,pywire-cli:** bump floors to pywire-templates 0.4.0 ([#391](https://github.com/pywire/pywire/issues/391)) ([ecb5cfc](https://github.com/pywire/pywire/commit/ecb5cfc55e94e75585db7da5d10bb9a7d9840e52))
+* **pywire-auth,pywire-cli,pywire-language-server:** bump floors to pywire 0.18.0 ([#388](https://github.com/pywire/pywire/issues/388)) ([2219550](https://github.com/pywire/pywire/commit/221955013d40c81709fc87253d19e42d5c9400e5))
+
 ## [0.4.1](https://github.com/pywire/pywire/compare/pywire-cli-v0.4.0...pywire-cli-v0.4.1) (2026-09-29)
 
 

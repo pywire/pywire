@@ -1,22 +1,52 @@
 """PyWire edge worker — stateless, no Durable Objects."""
 import os
+import sys
 from urllib.parse import urlparse
 
-from workers import Response
+from workers import Response, WorkerEntrypoint
 
 from pywire.adapters.oneshot import OneShotASGIAdapter
+
+# Like `pywire dev`: for an app at src.main, both the bundle root and src/
+# are importable, so main.py can import its sibling packages.
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_PARTS = "{{ app_module }}".split(".")
+for _depth in range(len(_PARTS) - 1, -1, -1):
+    _dir = os.path.join(_ROOT, *_PARTS[:_depth])
+    if os.path.isdir(_dir) and _dir not in sys.path:
+        sys.path.insert(0, _dir)
 
 _adapter = None
 
 
+def _env_names(env):
+    try:
+        from js import Object
+    except ImportError:  # outside the Workers runtime
+        return dir(env)
+    # `env` wraps the JS env object, which dir() can't list.
+    return [str(name) for name in Object.keys(getattr(env, "_env", env))]
+
+
+def _load_env(env):
+    """Copy Worker vars and secrets (PYWIRE_SECRET_KEY, PYWIRE_BASE_PATH, the
+    app's own API keys) into os.environ, where apps read their settings.
+    Bindings that aren't strings (ASSETS, KV, R2) are skipped."""
+    for name in _env_names(env):
+        if not name.isupper():
+            continue
+        value = getattr(env, name, None)
+        if isinstance(value, str):
+            os.environ.setdefault(name, value)
+
+
 def _get_adapter(env):
-    # Python Workers expose secrets on `env`, never os.environ, and `env` is
-    # only guaranteed inside a request, so the app is built on the first one.
+    # Python Workers expose vars and secrets on `env`, never os.environ, and
+    # `env` is only guaranteed inside a request, so the app is built on the
+    # first one.
     global _adapter
     if _adapter is None:
-        secret = getattr(env, "PYWIRE_SECRET_KEY", None)
-        if secret:
-            os.environ.setdefault("PYWIRE_SECRET_KEY", str(secret))
+        _load_env(env)
         # _routes.py registers the prebuilt pages: PyWire() must not compile
         # src/pages.
         os.environ["PYWIRE_PREBUILT"] = "1"
@@ -27,13 +57,13 @@ def _get_adapter(env):
     return _adapter
 
 
-async def on_fetch(request, env):
+async def serve(request, env):
     adapter = _get_adapter(env)
     parsed = urlparse(request.url)
     body = b""
     if request.method in ("POST", "PUT", "PATCH"):
-        body = bytes((await request.arrayBuffer()).to_py())
-    headers = dict(request.headers)
+        body = await request.bytes()
+    headers = {name.lower(): value for name, value in request.headers.items()}
     # The Workers runtime compresses a response whose Content-Encoding is
     # set, so a body the app already gzipped would be gzipped twice.
     headers.pop("accept-encoding", None)
@@ -41,3 +71,8 @@ async def on_fetch(request, env):
         request.method, parsed.path, headers, body, parsed.query or "")
     # A list, not a dict: keeps every Set-Cookie.
     return Response(resp_body, status=status, headers=list(resp_headers))
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request):
+        return await serve(request, self.env)
