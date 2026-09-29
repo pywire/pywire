@@ -14,18 +14,18 @@ Choose the tier by who owns the timeline:
 
 ## Deployment support matrix
 
-| Host                                         | Stateful         | Stateless | Timeline owner / ideology                                       |
-| -------------------------------------------- | ---------------- | --------- | --------------------------------------------------------------- |
-| Docker                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped              |
-| Fly.io                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped              |
-| Render                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped              |
-| Railway                                      | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped              |
-| Google Cloud Run                             | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped              |
-| Cloudflare Durable Objects                   | Yes, at the edge | No        | The Durable Object owns a persistent session and pushes updates |
-| Cloudflare plain Workers (`cloudflare-edge`) | No               | Yes       | Each request owns its event; the client carries the timeline    |
-| AWS Lambda                                   | No               | Yes       | Request-scoped                                                  |
-| Azure Functions                              | No               | Yes       | Request-scoped                                                  |
-| GCP Cloud Functions                          | No               | Yes       | Request-scoped                                                  |
+| Host                                         | Stateful         | Stateless | Timeline owner / ideology                                    |
+| -------------------------------------------- | ---------------- | --------- | ------------------------------------------------------------ |
+| Docker                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
+| Fly.io                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
+| Render                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
+| Railway                                      | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
+| Google Cloud Run                             | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
+| Cloudflare Durable Objects                   | Yes, at the edge | No        | One Durable Object runs the app and pushes updates           |
+| Cloudflare plain Workers (`cloudflare-edge`) | No               | Yes       | Each request owns its event; the client carries the timeline |
+| AWS Lambda                                   | No               | Yes       | Request-scoped                                               |
+| Azure Functions                              | No               | Yes       | Request-scoped                                               |
+| GCP Cloud Functions                          | No               | Yes       | Request-scoped                                               |
 
 Container and long-running platforms can host either tier. FaaS/one-shot targets are stateless because they do not retain a page between invocations. The Cloudflare Durable Object target is the stateful edge alternative.
 

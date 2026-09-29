@@ -20,7 +20,7 @@ export interface Transport {
   /** Check if connected */
   isConnected(): boolean
 
-  /** Set session ID for reconnection routing (e.g. Durable Objects) */
+  /** Set the session ID a reconnect sends to restore page state */
   setSessionId(sessionId: string): void
 
   /** Force an immediate reconnect attempt (e.g. triggered by window.online). No-op if already connected. */

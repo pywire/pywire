@@ -172,9 +172,8 @@ def import_app(app_str: str) -> Any:
 
 # Pure-FaaS platforms serve one-shot requests with no durable state — only
 # stateless mode works there. gcp-cloudrun (long-running container) accepts
-# either mode. cloudflare (Durable Objects) is stateful only: its entry
-# builds the app at import time, where Workers expose no secrets, so a
-# stateless app never starts there; cloudflare-edge serves those.
+# either mode. cloudflare (Durable Objects) runs stateful apps only;
+# cloudflare-edge serves stateless ones.
 _STATELESS_PLATFORMS = frozenset(
     {"cloudflare-edge", "aws-lambda", "azure-functions", "gcp-functions"}
 )
@@ -1098,9 +1097,7 @@ def deploy(
             files_to_write.append(
                 ("wrangler.toml", generate_wrangler_toml(project_root, project_name))
             )
-            files_to_write.append(
-                ("entry.py", generate_cf_entry(project_root, app_string=app))
-            )
+            files_to_write.append(("entry.py", generate_cf_entry(project_root)))
             files_to_write.append(
                 (
                     "pywire_do.py",
@@ -1239,13 +1236,13 @@ def deploy(
             "  2. Build: [cyan]uv run pywire build --platform cloudflare[/]\n"
             "  3. Deploy: [cyan]uv run pywrangler deploy[/]\n"
             "\n[bold]Generated files:[/]\n"
-            "  • [cyan]wrangler.toml[/] — Cloudflare config with Durable Objects binding\n"
-            "  • [cyan]entry.py[/] — Workers entry point (routes WS to Durable Objects)\n"
-            "  • [cyan]pywire_do.py[/] — Durable Object for session + WebSocket handling\n"
+            "  • [cyan]wrangler.toml[/] — Cloudflare config with the Durable Object binding\n"
+            "  • [cyan]entry.py[/] — Workers entry point (sends every request to the app)\n"
+            "  • [cyan]pywire_do.py[/] — the Durable Object that runs your app\n"
             "\n[bold]Architecture:[/]\n"
-            "  Each session runs in a Durable Object with persistent storage and\n"
-            "  WebSocket support. Real-time reactivity works out of the box.\n"
-            "  No Redis or worker processes needed — Durable Objects handle state.\n"
+            "  One Durable Object runs the whole app, like [cyan]pywire run --workers 1[/]:\n"
+            "  each tab gets its own page, and module-level wires are shared by\n"
+            "  everyone. It stays in memory while anyone is connected.\n"
             "\n[bold]CI/CD:[/]\n"
             "  [cyan]uv sync && uv run pywire build --platform cloudflare "
             "&& uv run pywrangler deploy[/]"
