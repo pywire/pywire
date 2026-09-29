@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/pywire/pywire/compare/pywire-v0.15.1...pywire-v0.16.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** edge stateless mode — stateless snapshots, keyed regions, optimistic UI ([#282](https://github.com/pywire/pywire/issues/282)) ([6bf40d7](https://github.com/pywire/pywire/commit/6bf40d72c3311003b94976bd26ef13ff77ce5f7f))
+
+
+### Bug Fixes
+
+* **pywire,pywire-cli,pywire-language-server,create-pywire-app:** bump pywire-parser and pywire-templates floors ([#352](https://github.com/pywire/pywire/issues/352)) ([1402a78](https://github.com/pywire/pywire/commit/1402a781bc4cc85e6fcbff9ef263a743d1ae9930))
+
 ## [0.15.1](https://github.com/pywire/pywire/compare/pywire-v0.15.0...pywire-v0.15.1) (2026-09-28)
 
 
