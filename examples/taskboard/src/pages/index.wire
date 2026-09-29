@@ -1,0 +1,4 @@
+<h1>Taskboard</h1>
+<p>A team task board built with FastAPI and pywire. Pages and the JSON API share one service layer; boards update live for everyone who has them open.</p>
+<p $if={user.is_authenticated}><a class="button" href="/boards">Open your boards</a></p>
+<p $if={not user.is_authenticated}><a class="button" href="/register">Create an account</a> or <a href="/login">sign in</a>.</p>

@@ -21,6 +21,7 @@ workspace = { members = [
     "packages/tree-sitter-pywire",
     "examples/realtime",
     "examples/edge-stateless",
+    "examples/taskboard",
 ] }
 
 [tool.uv.sources]

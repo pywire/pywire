@@ -1,0 +1,25 @@
+!auth {"redirect": "/login"}
+---
+from taskboard import db, services
+from taskboard.identity import actor_from
+
+boards = wire([])
+
+@init
+async def load():
+    # Resolve the actor from self.user on every call instead of caching it:
+    # the principal can change while the page is open (sign-out elsewhere).
+    async with db.session() as s:
+        boards.value = [b.model_dump() for b in await services.list_boards(s, actor_from(self.user))]
+---
+<div class="row">
+    <h1>Your boards</h1>
+    <a class="button" href="/boards/new">New board</a>
+</div>
+<ul class="boards" $if={boards}>
+    <li $for={b in boards}>
+        <a href={f"/boards/{b['id']}"}>{b["name"]}</a>
+        <p class="muted" $if={b["description"]}>{b["description"]}</p>
+    </li>
+</ul>
+<p class="muted" $if={not boards}>No boards yet.</p>

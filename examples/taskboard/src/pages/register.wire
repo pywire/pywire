@@ -1,0 +1,18 @@
+---
+ERRORS = {"exists": "That email already has an account.", "missing": "Enter an email and a password."}
+error = ERRORS.get(query.get("error") or "", "")
+---
+<h1>Create an account</h1>
+<p class="error" $if={error}>{error}</p>
+<!--
+    Only email, password and name. pywire-auth's register route also reads
+    `role` and `email_verified` from the form, so anyone could post those;
+    this app never reads claims for access, it uses its own memberships table.
+-->
+<form class="stack" method="post" action="/auth/local/register">
+    <input type="hidden" name="next" value="/boards" />
+    <label>Name <input name="name" required maxlength="120" autocomplete="name" /></label>
+    <label>Email <input type="email" name="email" required autocomplete="email" /></label>
+    <label>Password <input type="password" name="password" required minlength="10" autocomplete="new-password" /></label>
+    <button type="submit">Create account</button>
+</form>

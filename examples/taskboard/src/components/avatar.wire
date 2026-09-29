@@ -1,0 +1,27 @@
+---
+# A display-only component. It takes props and renders; it has no handlers.
+# Components inside $for loops currently share one instance for events
+# (pywire#290), so keep interactive markup for list rows inline in the page.
+from pywire import props
+
+@props
+class Props:
+    name: str
+    avatar_key: str | None = None
+    size: int = 28
+
+# Takes the name as an argument: inside a function, `props` is still the
+# decorator imported above, not the props object the template sees.
+def initials(name):
+    parts = name.split()
+    return "".join(p[0] for p in parts[:2]).upper() or "?"
+---
+<img
+    $if={props.avatar_key}
+    class="avatar"
+    src={f"/files/avatars/{props.avatar_key}"}
+    alt=""
+    width={props.size}
+    height={props.size}
+/>
+<span $if={not props.avatar_key} class="avatar" style={f"--size: {props.size}px"} aria-hidden="true">{initials(props.name)}</span>

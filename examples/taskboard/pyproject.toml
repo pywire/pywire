@@ -1,0 +1,23 @@
+[project]
+name = "example-taskboard"
+version = "0.1.0"
+description = "A FastAPI + pywire team task board: one service layer behind a JSON API and live pages."
+requires-python = ">=3.11"
+dependencies = [
+    "pywire[cli,forms]",
+    "pywire-auth[sqlalchemy]",
+    "fastapi>=0.115",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx", "ruff"]
+
+[tool.uv.sources]
+pywire = { workspace = true }
+pywire-auth = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:.*is not set; using a temporary secret"]
