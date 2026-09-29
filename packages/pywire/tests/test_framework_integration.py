@@ -265,3 +265,39 @@ class TestCapabilitiesMounted:
         data = response.json()
         assert "websocket" in data["transports"]
         assert data["interactive"] is True
+
+
+def test_host_app_runs_the_mounted_lifespan(tmp_path):
+    """A host doesn't run a mounted app's lifespan; PyWire.lifespan() does."""
+    from contextlib import asynccontextmanager
+
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+    from starlette.testclient import TestClient
+
+    from pywire.runtime.app import PyWire
+
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "index.wire").write_text("<p>hi</p>")
+    ui = PyWire(pages_dir=str(pages), fallthrough_404=True)
+    calls = []
+
+    class Store:
+        async def connect(self):
+            calls.append("connect")
+
+        async def close(self):
+            calls.append("close")
+
+    ui.session_store = Store()
+
+    @asynccontextmanager
+    async def lifespan(app):
+        async with ui.lifespan():
+            yield
+
+    host = Starlette(routes=[Mount("/", app=ui.as_asgi())], lifespan=lifespan)
+    with TestClient(host):
+        assert calls == ["connect"]
+    assert calls == ["connect", "close"]

@@ -131,7 +131,11 @@ def test_single_toggle_payload_stateless_post(tmp_path):
     pages = tmp_path / "pages"
     pages.mkdir()
     (pages / "index.wire").write_text(_src(keyed=True))
-    app = PyWire(pages_dir=str(pages), stateless=True, secret_key="test-secret-key-at-least-32-bytes")
+    app = PyWire(
+        pages_dir=str(pages),
+        stateless=True,
+        secret_key="test-secret-key-at-least-32-bytes",
+    )
     with TestClient(app) as client:
         get = client.get("/")
         assert get.status_code == 200

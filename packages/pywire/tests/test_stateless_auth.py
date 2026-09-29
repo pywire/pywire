@@ -30,7 +30,7 @@ AUTH_PAGE = (
     "def increment(data):\n"
     "    count.value += 1\n"
     "---\n"
-    "<p>{$auth claims=[(\"role\", \"admin\")]}"
+    '<p>{$auth claims=[("role", "admin")]}'
     "PENDING-VIEW{$then ok}RESOLVED-{ok}{/auth}</p>\n"
     "<form method='post' @submit={increment}>\n"
     "  <button>go</button>\n"

@@ -211,9 +211,7 @@ def test_unused_await_component_builds_clean(tmp_path: Path):
 
 def test_dev_render_names_page_for_component_closure(tmp_path: Path):
     pages = _closure_project(tmp_path)
-    app = PyWire(
-        pages_dir=str(pages), stateless=True, secret_key=SECRET, debug=True
-    )
+    app = PyWire(pages_dir=str(pages), stateless=True, secret_key=SECRET, debug=True)
     with TestClient(app) as client:
         r = client.get("/a")
     assert r.status_code == 500 or "poll" in r.text
