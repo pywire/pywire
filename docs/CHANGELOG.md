@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.6.1...pywire-docs-v0.7.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** edge stateless mode — stateless snapshots, keyed regions, optimistic UI ([#282](https://github.com/pywire/pywire/issues/282)) ([6bf40d7](https://github.com/pywire/pywire/commit/6bf40d72c3311003b94976bd26ef13ff77ce5f7f))
+
 ## [0.6.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.6.0...pywire-docs-v0.6.1) (2026-09-28)
 
 
