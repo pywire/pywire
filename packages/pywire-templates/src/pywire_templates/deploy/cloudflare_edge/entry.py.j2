@@ -62,8 +62,8 @@ async def serve(request, env):
     parsed = urlparse(request.url)
     body = b""
     if request.method in ("POST", "PUT", "PATCH"):
-        body = bytes((await request.arrayBuffer()).to_py())
-    headers = dict(request.headers)
+        body = await request.bytes()
+    headers = {name.lower(): value for name, value in request.headers.items()}
     # The Workers runtime compresses a response whose Content-Encoding is
     # set, so a body the app already gzipped would be gzipped twice.
     headers.pop("accept-encoding", None)

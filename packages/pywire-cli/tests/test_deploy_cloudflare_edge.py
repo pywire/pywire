@@ -163,20 +163,13 @@ def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
     # here (before any request) would raise for want of one.
     exec(compile(source, "entry.py", "exec"), ns)
 
-    class Buffer:
-        def __init__(self, data):
-            self.data = data
-
-        def to_py(self):
-            return self.data
-
     class Request:
         def __init__(self, method, url, body=b"", headers=None):
             self.method, self.url, self._body = method, url, body
             self.headers = {"accept-encoding": "gzip", **(headers or {})}
 
-        async def arrayBuffer(self):
-            return Buffer(self._body)
+        async def bytes(self):
+            return self._body
 
     monkeypatch.delenv("EDGE_FIXTURE_SETTING", raising=False)
     env = types.SimpleNamespace(
