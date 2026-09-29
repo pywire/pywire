@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/pywire-templates-v0.3.0...pywire-templates-v0.4.0) (2026-09-29)
+
+
+### Features
+
+* **pywire:** live validation, uploads, wizards and list rows for bound forms ([#345](https://github.com/pywire/pywire/issues/345)) ([ff5f95b](https://github.com/pywire/pywire/commit/ff5f95bd0f899d6e5295ff2388d27f677a7c5d73))
+
 ## [0.3.0](https://github.com/pywire/pywire/compare/pywire-templates-v0.2.0...pywire-templates-v0.3.0) (2026-09-29)
 
 
