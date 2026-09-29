@@ -8,7 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 _FLOORS = {
     "pywire": "0.18.0",
-    "pywire-templates": "0.3.0",
+    "pywire-templates": "0.4.0",
 }
 
 
