@@ -932,6 +932,8 @@ class CodeGenerator:
                     bind is not None
                     and tag in ("input", "select", "textarea")
                     and bind.expr.strip() in known_vars
+                    # A $for variable of the same name is not the page's wire.
+                    and bind.expr.strip() not in in_scope
                 ):
                     handlers.append(
                         self._wire_bind_handler(
@@ -1238,6 +1240,8 @@ class CodeGenerator:
                                 ctx=ast.Load(),
                             ),
                             ast.Name(id="event_data", ctx=ast.Load()),
+                            ast.Name(id="self", ctx=ast.Load()),
+                            ast.Constant(value=method_name),
                         ],
                         keywords=[],
                     )

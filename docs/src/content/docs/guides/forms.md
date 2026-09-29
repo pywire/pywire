@@ -52,9 +52,11 @@ def results():
 </ul>
 ```
 
-The value is converted to the type the wire holds: a wire holding an `int` gets an `int`, a lone checkbox bound to a `bool` wire gets `True` or `False`, and checkboxes or a `<select multiple>` bound to a list wire get a list. Radios and a plain `<select>` set one value. Text boxes send after the user pauses typing ([the default `@input` debounce](/syntax/event-modifiers/#default-timing)); everything else sends on change.
+The value is converted to the type the wire holds: a wire holding an `int` gets an `int`, an enum gets the member with that value, a date gets a date, a lone checkbox bound to a `bool` wire gets `True` or `False`, and checkboxes or a `<select multiple>` bound to a list wire get a list. A value that doesn't convert (text in a number box, `NaN`) leaves the wire as it was. Radios and a plain `<select>` set one value. Text boxes send after the user pauses typing ([the default `@input` debounce](/syntax/event-modifiers/#default-timing)); everything else sends on change.
 
-Binding a wire needs no Pydantic, and nothing is validated. Use a bound form when the value has rules.
+The server only writes a wire through an element the page rendered, and not one rendered `disabled`, `readonly` or `type="hidden"`. A `<select>` or a checkbox only sets the values it offered. A `$for` variable can't be bound to a wire; bind the wire by its own name.
+
+Binding a wire needs no Pydantic, and nothing else is validated. Use a bound form when the value has rules.
 
 ## Bound forms
 

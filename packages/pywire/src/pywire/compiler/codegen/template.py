@@ -5518,6 +5518,7 @@ class TemplateCodegen:
                                     ast.Name(id="self", ctx=ast.Load()),
                                     ast.Constant(value=select_site),
                                     ast.Name(id=bind_var, ctx=ast.Load()),
+                                    ast.Constant(value=wire_handler or ""),
                                 ],
                                 keywords=[],
                             )
