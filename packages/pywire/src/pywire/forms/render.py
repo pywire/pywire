@@ -303,6 +303,9 @@ def form_attrs(
     base: Dict[str, Any] = {"method": "post", "data-pw-form": form._dom_id_value()}
     if form._live:
         base["data-pw-validate"] = "blur"
+    if form._resets:
+        # A change tells the browser to show the server's values, not typing.
+        base["data-pw-reset"] = str(form._resets)
     if "id" not in hand:
         base["id"] = form._dom_id_value()
     if _has_files(form._spec):

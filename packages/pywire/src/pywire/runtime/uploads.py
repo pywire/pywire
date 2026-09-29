@@ -223,24 +223,47 @@ def private_dir(path: Path) -> Path:
 
 def machine_key(path: Path) -> bytes:
     """A random 32-byte key kept at ``path`` (in a private folder), created
-    by whichever process asks first, so processes on one machine share it."""
+    by whichever process asks first, so processes on one machine share it.
+
+    Falls back to a key for this process alone when the file can't be used
+    (a read-only or missing filesystem, as in some Pyodide builds).
+    """
     for _ in range(50):
         try:
             key = path.read_bytes()
         except FileNotFoundError:
             key = b""
+        except OSError:
+            break
         if len(key) == 32:
             return key
-        temp = path.with_name(f"{path.name}.{secrets.token_hex(8)}")
-        temp.write_bytes(secrets.token_bytes(32))
-        temp.chmod(0o600)
+        if key:
+            # Another process is still writing it.
+            time.sleep(0.01)
+            continue
         try:
-            os.link(temp, path)  # fails if another process got there first
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
-            pass
+            continue
+        except OSError:
+            break
+        try:
+            os.write(fd, secrets.token_bytes(32))
         finally:
-            temp.unlink(missing_ok=True)
-    raise RuntimeError(f"PyWire: can't read the key at {path}")
+            os.close(fd)
+    global _process_key
+    if _process_key is None:
+        logger.warning(
+            "PyWire: can't keep the upload token key at %s; upload tokens are "
+            "only accepted by this process. Set PyWire(secret_key=...) to "
+            "share them.",
+            path,
+        )
+        _process_key = secrets.token_bytes(32)
+    return _process_key
+
+
+_process_key: Optional[bytes] = None
 
 
 class _TooLarge(Exception):

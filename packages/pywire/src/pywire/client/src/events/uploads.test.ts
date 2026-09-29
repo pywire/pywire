@@ -230,6 +230,13 @@ describe('checkFiles', () => {
     expect(checkFiles(el, [file, file])).toBeNull()
     expect(checkFiles(el, [file, file, file])).toBe('Choose at most 2 files')
   })
+
+  it('leaves a novalidate form to the server, which shows the message', () => {
+    document.body.innerHTML =
+      '<form novalidate><input type="file" accept=".pdf" data-pw-max-size="1"></form>'
+    const el = document.querySelector('input') as HTMLInputElement
+    expect(checkFiles(el, [new File(['xx'], 'a.doc', { type: 'text/x' })])).toBeNull()
+  })
 })
 
 describe('formatSize', () => {

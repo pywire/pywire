@@ -468,6 +468,8 @@ class Form(Generic[M]):
         # Fields the user has been through (path keys): their errors show
         # before the form is submitted.
         self._touched: set[str] = set()
+        # Bumped by reset(): the page shows it, so the browser drops typed text.
+        self._resets = 0
         # HTML names ``$bind`` has rendered on this page, editable or
         # read-only. Only editable ones are read from a submit; see
         # ``_keep_unrendered`` for every other field.
@@ -600,6 +602,7 @@ class Form(Generic[M]):
         # The re-render this triggers registers the fields shown from now on.
         self._editable = set()
         self._owned = set()
+        self._resets += 1
         self._touch()
 
     # -- snapshot hooks (session_serializer) --------------------------------
@@ -613,6 +616,7 @@ class Form(Generic[M]):
             "errors": {k: [e.to_dict() for e in v] for k, v in self._errors.items()},
             "submitted": self._submitted,
             "touched": sorted(self._touched),
+            "resets": self._resets,
             "editable": sorted(self._editable),
             "owned": sorted(self._owned),
             "rows": dict(self._rows),
@@ -642,6 +646,8 @@ class Form(Generic[M]):
         }
         self._submitted = bool(state.get("submitted"))
         self._touched = _names(state.get("touched"))
+        resets = state.get("resets")
+        self._resets = resets if isinstance(resets, int) and resets >= 0 else 0
         self._editable = _names(state.get("editable"))
         self._owned = _names(state.get("owned"))
         rows = state.get("rows")
