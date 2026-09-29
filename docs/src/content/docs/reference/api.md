@@ -268,7 +268,7 @@ Lifecycle hooks are functions in the frontmatter marked with a decorator. The de
 | `@mount`         | After the first render has been delivered to the browser.                              |
 | `@before_update` | Before each re-render. Return `False` to skip that update (the handler still ran).     |
 | `@after_update`  | After each re-render has been sent to the browser.                                     |
-| `@unmount`       | When a component is removed from the render tree.                                      |
+| `@unmount`       | When a component is removed from the render tree, or a page closes or navigates away.  |
 | `@error`         | When a handler or render raises. Receives the exception; return `True` to suppress it. |
 
 Top-level frontmatter statements run once, when the page instance is created, before any hook.
