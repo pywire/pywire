@@ -14,7 +14,7 @@ from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import decode_snapshot
 from pywire.runtime.upload_manager import UploadManager
 
-SECRET = "forms-test-secret"
+SECRET = "forms-test-secret-at-least-32-bytes"
 
 PAGE = """---
 from typing import Literal, Optional
