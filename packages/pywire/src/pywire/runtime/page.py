@@ -257,7 +257,11 @@ class BasePage:
         else:
             self._style_collector = StyleCollector()
 
-        self.user: Any = None  # Set by middleware
+        # Set on pages by the transport. Components and layouts start with
+        # their page's, so `user` works in a layout; frontmatter may still
+        # reuse the name for its own variable.
+        parent = kwargs.get("_parent_page")
+        self.user: Any = getattr(parent, "user", None)
 
         # Expose params as attributes for easy access in templates
         for k, v in self.params.items():
