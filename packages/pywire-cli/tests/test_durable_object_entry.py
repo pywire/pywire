@@ -52,8 +52,11 @@ class FakeHeaders(dict):
 
 
 class FakeRequest:
-    def __init__(self, url: str, headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, url: str, headers: dict[str, str] | None = None, cf: Any = None
+    ) -> None:
         self.url = url
+        self.cf = cf
         self.method = "GET"
         self.headers = FakeHeaders({k.lower(): v for k, v in (headers or {}).items()})
         self.js_object = self
@@ -122,10 +125,12 @@ class FakeNamespace:
         self.do_class = do_class
         self.env = env
         self.objects: dict[str, Any] = {}
+        self.hints: dict[str, str | None] = {}
 
-    def getByName(self, name: str) -> Any:
+    def getByName(self, name: str, options: Any = None) -> Any:
         if name not in self.objects:
             self.objects[name] = self.do_class(None, self.env)
+            self.hints[name] = (options or {}).get("locationHint")
         return self.objects[name]
 
 
@@ -233,7 +238,9 @@ def cloudflare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     workers.WorkerEntrypoint = WorkerEntrypoint  # type: ignore[attr-defined]
     js = types.ModuleType("js")
     js.Headers = types.SimpleNamespace(new=FakeHeaders)  # type: ignore[attr-defined]
-    js.Object = types.SimpleNamespace(keys=lambda env: list(vars(env)))  # type: ignore[attr-defined]
+    js.Object = types.SimpleNamespace(  # type: ignore[attr-defined]
+        keys=lambda env: list(vars(env)), fromEntries=dict
+    )
     js.Request = types.SimpleNamespace(new=lambda req, headers: req)  # type: ignore[attr-defined]
     js.Response = Response  # type: ignore[attr-defined]
     js.Uint8Array = Uint8Array  # type: ignore[attr-defined]
@@ -241,7 +248,7 @@ def cloudflare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     pyodide = types.ModuleType("pyodide")
     ffi = types.ModuleType("pyodide.ffi")
     ffi.create_proxy = FakeProxy  # type: ignore[attr-defined]
-    ffi.to_js = lambda value: value  # type: ignore[attr-defined]
+    ffi.to_js = lambda value, dict_converter=None: value  # type: ignore[attr-defined]
     asgi = types.ModuleType("asgi")
     asgi.fetch = asgi_fetch  # type: ignore[attr-defined]
     for name, module in {
@@ -302,7 +309,13 @@ async def _click(socket: FakeSocket, event_id: int) -> str:
     return str(reply)
 
 
-def test_every_request_goes_to_one_app_object(cloudflare) -> None:
+def _cf(continent: str, longitude: str = "0", country: str = "") -> Any:
+    return types.SimpleNamespace(
+        continent=continent, longitude=longitude, country=country
+    )
+
+
+def test_without_a_location_every_request_goes_to_one_object(cloudflare) -> None:
     async def run() -> None:
         await cloudflare.entry.fetch(FakeRequest("https://example.com/"))
         await _open_tab(cloudflare)
@@ -310,6 +323,57 @@ def test_every_request_goes_to_one_app_object(cloudflare) -> None:
 
     asyncio.run(run())
     assert list(cloudflare.env.PYWIRE_APP.objects) == ["app"]
+
+
+def test_visitors_reach_an_object_placed_in_their_region(cloudflare) -> None:
+    visitors = {
+        "San Francisco": _cf("NA", "-122.4"),
+        "New York": _cf("NA", "-74.0"),
+        "Bangkok": _cf("AS", "100.5", "TH"),
+        "Bangkok again": _cf("AS", "100.6", "TH"),
+    }
+
+    async def run() -> None:
+        for cf in visitors.values():
+            await cloudflare.entry.fetch(FakeRequest("https://example.com/", cf=cf))
+
+    asyncio.run(run())
+    assert cloudflare.env.PYWIRE_APP.hints == {
+        "app-wnam": "wnam",
+        "app-enam": "enam",
+        "app-apac": "apac",
+    }
+
+
+def test_global_placement_runs_one_object_for_everyone(cloudflare) -> None:
+    cloudflare.env.PYWIRE_PLACEMENT = "global"
+
+    async def run() -> None:
+        for cf in (_cf("NA", "-122.4"), _cf("EU", "2.3", "FR")):
+            await cloudflare.entry.fetch(FakeRequest("https://example.com/", cf=cf))
+
+    asyncio.run(run())
+    assert cloudflare.env.PYWIRE_APP.hints == {"app": None}
+
+
+@pytest.mark.parametrize(
+    ("cf", "region"),
+    [
+        (None, None),
+        (_cf(""), None),
+        (_cf("NA", "-105.0"), "wnam"),
+        (_cf("NA", "-97.7"), "enam"),
+        (_cf("SA", "-46.6"), "sam"),
+        (_cf("EU", "-0.1"), "weur"),
+        (_cf("EU", "21.0"), "eeur"),
+        (_cf("AS", "55.3", "AE"), "me"),
+        (_cf("AS", "139.7", "JP"), "apac"),
+        (_cf("AF", "18.4"), "afr"),
+        (_cf("OC", "151.2"), "oc"),
+    ],
+)
+def test_region_for_maps_locations_to_hints(cloudflare, cf: Any, region: Any) -> None:
+    assert sys.modules["entry"].region_for(cf) == region
 
 
 def test_tabs_share_module_wires_and_keep_their_own_page(cloudflare) -> None:

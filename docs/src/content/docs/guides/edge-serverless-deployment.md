@@ -21,7 +21,7 @@ Choose the tier by who owns the timeline:
 | Render                                       | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
 | Railway                                      | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
 | Google Cloud Run                             | Yes              | Yes       | Stateful: server pushes; stateless: request-scoped           |
-| Cloudflare Durable Objects                   | Yes, at the edge | No        | One Durable Object runs the app and pushes updates           |
+| Cloudflare Durable Objects                   | Yes, at the edge | No        | Regional Durable Objects run the app and push updates        |
 | Cloudflare plain Workers (`cloudflare-edge`) | No               | Yes       | Each request owns its event; the client carries the timeline |
 | AWS Lambda                                   | No               | Yes       | Request-scoped                                               |
 | Azure Functions                              | No               | Yes       | Request-scoped                                               |

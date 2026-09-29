@@ -72,7 +72,16 @@ pywire deploy --platform cloudflare
 Cloudflare Python Workers requires a [Workers Paid plan](https://dash.cloudflare.com/workers/plans) ($5/month). The free plan's 3 MiB size limit and startup CPU limits are incompatible with Python frameworks.
 :::
 
-The whole app runs in one **Durable Object**, the way `pywire run --workers 1` runs it on a server. The Worker sends every page load, WebSocket and long-poll request to that object. Each tab gets its own page, and module-level wires are shared by everyone, so live features such as presence or chat work as they do locally. Static assets are served from Cloudflare's edge CDN and never reach the object.
+The app runs in **Durable Objects** placed near your visitors: one per Cloudflare region (western and eastern North America, South America, western and eastern Europe, Asia-Pacific, Oceania, Africa and the Middle East), created on first use. The Worker sends every page load, WebSocket and long-poll request to the object for the visitor's region. Each object runs the whole app, the way one `pywire run --workers 1` process does: each tab gets its own page, and module-level wires are shared by everyone in that region. Static assets are served from Cloudflare's edge CDN and never reach an object.
+
+Visitors in different regions don't share module-level wires, just as two worker processes on a server don't. To run one object for everyone, so that all visitors share them, set a Worker var in `wrangler.toml`:
+
+```toml
+[vars]
+PYWIRE_PLACEMENT = "global"
+```
+
+A single object lives near whoever reached it first, so visitors far from it pay the extra round trip.
 
 This target serves stateful apps, and the build refuses a `PyWire(stateless=True)` app. Deploy a stateless app to a plain Worker with `--platform cloudflare-edge` instead (see [Provider quickstarts](/guides/stateless-provider-quickstarts/)).
 
@@ -96,14 +105,14 @@ uv run pywrangler deploy
 
 **Architecture notes:**
 
-- One Durable Object handles the whole app. Like one server process, it runs one thing at a time, so it suits the traffic one `pywire run --workers 1` process can take.
-- The object stays in memory while anyone is connected. When everyone has left, Cloudflare may evict it, and module-level state starts over, as after a server restart.
+- Each object runs one thing at a time, like one server process, so it suits the traffic one `pywire run --workers 1` process can take.
+- An object stays in memory while anyone is connected to it. When everyone has left, or after a deploy, Cloudflare may evict it, and its module-level state and open pages start over, as after a server restart.
 - Worker variables and secrets reach `os.environ` before your app is imported, so set `PYWIRE_SECRET_KEY` and your app's own settings with `wrangler secret put` or `[vars]`.
 - `--workers` and `--redis` flags are not applicable.
 
 **Current limitations:**
 
-- **Cold starts (2-4 seconds):** Cloudflare Python Workers have cold start latency from restoring the Pyodide (WebAssembly Python) snapshot. With one object for the app, only the first visitor after the object starts waits for it; later page loads and sockets reuse the running object.
+- **Cold starts (2-4 seconds):** Cloudflare Python Workers have cold start latency from restoring the Pyodide (WebAssembly Python) snapshot. Only the first visitor in a region after its object starts waits for it; later page loads and sockets reuse the running object.
 - **No pydantic support:** The `pywire[forms]` extra (pydantic form validation) is excluded from Cloudflare deployments because `pydantic_core` (4.3 MiB WASM binary) would exceed the bundle size limit. Standard HTML form validation still works.
 - **Platform maturity:** Cloudflare Python Workers launched in late 2024 and is actively being improved. Cold start performance is expected to improve as Cloudflare optimizes Pyodide snapshot restoration and Durable Object initialization. Follow [Cloudflare's Python Workers changelog](https://developers.cloudflare.com/changelog/) for updates.
 

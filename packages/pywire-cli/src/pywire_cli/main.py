@@ -1240,9 +1240,10 @@ def deploy(
             "  • [cyan]entry.py[/] — Workers entry point (sends every request to the app)\n"
             "  • [cyan]pywire_do.py[/] — the Durable Object that runs your app\n"
             "\n[bold]Architecture:[/]\n"
-            "  One Durable Object runs the whole app, like [cyan]pywire run --workers 1[/]:\n"
-            "  each tab gets its own page, and module-level wires are shared by\n"
-            "  everyone. It stays in memory while anyone is connected.\n"
+            "  One Durable Object per Cloudflare region runs the whole app, like\n"
+            "  [cyan]pywire run --workers 1[/]: each tab gets its own page, and module-level\n"
+            "  wires are shared within the region. Set the Worker var\n"
+            '  [cyan]PYWIRE_PLACEMENT = "global"[/] to run one object for everyone.\n'
             "\n[bold]CI/CD:[/]\n"
             "  [cyan]uv sync && uv run pywire build --platform cloudflare "
             "&& uv run pywrangler deploy[/]"
