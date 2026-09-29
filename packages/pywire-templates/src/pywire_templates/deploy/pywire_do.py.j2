@@ -54,7 +54,10 @@ def _decode(message):
 
 
 def _resolve_page(path):
-    result = resolve_page({{ app_attr }}.router, path)
+    # The client sends the path the browser shows. Behind a Worker route like
+    # example.com/demo/*, that includes base_path, which the router doesn't.
+    base = getattr({{ app_attr }}, "base_path", "") or ""
+    result = resolve_page({{ app_attr }}.router, path, base_scope={"root_path": base})
     if result is None:
         return None
     page, _params, _variant_name = result
