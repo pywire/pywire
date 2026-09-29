@@ -323,6 +323,17 @@ def test_constraint_that_disagrees_with_the_model(tmp_path):
     assert 'minlength="2"' in _render(p)
 
 
+def test_password_input_on_a_plain_str_field(tmp_path):
+    src = (
+        "---" + MODEL + "signup = form(Signup)\n---\n"
+        '<input type="password" $bind={signup.name}>\n'
+    )
+    p = _page(_load(tmp_path, src))
+    p._is_debug = lambda: True
+    with pytest.raises(BindError, match="Type it SecretStr"):
+        _render(p)
+
+
 def test_bind_on_a_component_is_a_compile_error(tmp_path, monkeypatch):
     from pywire.runtime.importer import install_import_hook
 

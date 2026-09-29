@@ -1,8 +1,9 @@
 ---
 note = wire('')
 
-def save(doc):
-    note.value = str(doc)
+async def save(event):
+    doc = event["doc"]
+    note.value = f"{doc.filename}:{(await doc.read()).decode()}"
 ---
 <p id="note">{note}</p>
 <form method="post" @submit={save}>

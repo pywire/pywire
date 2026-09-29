@@ -3,14 +3,16 @@
 import logging
 import os
 import re
+import secrets
 import traceback
 import inspect
 import hashlib
+import hmac
 import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -30,8 +32,15 @@ from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
-from pywire.runtime.upload_manager import upload_manager
+from pywire.runtime.uploads import (
+    Staging,
+    machine_key,
+    part_chunks,
+    private_dir,
+    runtime_parent,
+)
 from pywire.runtime.websocket import WebSocketHandler
+from pywire.storage import FileStore, LocalStore
 
 logger = logging.getLogger(__name__)
 
@@ -146,30 +155,22 @@ async def _read_form(request: Request, max_upload_size: int) -> Any:
         raise _FormBodyError(f"PyWire: {exc.message}", 400) from exc
 
 
-async def _read_upload(upload: Any, limit: int) -> Any:
-    """A multipart file part as a FileUpload sized from the bytes read.
+_EVENT_TIMING = re.compile(r"immediate|(debounce|throttle)(\.\d+ms)?")
 
-    Returns None when the part is larger than ``limit``.
-    """
-    from pywire.runtime.files import FileUpload
 
-    chunks: List[bytes] = []
-    total = 0
-    while True:
-        chunk = await upload.read(1024 * 1024)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > limit:
-            return None
-        chunks.append(chunk)
-    return FileUpload(
-        filename=getattr(upload, "filename", None) or "",
-        content_type=getattr(upload, "content_type", None)
-        or "application/octet-stream",
-        size=total,
-        content=b"".join(chunks),
-    )
+def _check_event_defaults(defaults: Mapping[str, str]) -> Dict[str, str]:
+    """``{"input": "debounce.400ms", "scroll": "throttle.50ms"}``, checked."""
+    checked: Dict[str, str] = {}
+    for event, timing in defaults.items():
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", str(event)) or not (
+            isinstance(timing, str) and _EVENT_TIMING.fullmatch(timing)
+        ):
+            raise ValueError(
+                f"event_defaults[{event!r}] = {timing!r}: use 'immediate', "
+                "'debounce', 'debounce.300ms', 'throttle' or 'throttle.100ms'"
+            )
+        checked[str(event)] = timing
+    return checked
 
 
 def _form_handler_refusal(target: Any, name: str) -> Optional[str]:
@@ -272,6 +273,7 @@ class PyWire:
         static_dir: Optional[str] = None,
         static_route: Optional[str] = None,
         max_upload_size: int = 10 * 1024 * 1024,
+        upload_store: Optional[FileStore] = None,
         upload_token_ttl_seconds: int = 600,
         middleware: Optional[List] = None,
         session_store: Optional[Any] = None,
@@ -282,6 +284,7 @@ class PyWire:
         ws_ping_timeout: int = 10,
         reconnect_max_attempts: int = 10,
         reconnect_overlay: bool = True,
+        event_defaults: Optional[Mapping[str, str]] = None,
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
         stateless: bool = False,
@@ -389,18 +392,19 @@ class PyWire:
         runtime_key = hashlib.sha256(str(self.pages_dir).encode("utf-8")).hexdigest()[
             :16
         ]
-        self._runtime_dir = (
-            Path(tempfile.gettempdir()) / "pywire_runtime" / runtime_key
-        ).resolve()
-        self._runtime_dir.mkdir(parents=True, exist_ok=True)
+        self._runtime_dir = private_dir(
+            Path(tempfile.gettempdir()) / runtime_parent() / runtime_key
+        )
         self._upload_token_dir = self._runtime_dir / "upload_tokens"
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
+        self._upload_token_key: Optional[bytes] = None
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
         # Reconnection overlay config (passed to client via SPA metadata)
         self.reconnect_max_attempts = reconnect_max_attempts
         self.reconnect_overlay = reconnect_overlay
+        self.event_defaults = _check_event_defaults(event_defaults or {})
 
         # Gzip text responses (pages, client runtime, JSON, msgpack updates).
         # Turn off when a CDN or reverse proxy in front already compresses.
@@ -485,10 +489,26 @@ class PyWire:
             pass
         else:
             set_stateless_tier(stateless)
+        secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
+        # Signs state a page hands the browser to send back (what a bound
+        # form rendered, a wizard's steps). Processes that serve the same
+        # pages must share it, and a short one could be guessed, so it is
+        # only used when it is at least 32 bytes.
+        strong = bool(secret) and len(str(secret).encode("utf-8")) >= 32
+        if secret and not strong and not stateless:
+            logger.warning(
+                "PyWire: secret_key is shorter than 32 bytes, so it doesn't "
+                "sign form state; forms posted without JavaScript are only "
+                "accepted by the process that rendered them. Generate one "
+                "with: python -c 'import secrets; print(secrets.token_hex(32))'"
+            )
+        self.signing_secret: bytes = (
+            str(secret).encode("utf-8") if strong else secrets.token_bytes(32)
+        )
+        self.signing_secret_shared = strong
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
         if stateless:
-            secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
             if not secret:
                 raise RuntimeError(
                     "PyWire(stateless=True) requires secret_key= or the "
@@ -531,8 +551,13 @@ class PyWire:
         self.upload_tokens: Set[str] = set()
         # Token metadata: token -> (bound_session_id, issued_ts)
         self._upload_token_meta: Dict[str, Tuple[Optional[str], float]] = {}
-        upload_manager.configure_storage(self._runtime_dir / "uploads")
-        upload_manager.max_upload_size = self.max_upload_size
+        # Where uploads wait for a handler. Several processes (workers,
+        # stateless instances) must share one store, e.g. an ObjectStore.
+        self.uploads = Staging(
+            upload_store
+            if upload_store is not None
+            else LocalStore(self._runtime_dir / "uploads")
+        )
 
         # Compile and register all pages. Prebuilt deploy bundles (FaaS and
         # Cloudflare) skip this: their entrypoint sets PYWIRE_PREBUILT, the
@@ -953,7 +978,10 @@ class PyWire:
             self._cleanup_upload_tokens()
             token_binding = self._load_upload_token(token)
             if token_binding is None:
-                if token in self.upload_tokens:
+                issued = self._signed_upload_token_ts(token)
+                if issued is not None:
+                    token_binding = (None, issued)
+                elif token in self.upload_tokens:
                     token_binding = (None, time.time())
                     self._store_upload_token(token, None, token_binding[1])
                 else:
@@ -974,60 +1002,41 @@ class PyWire:
             if bound_session_id is None and session_id:
                 self._store_upload_token(token, session_id, issued_ts)
 
-            # Fail-fast: Check Content-Length header
-            content_length = request.headers.get("content-length")
-            if content_length:
-                try:
-                    length = int(content_length)
-                    if length > self.max_upload_size:
-                        logger.warning(
-                            "Upload rejected. Content-Length %s exceeds configured limit %s.",
-                            length,
-                            self.max_upload_size,
+            # The body is counted as it arrives (a chunked request declares
+            # no length) and holds at most _MAX_FORM_FILES files; each file is
+            # held to max_upload_size as it is staged.
+            try:
+                form = await _read_form(request, self.max_upload_size)
+            except _FormBodyError as exc:
+                error = "Payload Too Large" if exc.status_code == 413 else exc.message
+                return JSONResponse({"error": error}, status_code=exc.status_code)
+            try:
+                response_data: Dict[str, List[str]] = {}
+                for field_name, file in form.multi_items():
+                    if isinstance(file, str):
+                        continue
+                    upload_id = await self.uploads.stage(
+                        part_chunks(file),
+                        filename=file.filename or "",
+                        content_type=file.content_type or "application/octet-stream",
+                        limit=self.max_upload_size,
+                        owner=token,
+                    )
+                    if upload_id is None:
+                        await self.uploads.discard(
+                            [i for ids in response_data.values() for i in ids]
                         )
                         return JSONResponse(
-                            {"error": "Payload Too Large"}, status_code=413
+                            {"error": "Payload Too Large", "field": field_name},
+                            status_code=413,
                         )
-                except ValueError:
-                    pass
-
-            form = await request.form()
-            response_data: Dict[str, Any] = {}
-            upload_errors: Dict[str, str] = {}
-            items_iter = (
-                form.multi_items() if hasattr(form, "multi_items") else form.items()
-            )
-            for field_name, file in items_iter:
-                if not hasattr(file, "filename"):
-                    continue
-                from starlette.datastructures import UploadFile
-
-                try:
-                    upload_id = upload_manager.save(
-                        cast(UploadFile, file), max_size=self.max_upload_size
-                    )
-                except ValueError:
-                    upload_errors[field_name] = "Payload Too Large"
-                    continue
-
-                existing = response_data.get(field_name)
-                if existing is None:
-                    response_data[field_name] = upload_id
-                    continue
-                if isinstance(existing, list):
-                    existing.append(upload_id)
-                    continue
-                response_data[field_name] = [existing, upload_id]
-
-            logger.debug(f"Upload successful. Returning: {response_data}")
-            if upload_errors:
-                return JSONResponse(
-                    {"uploads": response_data, "errors": upload_errors}, status_code=400
-                )
+                    response_data.setdefault(field_name, []).append(upload_id)
+            finally:
+                await form.close()
             return JSONResponse(response_data)
-        except Exception as e:
-            logger.error(f"Upload failed: {e}", exc_info=True)
-            return JSONResponse({"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("Upload failed")
+            return JSONResponse({"error": "Upload failed"}, status_code=500)
 
     async def _handle_debug_snapshot(self, request: Request) -> Response:
         """Decode and pretty-print a client-held snapshot (debug mode only).
@@ -1937,10 +1946,9 @@ class PyWire:
             if getattr(page, "__has_uploads__", False) or getattr(
                 page, "_pw_has_uploads", False
             ):
-                import secrets
-
-                token = secrets.token_urlsafe(32)
-                self._store_upload_token(token, None, time.time())
+                # Signed, so a page view stores nothing; a token is only
+                # written down when an upload binds it to a session.
+                token = self._issue_upload_token()
                 # Token meta tag
                 injections.append(
                     f'<meta name="pywire-upload-token" content="{token}">'
@@ -2057,15 +2065,26 @@ class PyWire:
             # Only now are file parts read into memory: a request for a
             # handler that does not exist costs no more than its text fields.
             fields: Dict[str, List[Any]] = {}
+            staged: List[str] = []
             for key, value in form_data.multi_items():
                 if key == "__pywire_handler":
                     continue
                 if not isinstance(value, str):
-                    value = await _read_upload(value, self.max_upload_size)
-                    if value is None:
+                    if not value.filename:
+                        continue  # a file input with no file chosen
+                    upload_id = await self.uploads.stage(
+                        part_chunks(value),
+                        filename=value.filename,
+                        content_type=value.content_type or "application/octet-stream",
+                        limit=self.max_upload_size,
+                    )
+                    if upload_id is None:
+                        await self.uploads.discard(staged)
                         return PlainTextResponse(
                             "PyWire: uploaded file too large", status_code=413
                         )
+                    staged.append(upload_id)
+                    value = {"_upload_id": upload_id}
                 fields.setdefault(str(key), []).append(value)
             # Same shape the JS client sends: repeated names become lists.
             payload = {k: v[0] if len(v) == 1 else v for k, v in fields.items()}
@@ -2097,6 +2116,43 @@ class PyWire:
             return response
         finally:
             await form_data.close()
+
+    def _upload_key(self) -> bytes:
+        """The key page upload tokens are signed with.
+
+        Derived from ``secret_key`` when there is one. Otherwise a random key
+        kept in the private runtime folder, so every process serving these
+        pages on this machine accepts the others' tokens.
+        """
+        if self._upload_token_key is None:
+            if self.signing_secret_shared:
+                self._upload_token_key = hmac.new(
+                    self.signing_secret, b"pywire.upload", hashlib.sha256
+                ).digest()
+            else:
+                self._upload_token_key = machine_key(
+                    self._runtime_dir / "upload_token.key"
+                )
+        return self._upload_token_key
+
+    def _issue_upload_token(self) -> str:
+        body = f"{int(time.time()):x}_{secrets.token_hex(16)}"
+        mac = hmac.new(self._upload_key(), body.encode(), hashlib.sha256)
+        return f"{body}_{mac.hexdigest()}"
+
+    def _signed_upload_token_ts(self, token: str) -> Optional[float]:
+        """When a signed page token was issued, or None if it isn't one."""
+        parts = token.split("_")
+        if len(parts) != 3:
+            return None
+        body = f"{parts[0]}_{parts[1]}"
+        mac = hmac.new(self._upload_key(), body.encode(), hashlib.sha256)
+        if not hmac.compare_digest(mac.hexdigest(), parts[2]):
+            return None
+        try:
+            return float(int(parts[0], 16))
+        except ValueError:
+            return None
 
     def _cleanup_upload_tokens(self) -> None:
         cutoff = time.time() - self.upload_token_ttl_seconds

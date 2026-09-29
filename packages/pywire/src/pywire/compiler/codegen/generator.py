@@ -85,6 +85,8 @@ class CodeGenerator:
         self._wired_handler_names: Set[str] = set()
         # Submit handlers of bound forms -> the <form> node, for errors.
         self._bound_submits: Dict[str, TemplateNode] = {}
+        # Generated wrappers of bound forms' submits (``_handler_N``).
+        self._bound_wrappers: Set[str] = set()
         self._wire_vars_from_decorators: Set[str] = set()
         self._collected_props: Optional[PropsDirective] = None
         module_body = []
@@ -615,6 +617,26 @@ class CodeGenerator:
                     value=ast.Constant(value=True),
                 )
             )
+            # The fields a plain @submit handler may get files under.
+            names = self.template_codegen.file_input_names
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__file_fields__", ctx=ast.Store())],
+                    value=ast.parse(
+                        "None" if names is None else f"frozenset({sorted(names)!r})",
+                        mode="eval",
+                    ).body,
+                )
+            )
+        if self._bound_wrappers:
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__bound_handlers__", ctx=ast.Store())],
+                    value=ast.parse(
+                        f"frozenset({sorted(self._bound_wrappers)!r})", mode="eval"
+                    ).body,
+                )
+            )
 
         # Determine base class
         base_id = "BasePage"
@@ -910,14 +932,16 @@ class CodeGenerator:
                     except Exception:
                         pass  # ast.unparse can fail on malformed nodes; skip gracefully
 
+        bind_count = 0
+
         def visit_nodes(nodes: List[TemplateNode], loop_vars: Set[str]) -> None:
-            nonlocal handler_count
+            nonlocal handler_count, bind_count
             for node in nodes:
                 in_scope = loop_vars | self._loop_names(node)
-                if (
-                    self._bind_attr(node) is not None
-                    and (node.tag or "").lower() == "form"
-                ):
+                bind = self._bind_attr(node)
+                tag = (node.tag or "").lower()
+                if bind is not None and tag == "form":
+                    self._bound_wrappers.add(f"_handler_{handler_count}")
                     handlers.append(
                         self._bound_form_handler(
                             node,
@@ -928,6 +952,19 @@ class CodeGenerator:
                         )
                     )
                     handler_count += 1
+                elif (
+                    bind is not None
+                    and tag in ("input", "select", "textarea")
+                    and bind.expr.strip() in known_vars
+                    # A $for variable of the same name is not the page's wire.
+                    and bind.expr.strip() not in in_scope
+                ):
+                    handlers.append(
+                        self._wire_bind_handler(
+                            bind, f"_handle_bind_{bind_count}", bind.expr.strip()
+                        )
+                    )
+                    bind_count += 1
                 # Check for events
                 for attr in node.special_attributes:
                     if isinstance(attr, EventAttribute):
@@ -1183,6 +1220,57 @@ class CodeGenerator:
                 defaults=[],
             ),
             body=[ast.Expr(value=call)],
+            decorator_list=[],
+            returns=None,
+        )
+
+    def _wire_bind_handler(
+        self, bind: ReactiveAttribute, method_name: str, name: str
+    ) -> ast.AsyncFunctionDef:
+        """``<input $bind={term}>`` -> the handler that writes the element's
+        value back into the page-level wire ``query``.
+
+        ``async def _handle_bind_N(self, event_data):
+               apply_bind_event(self.query, event_data)``
+
+        It only acts when ``query`` is a wire at run time; a bare name bound
+        to anything else renders through the forms helpers and never sends.
+        """
+        setattr(bind, "_pw_bind_handler", method_name)
+        self._wired_handler_names.add(method_name)
+        return ast.AsyncFunctionDef(
+            name=method_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self"), ast.arg(arg="event_data")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=[
+                ast.ImportFrom(
+                    module="pywire.runtime.bind",
+                    names=[ast.alias(name="apply_bind_event", asname=None)],
+                    level=0,
+                ),
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Name(id="apply_bind_event", ctx=ast.Load()),
+                        args=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
+                            ),
+                            ast.Name(id="event_data", ctx=ast.Load()),
+                            ast.Name(id="self", ctx=ast.Load()),
+                            ast.Constant(value=method_name),
+                        ],
+                        keywords=[],
+                    )
+                ),
+            ],
             decorator_list=[],
             returns=None,
         )

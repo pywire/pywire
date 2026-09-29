@@ -13,29 +13,28 @@ from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import decode_snapshot
-from pywire.runtime.upload_manager import UploadManager
 
 SECRET = "forms-test-secret-at-least-32-bytes"
 
 PAGE = """---
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from pydantic import BaseModel, EmailStr, Field
 from pywire import form
-from pywire.runtime.files import FileUpload
+from pywire.forms import Upload, UploadField
 
 class Signup(BaseModel):
     email: EmailStr
     name: str = Field(min_length=2)
     tags: list[Literal["a", "b", "c"]] = []
     terms: Literal[True]
-    avatar: Optional[FileUpload] = None
+    avatar: Optional[Annotated[Upload, UploadField(max_size=500, accept="image/*")]] = None
     role: str = "user"  # never rendered
 
 signup = form(Signup)
 done = wire("")
 
 async def create(data: Signup):
-    size = data.avatar.size if data.avatar else 0
+    size = len(await data.avatar.read()) if data.avatar else 0
     done.value = f"{data.email}|{data.tags}|{size}|{data.role}"
     if data.name == "Go":
         navigate("/thanks")
@@ -49,6 +48,7 @@ async def create(data: Signup):
   <input type="checkbox" value="b" $bind={signup.tags}>
   <input $bind={signup.terms}>
   <input $bind={signup.avatar}>
+  <p $if={signup.avatar.error}>FILE:{signup.avatar.error}</p>
 </form>
 """
 
@@ -141,6 +141,40 @@ def test_multipart_file_is_sized_from_bytes(client):
     assert "|100|user</p>" in r.text
 
 
+def test_upload_field_rules_render_and_apply(client):
+    html = client.get("/").text
+    avatar = re.search(r'<input[^>]*type="file"[^>]*>', html).group(0)
+    assert 'accept="image/*"' in avatar and 'data-pw-max-size="500"' in avatar
+
+    handler = _handler(client)
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": ("a.png", b"x" * 600, "image/png")},
+    )
+    assert r.status_code == 422
+    assert "FILE:Choose a file no larger than 500 B" in r.text
+
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": ("a.txt", b"x", "text/plain")},
+    )
+    assert r.status_code == 422
+    assert "FILE:Choose a file of type image/*" in r.text
+
+
+def test_no_file_chosen_is_no_file(client):
+    handler = _handler(client)
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": ("", b"", "application/octet-stream")},
+    )
+    assert r.status_code == 200
+    assert "|0|user</p>" in r.text
+
+
 def test_multipart_file_over_the_limit_is_413(client):
     handler = _handler(client)
     r = client.post(
@@ -216,15 +250,6 @@ def test_stateless_event_carries_form_state_in_the_snapshot():
             assert "ERR:" not in str(out["regions"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
-
-
-@pytest.mark.parametrize(
-    "upload_id", ["../../etc/passwd", "/etc/passwd", "abc", "", None, "0" * 36]
-)
-def test_upload_ids_must_be_canonical_uuids(tmp_path, upload_id):
-    manager = UploadManager(storage_dir=tmp_path)
-    assert manager.get(upload_id) is None  # type: ignore[arg-type]
-    manager.delete(upload_id)  # type: ignore[arg-type]
 
 
 def _app(tmp_path, pages, **kwargs):
@@ -303,17 +328,15 @@ def test_large_form_bodies_are_refused_before_they_are_read(tmp_path):
 
 
 def test_files_are_not_read_for_a_handler_that_is_refused(tmp_path, monkeypatch):
-    import pywire.runtime.app as app_module
-
     reads = []
-    real = app_module._read_upload
-
-    async def counting(upload, limit):
-        reads.append(upload.filename)
-        return await real(upload, limit)
-
-    monkeypatch.setattr(app_module, "_read_upload", counting)
     app = _app(tmp_path, {"index": PAGE})
+    real = app.uploads.stage
+
+    async def counting(chunks, **kwargs):
+        reads.append(kwargs.get("filename"))
+        return await real(chunks, **kwargs)
+
+    monkeypatch.setattr(app.uploads, "stage", counting)
     with TestClient(app, raise_server_exceptions=False) as c:
         r = c.post(
             "/",
@@ -379,3 +402,12 @@ def test_form_state_stays_on_its_page_without_a_socket(tmp_path):
         assert r.status_code == 422
         html = c.get("/other").text
         assert "typed@@x" not in html and "ERR:" not in html
+
+
+def test_a_short_secret_never_signs_form_state(tmp_path, caplog):
+    app = _app(tmp_path, {"index": PAGE}, secret_key="short")
+    assert "shorter than 32 bytes" in caplog.text
+    assert app.signing_secret != b"short" and not app.signing_secret_shared
+    (tmp_path / "b").mkdir()
+    strong = _app(tmp_path / "b", {"index": PAGE}, secret_key=SECRET)
+    assert strong.signing_secret == SECRET.encode() and strong.signing_secret_shared

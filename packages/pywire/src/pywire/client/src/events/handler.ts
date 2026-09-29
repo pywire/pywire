@@ -2,14 +2,40 @@ import { PyWireApp } from '../core/app'
 import { DOMUpdater } from '../core/dom-updater'
 import { EventData } from '../core/transports'
 import { logger } from '../core/logger'
+import { beginSubmit, isBoundForm, releaseForms, submitSent, submitterField } from './forms'
 import { applyOptimistic, bindPending, isOptimistic, revertElement } from './pending'
 import { schedulePolls } from './poll'
+import { checkFiles, UploadError, Uploader, UploadRef } from './uploads'
 
 // Type alias for backward compatibility
 type Application = PyWireApp
 
-type UploadResult = { _upload_id: string }
-type FormDataValue = string | string[] | UploadResult | UploadResult[]
+type FormDataValue = string | string[] | UploadRef | UploadRef[]
+
+type Timing = { kind: 'immediate' } | { kind: 'debounce' | 'throttle'; ms: number }
+
+/**
+ * Timing for events written without `.debounce`, `.throttle` or `.immediate`.
+ * `input` applies to text-like controls only; checkboxes, selects and the
+ * like send at once. `PyWire(event_defaults=...)` overrides entries.
+ */
+const DEFAULT_TIMING: Record<string, string> = {
+  input: 'debounce.250ms',
+  scroll: 'throttle.100ms',
+  wheel: 'throttle.100ms',
+  resize: 'throttle.100ms',
+  mousemove: 'throttle.100ms',
+  pointermove: 'throttle.100ms',
+  touchmove: 'throttle.100ms',
+  drag: 'throttle.100ms',
+}
+const TEXT_INPUT_TYPES = new Set(['text', 'email', 'search', 'url', 'tel', 'password', 'number'])
+
+function isTextLike(el: EventTarget | null): boolean {
+  if (el instanceof HTMLTextAreaElement) return true
+  if (el instanceof HTMLInputElement) return TEXT_INPUT_TYPES.has(el.type)
+  return el instanceof HTMLElement && el.isContentEditable
+}
 
 // Event base class metadata — serializable but useless noise on every Event.
 // These never change since they're the Event interface itself.
@@ -28,20 +54,35 @@ const SKIP_EVENT_META = new Set([
 
 export class UnifiedEventHandler {
   private app: Application
-  private debouncers = new Map<string, number>()
-  private throttlers = new Map<string, number>()
+  // Pending debounced sends and throttle windows, keyed per element, event
+  // and handler. Both flush before any event that sends at once, in order,
+  // so a handler never reads state from before the user's last keystroke.
+  private debouncers = new Map<string, { timer: number; run: () => void; seq: number }>()
+  private throttlers = new Map<
+    string,
+    { timer: number; trailing: (() => void) | null; seq: number }
+  >()
+  // Queue order of pending sends, across both maps.
+  private seq = 0
   private firedOnce = new Set<string>()
+  // Fields the user has typed in, per bound form: they validate on blur.
+  private dirtyFields = new WeakMap<HTMLFormElement, Set<string>>()
+  private uploader: Uploader
 
   private defaultEvents = ['click', 'submit', 'input', 'change']
   private attachedEvents = new Set<string>()
 
   // Events that should be suppressed during DOM updates to prevent loops
-  private suppressDuringUpdate = ['focus', 'blur', 'mouseenter', 'mouseleave']
+  private suppressDuringUpdate = ['focus', 'blur', 'focusout', 'mouseenter', 'mouseleave']
 
   private static ENABLE_TRACE = false
 
   constructor(app: Application) {
     this.app = app
+    this.uploader = new Uploader(
+      () => `${this.app.mountPath || ''}/_pywire/upload`,
+      (input) => this.afterUpload(input)
+    )
   }
 
   private debugLog(...args: unknown[]): void {
@@ -55,8 +96,13 @@ export class UnifiedEventHandler {
    * Uses event delegation on document body.
    */
   init(): void {
-    this.attachListeners(this.defaultEvents)
+    // focusout drives live validation of bound forms.
+    this.attachListeners([...this.defaultEvents, 'focusout'])
     this.refreshListeners()
+    // The server reset a bound form: what was typed before no longer counts.
+    document.addEventListener('pywire:form-reset', (e) => {
+      if (e.target instanceof HTMLFormElement) this.dirtyFields.delete(e.target)
+    })
   }
 
   /**
@@ -161,14 +207,19 @@ export class UnifiedEventHandler {
 
     const eventType = e.type
 
-    // File inputs can retain a prior custom validity error unless we clear it
-    // immediately when the user re-selects a file, even without data-on-change.
+    // A file input in a pywire form uploads its files when they're picked.
+    // Either way a new pick clears the last pick's validity error.
     if (
       eventType === 'change' &&
       e.target instanceof HTMLInputElement &&
       e.target.type === 'file'
     ) {
-      e.target.setCustomValidity('')
+      const form = e.target.form
+      if (form && this.app.isInteractive !== false && this.uploadInputs(form).includes(e.target)) {
+        this.uploader.select(e.target)
+      } else {
+        e.target.setCustomValidity('')
+      }
     }
 
     // Skip focus/blur/mouseenter/mouseleave events during DOM updates to prevent loops
@@ -190,6 +241,10 @@ export class UnifiedEventHandler {
     if ((e as unknown as Record<string, unknown>).__pwServerHandled) {
       this.debugLog('[Handler] Skipping server-handled dispatch event:', eventType)
       return
+    }
+
+    if (eventType === 'input' || eventType === 'change' || eventType === 'focusout') {
+      this.liveValidate(e)
     }
 
     // 1. Delegated handlers (standard path walk with bubbling)
@@ -318,6 +373,7 @@ export class UnifiedEventHandler {
         'once',
         'debounce',
         'throttle',
+        'immediate',
       ]
 
       // Key modifiers are anything that's not a system mod and is either a known key or a single character
@@ -389,45 +445,243 @@ export class UnifiedEventHandler {
       }
     }
 
-    // --- 3. Performance Modifiers ---
-    const debounceMod = modifiers.find((m) => m.startsWith('debounce'))
-    const throttleMod = modifiers.find((m) => m.startsWith('throttle'))
-
+    // --- 3. Timing: debounce, throttle, or send now ---
     const elementId = element.id || this.getUniqueId(element)
     const eventKey = `${elementId}-${eventType}-${handlerName}`
-
-    if (debounceMod) {
-      const duration = this.parseDuration(modifiers, 250)
-
-      if (this.debouncers.has(eventKey)) {
-        window.clearTimeout(this.debouncers.get(eventKey))
-      }
-
-      const timer = window.setTimeout(() => {
-        this.debouncers.delete(eventKey)
-        void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
-      }, duration)
-
-      this.debouncers.set(eventKey, timer)
-      return
-    }
-
-    if (throttleMod) {
-      const duration = this.parseDuration(modifiers, 250)
-      if (this.throttlers.has(eventKey)) return
-
-      this.throttlers.set(eventKey, Date.now())
-      // Execute immediately
+    const send = (): void => {
       void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
+    }
+    this.schedule(eventKey, this.timingFor(eventType, modifiers, e.target), send)
+  }
 
-      window.setTimeout(() => {
-        this.throttlers.delete(eventKey)
-      }, duration)
+  /**
+   * Run `send` now, after a debounce, or throttled (first and last event of
+   * each window). Anything sent now flushes pending debounced and trailing
+   * sends first, in the order they were queued.
+   */
+  schedule(key: string, timing: Timing, send: () => void): void {
+    if (timing.kind === 'debounce') {
+      const pending = this.debouncers.get(key)
+      if (pending) window.clearTimeout(pending.timer)
+      const timer = window.setTimeout(() => {
+        this.debouncers.delete(key)
+        send()
+      }, timing.ms)
+      // Re-insert so flush order follows the latest keystroke.
+      this.debouncers.delete(key)
+      this.debouncers.set(key, { timer, run: send, seq: ++this.seq })
       return
     }
 
-    // Direct dispatch
-    void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
+    if (timing.kind === 'throttle') {
+      const window_ = this.throttlers.get(key)
+      if (window_) {
+        window_.trailing = send
+        window_.seq = ++this.seq
+        return
+      }
+      send()
+      this.openThrottleWindow(key, timing.ms)
+      return
+    }
+
+    const own = this.debouncers.get(key)
+    if (own) {
+      window.clearTimeout(own.timer)
+      this.debouncers.delete(key)
+    }
+    this.flushPending()
+    send()
+  }
+
+  /**
+   * Live validation for bound forms rendered with `data-pw-validate="blur"`:
+   * a field the user typed in validates when it loses focus, then on every
+   * (debounced) keystroke while it shows an error. Checkboxes, radios and
+   * selects validate on change. The server validates the whole form and
+   * shows errors only for fields the user has been through.
+   */
+  private liveValidate(e: Event): void {
+    if (this.app.isInteractive === false) return
+    const field = e.target
+    if (
+      !(
+        field instanceof HTMLInputElement ||
+        field instanceof HTMLSelectElement ||
+        field instanceof HTMLTextAreaElement
+      )
+    ) {
+      return
+    }
+    const form = field.form
+    if (!form || form.dataset.pwValidate !== 'blur' || !field.name) return
+    if (field instanceof HTMLInputElement && field.type === 'file') return
+    const handler = this.getHandlers(form, 'submit')[0]?.name
+    if (!handler) return
+
+    let dirty = this.dirtyFields.get(form)
+    if (!dirty) {
+      dirty = new Set()
+      this.dirtyFields.set(form, dirty)
+    }
+    const name = field.name
+    const key = `validate:${this.getUniqueId(form)}:${name}`
+    const send = (): void => this.sendValidate(form, handler, name)
+    const textLike = isTextLike(field)
+
+    if (e.type === 'input') {
+      if (!textLike) return
+      dirty.add(name)
+      if (field.getAttribute('aria-invalid') === 'true') {
+        this.schedule(key, this.timingFor('input', [], field), send)
+      }
+      return
+    }
+    if (e.type === 'change') {
+      if (!textLike) this.schedule(key, { kind: 'immediate' }, send)
+      return
+    }
+    if (textLike && dirty.has(name)) {
+      this.schedule(key, { kind: 'immediate' }, send)
+    }
+  }
+
+  private sendValidate(form: HTMLFormElement, handler: string, field: string): void {
+    const inputs = this.uploadInputs(form)
+    this.app.sendEvent(handler, {
+      type: 'validate',
+      id: form.id || undefined,
+      tagName: form.tagName,
+      args: {},
+      field,
+      formData: {
+        ...this.formFields(form),
+        ...this.uploadRefs(inputs, (input) => this.uploader.uploaded(input)),
+      },
+    })
+  }
+
+  /** An upload finished: a live form checks the field now. */
+  private afterUpload(input: HTMLInputElement): void {
+    const form = input.form
+    if (!form || form.dataset.pwValidate !== 'blur') return
+    const handler = this.getHandlers(form, 'submit')[0]?.name
+    if (handler) this.sendValidate(form, handler, input.name)
+  }
+
+  /** A form's file inputs that pywire uploads (named, enabled, handled). */
+  private uploadInputs(form: HTMLFormElement): HTMLInputElement[] {
+    if (!this.getHandlers(form, 'submit').length) return []
+    return Array.from(form.elements).filter(
+      (el): el is HTMLInputElement =>
+        el instanceof HTMLInputElement && el.type === 'file' && !!el.name && !el.disabled
+    )
+  }
+
+  /** Upload references by field name: a list for `multiple` or repeated names. */
+  private uploadRefs(
+    inputs: HTMLInputElement[],
+    refsOf: (input: HTMLInputElement) => UploadRef[]
+  ): Record<string, UploadRef | UploadRef[]> {
+    const out: Record<string, UploadRef | UploadRef[]> = {}
+    for (const input of inputs) {
+      const refs = refsOf(input)
+      if (!refs.length) continue
+      const existing = out[input.name]
+      if (existing === undefined && !input.multiple) {
+        out[input.name] = refs[0]
+      } else {
+        out[input.name] = [...(existing === undefined ? [] : [existing].flat()), ...refs]
+      }
+    }
+    return out
+  }
+
+  /** Check picked files before a submit; false (and reported) when one can't go. */
+  private checkFileInputs(form: HTMLFormElement): boolean {
+    for (const input of this.uploadInputs(form)) {
+      input.setCustomValidity('')
+      const problem = checkFiles(input, Array.from(input.files ?? []))
+      if (problem) {
+        input.setCustomValidity(problem)
+        input.reportValidity()
+        return false
+      }
+    }
+    return true
+  }
+
+  /** A form's fields as the server reads them (files aside): repeated names become lists. */
+  private formFields(form: HTMLFormElement): Record<string, FormDataValue> {
+    const data: Record<string, FormDataValue> = {}
+    new FormData(form).forEach((value, key) => {
+      if (value instanceof File) return
+      const strVal = value.toString()
+      const existing = data[key]
+      if (existing === undefined) {
+        data[key] = strVal
+      } else if (Array.isArray(existing)) {
+        ;(existing as string[]).push(strVal)
+      } else {
+        data[key] = [existing as string, strVal]
+      }
+    })
+    return data
+  }
+
+  private openThrottleWindow(key: string, ms: number): void {
+    const state = { timer: 0, trailing: null as (() => void) | null, seq: 0 }
+    state.timer = window.setTimeout(() => {
+      this.throttlers.delete(key)
+      const trailing = state.trailing
+      if (trailing) {
+        trailing()
+        this.openThrottleWindow(key, ms)
+      }
+    }, ms)
+    this.throttlers.set(key, state)
+  }
+
+  /** Send every pending debounced and trailing throttled event now, in the
+   * order they were queued. */
+  flushPending(): void {
+    const queued: Array<{ seq: number; run: () => void }> = []
+    for (const pending of this.debouncers.values()) {
+      window.clearTimeout(pending.timer)
+      queued.push(pending)
+    }
+    this.debouncers.clear()
+    for (const state of this.throttlers.values()) {
+      const trailing = state.trailing
+      state.trailing = null
+      if (trailing) queued.push({ seq: state.seq, run: trailing })
+    }
+    queued.sort((a, b) => a.seq - b.seq)
+    for (const pending of queued) pending.run()
+  }
+
+  private timingFor(eventType: string, modifiers: string[], target: EventTarget | null): Timing {
+    const explicit = this.timingFromModifiers(modifiers, 250)
+    if (explicit) return explicit
+    if (eventType === 'input' && target instanceof HTMLInputElement && target.type === 'range') {
+      return { kind: 'throttle', ms: 100 }
+    }
+    if (eventType === 'input' && !isTextLike(target)) return { kind: 'immediate' }
+    const configured = this.app.getConfig().eventDefaults?.[eventType]
+    const spec = configured ?? DEFAULT_TIMING[eventType]
+    if (!spec) return { kind: 'immediate' }
+    return this.timingFromModifiers(spec.split('.'), 250) ?? { kind: 'immediate' }
+  }
+
+  private timingFromModifiers(modifiers: string[], fallbackMs: number): Timing | null {
+    if (modifiers.includes('immediate')) return { kind: 'immediate' }
+    if (modifiers.some((m) => m.startsWith('debounce'))) {
+      return { kind: 'debounce', ms: this.parseDuration(modifiers, fallbackMs) }
+    }
+    if (modifiers.some((m) => m.startsWith('throttle'))) {
+      return { kind: 'throttle', ms: this.parseDuration(modifiers, fallbackMs) }
+    }
+    return null
   }
 
   /**
@@ -458,16 +712,15 @@ export class UnifiedEventHandler {
       eventType === 'submit' &&
       element instanceof HTMLFormElement
     ) {
-      if (!this.validateFileInputs(element)) {
-        return
-      }
+      if (!this.checkFileInputs(element)) return
+      if (isBoundForm(element) && !beginSubmit(element)) return
       // Apply the optimistic prediction (and its double-submit guard) before
       // the async POST. httpFormSubmit reconciles it: every failure mode
       // navigates away, success morphs + clearPending().
       if (isOptimistic(modifiers)) {
         applyOptimistic(element, modifiers)
       }
-      await this.app.httpFormSubmit(element, handler)
+      await this.app.httpFormSubmit(element, handler, (e as SubmitEvent).submitter)
       return
     }
 
@@ -536,6 +789,13 @@ export class UnifiedEventHandler {
         if (!allowedFields || allowedFields.has('value')) {
           eventData.value = element.value
         }
+        if (
+          element instanceof HTMLSelectElement &&
+          element.multiple &&
+          (!allowedFields || allowedFields.has('values'))
+        ) {
+          eventData.values = Array.from(element.selectedOptions, (o) => o.value)
+        }
       }
     }
 
@@ -569,67 +829,43 @@ export class UnifiedEventHandler {
       eventType === 'submit' &&
       element instanceof HTMLFormElement
     ) {
-      if (!this.validateFileInputs(element)) {
-        return
-      }
+      if (!this.checkFileInputs(element)) return
+      // A bound form waits for the server's answer before it submits again.
+      if (isBoundForm(element) && !beginSubmit(element)) return
+      // Everything typed so far goes with this submit. If the handler resets
+      // the form, leaving a field it emptied must not check it again.
+      this.dirtyFields.delete(element)
 
-      const formData = new FormData(element)
-      const data: Record<string, FormDataValue> = {}
-      const uploadFormData = new FormData()
-      let hasFileUploads = false
-      formData.forEach((value, key) => {
-        if (value instanceof File) {
-          if (value.size > 0) {
-            uploadFormData.append(key, value)
-            hasFileUploads = true
-          }
-          return
-        }
-
-        const strVal = value.toString()
-        // Handle multiple values for same key
-        if (data[key] !== undefined) {
-          if (Array.isArray(data[key])) {
-            ;(data[key] as string[]).push(strVal)
-          } else {
-            data[key] = [data[key] as string, strVal]
-          }
-        } else {
-          data[key] = strVal
-        }
-      })
-
-      if (hasFileUploads) {
+      const data = this.formFields(element)
+      const pressed = submitterField((e as SubmitEvent).submitter)
+      if (pressed) data[pressed[0]] = pressed[1]
+      const inputs = this.uploadInputs(element).filter((input) => input.files?.length)
+      if (inputs.length) {
         // Apply the optimistic prediction (and its double-submit guard)
-        // synchronously, BEFORE the async upload starts — otherwise a slow
-        // upload leaves the control unguarded and a second click kicks off a
-        // second upload.
+        // before waiting on uploads, so a second click can't resubmit.
         if (isOptimistic(modifiers)) {
           applyOptimistic(element, modifiers)
         }
-        let uploadMap: Record<string, UploadResult | UploadResult[]>
         try {
-          uploadMap = await this.uploadFiles(uploadFormData, element)
+          const ids = new Map(
+            await Promise.all(
+              inputs.map(async (input) => [input, await this.uploader.ids(input)] as const)
+            )
+          )
+          Object.assign(
+            data,
+            this.uploadRefs(inputs, (input) => ids.get(input) ?? [])
+          )
         } catch (err) {
-          // No server error event will arrive for a failed upload — undo the
-          // prediction here so the control is never left stuck.
+          // No server answer will come for a failed upload: undo the
+          // prediction and release the form here.
           revertElement(element)
+          releaseForms()
+          if (err instanceof UploadError) return // reported on the input
           throw err
-        }
-        for (const [field, uploadValue] of Object.entries(uploadMap)) {
-          data[field] = uploadValue
         }
       }
       eventData.formData = data
-
-      // Non-interactive (SSR) mode: form POST → fetch + morph instead of
-      // a browser POST, so reload doesn't surface the "confirm resubmission"
-      // dialog and the swap feels SPA-like. Treat missing flag as interactive
-      // (matches the server-side default and the existing mock-app pattern).
-      if (this.app.isInteractive === false) {
-        await this.app.httpFormSubmit(element, handler)
-        return
-      }
     }
 
     // Apply the optimistic prediction synchronously, immediately before send
@@ -640,136 +876,9 @@ export class UnifiedEventHandler {
 
     const eventId = this.app.sendEvent(handler, eventData)
     bindPending(element, eventId)
-  }
-
-  private validateFileInputs(form: HTMLFormElement): boolean {
-    const fileInputs = form.querySelectorAll('input[type="file"]')
-    for (const input of fileInputs) {
-      if (!(input instanceof HTMLInputElement)) {
-        continue
-      }
-      if (input.dataset.pwFileInput === '1') {
-        continue
-      }
-
-      input.setCustomValidity('')
-      const files = input.files ? Array.from(input.files) : []
-
-      const maxFilesRaw = input.dataset.maxFiles
-      if (maxFilesRaw) {
-        const maxFiles = Number.parseInt(maxFilesRaw, 10)
-        if (!Number.isNaN(maxFiles) && maxFiles > 0 && files.length > maxFiles) {
-          input.setCustomValidity(`At most ${maxFiles} files are allowed`)
-          input.reportValidity()
-          return false
-        }
-      }
-
-      const minSizeRaw = input.dataset.minSize
-      const maxSizeRaw = input.dataset.maxSize
-      const minSize = minSizeRaw ? Number.parseInt(minSizeRaw, 10) : null
-      const maxSize = maxSizeRaw ? Number.parseInt(maxSizeRaw, 10) : null
-      if (
-        (minSize !== null && Number.isNaN(minSize)) ||
-        (maxSize !== null && Number.isNaN(maxSize))
-      ) {
-        continue
-      }
-
-      for (const file of files) {
-        if (minSize !== null && minSize > 0 && file.size < minSize) {
-          input.setCustomValidity(`File is too small (min ${minSize} bytes)`)
-          input.reportValidity()
-          return false
-        }
-        if (maxSize !== null && maxSize > 0 && file.size > maxSize) {
-          const sizeMb = maxSize / (1024 * 1024)
-          input.setCustomValidity(`File is too large (max ${sizeMb.toFixed(1)}MB)`)
-          input.reportValidity()
-          return false
-        }
-      }
-
-      const allowedNames = input.dataset.allowedNames
-      if (allowedNames) {
-        let allowedRegex: RegExp | null = null
-        try {
-          allowedRegex = new RegExp(allowedNames.replace(/\\\\/g, '\\'))
-        } catch {
-          allowedRegex = null
-        }
-
-        if (allowedRegex) {
-          for (const file of files) {
-            if (allowedRegex.test(file.name)) {
-              continue
-            }
-            input.setCustomValidity('Filename is not allowed')
-            input.reportValidity()
-            return false
-          }
-        }
-      }
+    if (eventType === 'submit' && element instanceof HTMLFormElement) {
+      submitSent(element, eventId)
     }
-    return true
-  }
-
-  private async uploadFiles(
-    fileData: FormData,
-    form?: HTMLFormElement
-  ): Promise<Record<string, UploadResult | UploadResult[]>> {
-    const token = (
-      document.querySelector('meta[name="pywire-upload-token"]') as HTMLMetaElement | null
-    )?.content
-    if (!token) {
-      throw new Error('Missing upload token. File uploads are not enabled for this page.')
-    }
-
-    const headers: Record<string, string> = {
-      'X-Upload-Token': token,
-    }
-    const httpSession = (window as Window & { __PYWIRE_HTTP_SESSION?: string | null })
-      .__PYWIRE_HTTP_SESSION
-    if (typeof httpSession === 'string' && httpSession.length > 0) {
-      headers['X-PyWire-Session'] = httpSession
-    }
-
-    const uploadUrl = `${this.app.mountPath || ''}/_pywire/upload`
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers,
-      body: fileData,
-      credentials: 'same-origin',
-    })
-    const payload = (await response.json()) as Record<string, unknown>
-    if (!response.ok) {
-      const uploadError = payload?.error || 'File upload failed'
-      throw new Error(String(uploadError))
-    }
-
-    const uploadIds = (payload.uploads ?? payload) as Record<string, unknown>
-    const result: Record<string, UploadResult | UploadResult[]> = {}
-    const multipleFieldNames = new Set<string>()
-    if (form) {
-      form.querySelectorAll('input[type="file"][multiple][name]').forEach((input) => {
-        if (input instanceof HTMLInputElement && input.name) {
-          multipleFieldNames.add(input.name)
-        }
-      })
-    }
-    for (const [field, raw] of Object.entries(uploadIds)) {
-      const isMultipleField = multipleFieldNames.has(field)
-      if (Array.isArray(raw)) {
-        result[field] = raw.map((uploadId: unknown) => ({ _upload_id: String(uploadId) }))
-        continue
-      }
-      if (isMultipleField) {
-        result[field] = [{ _upload_id: String(raw) }]
-        continue
-      }
-      result[field] = { _upload_id: String(raw) }
-    }
-    return result
   }
 
   private parseDuration(modifiers: string[], defaultDuration: number): number {

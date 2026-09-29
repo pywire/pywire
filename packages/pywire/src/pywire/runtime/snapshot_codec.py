@@ -1,4 +1,5 @@
-"""HMAC-signed session snapshots for stateless (client-held state) mode."""
+"""HMAC-signed state the client holds: session snapshots in stateless mode,
+and smaller pieces a page hands the browser to send back (wizard steps)."""
 
 import base64
 import hashlib
@@ -56,12 +57,31 @@ def encode_snapshot(page, *, secret: bytes, route: str, warn_size: int = 0) -> s
             len(raw),
             warn_size,
         )
+    return _seal(raw, secret)
+
+
+def decode_snapshot(blob: str, *, secret: bytes) -> dict:
+    return verify(blob, secret=secret)
+
+
+def sign(data: dict, *, secret: bytes) -> str:
+    """``data`` as a signed blob the client can hold but not change.
+
+    Signed, not encrypted: whoever holds the blob can read it.
+    """
+    return _seal(msgpack.packb(data), secret)
+
+
+def _seal(raw: bytes, secret: bytes) -> str:
     body = zlib.compress(raw, _ZLIB_LEVEL)
     sig = hmac.new(secret, body, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(sig + body).decode("ascii")
 
 
-def decode_snapshot(blob: str, *, secret: bytes) -> dict:
+def verify(blob: str, *, secret: bytes) -> dict:
+    """The mapping a blob from :func:`sign` holds; ``SnapshotError`` if forged."""
+    if not isinstance(blob, str) or len(blob) > MAX_SNAPSHOT_LEN:
+        raise SnapshotError("malformed snapshot encoding")
     try:
         data = base64.urlsafe_b64decode(blob.encode("ascii"))
     except Exception as exc:

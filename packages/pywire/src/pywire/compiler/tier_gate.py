@@ -33,11 +33,6 @@ A missed component surfaces when that component itself compiles — the
 error then names the component instead of the page. ``create_task()``
 alone is deliberately NOT a signal — it is the stateless ``@poll``
 pattern.
-
-Framework built-in components (``pywire/components/*.wire``) are exempt:
-they ship with the framework and are pinned by the capability matrix —
-``FileInput`` calls ``push_state()`` for in-request progress yet works
-statelessly (uploads are a plain-tier feature).
 """
 
 import ast
@@ -53,9 +48,6 @@ from pywire.compiler.ast_nodes import (
 from pywire.compiler.exceptions import PyWireSyntaxError
 
 _stateless_tier = False
-
-# Built-in framework components, exempt from the gate (see module docstring).
-_BUILTIN_COMPONENTS_DIR = Path(__file__).resolve().parent.parent / "components"
 
 
 def set_stateless_tier(stateless: bool) -> None:
@@ -122,8 +114,6 @@ def check_tier(parsed: ParsedPyWire) -> None:
     """
     if not _stateless_tier:
         return
-    if _is_builtin_component(parsed.file_path):
-        return
 
     parser = None
     root = str(Path(parsed.file_path).resolve())
@@ -142,7 +132,7 @@ def check_tier(parsed: ParsedPyWire) -> None:
                 )
         for dep in _wire_deps(current):
             key = str(dep)
-            if key in visited or _is_builtin_component(dep):
+            if key in visited:
                 continue
             visited.add(key)
             if parser is None:
@@ -245,7 +235,7 @@ def _resolve_wire_module(
     ``components/SlowPanel.wire`` via ``PyWireFinder`` submodule lookup —
     so ``<module>/<name>.wire`` is probed alongside ``<module>.wire``.
     Imports of real Python packages (``pywire.*`` etc.) resolve to nothing
-    here — the framework's built-in components are exempt anyway. Installed
+    here; the framework ships no ``.wire`` components. Installed
     third-party component packages cannot be resolved statically; they are
     documented in the error text and the writeup.
     """
@@ -268,10 +258,3 @@ def _resolve_wire_module(
                 break
             current = current.parent
     return found
-
-
-def _is_builtin_component(path) -> bool:
-    try:
-        return Path(path).resolve().is_relative_to(_BUILTIN_COMPONENTS_DIR)
-    except (OSError, ValueError):
-        return False

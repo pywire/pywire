@@ -60,34 +60,42 @@ class TestAppRuntime:
         self.app.router.add_route.assert_any_call("/users/{id}", ANY)
 
     @pytest.mark.asyncio
-    @patch("pywire.runtime.app.upload_manager")
-    async def test_handle_upload_invalid_token(self, mock_upload: MagicMock) -> None:
+    async def test_handle_upload_invalid_token(self) -> None:
         request = MagicMock(spec=Request)
         request.headers = {"X-Upload-Token": "invalid"}
         response = await self.app._handle_upload(request)
         assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch("pywire.runtime.app.upload_manager")
-    async def test_handle_upload_success(self, mock_upload: MagicMock) -> None:
-        self.app.upload_tokens.add("valid-token")
-        mock_upload.save.return_value = "upload-123"
-
-        request = AsyncMock(spec=Request)
-        request.headers = {"X-Upload-Token": "valid-token"}
-
-        # Mock form data
-        mock_file = MagicMock()
-        mock_file.filename = "test.txt"
-        # request.form must be an async method returning the dict
-        request.form = AsyncMock(return_value={"file": mock_file})
-
-        response = await self.app._handle_upload(request)
-        assert response.status_code == 200
+    async def test_handle_upload_success(self) -> None:
+        import io
         import json
 
-        data = json.loads(response.body)
-        assert data["file"] == "upload-123"
+        from starlette.datastructures import FormData, Headers, UploadFile
+
+        self.app.upload_tokens.add("valid-token")
+        request = AsyncMock(spec=Request)
+        request.headers = {"X-Upload-Token": "valid-token"}
+        part = UploadFile(
+            io.BytesIO(b"hi"),
+            filename="test.txt",
+            headers=Headers({"content-type": "text/plain"}),
+        )
+        with patch(
+            "pywire.runtime.app._read_form",
+            AsyncMock(return_value=FormData([("file", part)])),
+        ):
+            response = await self.app._handle_upload(request)
+        assert response.status_code == 200
+        (upload_id,) = json.loads(response.body)["file"]
+        upload = await self.app.uploads.get(upload_id, "valid-token")
+        assert upload is not None
+        assert (upload.filename, upload.content_type, upload.size) == (
+            "test.txt",
+            "text/plain",
+            2,
+        )
+        assert await upload.read() == b"hi"
 
     def test_register_error_page(self) -> None:
         self.app.router = MagicMock()

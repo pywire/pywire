@@ -5,11 +5,11 @@ import asyncio
 import json
 from datetime import date, timedelta
 from enum import Enum
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator, model_validator
 from pywire import form
-from pywire.forms import FileUpload
+from pywire.forms import Upload, UploadField
 
 # -------------------------------------------------------
 # A) Plain form: raw form data, no validation
@@ -86,13 +86,13 @@ class Profile(BaseModel):
     role: Role = Role.USER
     birth_date: date
     interests: list[Literal["python", "web", "data"]] = []
-    profile_pic: Optional[FileUpload] = None
-    attachments: list[FileUpload] = Field(default_factory=list, max_length=3)
+    profile_pic: Optional[Annotated[Upload, UploadField(max_size="2 MB", accept="image/*")]] = None
+    attachments: Annotated[list[Upload], UploadField(max_files=3, max_size="5 MB")] = []
 
 profile = form(Profile)
 profile_saved = wire("")
 
-def _summarize(upload: Optional[FileUpload]):
+def _summarize(upload: Optional[Upload]):
     return None if upload is None else f"{upload.filename} ({upload.size} bytes)"
 
 async def handle_profile(data: Profile):
@@ -285,11 +285,14 @@ async def run_long_task():
             </fieldset>
             <label>
                 Profile picture
-                <input $bind={profile.profile_pic} accept="image/*" />
+                <input $bind={profile.profile_pic} />
+                <progress data-pw-progress-for={profile.profile_pic.html_id}></progress>
+                <small class="error" $if={profile.profile_pic.error}>{profile.profile_pic.error}</small>
             </label>
             <label>
                 Attachments (up to 3)
                 <input $bind={profile.attachments} />
+                <progress data-pw-progress-for={profile.attachments.html_id}></progress>
                 <small class="error" $if={profile.attachments.error}>{profile.attachments.error}</small>
             </label>
             <button type="submit">Save profile</button>

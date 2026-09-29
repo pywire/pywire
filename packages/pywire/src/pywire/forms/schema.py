@@ -17,7 +17,7 @@ from typing import Annotated, Any, Dict, Optional, Tuple, Union, get_args, get_o
 
 from pydantic import BaseModel
 
-from pywire.runtime.files import FileUpload
+from pywire.runtime.uploads import Upload
 
 # kind -> default HTML control. ``select`` is a tag, not an input type.
 TEXT_KINDS = frozenset({"text", "secret"})
@@ -150,7 +150,7 @@ def _model_class(annotation: Any) -> Optional[type[BaseModel]]:
 
 def _is_upload(annotation: Any) -> bool:
     base, _ = _unwrap(annotation)
-    return isinstance(base, type) and issubclass(base, FileUpload)
+    return isinstance(base, type) and issubclass(base, Upload)
 
 
 def _enum_class(annotation: Any) -> Optional[type[enum.Enum]]:
@@ -279,6 +279,12 @@ def _constraint_attrs(kind: str, schema: Dict[str, Any]) -> Dict[str, str]:
         elif not is_int:
             attrs["step"] = "any"
         attrs["inputmode"] = "numeric" if is_int else "decimal"
+    elif kind in ("file", "files"):
+        # Set by UploadField (pywire.forms.uploads).
+        if isinstance(schema.get("x-accept"), str):
+            attrs["accept"] = schema["x-accept"]
+        if isinstance(schema.get("x-max-size"), int):
+            attrs["data-pw-max-size"] = str(schema["x-max-size"])
     return attrs
 
 
@@ -390,7 +396,14 @@ def _spec_for(
         items, _ = _split_nullable(schema.get("items", {}), defs)
         max_items = schema.get("maxItems")
         if _is_upload(item_ann):
-            return FieldSpec("", "", "files", "file", max_items=max_items)
+            return FieldSpec(
+                "",
+                "",
+                "files",
+                "file",
+                attrs=_constraint_attrs("files", items),
+                max_items=max_items,
+            )
         row_model = _model_class(item_ann)
         if row_model is not None:
             return FieldSpec(

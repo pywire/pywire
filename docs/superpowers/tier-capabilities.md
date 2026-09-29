@@ -118,12 +118,10 @@ dev-compile and `pywire build`.
 - `push_state()` is matched **by call name** anywhere in the frontmatter (`push_state(...)` or
   `self.push_state(...)`) — the "statically visible" case. Helper-wrapped pushes are missed
   (below).
-- **Framework code is exempt, in two ways:** files under `pywire/components/*.wire` are
-  skipped as closure members (they ship with the framework and are pinned by this matrix:
-  `FileInput` calls `push_state()` for in-request upload progress, yet uploads are a
-  plain-tier feature — the call no-ops safely on stateless); and **all `pywire.*` frontmatter
-  imports are dropped from the closure walk entirely** — they are framework modules, not app
-  dependencies.
+- **Framework code is exempt:** **all `pywire.*` frontmatter imports are dropped from the
+  closure walk entirely** — they are framework modules, not app dependencies. (The framework
+  ships no `.wire` components any more; upload progress is drawn by the client, so uploads
+  need no push on any tier.)
 
 ### What the check cannot see (stated, not pretended)
 
