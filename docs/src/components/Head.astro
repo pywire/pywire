@@ -3,6 +3,16 @@ import StarlightHead from '@astrojs/starlight/components/Head.astro'
 import VtbotStarlight from 'astro-vtbot/components/starlight/Base.astro'
 ---
 
+<!--
+  Use Astro's own page-change animation instead of the browser's native view
+  transition. Chromium on Linux flashes the whole window white during the
+  native cross-fade. Astro reads document.startViewTransition once when its
+  router loads, so this has to run before that module.
+-->
+<script is:inline>
+  delete Document.prototype.startViewTransition
+</script>
+
 <VtbotStarlight {...Astro.props}>
   <StarlightHead {...Astro.props}><slot /></StarlightHead>
 </VtbotStarlight>
