@@ -839,7 +839,11 @@ class Form(Generic[M]):
         prefix = self._html_name(path) + "."
         # Rows the user submitted, and rows rendered read-only (not posted
         # when disabled): both were rendered, so this never exceeds that.
-        heads = (k[len(prefix) :].split(".", 1)[0] for k in [*self._raw, *self._owned])
+        heads = (
+            k[len(prefix) :].split(".", 1)[0]
+            for k in [*self._raw, *self._owned]
+            if k.startswith(prefix)
+        )
         rows = {int(h) for h in heads if _is_index(h)}
         from_raw = max(rows) + 1 if rows else 0
         initial = self._initial_value(path)
