@@ -1,0 +1,54 @@
+"""AWS Lambda handler for a stateless PyWire application."""
+import asyncio
+import base64
+import os
+import sys
+from urllib.parse import urlencode
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "package"))
+# _routes.py registers the prebuilt pages: PyWire() must not compile src/pages.
+os.environ["PYWIRE_PREBUILT"] = "1"
+
+from pywire.adapters.oneshot import OneShotASGIAdapter
+from {{ app_module }} import {{ app_attr }}
+import _routes  # noqa: F401
+
+_adapter = OneShotASGIAdapter({{ app_attr }})
+
+
+def handler(event, context):
+    http = event.get("requestContext", {}).get("http", {})
+    method = http.get("method") or event.get("httpMethod", "GET")
+    path = event.get("rawPath") or event.get("path", "/")
+    query = event.get("rawQueryString") or urlencode(
+        event.get("queryStringParameters") or {}
+    )
+    headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    if event.get("cookies"):  # payload 2.0 moves Cookie out of the headers
+        headers["cookie"] = "; ".join(event["cookies"])
+    raw_body = event.get("body") or ""
+    body = base64.b64decode(raw_body) if event.get("isBase64Encoded") else raw_body.encode()
+    status, resp_headers, resp_body = asyncio.run(
+        _adapter.fetch(method, path, headers, body, query)
+    )
+    # Set-Cookie can't be folded into one header, so it gets its own list;
+    # other repeated headers are comma-joined.
+    out_headers, cookies = {}, []
+    for name, value in resp_headers:
+        name = name.lower()
+        if name == "set-cookie":
+            cookies.append(value)
+        else:
+            out_headers[name] = f"{out_headers[name]}, {value}" if name in out_headers else value
+    result = {
+        "statusCode": status,
+        "headers": out_headers,
+        "body": base64.b64encode(resp_body).decode(),
+        "isBase64Encoded": True,
+    }
+    if cookies:
+        if event.get("version") == "2.0":
+            result["cookies"] = cookies
+        else:  # payload 1.0 (REST API)
+            result["multiValueHeaders"] = {"set-cookie": cookies}
+    return result

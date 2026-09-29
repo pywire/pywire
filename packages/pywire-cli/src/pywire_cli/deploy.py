@@ -7,8 +7,11 @@ that feeds the right context variables to each template.
 
 from __future__ import annotations
 
+import re
+import tomllib
 from pathlib import Path
 
+from pywire import __version__ as pywire_version
 from pywire_templates import render_deploy_template
 
 
@@ -57,6 +60,87 @@ def generate_cf_entry(project_root: Path, app_string: str = "main:app") -> str:
     app_module, app_attr = _parse_app_string(app_string)
     return render_deploy_template(
         "entry.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def generate_cf_edge_wrangler_toml(project_root: Path, project_name: str) -> str:
+    """Generate wrangler.toml for the stateless Cloudflare edge Worker (no DOs)."""
+    return render_deploy_template(
+        "cloudflare_edge/wrangler.toml.j2", project_name=project_name
+    )
+
+
+def generate_cf_edge_entry(project_root: Path, app_string: str = "main:app") -> str:
+    """Generate entry.py for the stateless Cloudflare edge Worker."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "cloudflare_edge/entry.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def generate_aws_lambda_handler(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    """Generate handler.py for the stateless AWS Lambda target."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "aws/handler.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def generate_azure_function_app(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    """Generate function_app.py for the stateless Azure Functions target."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "azure/function_app.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def generate_gcp_functions_main(
+    project_root: Path, app_string: str = "main:app"
+) -> str:
+    """Generate main.py for the stateless Google Cloud Functions target."""
+    app_module, app_attr = _parse_app_string(app_string)
+    return render_deploy_template(
+        "gcp_functions/main.py.j2", app_module=app_module, app_attr=app_attr
+    )
+
+
+def _app_dependencies(project_root: Path) -> list[str]:
+    """The project's own runtime dependencies, minus pywire itself."""
+    pyproject = project_root / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+    with pyproject.open("rb") as f:
+        deps = tomllib.load(f).get("project", {}).get("dependencies", [])
+    kept = []
+    for dep in deps:
+        match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", dep.strip())
+        if match and re.sub(r"[-_.]+", "-", match.group()).lower() == "pywire":
+            continue
+        kept.append(dep.strip())
+    return kept
+
+
+def generate_faas_requirements(project_root: Path, target: str) -> str:
+    """Generate requirements.txt for a FaaS target (``aws``, ``azure``, ...).
+
+    Pins the pywire that compiled ``_pywire_build``: the prebuilt pages call
+    into its runtime, so a different release may not run them.
+    """
+    return render_deploy_template(
+        f"{target}/requirements.txt.j2",
+        pywire_version=pywire_version,
+        dependencies=_app_dependencies(project_root),
+    )
+
+
+def generate_aws_lambda_readme(project_root: Path, project_name: str) -> str:
+    """Generate AWS Lambda deployment instructions."""
+    return render_deploy_template(
+        "aws/README.md.j2", project_name=project_name, function_name=project_name
     )
 
 

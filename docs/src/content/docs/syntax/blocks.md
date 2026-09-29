@@ -110,6 +110,8 @@ Providing a `key` is **strongly recommended**. It allows PyWire to track identit
 
 The `{$await}` block handles Python **Awaitables** (coroutines, Tasks, Futures). It manages the three states of an async operation: **Pending**, **Resolved**, and **Rejected**.
 
+> **Stateful tier only:** `{$await}` needs a server-owned timeline to push its resolved view. `pywire build` rejects it in a `PyWire(stateless=True)` app. For background work on stateless or HTTP hosts, use a durable job record with [`@poll`](/reference/poll-directive/).
+
 ### Syntax
 
 ```pywire
@@ -228,7 +230,8 @@ When you want an "authorizing" placeholder (e.g. for expensive custom policies t
 ### Semantics
 
 - Policy lookup misses, missing engine, and user-policy exceptions all fail closed to denied.
-- Evaluation is asynchronous; the first render shows the authorizing body (if any), subsequent renders show the resolved branch.
+- On stateful deployments, evaluation is asynchronous; the first render shows the authorizing body (if any), and resolution pushes the final branch.
+- On stateless deployments, evaluation resolves inline in the same request. Verdicts are never snapshotted, so every request re-evaluates policy and revocation takes effect on the next request.
 - Each `{$auth}` region runs independently — works inside `{$for}`, nested inside other blocks, etc.
 - Auth channel events (claim grants, revokes) trigger a re-render that re-evaluates every `{$auth}` region on the page — no reload required.
 - Use `!auth` at the page level when you want a redirect on denial; use `{$auth}` when you want to branch the rendering in place.

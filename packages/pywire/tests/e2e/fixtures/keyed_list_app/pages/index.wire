@@ -1,0 +1,16 @@
+---
+items = wire([{"name": "item-" + str(k), "done": False} for k in range(1000)])
+
+def toggle(i):
+    items.value[i]["done"] = not items.value[i]["done"]
+
+def add_row():
+    items.value.append({"name": "new-row", "done": False})
+---
+<h1 id="title">Keyed List</h1>
+<ul id="rows">
+{$for idx, item in enumerate(items.value), key=idx}
+    <li><span class="name">{item["name"]}</span><span class="done">{item["done"]}</span><button class="tgl" @click={toggle(idx)}>toggle</button></li>
+{/for}
+</ul>
+<button id="add" @click={add_row()}>add</button>

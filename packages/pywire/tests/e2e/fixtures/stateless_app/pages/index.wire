@@ -1,0 +1,9 @@
+---
+count = wire(0)
+
+def increment():
+    count.value += 1
+---
+<p id="c">{count}</p>
+<button id="increment" @click={increment()}>+</button>
+<a href="/about" id="link-about">Go to About</a>

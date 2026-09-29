@@ -14,6 +14,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
+from pywire.runtime.protocol import event_ack, with_ack
 from pywire.runtime.session_serializer import restore_page_state
 from pywire import __version__
 
@@ -316,17 +317,26 @@ class WebSocketHandler:
             msgpack.packb({"type": "console", "lines": lines, "level": level})
         )
 
-    async def _send_error_trace(self, websocket: WebSocket, error: Exception) -> None:
-        """Send a structured error trace to the client."""
+    async def _send_error_trace(
+        self, websocket: WebSocket, error: Exception, ack: Optional[int] = None
+    ) -> None:
+        """Send a structured error trace to the client.
+
+        ``ack`` is the id of the client event that failed, echoed so the
+        client settles exactly that event's optimistic prediction.
+        """
         # Gate on debug mode + dev mode
         # If not in dev mode, send generic error message only
         if not (getattr(self.app, "_is_dev_mode", False)):
             await websocket.send_bytes(
                 msgpack.packb(
-                    {
-                        "type": "error",
-                        "error": f"{type(error).__name__}: An error occurred",
-                    }
+                    with_ack(
+                        {
+                            "type": "error",
+                            "error": f"{type(error).__name__}: An error occurred",
+                        },
+                        ack,
+                    )
                 )
             )
             return
@@ -382,18 +392,23 @@ class WebSocketHandler:
 
         await websocket.send_bytes(
             msgpack.packb(
-                {
-                    "type": "error_trace",
-                    "error": f"{type(error).__name__}: {str(error)}",
-                    "trace": trace,
-                }
+                with_ack(
+                    {
+                        "type": "error_trace",
+                        "error": f"{type(error).__name__}: {str(error)}",
+                        "trace": trace,
+                    },
+                    ack,
+                )
             )
         )
 
-    async def _send_update_payload(self, websocket: WebSocket, update: Any) -> None:
+    async def _send_update_payload(
+        self, websocket: WebSocket, update: Any, ack: Optional[int] = None
+    ) -> None:
         from pywire.runtime.protocol import build_update_payload
 
-        payload = build_update_payload(update)
+        payload = with_ack(build_update_payload(update), ack)
 
         # Keep virtual cookie jar in sync with cookie commands sent to client
         commands = payload.get("commands", [])
@@ -533,6 +548,7 @@ class WebSocketHandler:
         handler_name = data.get("handler")
         path = data.get("path", "/")
         event_data = data.get("data", {})
+        ack = event_ack(data)
 
         # Define callback for log streaming
         async def send_log(msg: str, level: str = "info") -> None:
@@ -588,13 +604,16 @@ class WebSocketHandler:
             if page._pending_navigation:
                 await websocket.send_bytes(
                     msgpack.packb(
-                        {"type": "navigate", "path": page._pending_navigation}
+                        with_ack(
+                            {"type": "navigate", "path": page._pending_navigation},
+                            ack,
+                        )
                     )
                 )
                 page._pending_navigation = None
                 return
 
-            await self._send_update_payload(websocket, update)
+            await self._send_update_payload(websocket, update, ack)
 
             # Run @after_update hooks after re-render sent to client
             await page._run_hooks(page.AFTER_UPDATE_HOOKS)
@@ -606,7 +625,7 @@ class WebSocketHandler:
 
         except Exception as e:
             logger.exception("Error handling event")
-            await self._send_error_trace(websocket, e)
+            await self._send_error_trace(websocket, e, ack)
         finally:
             log_callback_ctx.reset(token)
 

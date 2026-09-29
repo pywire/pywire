@@ -1,15 +1,15 @@
 """Pyodide shim for the PyWire docs interactive tutorial.
 
 This is the JS interop layer that bridges the tutorial's Web Worker
-with the PyodideASGIAdapter. The ASGI bridging logic lives in
-pywire.adapters.pyodide — this file only handles JS postMessage I/O.
+with the OneShotASGIAdapter. The ASGI bridging logic lives in
+pywire.adapters.oneshot — this file only handles JS postMessage I/O.
 """
 
 import asyncio
 import traceback
 
 from pywire import PyWire
-from pywire.adapters.pyodide import PyodideASGIAdapter
+from pywire.adapters.oneshot import OneShotASGIAdapter
 
 # Lazy initialization — wait until first request so virtual FS is ready
 app_instance = None
@@ -48,7 +48,7 @@ def get_adapter():
                 pages_dir=current_pages_dir, debug=True, ws_ping_interval=0
             )
             app_instance._is_dev_mode = True
-            adapter = PyodideASGIAdapter(app_instance)
+            adapter = OneShotASGIAdapter(app_instance)
             print("PyWire app initialized successfully")
         except Exception as e:
             print(f"Failed to initialize PyWire app: {repr(e)}")
@@ -102,7 +102,7 @@ async def handle_js_message(event_data):
                 raw = event_data["body"]
                 body = bytes(raw) if isinstance(raw, list) else raw
 
-            status, resp_headers, body_text = await adp.fetch(
+            status, resp_headers, body = await adp.fetch(
                 method=event_data["method"],
                 path=event_data["path"],
                 headers=headers,
@@ -116,7 +116,8 @@ async def handle_js_message(event_data):
                     "type": "http.response.body",
                     "status": status,
                     "headers": resp_headers,
-                    "body": body_text,
+                    # Tutorial responses are text (HTML); lossy decode is fine.
+                    "body": body.decode("utf-8", errors="replace"),
                 },
             }
             js.postMessage(to_js(response, dict_converter=js.Object.fromEntries))

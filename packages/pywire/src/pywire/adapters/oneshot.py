@@ -1,8 +1,8 @@
-"""Pyodide ASGI adapter for running PyWire in browser/WASM environments.
+"""One-shot ASGI adapter for running PyWire in FaaS/WASM/browser environments.
 
-Provides a clean bridge between JavaScript/Pyodide and PyWire's ASGI interface.
-Used by the docs tutorial, Cloudflare Python Workers, and Claude.ai/chatbot
-Pyodide sandboxes.
+Provides a clean bridge between a one-shot caller (JS/Pyodide, Cloudflare
+Python Workers, any FaaS template) and PyWire's ASGI interface. This is the
+integration surface every FaaS deploy target consumes.
 
 This module is pure Python with no js/pyodide imports — caller code handles
 the JS interop layer.
@@ -11,13 +11,16 @@ the JS interop layer.
 from __future__ import annotations
 
 import asyncio
+import logging
 import traceback
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+logger = logging.getLogger(__name__)
 
-class PyodideASGIAdapter:
-    """Adapts a PyWire ASGI app for use in Pyodide/browser environments.
+
+class OneShotASGIAdapter:
+    """Adapts a PyWire ASGI app for one-shot (request/response) callers.
 
     Provides simple methods for HTTP requests and WebSocket connections
     without requiring knowledge of the ASGI protocol.
@@ -31,13 +34,13 @@ class PyodideASGIAdapter:
         self,
         method: str = "GET",
         path: str = "/",
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         body: bytes = b"",
         query_string: str = "",
-    ) -> Tuple[int, List[Tuple[str, str]], str]:
+    ) -> tuple[int, list[tuple[str, str]], bytes]:
         """Make an HTTP request to the ASGI app.
 
-        Returns (status_code, response_headers, body_text).
+        Returns (status_code, response_headers, body_bytes).
         """
         if headers is None:
             headers = {}
@@ -65,6 +68,7 @@ class PyodideASGIAdapter:
         )
 
         status = 200
+        started = False
         response_headers: List[Tuple[str, str]] = []
         body_parts: List[bytes] = []
 
@@ -72,9 +76,10 @@ class PyodideASGIAdapter:
             return await receive_queue.get()
 
         async def send(message: dict):
-            nonlocal status, response_headers
+            nonlocal status, response_headers, started
             msg_type = message.get("type")
             if msg_type == "http.response.start":
+                started = True
                 status = message.get("status", 200)
                 raw_headers = message.get("headers", [])
                 response_headers = [
@@ -91,6 +96,13 @@ class PyodideASGIAdapter:
             await self.app(scope, receive, send)
         except Exception as exc:
             if not getattr(self.app, "debug", False):
+                if started:
+                    # Starlette's ServerErrorMiddleware sends the app's own
+                    # 500 page, then re-raises so the server can log it.
+                    # Log here and return that page; re-raising would fail
+                    # the whole FaaS invocation and discard it.
+                    logger.exception("Unhandled error in %s %s", method, path)
+                    return status, response_headers, b"".join(body_parts)
                 raise  # Don't leak tracebacks outside debug mode
             tb = traceback.format_exc()
             error_html = (
@@ -106,15 +118,9 @@ class PyodideASGIAdapter:
                 f"<pre>{tb}</pre>"
                 "</body></html>"
             )
-            return 500, [("content-type", "text/html")], error_html
+            return 500, [("content-type", "text/html")], error_html.encode("utf-8")
 
-        full_body = b"".join(body_parts)
-        try:
-            body_text = full_body.decode("utf-8")
-        except UnicodeDecodeError:
-            body_text = full_body.hex()
-
-        return status, response_headers, body_text
+        return status, response_headers, b"".join(body_parts)
 
     async def ws_connect(
         self,

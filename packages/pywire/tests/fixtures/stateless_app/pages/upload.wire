@@ -1,0 +1,11 @@
+---
+note = wire('')
+
+def save(doc):
+    note.value = str(doc)
+---
+<p id="note">{note}</p>
+<form method="post" @submit={save}>
+  <input type="file" name="doc" />
+  <button type="submit">Send</button>
+</form>

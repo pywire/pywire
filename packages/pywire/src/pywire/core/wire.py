@@ -12,7 +12,7 @@ from typing import (
     overload,
     TYPE_CHECKING,
 )
-from weakref import WeakSet
+from weakref import ReferenceType, WeakSet, ref
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,16 @@ def set_render_context(page: Any, region_id: Optional[str]) -> Any:
 
 def reset_render_context(token: Any) -> None:
     _render_context.reset(token)
+
+
+def suspend_render_context() -> Any:
+    """Detach the render context so reads are not registered against any
+    region (per-item key derivation in keyed ``{$for}`` renderers must not
+    subscribe the item region to the top-level container).
+
+    Returns a token for ``reset_render_context``.
+    """
+    return _render_context.set(None)
 
 
 def _is_mutable(val: Any) -> bool:
@@ -73,15 +83,20 @@ class WireBase:
     def __init__(
         self, parent: Optional["WireBase"] = None, field: Optional[str] = None
     ):
-        self._pages = WeakSet()
-        self._subscribers = WeakSet()  # Derived/Effect subscribers
+        # Pages that read this wire. List pages hold one proxy per row, so
+        # keep this small: None, then a weakref to the one page (the usual
+        # case), and a WeakSet only once a second page reads it.
+        self._pages: Optional[ReferenceType | WeakSet] = None
+        # Derived/Effect subscribers, created on first subscription.
+        self._subscribers: Optional[WeakSet] = None
         # Strong refs to Effects created via .subscribe() — without these,
         # the Effect is only tracked in the WeakSet of subscribers and
         # gets garbage-collected before the next write.
-        self._subscription_effects: list = []
+        self._subscription_effects: Optional[list] = None
         self._parent = parent
         self._field = field
         self._frozen = False
+        self._locked = False
         # Per-wire write counter. Bumped on every `_notify_write`. Used
         # by component-level memoization to invalidate only when wires
         # this specific component reads have been written.
@@ -95,7 +110,7 @@ class WireBase:
         ctx = _render_context.get()
         if ctx:
             page, region_id = ctx
-            self._pages.add(page)
+            self._add_page(page)
             logger.debug(
                 "WIRE-TRACK: wire=%s registered page=%s region=%s field=%s",
                 id(self),
@@ -112,8 +127,34 @@ class WireBase:
 
         if _TRACKING_STACK:
             subscriber = _TRACKING_STACK[-1]
+            if self._subscribers is None:
+                self._subscribers = WeakSet()
             self._subscribers.add(subscriber)
             subscriber.dependencies.add(self)
+
+    def _add_page(self, page: Any) -> None:
+        pages = self._pages
+        if pages is None:
+            self._pages = ref(page)
+        elif isinstance(pages, ReferenceType):
+            current = pages()
+            if current is page:
+                return
+            if current is None:
+                self._pages = ref(page)
+            else:
+                self._pages = WeakSet((current, page))
+        else:
+            pages.add(page)
+
+    def _live_pages(self) -> list:
+        pages = self._pages
+        if pages is None:
+            return []
+        if isinstance(pages, ReferenceType):
+            page = pages()
+            return [] if page is None else [page]
+        return list(pages)
 
     def _notify_write(self, field: str = "value") -> None:
         from pywire.core.signals import (
@@ -138,17 +179,17 @@ class WireBase:
         if self._parent:
             self._parent._notify_write(self._field or "value")
 
-        start_batch()
-        try:
-            # Notify signal subscribers
-            subscribers = list(self._subscribers)
-            for sub in subscribers:
-                sub.execute()
-        finally:
-            end_batch()
+        if self._subscribers:
+            start_batch()
+            try:
+                # Notify signal subscribers
+                for sub in list(self._subscribers):
+                    sub.execute()
+            finally:
+                end_batch()
 
         # Notify connected pages for re-render
-        for page in list(self._pages):
+        for page in self._live_pages():
             logger.debug(
                 "WIRE-NOTIFY: wire=%s notifying page=%s field=%s",
                 id(self),
@@ -174,20 +215,30 @@ class WireBase:
         # `value` is defined on every concrete subclass; the base class
         # leaves it abstract so getattr keeps both pyright and ty quiet.
         eff = Effect(lambda: callback(getattr(self, "value")))
+        if self._subscription_effects is None:
+            self._subscription_effects = []
         self._subscription_effects.append(eff)
 
         def unsubscribe() -> None:
             eff.dispose()
             try:
-                self._subscription_effects.remove(eff)
+                if self._subscription_effects is not None:
+                    self._subscription_effects.remove(eff)
             except ValueError:
                 pass
 
         return unsubscribe
 
     def freeze(self) -> None:
-        """Make the wire read-only."""
+        """Make the wire read-only. Container subclasses propagate to
+        child proxies already stored in their slots."""
         self._frozen = True
+
+    def lock(self) -> "WireBase":
+        """Exclude this wire from client-visible session snapshots.
+        The attr must be re-derivable by frontmatter on every instantiation."""
+        self._locked = True
+        return self
 
     def _check_frozen(self):
         if self._frozen:
@@ -324,16 +375,39 @@ class WireList(WireBase, list, Generic[T]):
         WireBase.__init__(self, parent, field)
         list.__init__(self, items)
 
+    def _proxy_slot(self, index: int) -> Any:
+        """Return the stable child proxy for the element at ``index``.
+
+        The proxy is stored in the list slot itself, so every later read
+        (indexing, iteration) returns the SAME object — per-item
+        invalidation keys depend on that identity. Not tracking: callers
+        decide whether the read registers.
+        """
+        val = list.__getitem__(self, index)
+        if isinstance(val, WireBase):
+            return val
+        if not _is_mutable(val):
+            return val
+        proxy = _create_proxy(val, parent=self, field=str(index))
+        if self._frozen:
+            proxy.freeze()
+        list.__setitem__(self, index, proxy)
+        return proxy
+
     def __getitem__(self, index):
         self._track_read()
-        val = super().__getitem__(index)
+        if isinstance(index, int):
+            n = list.__len__(self)
+            i = index if index >= 0 else index + n
+            if 0 <= i < n:
+                return self._proxy_slot(i)
+            return list.__getitem__(self, index)  # raise IndexError
+        val = list.__getitem__(self, index)
         if _is_mutable(val):
-            proxy = _create_proxy(val, parent=self)
-            # Store the proxy itself. `self[index] = proxy` compared equal to
-            # the plain value and skipped the write, so nested mutations went
-            # to a throwaway copy.
-            list.__setitem__(self, index, proxy)
-            return proxy
+            # Slice read: detached proxy over the slice copy. The old
+            # eager write-back aliased copies into the source slots and
+            # notified a write on every slice read; don't store it.
+            return _create_proxy(val, parent=self)
         return val
 
     def __setitem__(self, index, value):
@@ -387,7 +461,18 @@ class WireList(WireBase, list, Generic[T]):
 
     def __iter__(self):
         self._track_read()
-        return super().__iter__()
+        i = 0
+        while i < list.__len__(self):
+            # Yield stable child proxies so reads/writes on loop items
+            # track per item instead of only via the top-level list.
+            yield self._proxy_slot(i)
+            i += 1
+
+    def freeze(self) -> None:
+        super().freeze()
+        for v in list.__iter__(self):
+            if isinstance(v, WireBase):
+                v.freeze()
 
     def __contains__(self, item):
         self._track_read()
@@ -433,7 +518,9 @@ class WireList(WireBase, list, Generic[T]):
         return self
 
     def peek(self):
-        return list(self)
+        # Plain copy: no read tracking, no row proxies, no aliasing of live
+        # state into session snapshots.
+        return _plain(self)
 
     @property
     def value(self):
@@ -464,16 +551,29 @@ class WireDict(WireBase, dict, Generic[K, V]):
         WireBase.__init__(self, parent, field)
         dict.__init__(self, items)
 
+    def _proxy_entry(self, key: Any) -> Any:
+        """Stable child proxy for ``key``, stored in the dict slot itself
+        (see ``WireList._proxy_slot``). Not tracking."""
+        val = dict.__getitem__(self, key)
+        if isinstance(val, WireBase):
+            return val
+        if not _is_mutable(val):
+            return val
+        proxy = _create_proxy(val, parent=self, field=str(key))
+        if self._frozen:
+            proxy.freeze()
+        dict.__setitem__(self, key, proxy)
+        return proxy
+
     def __getitem__(self, key):
         self._track_read()
-        val = super().__getitem__(key)
-        if _is_mutable(val):
-            proxy = _create_proxy(
-                val, parent=self, field=key if isinstance(key, str) else None
-            )
-            dict.__setitem__(self, key, proxy)  # see WireList.__getitem__
-            return proxy
-        return val
+        return self._proxy_entry(key)  # raises KeyError if absent
+
+    def get(self, key, default=None):
+        self._track_read()
+        if dict.__contains__(self, key):
+            return self._proxy_entry(key)
+        return default
 
     def __setitem__(self, key, value):
         self._check_frozen()
@@ -496,11 +596,11 @@ class WireDict(WireBase, dict, Generic[K, V]):
 
     def values(self):
         self._track_read()
-        return super().values()
+        return {k: self._proxy_entry(k) for k in dict.keys(self)}.values()
 
     def items(self):
         self._track_read()
-        return super().items()
+        return {k: self._proxy_entry(k) for k in dict.keys(self)}.items()
 
     def __delitem__(self, key):
         self._check_frozen()
@@ -532,6 +632,12 @@ class WireDict(WireBase, dict, Generic[K, V]):
         self._check_frozen()
         super().clear()
         self._notify_write()
+
+    def freeze(self) -> None:
+        super().freeze()
+        for v in dict.values(self):
+            if isinstance(v, WireBase):
+                v.freeze()
 
     def pop(self, key, default=None):
         self._check_frozen()
@@ -571,7 +677,7 @@ class WireDict(WireBase, dict, Generic[K, V]):
         return super().__ne__(other)
 
     def peek(self):
-        return dict(self)
+        return _plain(self)
 
     @property
     def value(self):
@@ -694,7 +800,7 @@ class WireSet(WireBase, set, Generic[T]):
         return super().__ne__(other)
 
     def peek(self):
-        return set(self)
+        return _plain(self)
 
     @property
     def value(self):
@@ -808,7 +914,14 @@ def unwrap_wire(val: Any) -> Any:
         return unwrap_wire(val.value)
 
     if isinstance(val, WireBase):
-        val = val.value
+        if isinstance(val, (list, dict, set)):
+            # Container wires return themselves from ``.value``; peek()
+            # gives plain contents for the recursion below. peek() doesn't
+            # track, and unwrapping is a read, so register it here.
+            val._track_read()
+            val = val.peek()
+        else:
+            val = val.value
 
     if type(val) is dict:
         return {k: unwrap_wire(v) for k, v in val.items()}

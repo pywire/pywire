@@ -1,0 +1,17 @@
+---
+count = wire(0)
+done = wire(False)
+
+def tick():
+    if done.value:
+        return
+    count.value += 1
+    if count.value >= 5:
+        done.value = True
+---
+<h1 id="poll-title">Poll Test</h1>
+<p id="count">{count}</p>
+<div id="poll-region" $if={not done}>
+    <p id="tick-el" @poll.every-200={tick()}>ticking</p>
+</div>
+<p id="done-el" $if={done}>all done</p>

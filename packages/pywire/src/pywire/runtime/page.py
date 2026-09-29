@@ -13,6 +13,7 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
+    FrozenSet,
     Iterable,
     List,
     Optional,
@@ -146,6 +147,13 @@ class BasePage:
     """Base class for all compiled pages."""
 
     __file_path__: ClassVar[str]
+    # Compile-time allowlist of names ``_dispatch_handler`` may invoke. Set by
+    # the .wire codegen; ``None`` (hand-rolled pages) keeps dispatch permissive.
+    __event_handlers__: ClassVar[Optional[frozenset[str]]] = None
+    # Site id → ``_pw_item_<site>`` renderer for keyed ``{$for ... key=}``
+    # loops. Set by the .wire codegen; ``None`` (hand-rolled pages) means no
+    # keyed regions — dirty ``{site}#{key}`` ids fall back to a full render.
+    __keyed_region_renderers__: ClassVar[Optional[Dict[str, str]]] = None
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
         "params",
@@ -254,7 +262,11 @@ class BasePage:
 
         # Async update hook for intermediate state (injected by runtime)
         self._on_update: Optional[Callable[[], Awaitable[None]]] = None
-        self._wire_subscribers: Dict[Tuple[Any, str], Set[str]] = defaultdict(set)
+        # (wire, field) -> regions that read it. Values are frozensets shared
+        # through _region_sets: every row of a list read by one region maps
+        # to the same {region} object instead of a set per row.
+        self._wire_subscribers: Dict[Tuple[Any, str], FrozenSet[str]] = {}
+        self._region_sets: Dict[FrozenSet[str], FrozenSet[str]] = {}
         self._region_dependencies: Dict[str, Set[Tuple[Any, str]]] = defaultdict(set)
         self._dirty_regions: Set[str] = set()
 
@@ -652,7 +664,14 @@ class BasePage:
 
         snapshot = self._component_state_snapshots.pop(key, None)
         if snapshot:
+            from pywire.core.wire import WireBase  # noqa: PLC0415
+
             for attr, value in snapshot.items():
+                current = getattr(instance, attr, None)
+                if isinstance(current, WireBase) and current._locked:
+                    # Stale snapshot carrying an attr locked after signing:
+                    # keep the fresh frontmatter wire (still locked).
+                    continue
                 try:
                     setattr(instance, attr, value)
                 except AttributeError:
@@ -737,6 +756,19 @@ class BasePage:
         is_framework_handler = event_name.startswith(
             "_handle_bind_"
         ) or event_name.startswith("_handler_")
+        allowed = self.__class__.__event_handlers__
+        if allowed is not None and event_name not in allowed:
+            # Unresolvable names are stale DOM refs from hot reload: ignore
+            # without dispatching. getattr_static runs no descriptors and no
+            # __getattr__, so nothing unlisted is ever invoked.
+            try:
+                inspect.getattr_static(self, event_name)
+            except AttributeError:
+                logger.debug("Ignoring unknown handler '%s'", event_name)
+                return
+            raise ValueError(
+                f"Handler '{event_name}' is not a registered event handler"
+            )
         if not is_framework_handler and event_name.startswith("_"):
             raise ValueError(f"Handler '{event_name}' not allowed")
 
@@ -1198,6 +1230,15 @@ class BasePage:
                 except (AttributeError, KeyError):
                     pass
 
+                # Stateless (client-held state) mode
+                stateless_mode = False
+                try:
+                    stateless_mode = bool(
+                        getattr(self.request.app.state, "stateless", False)
+                    )
+                except (AttributeError, KeyError):
+                    pass
+
                 # Dev-only SSE reload channel for non-interactive mode. The
                 # dev server mounts /_pywire/dev/reload when both conditions
                 # hold; client subscribes via EventSource if this is set.
@@ -1223,6 +1264,7 @@ class BasePage:
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
                     "interactive": interactive_mode,
+                    "stateless": stateless_mode,
                     # Per-page !no_interactive: WebSocket stays connected,
                     # but the client skips event/wire wiring on this page.
                     "page_interactive": not page_no_interactive,
@@ -1325,6 +1367,7 @@ class BasePage:
 
     def _clear_wire_tracking(self) -> None:
         self._wire_subscribers.clear()
+        self._region_sets.clear()
         self._region_dependencies.clear()
         self._dirty_regions.clear()
         # Also drop the output-equality cache so the next full render emits
@@ -1351,9 +1394,12 @@ class BasePage:
             for dep in deps:
                 regions = self._wire_subscribers.get(dep)
                 if regions and region_id in regions:
-                    regions.discard(region_id)
-                    if not regions:
-                        self._wire_subscribers.pop(dep, None)
+                    if len(regions) == 1:
+                        del self._wire_subscribers[dep]
+                    else:
+                        self._wire_subscribers[dep] = self._shared_regions(
+                            regions - {region_id}
+                        )
         self._region_dependencies[region_id] = set()
 
     def _render_expr(self, static_id: str, compute_func: Callable[[], Any]) -> Any:
@@ -1404,15 +1450,26 @@ class BasePage:
 
     def _register_wire_read(self, wire_obj: Any, field: str, region_id: str) -> None:
         key = (wire_obj, field)
-        self._wire_subscribers[key].add(region_id)
+        regions = self._wire_subscribers.get(key)
+        if regions is None:
+            self._wire_subscribers[key] = self._shared_regions(frozenset((region_id,)))
+        elif region_id not in regions:
+            self._wire_subscribers[key] = self._shared_regions(regions | {region_id})
         self._region_dependencies[region_id].add(key)
 
         logger.debug(
-            f"register_read: page={id(self)} wire={id(wire_obj)} field={field} region={region_id}"
+            "register_read: page=%s wire=%s field=%s region=%s",
+            id(self),
+            id(wire_obj),
+            field,
+            region_id,
         )
 
         if self._capturing_deps:
             self._captured_deps.add(key)
+
+    def _shared_regions(self, regions: FrozenSet[str]) -> FrozenSet[str]:
+        return self._region_sets.setdefault(regions, regions)
 
     def _invalidate_wire(self, wire_obj: Any, field: str) -> None:
         # Bump the global wire-write counter. Components snapshot this on
@@ -1542,6 +1599,17 @@ class BasePage:
                 # Safe to sort now as we know no None is present
                 for region_id in sorted(self._dirty_regions):
                     method_name = region_map.get(region_id)
+                    keyed_key: Optional[str] = None
+                    if not method_name and "#" in region_id:
+                        # Keyed per-iteration region ``{site}#{key}`` from
+                        # ``{$for ..., key=}``. Nested keyed loops (enclosing
+                        # locals) have no top-level renderer — the site won't
+                        # be in the map and we fall through to the full
+                        # re-render below, the same safe path dynamic
+                        # iteration regions take.
+                        site_id, keyed_key = region_id.split("#", 1)
+                        keyed_map = self.__keyed_region_renderers__ or {}
+                        method_name = keyed_map.get(site_id)
                     if not method_name:
                         # Dynamic regions (e.g. ``{$auth claims=[("tier",
                         # tier)]}`` inside ``{$for}``) carry an iteration
@@ -1562,7 +1630,13 @@ class BasePage:
                     if is_dynamic:
                         self._dynamic_render_depth += 1
                     try:
-                        if inspect.iscoroutinefunction(renderer):
+                        if keyed_key is not None:
+                            # ``_pw_item_<site>(self, _pw_key)`` — always async,
+                            # called positionally. A key that no longer exists
+                            # (item deleted since dirtying) raises inside the
+                            # renderer and hits the full-render fallback below.
+                            region_html = await renderer(keyed_key)
+                        elif inspect.iscoroutinefunction(renderer):
                             region_html = await renderer()
                         else:
                             region_html = renderer()
@@ -1716,6 +1790,25 @@ class BasePage:
             logger.debug(f"[{self._instance_id}] push_state failed: {e}")
             # push_state might fail if connection closed
             pass
+
+    def _auth_inline(self) -> bool:
+        """Must ``{$auth}`` resolve inline instead of fire-and-forget?
+
+        True on the stateless tier: a one-shot response has no push
+        channel, so a verdict delivered "later" would never arrive — the
+        region must resolve before the render emits. Stateful renders keep
+        the pending view + ``push_state`` flow exactly as before.
+        """
+        page: Optional["BasePage"] = self
+        while page is not None:
+            request = getattr(page, "request", None)
+            if request is not None:
+                try:
+                    return bool(request.app.state.stateless)
+                except (AttributeError, KeyError):
+                    return False
+            page = getattr(page, "_parent_page", None)
+        return False
 
     async def _resolve_auth(
         self,

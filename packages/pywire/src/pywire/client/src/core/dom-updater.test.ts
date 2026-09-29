@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DOMUpdater } from './dom-updater'
+import { logger } from './logger'
 import morphdom from 'morphdom'
 
 vi.mock('morphdom', () => ({
@@ -305,6 +306,25 @@ describe('DOMUpdater', () => {
     delete (window as Window & { permScriptRan?: boolean }).permScriptRan
   })
 
+  it('should not execute the _pywire_snapshot data blob during morphs', () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {})
+
+    updater.update(
+      '<div><script id="_pywire_snapshot" type="text/plain">{"state":"blob"}</script></div>'
+    )
+
+    // Snapshot blob is data, not JS: never eval'd, no console error
+    ;(window as Window & { snapshotRan?: boolean }).snapshotRan = false
+    updater.update(
+      '<div><script id="_pywire_snapshot" type="text/plain">window.snapshotRan = true</script></div>'
+    )
+
+    expect((window as Window & { snapshotRan?: boolean }).snapshotRan).toBe(false)
+    expect(errorSpy).not.toHaveBeenCalled()
+    delete (window as Window & { snapshotRan?: boolean }).snapshotRan
+    errorSpy.mockRestore()
+  })
+
   it('should skip duplicate external scripts already in head', () => {
     // Mock appendChild before adding the existing script so happy-dom doesn't
     // try to load the src in the test environment.
@@ -334,6 +354,30 @@ describe('DOMUpdater', () => {
     expect(duplicateCall).toBeUndefined()
     appendSpy.mockRestore()
     querySpy.mockRestore()
+  })
+
+  it('should never re-run the PyWire client bundle from a full-document update', async () => {
+    // Stateless SPA navigation morphs a full document that carries the client
+    // bundle at </body>; re-running it would boot a second app.
+    const appendSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node) => node as Node)
+
+    updater.update(
+      '<html><body><div id="app">Next</div>' +
+        '<script src="/_pywire/static/pywire.core.min.js?v=1"></script>' +
+        '<script src="/app.js"></script></body></html>'
+    )
+    // Non-async src scripts are appended through the sequenced load chain.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const srcs = appendSpy.mock.calls
+      .map((call) => call[0])
+      .filter((node): node is HTMLScriptElement => node instanceof HTMLScriptElement)
+      .map((node) => node.getAttribute('src'))
+    expect(srcs).not.toContain('/_pywire/static/pywire.core.min.js?v=1')
+    expect(srcs).toContain('/app.js')
+    appendSpy.mockRestore()
   })
 
   it('should execute scripts with attributes', () => {

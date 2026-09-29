@@ -127,6 +127,8 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
 
         # Handle wire types
         if isinstance(value, WireBase):
+            if value._locked:
+                continue
             tag = _get_wire_tag(value)
             if tag:
                 wire_tags[name] = tag
@@ -188,6 +190,8 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
             if attr in {"request", "params", "query", "path", "url"}:
                 continue
             if isinstance(value, WireBase):
+                if value._locked:
+                    continue
                 tag = _get_wire_tag(value)
                 if tag:
                     raw = _peek_wire(value)
@@ -241,8 +245,17 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
     wire_tags = snapshot.get("wire_tags", {})
 
     for name, value in attrs.items():
+        # Snapshots never contain these (snapshot_page_state skips them), but a
+        # stale or hand-built one must not overwrite request-bound attributes
+        # such as ``query`` or reach private framework state.
+        if name.startswith("_") or name in _FRAMEWORK_ATTRS:
+            continue
         try:
             current = getattr(page, name, None)
+            if isinstance(current, WireBase) and current._locked:
+                # Stale signed snapshot (attr locked after it was signed):
+                # the fresh frontmatter value always wins, never the client's.
+                continue
             if name in wire_tags:
                 # Current page has a wire attribute — update its value
                 if isinstance(current, WireBase):

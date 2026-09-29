@@ -4,6 +4,21 @@
 import morphdom from 'morphdom'
 import { logger } from './logger'
 
+/** Elements the HTML parser only keeps inside a table or <select>. */
+const TABLE_CONTEXT_ELEMENTS = new Set([
+  'CAPTION',
+  'COL',
+  'COLGROUP',
+  'OPTGROUP',
+  'OPTION',
+  'TBODY',
+  'TD',
+  'TFOOT',
+  'TH',
+  'THEAD',
+  'TR',
+])
+
 // Alpine.js integration — if the user loads `@alpinejs/morph`, we hand Alpine
 // subtrees to `Alpine.morph` so reactive state survives server renders.
 // Without the plugin, morphdom strips Alpine's internal `_x_dataStack` and
@@ -254,6 +269,10 @@ export class DOMUpdater {
       // and the new one was extracted out before morphdom ran.
       if (script.id === '_pywire_spa_meta') continue
 
+      // Leave the stateless-mode snapshot blob in place — it's text/plain
+      // data, not JavaScript. Executing it would throw a SyntaxError.
+      if (script.id === '_pywire_snapshot') continue
+
       // Check if this script is inside a data-pw-permanent element
       const inPermanent = !!script.closest('[data-pw-permanent]')
       extracted.push({ script, inPermanent })
@@ -313,6 +332,10 @@ export class DOMUpdater {
 
       const srcAttr = script.getAttribute('src')
       if (srcAttr) {
+        // The PyWire client is already running. A full-document update (the
+        // stateless transport's navigation GET) carries its bundle again, and
+        // re-running it boots a second app that sends every event twice.
+        if (srcAttr.includes('/_pywire/static/')) continue
         // Skip if a script with this src already exists in <head>.
         // Use getAttribute to compare the raw attribute value (not the resolved URL).
         const existing = document.head.querySelector(`script[src="${srcAttr}"]`)
@@ -405,6 +428,13 @@ export class DOMUpdater {
           const parsedDoc = parser.parseFromString(newContent, 'text/html')
           deferredScripts = this.extractScripts(parsedDoc)
           contentToMorph = parsedDoc.documentElement
+        } else if (!childrenOnly && TABLE_CONTEXT_ELEMENTS.has(target.nodeName)) {
+          // A keyed <tr>/<td>/<option> region: parsed inside a <div>, its HTML
+          // would lose those tags. A <template> parses them in any context.
+          const template = document.createElement('template')
+          template.innerHTML = newContent.trim()
+          deferredScripts = this.extractScripts(template.content)
+          contentToMorph = template.content.firstElementChild || template.content
         } else {
           const tempContainer = document.createElement(target.nodeName === 'BODY' ? 'body' : 'div')
           tempContainer.innerHTML = newContent.trim()

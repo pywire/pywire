@@ -1,9 +1,14 @@
 import asgi
+import os
+
+# _routes.py registers the prebuilt pages: PyWire() must not compile src/pages.
+os.environ["PYWIRE_PREBUILT"] = "1"
+
 from {{ app_module }} import {{ app_attr }}
 import _routes  # noqa: F401 — registers routes as a side effect
 from pywire_do import PyWireSessionDO
-from workers import WorkerEntrypoint, Response
-from js import URL, Request as JsRequest
+from workers import WorkerEntrypoint
+from js import URL, Headers, Request as JsRequest, Response as JsResponse
 import uuid
 
 
@@ -23,8 +28,20 @@ class Default(WorkerEntrypoint):
         stub = self.env.PYWIRE_SESSION.getByName(session_id)
         self.ctx.waitUntil(stub.fetch(JsRequest.new("http://do/warm")))
 
-        # Serve the page via ASGI
-        response = await asgi.fetch({{ app_attr }}, request.js_object, self.env)
+        # Serve the page via ASGI. Without Accept-Encoding the app doesn't
+        # gzip: the body is re-read as text below, and the runtime compresses
+        # the final response itself.
+        js_request = request.js_object
+        if js_request.headers.has("accept-encoding"):
+            headers = Headers.new(js_request.headers)
+            headers.delete("accept-encoding")
+            js_request = JsRequest.new(js_request, headers=headers)
+        response = await asgi.fetch({{ app_attr }}, js_request, self.env)
+
+        # Only HTML can be re-read as text; msgpack event replies and other
+        # binary bodies pass through untouched.
+        if "text/html" not in (response.headers.get("content-type") or ""):
+            return response
 
         # Inject pre-assigned session into the HTML so the client
         # connects to the already-warming DO instead of creating a new one.
@@ -32,4 +49,5 @@ class Default(WorkerEntrypoint):
         meta = '<meta name="pywire-session" content="' + session_id + '">'
         body = body.replace("</head>", meta + "</head>", 1)
 
-        return Response.new(body, status=response.status, headers=response.headers)
+        # workers.Response has no .new(); build the JS Response directly.
+        return JsResponse.new(body, status=response.status, headers=response.headers)

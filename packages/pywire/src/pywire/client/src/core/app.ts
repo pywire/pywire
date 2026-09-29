@@ -12,6 +12,8 @@ import {
   InitClientMessage,
 } from './transports'
 import { UnifiedEventHandler } from '../events/handler'
+import { clearPending, revertPending } from '../events/pending'
+import { clearPollInFlight } from '../events/poll'
 import { RefManager } from './ref-manager'
 import { ReconnectOverlay } from './reconnect-overlay'
 import { logger } from './logger'
@@ -75,6 +77,8 @@ export class PyWireApp {
   protected sessionId: string | null = null
   private intentionalDisconnect = false
   private connectStartTime: number | null = null
+  /** Id of the last event sent; replies echo it as `ack`. */
+  private lastEventId = 0
   /**
    * Tracks the target path of a pending PJAX navigation.
    * Set before sending a relocate message, cleared after the resulting
@@ -257,6 +261,12 @@ export class PyWireApp {
         }
         if (meta.page_interactive !== undefined) {
           this.config.pageInteractive = !!meta.page_interactive
+        }
+        // Stateless (client-held state) mode: branch to the fetch-based
+        // transport BEFORE the WS/WebTransport/HTTP fallback order —
+        // stateless servers mount none of those endpoints.
+        if (meta.stateless) {
+          this.transport.useStatelessTransport()
         }
         if (meta.debug !== undefined) {
           this.config.debug = !!meta.debug
@@ -559,6 +569,9 @@ export class PyWireApp {
 
       const html = await response.text()
       this.updater.update(html)
+      // Flush optimistic predictions the morph reconciled (see handleMessage).
+      clearPending()
+      clearPollInFlight()
       this.eventHandler?.refreshListeners()
 
       document.dispatchEvent(
@@ -575,16 +588,20 @@ export class PyWireApp {
   }
 
   /**
-   * Send an event to the server.
+   * Send an event to the server. Returns the event's id, which the reply
+   * echoes as `ack`.
    */
-  sendEvent(handler: string, data: EventData): void {
+  sendEvent(handler: string, data: EventData): number {
+    const id = ++this.lastEventId
     const message: ClientMessage = {
       type: 'event',
       handler,
       path: window.location.pathname + window.location.search,
       data,
+      id,
     }
     this.transport.send(message)
+    return id
   }
 
   /**
@@ -621,6 +638,14 @@ export class PyWireApp {
           // so per-page `!no_interactive` flag tracks the current page.
           this.loadSPAMetadata()
         }
+
+        // An update message is the "request finished" signal: the morph already
+        // reconciled in-region markers/classes; settle the predictions of the
+        // event it answers that the morph never reached.
+        clearPending(msg.ack)
+        // Same signal for @poll: a response arrived (even an empty one), so
+        // clear the per-element in-flight overlap guard.
+        clearPollInFlight()
 
         // Per-update meta (sent by server `render_update`) — keeps
         // `pageInteractive` in sync after SPA nav, since SPA-nav responses
@@ -668,11 +693,19 @@ export class PyWireApp {
 
       case 'error':
         logger.error('PyWire: Server error:', msg.error)
+        // No morph is coming — revert the optimistic prediction so a failed
+        // control is never left stuck disabled (review focus #8).
+        revertPending(msg.ack)
+        // A poll dispatch that errored is no longer in flight — let the next
+        // tick retry.
+        clearPollInFlight()
         break
 
       case 'error_trace':
         // In core bundle, just log the error (no source loading)
         logger.error('PyWire: Error:', msg.error)
+        revertPending(msg.ack)
+        clearPollInFlight()
         break
 
       case 'console':
