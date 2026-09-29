@@ -230,7 +230,7 @@ def on_load():
     profile.load(fetch_profile())  # replace the initial values
 ```
 
-A field rendered `disabled` or `readonly` is owned by the server: on submit it keeps the value the server rendered, whatever the request says. A field marked `SkipJsonSchema` never renders and is never read from the request, which suits values like `owner_id` that only the server sets.
+A submit only reads the fields the page rendered with `$bind`. A field the page has not rendered, because the template leaves it out or an `$if` around it has stayed false, keeps its initial value (or the model default), whatever the request says. So an edit form can leave `id`, `owner_id` or `role` out of the template, and the handler still gets them from `initial`. A field rendered `disabled` or `readonly` is owned by the server the same way: on submit it keeps the value the server rendered.
 
 ### Nested models and lists
 
@@ -245,7 +245,7 @@ Nested models use dotted names, and list rows use their index:
 </div>
 ```
 
-These post as `address.street`, `items.0.name` and `items.0.qty`. The server stops reading rows past the model's `max_length` and reports the excess, so a client can't send a thousand of them.
+These post as `address.street`, `items.0.name` and `items.0.qty`. Only the rows the page rendered are read, so a client can't add rows by posting them, and the server reports rows past the model's `max_length`.
 
 To let people add and remove rows, spread `add_button` onto a button for the list and `remove_button` onto one in each row:
 
@@ -433,10 +433,10 @@ The values and errors come from the submitted fields themselves, so a no-JavaScr
 ## What the server enforces
 
 - Only the generated submit handler can be reached from a request. Your handler is called with a validated model and is never directly dispatchable.
-- Only fields in the model's schema are read. Extra fields, even on a model with `extra="allow"`, never reach it.
-- Native form posts from another site are refused with a 403 (checked with `Sec-Fetch-Site` and `Origin`).
+- Only fields the page rendered with `$bind` are read. Other model fields keep their initial or default value, and names outside the model never reach it, even on a model with `extra="allow"`.
+- Native form posts from another site are refused with a 403 (checked with `Sec-Fetch-Site` and `Origin`). A post runs the page's `@before_load` hooks and auth checks first, exactly like a GET, and nothing is dispatched if they stop the page.
 - Secrets (`SecretStr`) are never echoed back into the page, kept in a snapshot or carried between wizard steps. Binding a plain `str` field to `type="password"` is an error in debug mode, so a password can't slip through as ordinary text.
-- An upload reference only resolves to a file this app staged in the last hour. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload.
+- An upload reference only resolves to a file this app staged in the last hour. File sizes are counted on the server, and every `UploadField` rule is checked again after the upload. A native post's body is limited to 1 MB of fields plus 10 files of `max_upload_size` each, counted as it arrives.
 - List fields are capped, and add and remove buttons only act on lists the model declares.
 - Wizard state that doesn't carry this app's signature is ignored.
 

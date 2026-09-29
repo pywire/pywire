@@ -5746,6 +5746,28 @@ class TemplateCodegen:
             if select_site is not None:
                 self._bind_select_sites.pop()
 
+            if bind_var is not None and bind_tag == "form":
+                body.append(self._forms_import("state_input"))
+                body.append(
+                    ast.Expr(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id=parts_var, ctx=ast.Load()),
+                                attr="append",
+                                ctx=ast.Load(),
+                            ),
+                            args=[
+                                ast.Call(
+                                    func=ast.Name(id="state_input", ctx=ast.Load()),
+                                    args=[ast.Name(id=bind_var, ctx=ast.Load())],
+                                    keywords=[],
+                                )
+                            ],
+                            keywords=[],
+                        )
+                    )
+                )
+
             if node.tag.lower() not in self.VOID_ELEMENTS:
                 body.append(
                     ast.Expr(
@@ -5767,7 +5789,7 @@ class TemplateCodegen:
         # through pywire.runtime.bind, which also binds plain wires.
         module = (
             "pywire.forms.render"
-            if name in ("form_attrs", "handler_input")
+            if name in ("form_attrs", "handler_input", "state_input")
             else "pywire.runtime.bind"
         )
         return ast.ImportFrom(

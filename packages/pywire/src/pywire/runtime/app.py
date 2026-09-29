@@ -55,6 +55,11 @@ def _is_form_content(request: Request) -> bool:
     return ctype.strip().lower() in _FORM_CONTENT_TYPES
 
 
+def _is_multipart(request: Request) -> bool:
+    ctype = request.headers.get("content-type", "").split(";", 1)[0]
+    return ctype.strip().lower() == "multipart/form-data"
+
+
 def _is_cross_site(request: Request) -> bool:
     """True when a browser says this POST came from another site.
 
@@ -72,12 +77,68 @@ def _is_cross_site(request: Request) -> bool:
         return True
     from urllib.parse import urlsplit
 
-    netloc = urlsplit(origin).netloc.lower()
-    hosts = {request.headers.get("host", "").lower()}
+    def hostname(netloc: str) -> str:
+        # Ports are left out: cookies are shared across ports anyway, and
+        # proxies often drop the port from Host.
+        return (urlsplit("//" + netloc.strip()).hostname or "").lower()
+
+    hosts = {hostname(request.headers.get("host", ""))}
     forwarded = request.headers.get("x-forwarded-host")
     if forwarded:
-        hosts.update(h.strip().lower() for h in forwarded.split(","))
-    return netloc not in hosts
+        hosts.update(hostname(h) for h in forwarded.split(","))
+    return (urlsplit(origin).hostname or "").lower() not in hosts
+
+
+# A native form POST is read into memory before anything is known about its
+# sender, so its size is bounded up front: 1 MiB for the text fields, plus
+# ``_MAX_FORM_FILES`` files of at most ``max_upload_size`` each.
+_FORM_FIELDS_LIMIT = 1024 * 1024
+_MAX_FORM_FILES = 10
+
+
+class _FormBodyError(Exception):
+    """A form POST body that is too large or malformed; carries the response."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+async def _read_form(request: Request, max_upload_size: int) -> Any:
+    """Parse a form POST body without trusting its declared or real size.
+
+    Bodies over the limit are refused as they stream in (a chunked request
+    has no Content-Length to check). File parts are only spooled here; they
+    are read into memory after the handler has been accepted.
+    """
+    from starlette.datastructures import FormData
+    from starlette.formparsers import FormParser, MultiPartException, MultiPartParser
+
+    if not _is_form_content(request):
+        return FormData()
+    multipart = _is_multipart(request)
+    limit = _FORM_FIELDS_LIMIT + (max_upload_size * _MAX_FORM_FILES if multipart else 0)
+    declared = request.headers.get("content-length", "")
+    if declared.isdecimal() and int(declared) > limit:
+        raise _FormBodyError("PyWire: form body too large", 413)
+
+    async def stream() -> Any:
+        seen = 0
+        async for chunk in request.stream():
+            seen += len(chunk)
+            if seen > limit:
+                raise _FormBodyError("PyWire: form body too large", 413)
+            yield chunk
+
+    try:
+        if multipart:
+            return await MultiPartParser(
+                request.headers, stream(), max_files=_MAX_FORM_FILES
+            ).parse()
+        return await FormParser(request.headers, stream()).parse()
+    except MultiPartException as exc:
+        raise _FormBodyError(f"PyWire: {exc.message}", 400) from exc
 
 
 _EVENT_TIMING = re.compile(r"immediate|(debounce|throttle)(\.\d+ms)?")
@@ -1727,14 +1788,18 @@ class PyWire:
         if resolved_user is not None:
             page.user = resolved_user
 
-        # In non-interactive mode, restore session state if available
+        # In non-interactive mode, restore session state if available. The
+        # session holds one snapshot, of the last page served: it is restored
+        # only into that same page, and identity always comes from the request.
         session_id = request.scope.get("pywire_session_id")
         if not self.interactive_server_mode and session_id:
             session_data = request.scope.get("pywire_session_data")
-            if session_data:
+            if session_data and session_data.get("route_path") == request.url.path:
                 from pywire.runtime.session_serializer import restore_page_state
 
-                restore_page_state(page, session_data)
+                restore_page_state(
+                    page, {k: v for k, v in session_data.items() if k != "user"}
+                )
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
@@ -1900,7 +1965,10 @@ class PyWire:
                     page._pending_navigation = location
                 return denied
         try:
-            form_data = await request.form()
+            form_data = await _read_form(request, self.max_upload_size)
+        except _FormBodyError as exc:
+            return PlainTextResponse(exc.message, status_code=exc.status_code)
+        try:
             handler_name: Any = request.headers.get("x-pywire-handler") or (
                 form_data.get("__pywire_handler")
             )
@@ -1920,6 +1988,41 @@ class PyWire:
                     status_code=400,
                 )
 
+            # Render first, like the GET that served the form. Whatever stops
+            # a GET (a guard raising HTTPException, a failing @init) stops
+            # the POST the same way, and nothing is dispatched to a page
+            # whose @before_load asked to navigate away.
+            await page.render()
+            if getattr(page, "_pending_navigation", None):
+                from starlette.responses import RedirectResponse
+
+                redirect_path = page._pending_navigation
+                page._pending_navigation = None
+                return RedirectResponse(redirect_path, status_code=303)
+
+            target: Any = page
+            method = handler_name
+            while method.startswith("_comp:"):
+                comp_key, sep, rest = method[len("_comp:") :].partition(":")
+                if not sep or not comp_key or not rest:
+                    return PlainTextResponse(
+                        f"PyWire: malformed component handler '{handler_name}'",
+                        status_code=400,
+                    )
+                component = target._components.get(comp_key)
+                if component is None:
+                    return PlainTextResponse(
+                        f"PyWire: component '{comp_key}' not found",
+                        status_code=400,
+                    )
+                target, method = component, rest
+
+            refusal = _form_handler_refusal(target, method)
+            if refusal is not None:
+                return PlainTextResponse(refusal, status_code=400)
+
+            # Only now are file parts read into memory: a request for a
+            # handler that does not exist costs no more than its text fields.
             fields: Dict[str, List[Any]] = {}
             for key, value in form_data.multi_items():
                 if key == "__pywire_handler":
@@ -1942,37 +2045,17 @@ class PyWire:
             # Same shape the JS client sends: repeated names become lists.
             payload = {k: v[0] if len(v) == 1 else v for k, v in fields.items()}
             event_data: Dict[str, Any] = {"type": "submit", "formData": payload}
-
-            # Render first, like the GET that served the form.
-            await page.render()
-
-            target: Any = page
-            method = handler_name
-            if handler_name.startswith("_comp:"):
-                parsed = handler_name[len("_comp:") :]
-                comp_key, sep, method = parsed.partition(":")
-                if not sep or not comp_key or not method:
-                    return PlainTextResponse(
-                        f"PyWire: malformed component handler '{handler_name}'",
-                        status_code=400,
-                    )
-                target = page._components.get(comp_key)
-                if target is None:
-                    return PlainTextResponse(
-                        f"PyWire: component '{comp_key}' not found",
-                        status_code=400,
-                    )
-                if method.startswith("_comp:"):
-                    return PlainTextResponse(
-                        "PyWire: nested component handlers are not supported "
-                        "in form POSTs",
-                        status_code=400,
-                    )
-
-            refusal = _form_handler_refusal(target, method)
-            if refusal is not None:
-                return PlainTextResponse(refusal, status_code=400)
-            await target._dispatch_handler(method, event_data)
+            try:
+                await target._dispatch_handler(method, event_data)
+            except Exception as e:
+                # The guard and @init hooks already ran above, so showing the
+                # page again (without re-running them) leaks nothing a GET
+                # would not.
+                logger.error("Form POST error: %s", e, exc_info=True)
+                try:
+                    return await page.render(init=not is_spa_submit, run_hooks=False)
+                except Exception:
+                    return PlainTextResponse("Internal Server Error", status_code=500)
 
             if getattr(page, "_pending_navigation", None):
                 from starlette.responses import RedirectResponse
@@ -1985,15 +2068,10 @@ class PyWire:
             response = await page.render(init=not is_spa_submit, run_hooks=False)
             if invalid:
                 response.status_code = 422
+                response.headers["x-pywire-form"] = "invalid"
             return response
-        except Exception as e:
-            logger.error("Form POST error: %s", e, exc_info=True)
-            if hasattr(page, "_form_error"):
-                page._form_error = str(e)
-            try:
-                return await page.render(init=not is_spa_submit, run_hooks=False)
-            except Exception:
-                return PlainTextResponse("Internal Server Error", status_code=500)
+        finally:
+            await form_data.close()
 
     def _cleanup_upload_tokens(self) -> None:
         cutoff = time.time() - self.upload_token_ttl_seconds

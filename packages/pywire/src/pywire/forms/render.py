@@ -145,10 +145,15 @@ def field_attrs(
             f"{hand['name']!r} would post a field the server ignores.",
         )
 
+    # Only fields rendered here are read from a submit. One rendered
+    # read-only keeps the value the server rendered.
     form = field._form
-    if page is not None and (_present(hand, "disabled") or _present(hand, "readonly")):
-        # Rendered read-only: the value comes from server state on submit.
+    if _present(hand, "disabled") or _present(hand, "readonly"):
         form._owned.add(field.html_name)
+        form._editable.discard(field.html_name)
+    else:
+        form._editable.add(field.html_name)
+        form._owned.discard(field.html_name)
 
     base: Dict[str, Any] = {"name": field.html_name, "id": field.html_id}
     display = field.raw
@@ -294,9 +299,6 @@ def form_attrs(
     method = str(hand.get("method", "post")).lower()
     if method != "post":
         _complain(page, "A bound form always posts; drop method= from the <form>.")
-    # Fields re-register as they render: only what renders read-only now is
-    # server-owned on the next submit.
-    form._owned.clear()
     form._focus_claimed = False
     base: Dict[str, Any] = {"method": "post", "data-pw-form": form._dom_id_value()}
     if form._live:
@@ -325,16 +327,30 @@ def _has_files(spec: Any, depth: int = 0) -> bool:
     return False
 
 
+# Pressing Enter in a field clicks the form's first submit button. Rendered
+# first, this one makes that a plain submit, never Back or Remove.
+_DEFAULT_SUBMIT = (
+    '<button type="submit" tabindex="-1" aria-hidden="true" data-pw-default-submit'
+    ' style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;'
+    'overflow:hidden;clip:rect(0,0,0,0);border:0"></button>'
+)
+
+
 def handler_input(form: Any, handler_name: str) -> str:
-    """Hidden inputs a bound form posts: its handler, and any form state.
+    """What a bound form starts with: its handler, for native POSTs, and the
+    button Enter presses.
 
     ``form_attrs`` has already checked that ``form`` is a Form.
     """
-    hidden = form._pw_hidden_inputs()
     return (
         '<input type="hidden" name="__pywire_handler" value="'
-        f'{escape_html(handler_name)}">{hidden}'
+        f'{escape_html(handler_name)}">{_DEFAULT_SUBMIT}'
     )
+
+
+def state_input(form: Any) -> str:
+    """What a bound form ends with: the signed state of what it rendered."""
+    return str(form._pw_hidden_inputs())
 
 
 def textarea_text(field: Any) -> str:

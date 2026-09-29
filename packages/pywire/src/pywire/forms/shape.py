@@ -57,13 +57,13 @@ def _has_prefix(flat: Flat, prefix: str) -> bool:
     return any(k.startswith(prefix) for k in flat)
 
 
-def _row_indices(flat: Flat, prefix: str) -> List[int]:
+def row_indices(flat: Flat, prefix: str) -> List[int]:
     found: Set[int] = set()
     for key in flat:
         if not key.startswith(prefix):
             continue
         head = key[len(prefix) :].split(".", 1)[0]
-        if head.isdigit() and len(head) <= 6:
+        if head.isascii() and head.isdigit() and len(head) <= 6:
             found.add(int(head))
     return sorted(found)[:MAX_ROWS]
 
@@ -85,7 +85,7 @@ def _shape_field(spec: FieldSpec, flat: Flat, name: str) -> Tuple[bool, Any]:
         return True, sub
 
     if kind == "list":
-        rows = _row_indices(flat, name + ".")
+        rows = row_indices(flat, name + ".")
         if not rows:
             return False, None
         if spec.max_items is not None:

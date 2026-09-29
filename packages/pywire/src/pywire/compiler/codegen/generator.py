@@ -9,6 +9,7 @@ from pywire.compiler.ast_nodes import (
     AuthDirective,
     Directive,
     EventAttribute,
+    ForAttribute,
     LayoutDirective,
     NoInteractiveDirective,
     NoSpaDirective,
@@ -82,6 +83,8 @@ class CodeGenerator:
         self._collected_exposed_methods: List[str] = []
         # Bare user-def names the template wires as event handlers
         self._wired_handler_names: Set[str] = set()
+        # Submit handlers of bound forms -> the <form> node, for errors.
+        self._bound_submits: Dict[str, TemplateNode] = {}
         self._wire_vars_from_decorators: Set[str] = set()
         self._collected_props: Optional[PropsDirective] = None
         module_body = []
@@ -771,6 +774,14 @@ class CodeGenerator:
                         line=node.lineno,
                         column=node.col_offset,
                     )
+                if name.id.startswith(("_handler_", "_handle_bind_")):
+                    raise PyWireSyntaxError(
+                        f"'{name.id}' is reserved for the event handlers pywire "
+                        "generates, and would replace one of them. Rename it.",
+                        file_path=self.file_path,
+                        line=node.lineno,
+                        column=node.col_offset,
+                    )
 
     def _collect_global_names(
         self, python_ast: Optional[ast.Module]
@@ -900,15 +911,20 @@ class CodeGenerator:
 
         bind_count = 0
 
-        def visit_nodes(nodes: List[TemplateNode]) -> None:
+        def visit_nodes(nodes: List[TemplateNode], loop_vars: Set[str]) -> None:
             nonlocal handler_count, bind_count
             for node in nodes:
+                in_scope = loop_vars | self._loop_names(node)
                 bind = self._bind_attr(node)
                 tag = (node.tag or "").lower()
                 if bind is not None and tag == "form":
                     handlers.append(
                         self._bound_form_handler(
-                            node, f"_handler_{handler_count}", known_methods, known_vars
+                            node,
+                            f"_handler_{handler_count}",
+                            known_methods,
+                            known_vars,
+                            in_scope,
                         )
                     )
                     handler_count += 1
@@ -1014,10 +1030,36 @@ class CodeGenerator:
                             if source is not None:
                                 attr.field_mask = analyze_event_fields(source)
 
-                visit_nodes(node.children)
+                visit_nodes(node.children, in_scope)
 
-        visit_nodes(parsed.template)
+        visit_nodes(parsed.template, set())
+        for name, form_node in self._bound_submits.items():
+            if name in self._wired_handler_names:
+                from pywire.compiler.exceptions import PyWireSyntaxError
+
+                raise PyWireSyntaxError(
+                    f"{name!r} handles a bound form's submit, so it only ever "
+                    "gets a validated model. Wiring it to another event as "
+                    "well would let a request call it with unvalidated data; "
+                    "give that event its own handler.",
+                    file_path=self.file_path,
+                    line=form_node.line,
+                    column=form_node.column,
+                )
         return handlers
+
+    @staticmethod
+    def _loop_names(node: TemplateNode) -> Set[str]:
+        """Names a ``$for`` on ``node`` binds for itself and its children."""
+        names: Set[str] = set()
+        for attr in node.special_attributes:
+            if isinstance(attr, ForAttribute):
+                try:
+                    target = ast.parse(attr.loop_vars.strip(), mode="eval").body
+                except SyntaxError:
+                    continue
+                names.update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+        return names
 
     @staticmethod
     def _bind_attr(node: TemplateNode) -> Optional[ReactiveAttribute]:
@@ -1032,6 +1074,7 @@ class CodeGenerator:
         method_name: str,
         known_methods: Set[str],
         known_vars: Set[str],
+        loop_vars: Set[str],
     ) -> ast.AsyncFunctionDef:
         """``<form $bind={f} @submit={h}>`` -> the form's one entry point.
 
@@ -1060,6 +1103,13 @@ class CodeGenerator:
         root = target
         while isinstance(root, ast.Attribute):
             root = root.value
+        if isinstance(root, ast.Name) and root.id in loop_vars:
+            raise fail(
+                f"$bind={{{bind.expr.strip()}}}: {root.id!r} is a $for loop "
+                "variable here. A bound form must be a form defined in the "
+                "frontmatter; render one form per item with a component that "
+                "defines its own form."
+            )
         if not isinstance(root, ast.Name) or root.id not in known_vars:
             raise fail(
                 f"$bind on <form> must name a form defined in this page's "
@@ -1097,7 +1147,9 @@ class CodeGenerator:
                     "@submit on a bound form takes a function name, e.g. "
                     "@submit={create}; it is called with the validated model"
                 )
-            if name in known_methods:
+            self._bound_submits[name] = node
+            if name in known_methods or name in known_vars:
+                # A function, or a variable such as an ``on_*`` callback prop.
                 handler = ast.Attribute(
                     value=ast.Name(id="self", ctx=ast.Load()), attr=name, ctx=ast.Load()
                 )

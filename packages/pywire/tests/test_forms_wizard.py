@@ -14,7 +14,7 @@ from starlette.testclient import TestClient
 from pywire.forms import Upload, Wizard, wizard
 from pywire.forms.form import ACTION
 from pywire.forms.wizard import STATE
-from pywire.forms.wizard import _secret
+from pywire.forms.form import _secret
 from pywire.runtime.app import PyWire
 from pywire.runtime.snapshot_codec import verify
 from pywire.runtime.uploads import staging_for
@@ -50,6 +50,8 @@ SECRET = "wizard-test-secret-at-least-32-bytes"
 
 
 def post(w, data, handler=None, kind="submit"):
+    """Post ``data`` as if the page had rendered every posted field."""
+    w._editable.update(n for n in data if n not in (ACTION, STATE))
     asyncio.run(w._pw_submit(None, handler, {"type": kind, "formData": data}))
 
 
@@ -218,7 +220,7 @@ def test_a_forged_state_is_ignored():
 
     # Signed with the app's own key (not the derived one), as a stateless
     # snapshot is: refused.
-    from pywire.forms.wizard import _process_secret
+    from pywire.forms.form import _process_secret
     from pywire.runtime.snapshot_codec import sign
 
     snapshot_like = sign(

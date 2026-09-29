@@ -570,12 +570,14 @@ export class PyWireApp {
         redirect: 'follow',
       })
 
-      // A 422 is a bound form that failed validation: the body is this page
-      // with the submitted values and errors, so it morphs like a success.
-      // Other 4xx/5xx responses carry the error page — a different document.
-      // Morphing it into the current DOM would leak its styles into the
-      // host app. Fall back to a full navigation.
-      if (!response.ok && response.status !== 422) {
+      // A 422 marked by pywire is a bound form that failed validation: the
+      // body is this page with the submitted values and errors, so it morphs
+      // like a success. Other 4xx/5xx responses carry the error page — a
+      // different document. Morphing it into the current DOM would leak its
+      // styles into the host app. Fall back to a full navigation.
+      const invalidForm =
+        response.status === 422 && response.headers.get('X-PyWire-Form') === 'invalid'
+      if (!response.ok && !invalidForm) {
         window.location.href = path
         return
       }

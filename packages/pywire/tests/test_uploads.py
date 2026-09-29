@@ -245,6 +245,7 @@ def _upload(name: str, ctype: str, size: int) -> Upload:
 
 def _errors(**files):
     f = form(Profile)
+    f._editable.update(["avatar", "papers"])  # as if rendered
     got = []
 
     async def run():
@@ -278,6 +279,7 @@ def test_upload_field_checks_size_type_and_count():
 
 def test_upload_field_error_codes():
     f = form(Profile)
+    f._editable.add("avatar")
     asyncio.run(
         f._pw_submit(
             None,

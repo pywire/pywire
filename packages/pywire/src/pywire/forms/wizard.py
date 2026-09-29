@@ -33,52 +33,30 @@ as staged upload ids.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import inspect
 import re
-import secrets
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 
 from pywire.forms.form import (
     MAX_ROWS,
+    STATE,
     BoundField,
     Form,
     M,
     _action_button,
-    _current_page,
     _event_value,
     _is_secret,
     _mark_invalid,
     _pop_action,
-    _root_page,
     _takes_arg,
 )
 from pywire.forms.schema import FieldSpec
 from pywire.forms.shape import Flat, normalize, shape
-from pywire.runtime.escape import escape_html
-from pywire.runtime.snapshot_codec import SnapshotError, sign, verify
 from pywire.runtime.uploads import PREFIX, Upload, resolve_uploads, staging_for
 
-STATE = "__pywire_wizard"
+__all__ = ["STATE", "Wizard", "wizard"]
 
 _UPLOAD_ID = re.compile(r"[0-9a-f]{8,12}-[0-9a-f]{32}")
-_process_secret = secrets.token_bytes(32)
-
-
-def _secret(page: Any) -> bytes:
-    """The key wizard state is signed with.
-
-    Derived from the app's secret rather than the secret itself, which also
-    signs stateless snapshots, so neither kind of blob passes for the other.
-    """
-    try:
-        secret = _root_page(page).request.app.state.pywire.signing_secret
-    except (AttributeError, KeyError):
-        secret = None
-    if not (isinstance(secret, bytes) and secret):
-        secret = _process_secret
-    return hmac.new(secret, b"pywire.wizard", hashlib.sha256).digest()
 
 
 def _secret_in(spec: FieldSpec, depth: int = 0) -> Optional[str]:
@@ -183,7 +161,11 @@ class Wizard(Form[M]):
 
         step = self._steps[self._index]
         prefix = self._spec.children[step].data_key + "."
-        mine = {k: v for k, v in flat.items() if k.startswith(prefix)}
+        # Only this step's rendered fields are read; read-only ones keep the
+        # server's value.
+        mine = {
+            k: v for k, v in self._rendered_input(flat).items() if k.startswith(prefix)
+        }
         earlier = {k: v for k, v in self._raw.items() if not k.startswith(prefix)}
         self._capture(mine)
         self._raw = {**earlier, **self._raw}
@@ -196,10 +178,9 @@ class Wizard(Form[M]):
             self._apply_action(action)
             return
 
-        data = shape(
-            self._spec,
-            self._with_owned({**self._raw, **await self._files(page), **mine}),
-        )
+        merged = self._rendered_input({**self._raw, **await self._files(page), **mine})
+        data = shape(self._spec, merged)
+        self._keep_unrendered(self._spec, (), merged, data)
         if _event_value(event, "type") == "validate":
             self._validate_live(data, _event_value(event, "field"))
             self._keep_errors(step)
@@ -233,36 +214,24 @@ class Wizard(Form[M]):
         if self._errors:
             _mark_invalid(page)
 
-    def _pw_hidden_inputs(self) -> str:
-        self._track()
-        page = _current_page()
-        blob = sign(
-            {"form": self.model.__qualname__, **self._state()},
-            secret=_secret(page),
-        )
-        return f'<input type="hidden" name="{STATE}" value="{escape_html(blob)}">'
-
     # -- internals ---------------------------------------------------------
 
     def _state(self) -> Dict[str, Any]:
         return {
+            **super()._state(),
             "step": self._index,
             "raw": {k: list(v) for k, v in self._raw.items()},
             "files": {k: list(v) for k, v in self._carried.items()},
         }
 
-    def _restore_posted(self, blob: str, page: Any) -> None:
-        """Take the state the form posted back, if this server signed it."""
-        try:
-            state = verify(blob, secret=_secret(page))
-        except SnapshotError:
-            return
-        if state.get("form") != self.model.__qualname__:
-            return
-        self._load(state)
+    def _restore_posted(self, blob: str, page: Any) -> bool:
+        if not super()._restore_posted(blob, page):
+            return False
         self._has_raw = True
+        return True
 
     def _load(self, state: Mapping[str, Any]) -> None:
+        super()._load(state)
         step = state.get("step")
         if isinstance(step, int) and 0 <= step < len(self._steps):
             self._index = step
