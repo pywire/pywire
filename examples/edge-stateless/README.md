@@ -160,7 +160,7 @@ Open DevTools (Network + Elements side by side) and walk down the page.
    nav and click **Start generation**. Network shows one
    `POST /_pywire/stateless` per 400 ms tick, the same msgpack round trip as a
    click, while the progress climbs from 0 to 100%. If a response takes longer
-   than 400 ms, the next tick is skipped rather than sent on top of it. When
+   than 400 ms, the next tick waits for it and goes out as soon as it lands. When
    the job finishes, the polled element leaves the page and the POSTs stop.
    A real job would keep its progress in a store every instance can read
    (a database, KV or Redis), because a serverless host stops your code once

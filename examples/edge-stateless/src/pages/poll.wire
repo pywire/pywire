@@ -45,8 +45,8 @@ until it finishes.</p>
         <p id="job-progress" @poll.every-400={tick()}>Generating&hellip; {progress}%</p>
         <p>The line above is the poll: <code>{POLL_SYNTAX}</code>. Every
         400&#8239;ms it sends one POST, exactly like a click. If the previous
-        answer hasn't arrived yet, it skips that tick instead of piling up
-        requests.</p>
+        answer hasn't arrived yet, the next tick waits for it instead of
+        piling up requests.</p>
     </div>
     {/if}
 
