@@ -27,7 +27,9 @@ import subprocess
 import sys
 import time
 import tomllib
+import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -488,10 +490,22 @@ def check_ci(mono: Monorepo, ci_text: str) -> list[str]:
     return violations
 
 
-def check_publishable(mono: Monorepo, pkg: str, published: dict[str, str], fresh: bool = False) -> list[str]:
+def check_publishable(
+    mono: Monorepo,
+    pkg: str,
+    published: dict[str, str],
+    fresh: bool = False,
+    version_exists: Callable[[str, str], bool] | None = None,
+) -> list[str]:
     """Every monorepo floor of PKG must be satisfiable by a version already
     published to PyPI/npm (the release-ordering invariant). fresh=True also
-    requires each floor to be current (no floor bump still pending)."""
+    requires each floor to be current (no floor bump still pending).
+
+    PyPI serves its latest-version listing from a CDN cache for up to 15
+    minutes, so `published` can lag a publish. When a floor looks too high,
+    version_exists(dep, floor) asks the registry about that exact version
+    (a version that doesn't exist yet is never cached) before we call the
+    floor unsatisfiable."""
     path = _resolve_pkg(mono, pkg)
     unit = mono.units[path]
     violations: list[str] = []
@@ -504,7 +518,7 @@ def check_publishable(mono: Monorepo, pkg: str, published: dict[str, str], fresh
         latest = published.get(dep)
         if latest is None:
             violations.append(f"{path}: could not determine published version of {dep}")
-        elif version_tuple(floor) > version_tuple(latest):
+        elif version_tuple(floor) > version_tuple(latest) and not (version_exists and version_exists(dep, floor)):
             violations.append(
                 f"{path}: floor {dep}>={floor} is not satisfiable — latest published is {dep} {latest}"
                 f" (merge and publish {dep} first)"
@@ -595,6 +609,31 @@ def fetch_published(name: str, registry: str, cached: bool = True) -> str:
             version = json.load(resp)["info"]["version"]
     _REGISTRY_CACHE[name] = version
     return version
+
+
+def version_published(name: str, version: str, registry: str) -> bool:
+    """Is exactly NAME VERSION on the registry? Unlike the latest-version
+    listing, PyPI never caches a 404, so this sees a fresh publish at once.
+    Any other error counts as not published."""
+    if registry == "npm":
+        url = f"https://registry.npmjs.org/{name}/{version}"
+    else:
+        url = f"https://pypi.org/pypi/{name}/{version}/json"
+    try:
+        with urllib.request.urlopen(url, timeout=30):
+            return True
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            print(f"warning: could not check {registry} {name} {version}: {exc}", file=sys.stderr)
+        return False
+    except Exception as exc:  # noqa: BLE001 — network trouble: report as not published
+        print(f"warning: could not check {registry} {name} {version}: {exc}", file=sys.stderr)
+        return False
+
+
+def _registry_for(mono: Monorepo, name: str) -> str:
+    target = mono.by_name(name)
+    return "npm" if target and mono.units[target].kind == "js" else "pypi"
 
 
 def _published_for(mono: Monorepo, names: set[str]) -> dict[str, str]:
@@ -694,24 +733,18 @@ def _cmd_check_floors(mono: Monorepo, warn_stale: bool) -> int:
 def wait_published(
     mono: Monorepo, expected: dict[str, str], timeout: float, interval: float = 20.0
 ) -> list[str]:
-    """Poll the registries until each monorepo upstream in EXPECTED shows at
-    least that version (PyPI's JSON API lags a publish by a minute or two).
+    """Poll the registries until each monorepo upstream in EXPECTED is
+    published at that exact version (asked per version, because PyPI's
+    latest-version listing is cached for up to 15 minutes after a publish).
     Names nothing depends on are ignored. Returns the ones still missing."""
     wanted = {n: v for n, v in expected.items() if n in _monorepo_dep_names(mono)}
     deadline = time.monotonic() + timeout
     while True:
-        missing = []
-        for name, version in sorted(wanted.items()):
-            target = mono.by_name(name)
-            registry = "npm" if target and mono.units[target].kind == "js" else "pypi"
-            try:
-                latest = fetch_published(name, registry, cached=False)
-            except Exception:  # noqa: BLE001 — transient registry errors: poll again
-                latest = "0"
-            if version_tuple(latest) < version_tuple(version):
-                missing.append(f"{name} {version}")
-            else:
-                _REGISTRY_CACHE[name] = latest
+        missing = [
+            f"{name} {version}"
+            for name, version in sorted(wanted.items())
+            if not version_published(name, version, _registry_for(mono, name))
+        ]
         if not missing or time.monotonic() >= deadline:
             return missing
         print(f"waiting for {', '.join(missing)} on the registry…", file=sys.stderr)
@@ -731,6 +764,11 @@ def _cmd_bump_floors(mono: Monorepo, expect: list[str], timeout: float) -> int:
         print(f"error: not published after {timeout:.0f}s: {', '.join(missing)}", file=sys.stderr)
         return 1
     published = _published_for(mono, _monorepo_dep_names(mono))
+    for name, version in expected.items():
+        # wait_published confirmed these exact versions; the cached latest
+        # listing may still be older.
+        if name in published and version_tuple(version) > version_tuple(published[name]):
+            published[name] = version
     edits = bump_floors(mono, published)
     for path, dep, old, new in edits:
         print(f"{path}: {dep}>={old} -> >={new}")
@@ -751,7 +789,13 @@ def _cmd_check_ci(mono: Monorepo, root: Path) -> int:
 def _cmd_check_publishable(mono: Monorepo, pkg: str, fresh: bool) -> int:
     path = _resolve_pkg(mono, pkg)
     published = _published_for(mono, _monorepo_dep_names(mono, [path]))
-    violations = check_publishable(mono, pkg, published, fresh=fresh)
+    violations = check_publishable(
+        mono,
+        pkg,
+        published,
+        fresh=fresh,
+        version_exists=lambda dep, version: version_published(dep, version, _registry_for(mono, dep)),
+    )
     for v in violations:
         print(v)
     print(f"check-publishable {pkg}: {'FAIL' if violations else 'ok'}")

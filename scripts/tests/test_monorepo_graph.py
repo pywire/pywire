@@ -323,11 +323,42 @@ def test_check_publishable_fresh_flags_pending_bump(tmp_path):
 def test_wait_published_ignores_names_without_dependents(tmp_path, monkeypatch):
     mono = mg.load(make_repo(tmp_path))
     seen = []
-    monkeypatch.setattr(mg, "fetch_published", lambda name, registry, cached=True: seen.append(name) or "1.3.0")
+    live = {("upstream", "1.3.0")}
+    monkeypatch.setattr(
+        mg, "version_published", lambda name, version, registry: seen.append(name) or (name, version) in live
+    )
     missing = mg.wait_published(mono, {"upstream": "1.3.0", "down": "9.9.9"}, timeout=0)
     assert missing == [] and seen == ["upstream"]
     missing = mg.wait_published(mono, {"upstream": "2.0.0"}, timeout=0)
     assert missing == ["upstream 2.0.0"]
+
+
+def test_check_publishable_trusts_exact_version_over_stale_listing(tmp_path):
+    # PyPI's latest listing is cached for up to 15 minutes after a publish:
+    # a floor above the listed latest is fine once that exact version exists.
+    mono = mg.load(make_repo(tmp_path))
+    stale = {"upstream": "1.2.2", "mid": "1.0.0"}
+    assert mg.check_publishable(mono, "down", stale)  # no lookup: unsatisfiable
+    asked = []
+
+    def exists(dep, version):
+        asked.append((dep, version))
+        return True
+
+    assert mg.check_publishable(mono, "down", stale, version_exists=exists) == []
+    assert ("upstream", "1.2.3") in asked
+    violations = mg.check_publishable(mono, "down", stale, version_exists=lambda dep, version: False)
+    assert len(violations) == 1 and "not satisfiable" in violations[0], violations
+
+
+def test_check_publishable_skips_lookup_when_listing_is_enough(tmp_path):
+    mono = mg.load(make_repo(tmp_path))
+    published = {"upstream": "1.2.3", "mid": "1.0.0"}
+
+    def boom(dep, version):
+        raise AssertionError("no registry lookup needed")
+
+    assert mg.check_publishable(mono, "down", published, version_exists=boom) == []
 
 
 # --- check-ci ---
