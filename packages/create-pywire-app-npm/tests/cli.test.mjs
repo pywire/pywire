@@ -119,7 +119,7 @@ EOF`,
   const r = run(box, ['my-app'])
   assert.equal(r.status, 0, r.stderr)
   const log = calls(box)
-  assert.ok(log.includes('curl -LsSf https://astral.sh/uv/install.sh'), log.join('\n'))
+  assert.ok(log.includes('curl -LsSf https://astral.sh/uv/0.12.21/install.sh'), log.join('\n'))
   assert.ok(log.includes('uv tool run create-pywire-app@latest my-app'), log.join('\n'))
   // The wizard shells out to `uv sync`, so the fresh uv must be on its PATH.
   assert.ok(log.includes('uv-on-path'), log.join('\n'))

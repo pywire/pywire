@@ -9,6 +9,9 @@ import { delimiter, dirname, join } from 'node:path'
 
 const isWindows = process.platform === 'win32'
 const UV_DOCS = 'https://docs.astral.sh/uv/getting-started/installation/'
+// The installer of one uv release, not whatever install.sh serves today; it
+// checks the downloaded uv against that release's checksums.
+const UV_INSTALLER = 'https://astral.sh/uv/0.12.21/install'
 
 function findUv() {
   if (spawnSync('uv', ['--version'], { stdio: 'ignore' }).status === 0) return 'uv'
@@ -24,13 +27,13 @@ function findUv() {
 function installUv() {
   console.log('==> uv is not installed. Installing uv...')
   const [cmd, args] = isWindows
-    ? ['powershell', ['-ExecutionPolicy', 'ByPass', '-NoProfile', '-c', 'irm https://astral.sh/uv/install.ps1 | iex']]
+    ? ['powershell', ['-ExecutionPolicy', 'ByPass', '-NoProfile', '-c', `irm ${UV_INSTALLER}.ps1 | iex`]]
     : [
         'sh',
         [
           '-c',
-          'if command -v curl >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh | sh; ' +
-            'else wget -qO- https://astral.sh/uv/install.sh | sh; fi',
+          `if command -v curl >/dev/null 2>&1; then curl -LsSf ${UV_INSTALLER}.sh | sh; ` +
+            `else wget -qO- ${UV_INSTALLER}.sh | sh; fi`,
         ],
       ]
   spawnSync(cmd, args, { stdio: ['ignore', 'inherit', 'inherit'] })
