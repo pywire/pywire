@@ -1,18 +1,26 @@
-"""AuthActions — one-call propagation across store + session + channel."""
+"""AuthActions — changes reach the target user's store row, sessions and tabs."""
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 import pytest
 
 from pywire.auth import (
+    ANONYMOUS,
     Claim,
+    ClaimsPrincipal,
     MemoryAuthChannel,
-    read_principal_from_session,
+    PolicyEngine,
+    write_principal_to_session,
 )
 
 from pywire_auth import AuthActions, LocalIdP, MemoryAuthStore
+from pywire_auth.middleware import AuthMiddleware
+from pywire_auth.sessions import AUTH_AT_KEY, UserSessions
+
+SECRET = "test-signing-key-0123456789abcdef"
 
 
 class _SessionStore:
@@ -23,7 +31,7 @@ class _SessionStore:
         return self._data.get(sid)
 
     async def set(self, sid: str, data: Dict[str, Any], *, ttl: int = 0) -> None:
-        self._data[sid] = dict(data)
+        self._data[sid] = data
 
 
 class _FakeApp:
@@ -36,149 +44,118 @@ class _FakeApp:
         self.app.state.auth_store = store
 
 
-class _FakeRequest:
-    def __init__(self, sid: str | None) -> None:
-        self.scope: Dict[str, Any] = {}
-        if sid:
-            self.scope["pywire_session_id"] = sid
-
-
-async def _build() -> tuple[AuthActions, _FakeApp, LocalIdP, MemoryAuthChannel]:
-    store = MemoryAuthStore()
-    session_store = _SessionStore()
-    channel = MemoryAuthChannel()
-    app = _FakeApp(store, session_store, channel)
-    actions = AuthActions(app)
-    idp = LocalIdP(store=store, secret="s" * 32)
-    return actions, app, idp, channel
-
-
-@pytest.mark.asyncio
-async def test_grant_writes_all_three_layers() -> None:
-    actions, app, idp, channel = await _build()
-    uid = await idp.create_user(email="a@b.c", password="pw", name="Alice")
-    principal = await idp.principal_for_user(uid)
-    assert principal is not None
-
-    request = _FakeRequest("sid-1")
-    received: List[Any] = []
-
-    async with channel.subscribe(principal.user_id) as sub:
-        # Seed the session with the initial principal so AuthActions has
-        # something to overwrite.
-        await app.session_store.set(
-            "sid-1",
-            {
-                "auth": {
-                    "is_authenticated": True,
-                    "user_id": principal.user_id,
-                    "name": principal.name,
-                    "claims": [(c.type, c.value) for c in principal.claims],
-                    "raw": {},
-                }
-            },
+class _Env:
+    def __init__(self) -> None:
+        self.store = MemoryAuthStore()
+        self.sessions = _SessionStore()
+        self.channel = MemoryAuthChannel()
+        self.app = _FakeApp(self.store, self.sessions, self.channel)
+        user_sessions = UserSessions(self.sessions, SECRET, 1800)
+        self.actions = AuthActions(self.app, user_sessions)
+        self.idp = LocalIdP(store=self.store, secret=SECRET)
+        self.mw = AuthMiddleware(
+            None,
+            session_store=self.sessions,
+            secret_key=SECRET,
+            policy_engine=PolicyEngine(),
+            auth_channel=self.channel,
+            user_sessions=user_sessions,
         )
 
-        new_principal = await actions.grant(principal, request, "role", "admin")
+    async def user(self, email: str, **claims: str) -> ClaimsPrincipal:
+        uid = await self.idp.create_user(email=email, password="pw", claims=claims)
+        principal = await self.idp.principal_for_user(uid)
+        assert principal is not None
+        return principal
 
-        # 1. Store: user record has role claim
-        record = await app.app.state.auth_store.get_user(uid)
-        assert record is not None
-        assert record["claims"].get("role") == "admin"
+    async def sign_in(self, sid: str, principal: ClaimsPrincipal) -> None:
+        data: Dict[str, Any] = {AUTH_AT_KEY: time.time()}
+        write_principal_to_session(data, principal)
+        await self.sessions.set(sid, data)
 
-        # 2. Session: principal has role claim
-        data = await app.session_store.get("sid-1")
-        assert data is not None
-        stored = read_principal_from_session(data)
-        assert stored is not None
-        assert stored.has_claim("role", "admin")
-
-        # 3. Channel: subscriber got an update event
-        event = await sub.__anext__()
-        received.append(event)
-
-    assert received[0].kind == "update"
-    assert received[0].principal is not None
-    assert received[0].principal.has_claim("role", "admin")
-    assert new_principal.has_claim("role", "admin")
+    async def who(self, sid: str) -> ClaimsPrincipal:
+        """The principal the middleware resolves for a request on ``sid``."""
+        return await self.mw._load_principal_from_sid({}, sid)
 
 
 @pytest.mark.asyncio
-async def test_revoke_claim_removes_from_all_layers() -> None:
-    actions, app, idp, _ = await _build()
-    uid = await idp.create_user(email="a@b.c", password="pw", claims={"role": "admin"})
-    principal = await idp.principal_for_user(uid)
-    assert principal is not None
-    assert principal.has_claim("role", "admin")
+async def test_grant_reaches_every_session_of_the_target_user() -> None:
+    env = _Env()
+    admin = await env.user("admin@b.c", role="admin")
+    bob = await env.user("bob@b.c")
+    await env.sign_in("admin-sid", admin)
+    await env.sign_in("bob-laptop", bob)
+    await env.sign_in("bob-phone", bob)
 
-    request = _FakeRequest("sid-1")
-    new_principal = await actions.revoke_claim(principal, request, "role")
+    async with env.channel.subscribe(bob.user_id) as sub:
+        # An admin page grants Bob a claim: the admin's own session is untouched.
+        new_bob = await env.actions.grant(bob, "role", "editor")
+        event = await sub.__anext__()
 
-    assert not new_principal.has_claim("role", "admin")
-    record = await app.app.state.auth_store.get_user(uid)
-    assert record is not None
-    assert "role" not in (record.get("claims") or {})
+    assert new_bob.has_claim("role", "editor")
+    record = await env.store.get_user(bob.user_id.split(":", 1)[1])
+    assert record is not None and record["claims"]["role"] == "editor"
+    for sid in ("bob-laptop", "bob-phone"):
+        seen = await env.who(sid)
+        assert seen.user_id == bob.user_id
+        assert seen.has_claim("role", "editor")
+    admin_now = await env.who("admin-sid")
+    assert admin_now.user_id == admin.user_id
+    assert admin_now.has_claim("role", "admin")
+    assert event.kind == "update" and event.principal.has_claim("role", "editor")
 
 
 @pytest.mark.asyncio
-async def test_revoke_session_clears_and_fires_revoke_event() -> None:
-    actions, app, idp, channel = await _build()
-    uid = await idp.create_user(email="a@b.c", password="pw")
-    principal = await idp.principal_for_user(uid)
-    assert principal is not None
+async def test_revoke_claim_removes_from_store_and_sessions() -> None:
+    env = _Env()
+    bob = await env.user("bob@b.c", role="admin")
+    await env.sign_in("bob-sid", bob)
 
-    # Seed the session.
-    await app.session_store.set(
-        "sid-1",
-        {
-            "auth": {
-                "is_authenticated": True,
-                "user_id": principal.user_id,
-                "name": "",
-                "claims": [],
-                "raw": {},
-            },
-            "_refresh_token": "rt",
-        },
-    )
+    new_bob = await env.actions.revoke_claim(bob, "role")
 
-    request = _FakeRequest("sid-1")
-    received: List[Any] = []
-
-    async with channel.subscribe(principal.user_id) as sub:
-        await actions.revoke_session(principal, request)
-        event = await sub.__anext__()
-        received.append(event)
-
-    # Session cleared
-    data = await app.session_store.get("sid-1")
-    assert data is not None
-    assert "auth" not in data
-    assert "_refresh_token" not in data
-
-    # Channel emitted revoke
-    assert received[0].kind == "revoke"
+    assert not new_bob.has_claim("role", "admin")
+    record = await env.store.get_user(bob.user_id.split(":", 1)[1])
+    assert record is not None and "role" not in record["claims"]
+    assert not (await env.who("bob-sid")).has_claim("role", "admin")
 
 
 @pytest.mark.asyncio
-async def test_update_claims_no_session_noop_ok() -> None:
-    """When there's no session id on the request, store + channel still fire."""
-    actions, app, idp, channel = await _build()
-    uid = await idp.create_user(email="a@b.c", password="pw")
-    principal = await idp.principal_for_user(uid)
-    assert principal is not None
+async def test_revoke_sessions_signs_the_target_out_everywhere() -> None:
+    env = _Env()
+    admin = await env.user("admin@b.c", role="admin")
+    bob = await env.user("bob@b.c")
+    await env.sign_in("admin-sid", admin)
+    await env.sign_in("bob-laptop", bob)
+    await env.sign_in("bob-phone", bob)
+    env.sessions._data["bob-phone"]["_refresh_token"] = "rt"
 
-    request = _FakeRequest(None)  # no pywire_session_id
-    received: List[Any] = []
-
-    async with channel.subscribe(principal.user_id) as sub:
-        await actions.update_claims(
-            principal, request, [Claim(type="role", value="editor")]
-        )
+    async with env.channel.subscribe(bob.user_id) as sub:
+        await env.actions.revoke_sessions(bob)
         event = await sub.__anext__()
-        received.append(event)
 
-    record = await app.app.state.auth_store.get_user(uid)
-    assert record is not None
-    assert record["claims"].get("role") == "editor"
-    assert received[0].kind == "update"
+    assert event.kind == "revoke"
+    assert await env.who("bob-laptop") is ANONYMOUS
+    assert await env.who("bob-phone") is ANONYMOUS
+    assert "auth" not in env.sessions._data["bob-phone"]
+    assert "_refresh_token" not in env.sessions._data["bob-phone"]
+    assert (await env.who("admin-sid")).user_id == admin.user_id
+
+    # Signing in again afterwards works.
+    await env.sign_in("bob-new", bob)
+    assert (await env.who("bob-new")).user_id == bob.user_id
+
+
+@pytest.mark.asyncio
+async def test_update_claims_needs_a_user() -> None:
+    env = _Env()
+    with pytest.raises(ValueError):
+        await env.actions.update_claims(ANONYMOUS, [Claim(type="role", value="x")])
+
+
+@pytest.mark.asyncio
+async def test_user_record_key_is_not_guessable() -> None:
+    env = _Env()
+    bob = await env.user("bob@b.c")
+    await env.actions.revoke_sessions(bob)
+    keys: List[str] = [k for k in env.sessions._data if k.startswith("pywire-auth:")]
+    assert len(keys) == 1 and bob.user_id not in keys[0]

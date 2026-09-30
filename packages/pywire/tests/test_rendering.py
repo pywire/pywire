@@ -118,9 +118,10 @@ class TestPageRendering:
         assert "<style>.test { color: red; }</style></head>" in html_passed
 
     @pytest.mark.asyncio
-    async def test_handle_event_arg_normalization(self) -> None:
-        # We need Response to be available for the class definition
+    async def test_handle_event_takes_only_signed_args(self) -> None:
         from starlette.responses import Response
+
+        from pywire.runtime.handler_args import HandlerArgsError
 
         class HandlerPage(BasePage):
             def on_click(self, arg0: Any = None) -> None:
@@ -132,8 +133,15 @@ class TestPageRendering:
         request = MagicMock()
         page = HandlerPage(request, {}, {})
 
-        # handle_event calls render() but we don't need to check its return value here
-        await page.handle_event("on_click", {"args": {"arg-0": 42}})
+        await page.handle_event(
+            "on_click", {"args": page._pw_sign_args("on_click", 42)}
+        )
+        assert page.last_arg0 == 42
+
+        # Arguments the client picks itself are refused, not passed on.
+        for forged in ({"arg0": 7}, {"arg-0": 7}, "Wzdd.AAAA", [7]):
+            with pytest.raises(HandlerArgsError):
+                await page.handle_event("on_click", {"args": forged})
         assert page.last_arg0 == 42
 
 

@@ -7,6 +7,7 @@ hot-reload state migration pattern from websocket.py broadcast_reload.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -144,6 +145,77 @@ def _is_serializable(value: Any) -> bool:
     return False
 
 
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+def page_identity(page: Any) -> str:
+    """Which page a snapshot belongs to: its ``.wire`` file and class.
+
+    Stays the same across processes and hot reloads of that file.
+    """
+    cls = type(page)
+    source = getattr(cls, "__file_path__", None) or cls.__module__
+    return _digest(f"{source}\0{cls.__qualname__}")
+
+
+def _route(page: Any) -> str:
+    try:
+        return str(page.request.url.path)
+    except AttributeError:
+        return ""
+
+
+def principal_key(user: Any) -> str:
+    """Who a snapshot was taken for, so it is only restored for them."""
+    if user is None or getattr(user, "is_authenticated", True) is False:
+        return ""
+    for attr in ("user_id", "id", "username"):
+        value = getattr(user, attr, None)
+        if value not in (None, ""):
+            return _digest(f"{type(user).__qualname__}\0{attr}\0{value}")
+    return _digest(f"{type(user).__qualname__}\0{user!r}")
+
+
+def page_state_key(session_id: str, page: Any) -> str:
+    """Session-store key of one page's state in one session.
+
+    Each page (class and URL path) of a session keeps its own record, so one
+    page's state never lands in another.
+    """
+    return f"{session_id}:page:{_digest(page_identity(page) + chr(0) + _route(page))}"
+
+
+def plain_attr_digest(value: Any) -> Optional[bytes]:
+    """A digest of a serializable plain value, to tell whether it changed."""
+    import hashlib
+
+    import msgpack
+
+    try:
+        packed = msgpack.packb(value)
+    except Exception:
+        return None
+    return hashlib.blake2b(packed, digest_size=16).digest()
+
+
+def remember_initial_state(page: Any) -> None:
+    """Note the plain attributes a freshly built page holds.
+
+    A client-held snapshot leaves out the ones still unchanged when it is
+    taken: rebuilding the page recreates them, and they often hold what the
+    browser must not see (keys and config read by the frontmatter).
+    """
+    page.__dict__["_pw_initial_digests"] = {
+        name: plain_attr_digest(value)
+        for name, value in page.__dict__.items()
+        if not name.startswith("_")
+        and name not in _FRAMEWORK_ATTRS
+        and not isinstance(value, WireBase)
+        and _is_serializable(value)
+    }
+
+
 def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     """Extract serializable user state from a BasePage instance.
 
@@ -156,11 +228,13 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     - "attrs": user-defined attributes (wire values peeked to raw)
     - "wire_tags": maps attr name to wire type tag for reconstruction
     - "loading": page.loading dict
-    - "user": page.user (if serializable)
     - "await_states": page._await_states
     - "component_snapshots": nested component state
-    - "page_class": qualified class name for lookup
+    - "page": ``page_identity`` of the page it was taken from
     - "route_path": current URL path
+    - "principal": ``principal_key`` of the page's user
+
+    The user itself is never in a snapshot: it comes from each request.
     """
     snapshot: Dict[str, Any] = {}
     attrs: Dict[str, Any] = {}
@@ -233,14 +307,6 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     # Framework-managed state that should persist
     snapshot["loading"] = dict(page.loading) if page.loading else {}
 
-    # User identity
-    if hasattr(page, "user") and page.user is not None:
-        if _is_serializable(page.user):
-            snapshot["user"] = page.user
-        else:
-            # Try to serialize just the user's serializable attributes
-            logger.debug("User object not directly serializable, skipping")
-
     # Await block states
     if hasattr(page, "_await_states") and page._await_states:
         snapshot["await_states"] = dict(page._await_states)
@@ -276,10 +342,10 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     if component_snapshots:
         snapshot["component_snapshots"] = component_snapshots
 
-    # Page identification for restoration
-    snapshot["page_class"] = type(page).__qualname__
-    if hasattr(page, "request") and hasattr(page.request, "url"):
-        snapshot["route_path"] = str(page.request.url.path)
+    # Which page, and for whom: restore checks both.
+    snapshot["page"] = page_identity(page)
+    snapshot["route_path"] = _route(page)
+    snapshot["principal"] = principal_key(getattr(page, "user", None))
 
     # Warn if snapshot is large
     if warn_size > 0:
@@ -302,15 +368,26 @@ def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     return snapshot
 
 
-def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
+def restore_page_state(page: Any, snapshot: Dict[str, Any], *, principal: Any) -> bool:
     """Inject saved state into a fresh BasePage instance.
 
     The page should already be instantiated with the correct request,
     params, query, and path. This function restores user-defined state
     from a snapshot dict.
 
+    Nothing is restored, and False returned, unless the snapshot was taken
+    from this page (class and ``.wire`` file) for this ``principal`` (the
+    user the current request resolved to). The page's ``user`` is never
+    touched: it always comes from the request.
+
     Wire dependency tracking rebuilds naturally on the next render() call.
     """
+    if snapshot.get("page") != page_identity(page):
+        logger.debug("Not restoring a snapshot of another page into %s", page)
+        return False
+    if snapshot.get("principal", "") != principal_key(principal):
+        logger.debug("Not restoring a snapshot taken for another user")
+        return False
     attrs = snapshot.get("attrs", {})
     wire_tags = snapshot.get("wire_tags", {})
     owned = _owned_by(page)
@@ -374,8 +451,6 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
     # Restore framework-managed state
     if "loading" in snapshot:
         page.loading.update(snapshot["loading"])
-    if "user" in snapshot:
-        page.user = snapshot["user"]
     if "await_states" in snapshot:
         page._await_states.update(snapshot["await_states"])
 
@@ -406,3 +481,4 @@ def restore_page_state(page: Any, snapshot: Dict[str, Any]) -> None:
             if comp_attrs:
                 restored[comp_key] = comp_attrs
         page._component_state_snapshots.update(restored)
+    return True

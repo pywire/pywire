@@ -44,7 +44,7 @@ MAX_REFS = 100
 _ID = re.compile(r"[0-9a-f]{8,12}-[0-9a-f]{32}")
 _EXT = re.compile(r"\.[A-Za-z0-9]{1,10}")
 # Types a browser renders or runs when a store serves them.
-_ACTIVE_TYPES = frozenset(
+ACTIVE_TYPES = frozenset(
     {
         "text/html",
         "application/xhtml+xml",
@@ -57,14 +57,97 @@ _ACTIVE_TYPES = frozenset(
 )
 
 
+# File signatures: the first bytes of common formats, and their types.
+_SIGNATURES = (
+    (0, b"\x89PNG\r\n\x1a\n", "image/png"),
+    (0, b"\xff\xd8\xff", "image/jpeg"),
+    (0, b"GIF87a", "image/gif"),
+    (0, b"GIF89a", "image/gif"),
+    (0, b"BM", "image/bmp"),
+    (0, b"\x00\x00\x01\x00", "image/x-icon"),
+    (0, b"II*\x00", "image/tiff"),
+    (0, b"MM\x00*", "image/tiff"),
+    (0, b"%PDF-", "application/pdf"),
+    (0, b"PK\x03\x04", "application/zip"),
+    (0, b"\x1f\x8b", "application/gzip"),
+    (0, b"OggS", "audio/ogg"),
+    (0, b"ID3", "audio/mpeg"),
+    (0, b"fLaC", "audio/flac"),
+    (0, b"\x1aE\xdf\xa3", "video/webm"),
+)
+# ISO media (``....ftyp<brand>``): brand to type.
+_FTYP = {
+    b"avif": "image/avif",
+    b"avis": "image/avif",
+    b"heic": "image/heic",
+    b"heix": "image/heic",
+    b"mif1": "image/heif",
+    b"isom": "video/mp4",
+    b"iso2": "video/mp4",
+    b"mp41": "video/mp4",
+    b"mp42": "video/mp4",
+    b"M4A ": "audio/mp4",
+    b"qt  ": "video/quicktime",
+}
+# Markup a browser renders as a page or runs as script, wherever it starts.
+_MARKUP = (
+    (b"<svg", "image/svg+xml"),
+    (b"<!doctype html", "text/html"),
+    (b"<html", "text/html"),
+    (b"<script", "text/html"),
+    (b"<body", "text/html"),
+    (b"<iframe", "text/html"),
+    (b"<?xml", "application/xml"),
+)
+# How many leading bytes are sniffed.
+SNIFF_LEN = 1024
+# Types :func:`sniff` recognizes from a file's bytes.
+SNIFFABLE_TYPES = frozenset(
+    {kind for _, _, kind in _SIGNATURES}
+    | set(_FTYP.values())
+    | {"image/webp", "audio/wav", "video/x-msvideo"}
+)
+
+
+def _extension_for(content_type: str) -> str:
+    guessed = mimetypes.guess_extension(content_type)
+    return guessed if guessed and _EXT.fullmatch(guessed) else ""
+
+
+def sniff(head: bytes) -> str:
+    """The type a file's first bytes say it is, or ``""`` when they don't say.
+
+    Binary formats are known by their signature; text that holds page or SVG
+    markup is reported as such, since that is how a browser would treat it.
+    """
+    for offset, magic, kind in _SIGNATURES:
+        if head[offset : offset + len(magic)] == magic:
+            return kind
+    if head[:4] == b"RIFF" and head[8:12] in (b"WEBP", b"WAVE", b"AVI "):
+        return {
+            b"WEBP": "image/webp",
+            b"WAVE": "audio/wav",
+            b"AVI ": "video/x-msvideo",
+        }[head[8:12]]
+    if head[4:8] == b"ftyp" and head[8:12] in _FTYP:
+        return _FTYP[head[8:12]]
+    lowered = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    for marker, kind in _MARKUP:
+        if marker in lowered:
+            return kind
+    return ""
+
+
 class Upload:
     """A file sent with a form.
 
     ``filename`` and ``content_type`` are what the browser said, so treat
-    them as hints; ``size`` is counted from the bytes the server received.
+    them as hints; ``size`` is counted from the bytes the server received,
+    and ``sniffed_type`` is what the file's first bytes say it is (``""``
+    when they don't match a known format).
     """
 
-    __slots__ = ("filename", "content_type", "size", "_store", "_key")
+    __slots__ = ("filename", "content_type", "size", "sniffed_type", "_store", "_key")
 
     def __init__(
         self,
@@ -73,10 +156,13 @@ class Upload:
         size: int,
         store: FileStore,
         key: str,
+        sniffed_type: Optional[str] = None,
     ) -> None:
         self.filename = filename
         self.content_type = content_type
         self.size = size
+        # None: not sniffed (an Upload built by hand, as in tests).
+        self.sniffed_type = sniffed_type
         self._store = store
         self._key = key
 
@@ -91,19 +177,38 @@ class Upload:
         ext = os.path.splitext(self.filename)[1]
         return ext.lower() if _EXT.fullmatch(ext) else ""
 
+    def _declared_type(self) -> str:
+        return self.content_type.split(";", 1)[0].strip().lower()
+
+    def _stored_type(self) -> str:
+        """The content type a saved copy gets: what the bytes are when they
+        say, else what the browser declared, and never a type browsers run
+        (a page, SVG, a script), which is stored as a download instead."""
+        kind = self.sniffed_type or self._declared_type()
+        if kind in ACTIVE_TYPES or self.sniffed_type in ACTIVE_TYPES:
+            return "application/octet-stream"
+        return kind or "application/octet-stream"
+
     def _stored_extension(self) -> str:
-        """The extension a random key gets: the filename's, unless it names a
-        type browsers run (a page, SVG, a script) and the file was declared
-        as something else. ``evil.html`` sent as ``image/png`` (which passes
-        ``accept="image/*"``) is kept as ``.png``, so a store served to
-        browsers never serves it as a page."""
+        """The extension a random key gets, matching :meth:`_stored_type`.
+
+        A file whose bytes are a known format gets that format's extension
+        (``evil.html`` holding a PNG is kept as ``.png``). Otherwise the
+        filename's extension is kept, unless it or the file names a type
+        browsers run: a store served to browsers must never serve an upload
+        as a page.
+        """
         ext = self.extension
         named = mimetypes.guess_type("x" + ext)[0] if ext else None
-        declared = self.content_type.split(";", 1)[0].strip().lower()
-        if named not in _ACTIVE_TYPES or named == declared:
+        stored = self._stored_type()
+        download = stored == "application/octet-stream"
+        if self.sniffed_type and stored == self.sniffed_type:
+            return _extension_for(stored)
+        if named in ACTIVE_TYPES or self.sniffed_type in ACTIVE_TYPES:
+            return "" if download else _extension_for(stored)
+        if named is None or named == stored or download:
             return ext
-        guessed = mimetypes.guess_extension(declared) if declared else None
-        return guessed if guessed and _EXT.fullmatch(guessed) else ""
+        return _extension_for(stored)
 
     async def read(self) -> bytes:
         """The whole file."""
@@ -121,10 +226,11 @@ class Upload:
     ) -> str:
         """Keep the file: in a store (returns the key) or at a path.
 
-        ``await upload.save(store)`` picks a random key with the file's
-        extension; pass ``key`` to choose it. ``await upload.save("a/b.png")``
-        writes a file on disk. The browser's filename is never used as a key
-        or path.
+        ``await upload.save(store)`` picks a random key with an extension
+        that matches what the file is; pass ``key`` to choose it.
+        ``await upload.save("a/b.png")`` writes a file on disk. The browser's
+        filename is never used as a key or path, and a store never gets a
+        type browsers run (HTML, SVG, script): those are kept as downloads.
         """
         if isinstance(to, (str, Path)):
             if key is not None:
@@ -135,7 +241,7 @@ class Upload:
         name = check_key(key) if key is not None else secrets.token_hex(16)
         if key is None:
             name += self._stored_extension()
-        await to.put(name, self.stream(), content_type=self.content_type)
+        await to.put(name, self.stream(), content_type=self._stored_type())
         return name
 
     @classmethod
@@ -324,13 +430,16 @@ class Staging:
         upload_id = f"{int(time.time()):x}-{secrets.token_hex(16)}"
         key = PREFIX + upload_id
         size = 0
+        head = b""
 
         async def counted() -> AsyncIterator[bytes]:
-            nonlocal size
+            nonlocal size, head
             async for chunk in chunks:
                 size += len(chunk)
                 if size > limit:
                     raise _TooLarge
+                if len(head) < SNIFF_LEN:
+                    head += chunk[: SNIFF_LEN - len(head)]
                 yield chunk
 
         try:
@@ -344,6 +453,7 @@ class Staging:
             "filename": filename,
             "content_type": content_type,
             "size": size,
+            "sniffed": sniff(head),
         }
         if owner is not None:
             meta["owner"] = _owner_hash(owner)
@@ -386,7 +496,15 @@ class Staging:
                 str(owner), _owner_hash(token)
             ):
                 return None
-        return Upload(filename, content_type, size, self.store, key)
+        sniffed = meta.get("sniffed")
+        return Upload(
+            filename,
+            content_type,
+            size,
+            self.store,
+            key,
+            sniffed if isinstance(sniffed, str) else "",
+        )
 
     async def discard(self, upload_ids: List[str]) -> None:
         """Delete staged files no handler will get (the request failed)."""

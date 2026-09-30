@@ -5,16 +5,14 @@ tiny (<= 1 KB) regions payload — not the whole loop — through BOTH the
 in-process/WS path and the stateless POST path (transport parity).
 
 Event dispatch mirrors the REAL client shape: the button carries
-``data-on-click="_handler_N"`` and ``data-arg-0="500"``; the client
-(events/handler.ts getArgs) JSON-parses dataset ``arg*`` keys and sends
-``{"type": "click", "tagName": "BUTTON", "args": {"arg0": 500}}``.
-(Same shape as tests/test_wire_primitive.py's ``_handler_0`` dispatch.)
+``data-on-click="_handler_N"`` and ``data-pw-args-click="<signed [500]>"``;
+the client (events/handler.ts) sends the token back unchanged:
+``{"type": "click", "tagName": "BUTTON", "args": "<token>"}``.
 
 The keyless contrast test proves the bound is pinned by ``key=``: without
 it, one toggle dirties the whole-loop region (~150 KB) and fails <= 1024.
 """
 
-import json
 import re
 from types import SimpleNamespace
 
@@ -66,19 +64,15 @@ def _make_page(tmp_path, source, name="page.wire"):
 
 def _row500_dispatch(html: str) -> tuple[str, dict]:
     """Extract (handler, event_data) for row 500's button exactly like the
-    client does: data-on-click -> handler name, data-arg-0 -> args.arg0."""
+    client does: data-on-click -> handler name, data-pw-args-click -> args."""
     m = re.search(
         r'data-pw-region="[^"]+#500"[^>]*>.*?data-on-click="([^"]+)"[^>]*'
-        r'data-arg-0="([^"]+)"',
+        r'data-pw-args-click="([^"]+)"',
         html,
         re.S,
     )
     assert m, "row-500 keyed wrapper with toggle button not found in render"
-    return m.group(1), {
-        "type": "click",
-        "tagName": "BUTTON",
-        "args": {"arg0": json.loads(m.group(2))},
-    }
+    return m.group(1), {"type": "click", "tagName": "BUTTON", "args": m.group(2)}
 
 
 def _assert_single_tiny_row500(update: dict, site: str) -> int:
@@ -99,7 +93,6 @@ async def test_single_toggle_payload_in_process(tmp_path):
     html = await page._render_template()
     site = next(iter(page.__keyed_region_renderers__))
     handler, event_data = _row500_dispatch(html)
-    assert event_data["args"]["arg0"] == 500
 
     update = await page.handle_event(handler, event_data)
     _assert_single_tiny_row500(update, site)
@@ -117,7 +110,12 @@ async def test_keyless_toggle_exceeds_bound(tmp_path):
     page = _make_page(tmp_path, _src(keyed=False))
     await page._render_template()
     update = await page.handle_event(
-        "_handler_0", {"type": "click", "tagName": "BUTTON", "args": {"arg0": 500}}
+        "_handler_0",
+        {
+            "type": "click",
+            "tagName": "BUTTON",
+            "args": page._pw_sign_args("_handler_0", 500),
+        },
     )
     total = sum(len(r["html"]) for r in update.get("regions", [])) or len(
         update.get("html", "")

@@ -281,6 +281,28 @@ def test_upload_field_checks_size_type_and_count():
     assert errors == {"papers": "Choose a file of type application/pdf"}
 
 
+def test_upload_field_trusts_the_bytes_over_the_browser():
+    def up(name, ctype, sniffed):
+        return Upload(name, ctype, 1, MemoryStore(), "k", sniffed)
+
+    images = UploadField(accept="image/*")
+    assert images.accepts(up("a.png", "image/png", "image/png"))
+    assert images.accepts(up("a.bin", "application/octet-stream", "image/webp"))
+    assert not images.accepts(up("a.png", "image/png", ""))
+    assert not images.accepts(up("a.svg", "image/svg+xml", "image/svg+xml"))
+    assert not images.accepts(up("a.png", "image/png", "text/html"))
+    # SVG only where accept names it outright.
+    for accept in ("image/svg+xml", ".svg", "image/*,.svg"):
+        assert UploadField(accept=accept).accepts(
+            up("a.svg", "image/svg+xml", "image/svg+xml")
+        )
+    pdfs = UploadField(accept="application/pdf")
+    assert pdfs.accepts(up("p.pdf", "application/pdf", "application/pdf"))
+    assert not pdfs.accepts(up("p.pdf", "application/pdf", ""))
+    # A type the sniffer can't recognize falls back to the declared type.
+    assert UploadField(accept="text/csv").accepts(up("a.csv", "text/csv", ""))
+
+
 def test_upload_field_error_codes():
     f = form(Profile)
     f._editable.add("avatar")
@@ -340,13 +362,25 @@ def test_pages_built_without_a_request_use_the_apps_staging(tmp_path):
     assert staging_for(page) is app.uploads
 
 
-def test_save_never_keeps_a_page_extension_on_another_type():
-    store = MemoryStore()
+class _TypedStore(MemoryStore):
+    """A MemoryStore that remembers the content type each file was put with."""
 
-    def saved(name: str, ctype: str) -> str:
+    def __init__(self) -> None:
+        super().__init__()
+        self._content_types: dict = {}
+
+    async def put(self, key, data, *, content_type=None):
+        self._content_types[key] = content_type
+        await super().put(key, data, content_type=content_type)
+
+
+def test_save_never_keeps_a_page_extension_on_another_type():
+    store = _TypedStore()
+
+    def saved(name: str, ctype: str, body: bytes = b"x") -> str:
         staging = Staging(MemoryStore())
         upload_id = asyncio.run(
-            staging.stage(_chunks(b"x"), filename=name, content_type=ctype, limit=9)
+            staging.stage(_chunks(body), filename=name, content_type=ctype, limit=99)
         )
         upload = asyncio.run(staging.get(upload_id))
         assert upload is not None
@@ -354,9 +388,33 @@ def test_save_never_keeps_a_page_extension_on_another_type():
 
     assert saved("evil.html", "image/png").endswith(".png")
     assert saved("evil.svg", "image/png").endswith(".png")
-    assert saved("page.html", "text/html").endswith(".html")
     assert saved("a.zip", "application/octet-stream").endswith(".zip")
     assert saved("photo.JPG", "image/jpeg").endswith(".jpg")
+    # The bytes decide: a PNG named .html is a .png.
+    assert saved("x.html", "text/html", b"\x89PNG\r\n\x1a\nxx").endswith(".png")
+    assert store._content_types[saved("x.gif", "text/html", b"GIF89a")] == "image/gif"
+    # A page or SVG is kept as a download, never under a name that runs.
+    for name, ctype, body in (
+        ("page.html", "text/html", b"x"),
+        ("logo.png", "image/png", b"<svg onload=alert(1)>"),
+        ("logo.svg", "image/svg+xml", b"<svg></svg>"),
+    ):
+        key = saved(name, ctype, body)
+        assert "." not in key
+        assert store._content_types[key] == "application/octet-stream"
+
+
+def test_sniff_knows_common_formats():
+    from pywire.runtime.uploads import sniff
+
+    assert sniff(b"\x89PNG\r\n\x1a\n...") == "image/png"
+    assert sniff(b"\xff\xd8\xff\xe0") == "image/jpeg"
+    assert sniff(b"RIFF\0\0\0\0WEBPVP8 ") == "image/webp"
+    assert sniff(b"\0\0\0\x1cftypavif") == "image/avif"
+    assert sniff(b"%PDF-1.7") == "application/pdf"
+    assert sniff(b"\xef\xbb\xbf  <?xml?><svg>") == "image/svg+xml"
+    assert sniff(b"<!DOCTYPE HTML><p>") == "text/html"
+    assert sniff(b"hello") == ""
 
 
 @pytest.mark.skipif(not hasattr(__import__("os"), "getuid"), reason="POSIX only")

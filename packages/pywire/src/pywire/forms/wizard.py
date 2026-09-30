@@ -23,10 +23,10 @@ Each step's submit validates that step and moves on. The last one validates
 the whole model and calls the handler with it, so rules across steps apply
 there; an error on an earlier step's field goes back to that step.
 
-What earlier steps held travels with the form in a hidden input, signed so
-it can't be changed (``PyWire(secret_key=...)`` shares the key between
-processes). It is signed, not encrypted, so secret fields (``SecretStr``,
-passwords) are never carried: they must be on the last step, and ``wizard()``
+What earlier steps held travels with the form in a hidden input, encrypted
+and signed so it can't be read or changed (``PyWire(secret_key=...)`` shares
+the key between processes). Secret fields (``SecretStr``, passwords) are
+never carried even so: they must be on the last step, and ``wizard()``
 refuses a model that puts one earlier. Files picked on earlier steps travel
 as staged upload ids.
 """

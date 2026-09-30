@@ -68,6 +68,22 @@ class TestBaselineYes:
         )
         _assert_has(project, "pyproject.toml", "README.md", "src", ".gitignore")
 
+    def test_secrets_and_debug_stay_out_of_production(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = tmp_path / "app"
+        _run(
+            [str(project), "-y", "--deploy", "docker", "--no-install", "--no-git"],
+            cwd=tmp_path,
+            monkeypatch=monkeypatch,
+        )
+        assert ".env" in (project / ".gitignore").read_text().splitlines()
+        assert ".env" in (project / ".dockerignore").read_text().splitlines()
+        assert "USER pywire" in (project / "Dockerfile").read_text()
+        main = (project / "src" / "main.py").read_text()
+        assert "debug=True" not in main
+        assert "PYWIRE_DEBUG" in main
+
     def test_default_template_is_counter(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

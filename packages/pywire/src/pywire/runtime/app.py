@@ -30,8 +30,11 @@ from pywire.runtime.base_path import (
 )
 from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
+from pywire.runtime.origin import is_cross_site, is_loopback_host
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
+from pywire.runtime.secret_key import GENERATE_HINT, weak_secret
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
 from pywire.runtime.uploads import (
     Staging,
     machine_key,
@@ -63,6 +66,9 @@ async def RequestContextMiddleware(scope, receive, send, app):
 
 _FORM_CONTENT_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
 
+# What the dev-only source endpoints serve: the files error frames point at.
+_SOURCE_SUFFIXES = frozenset({".py", ".wire"})
+
 
 def _is_form_content(request: Request) -> bool:
     ctype = request.headers.get("content-type", "").split(";", 1)[0]
@@ -72,35 +78,6 @@ def _is_form_content(request: Request) -> bool:
 def _is_multipart(request: Request) -> bool:
     ctype = request.headers.get("content-type", "").split(";", 1)[0]
     return ctype.strip().lower() == "multipart/form-data"
-
-
-def _is_cross_site(request: Request) -> bool:
-    """True when a browser says this POST came from another site.
-
-    ``Sec-Fetch-Site`` is set by the browser itself; ``Origin`` is the
-    fallback for browsers without it. A request with neither did not come
-    from a browser form, so CSRF does not apply.
-    """
-    site = request.headers.get("sec-fetch-site")
-    if site is not None:
-        return site.lower() not in ("same-origin", "none")
-    origin = request.headers.get("origin")
-    if origin is None:
-        return False
-    if origin == "null":
-        return True
-    from urllib.parse import urlsplit
-
-    def hostname(netloc: str) -> str:
-        # Ports are left out: cookies are shared across ports anyway, and
-        # proxies often drop the port from Host.
-        return (urlsplit("//" + netloc.strip()).hostname or "").lower()
-
-    hosts = {hostname(request.headers.get("host", ""))}
-    forwarded = request.headers.get("x-forwarded-host")
-    if forwarded:
-        hosts.update(hostname(h) for h in forwarded.split(","))
-    return (urlsplit(origin).hostname or "").lower() not in hosts
 
 
 # A native form POST is read into memory before anything is known about its
@@ -295,6 +272,7 @@ class PyWire:
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
+        self._project_root = project_root.resolve()
 
         # NOTE: We do NOT use CWD or caller_dir for auto-discovery to avoid
         # security risks (e.g. serving ~/static if running from home dir).
@@ -399,6 +377,7 @@ class PyWire:
         self._upload_token_dir = self._runtime_dir / "upload_tokens"
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
         self._upload_token_key: Optional[bytes] = None
+        self._args_key: Optional[bytes] = None
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
@@ -493,15 +472,17 @@ class PyWire:
         secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
         # Signs state a page hands the browser to send back (what a bound
         # form rendered, a wizard's steps). Processes that serve the same
-        # pages must share it, and a short one could be guessed, so it is
-        # only used when it is at least 32 bytes.
-        strong = bool(secret) and len(str(secret).encode("utf-8")) >= 32
+        # pages must share it, and a guessable one lets anyone forge that
+        # state, so it is only used when it looks random and is 32+ bytes.
+        weakness = weak_secret(str(secret)) if secret else None
+        strong = bool(secret) and weakness is None
         if secret and not strong and not stateless:
             logger.warning(
-                "PyWire: secret_key is shorter than 32 bytes, so it doesn't "
-                "sign form state; forms posted without JavaScript are only "
-                "accepted by the process that rendered them. Generate one "
-                "with: python -c 'import secrets; print(secrets.token_hex(32))'"
+                "PyWire: secret_key is not used to sign form state because "
+                "%s; forms posted without JavaScript are only accepted by the "
+                "process that rendered them. %s",
+                weakness,
+                GENERATE_HINT,
             )
         self.signing_secret: bytes = (
             str(secret).encode("utf-8") if strong else secrets.token_bytes(32)
@@ -523,11 +504,11 @@ class PyWire:
                     "PYWIRE_SECRET_KEY env var — it signs client-held session "
                     "snapshots"
                 )
-            if len(secret.encode("utf-8")) < 32:
+            if weakness is not None:
                 raise RuntimeError(
-                    "PYWIRE_SECRET_KEY must be at least 32 bytes — anyone who "
-                    "guesses it can forge page state. Generate one with: "
-                    "python -c 'import secrets; print(secrets.token_hex(32))'"
+                    "PYWIRE_SECRET_KEY must be at least 32 random bytes, and "
+                    f"this one isn't: {weakness}. Anyone who guesses it can "
+                    f"read and forge page state. {GENERATE_HINT}"
                 )
             self._stateless_secret = secret.encode("utf-8")
 
@@ -557,6 +538,10 @@ class PyWire:
 
         # Backward-compatible token allowlist
         self.upload_tokens: Set[str] = set()
+        # Bytes each client address staged through /_pywire/upload in the
+        # current hour: (window start, bytes). Tokens come with any page
+        # view, so this, not the token, bounds what one client can stage.
+        self._upload_usage: Dict[str, Tuple[float, int]] = {}
         # Token metadata: token -> (bound_session_id, issued_ts)
         self._upload_token_meta: Dict[str, Tuple[Optional[str], float]] = {}
         # Where uploads wait for a handler. Several processes (workers,
@@ -808,6 +793,13 @@ class PyWire:
         """
         explicit = os.environ.get("PYWIRE_SESSION_SECRET")
         if explicit:
+            weakness = weak_secret(explicit)
+            if weakness is not None:
+                raise RuntimeError(
+                    "PYWIRE_SESSION_SECRET must be at least 32 random bytes, "
+                    f"and this one isn't: {weakness}. It signs session cookies. "
+                    f"{GENERATE_HINT}"
+                )
             return explicit
 
         if os.environ.get("PYWIRE_DEV_MODE") == "1":
@@ -1034,11 +1026,20 @@ class PyWire:
             except _FormBodyError as exc:
                 error = "Payload Too Large" if exc.status_code == 413 else exc.message
                 return JSONResponse({"error": error}, status_code=exc.status_code)
+            client = request.client.host if request.client else ""
             try:
                 response_data: Dict[str, List[str]] = {}
                 for field_name, file in form.multi_items():
                     if isinstance(file, str):
                         continue
+                    if not self._upload_budget_left(client, file.size or 0):
+                        await self.uploads.discard(
+                            [i for ids in response_data.values() for i in ids]
+                        )
+                        return JSONResponse(
+                            {"error": "Too many uploads; try again later"},
+                            status_code=429,
+                        )
                     upload_id = await self.uploads.stage(
                         part_chunks(file),
                         filename=file.filename or "",
@@ -1068,7 +1069,7 @@ class PyWire:
         The HMAC gate stays in front: a tampered blob is a 400, never a
         decode. The signing secret is never echoed.
         """
-        if not (self._is_dev_mode and self.debug):
+        if not self._dev_route_allowed(request):
             # Same gate as _handle_source/_handle_file/_handle_devtools_json:
             # no inspector outside dev mode, even with debug=True.
             return Response("Not Found", status_code=404)
@@ -1095,72 +1096,72 @@ class PyWire:
             json.dumps(snap, indent=2, default=repr), media_type="application/json"
         )
 
+    def _dev_route_allowed(self, request: Request) -> bool:
+        """Gate for the dev-only debug endpoints.
+
+        Requires both ``debug=True`` and ``pywire dev`` (so ``pywire run``
+        never exposes them), and a loopback ``Host``: a DNS-rebinding page
+        (``evil.example`` re-pointed at 127.0.0.1) sends its own hostname.
+        """
+        return self._is_dev_mode and self.debug and is_loopback_host(request.headers)
+
+    def _read_source(self, path_str: str) -> Optional[str]:
+        """The text of a source file the debug endpoints may serve, if any.
+
+        Only Python and ``.wire`` sources (what error frames point at) under
+        the project root or the pages directory; never ``.env``, keys, or
+        anything elsewhere on the machine.
+        """
+        try:
+            path = Path(path_str).resolve()
+            if path.suffix not in _SOURCE_SUFFIXES or not path.is_file():
+                return None
+            roots = (self._project_root, self.pages_dir)
+            if not any(path.is_relative_to(root) for root in roots):
+                return None
+            return path.read_text(encoding="utf-8")
+        except (OSError, RuntimeError, ValueError):
+            # Unreadable, a symlink loop, undecodable bytes, a NUL in the path.
+            logger.debug("debug source %r not served", path_str, exc_info=True)
+            return None
+
     async def _handle_source(self, request: Request) -> Response:
-        """Serve source code for debugging. Requires both debug=True AND _is_dev_mode=True."""
-        if not (self._is_dev_mode and self.debug):
+        """Serve a page or module source to the dev error overlay."""
+        if not self._dev_route_allowed(request):
             return Response("Not Found", status_code=404)
 
         path_str = request.query_params.get("path")
-        logger.debug("_handle_source path=%s", path_str)
         if not path_str:
             return Response("Missing path", status_code=400)
-
-        try:
-            path = Path(path_str).resolve()
-            logger.debug(
-                "_handle_source resolved path=%s, exists=%s", path, path.exists()
-            )
-            # Path existence check
-            if not path.exists():
-                return Response("File not found", status_code=404)
-
-            content = path.read_text(encoding="utf-8")
-            return Response(content, media_type="text/plain")
-        except Exception as e:
-            logger.debug(f"_handle_source exception: {e}")
-            return Response(str(e), status_code=500)
+        content = self._read_source(path_str)
+        if content is None:
+            return Response("File not found", status_code=404)
+        return Response(content, media_type="text/plain")
 
     async def _handle_file(self, request: Request) -> Response:
         """Serve source file by base64-encoded path (for DevTools source mapping)."""
-        if not (self._is_dev_mode and self.debug):
+        if not self._dev_route_allowed(request):
             return Response("Not Found", status_code=404)
 
         import base64
+        import binascii
 
-        encoded_path = request.path_params.get("encoded", "")
-
-        # If the path contains a slash, it means we appended the filename for Chrome's benefit
-        # e.g., "BASE64STRING/my_file.py"
-        # We only care about the first part
-        if "/" in encoded_path:
-            encoded = encoded_path.split("/")[0]
-        else:
-            encoded = encoded_path
-
+        # "BASE64STRING/my_file.py": the filename is appended for Chrome's
+        # benefit; only the first segment is the (URL-safe base64) path.
+        encoded = request.path_params.get("encoded", "").split("/")[0]
+        encoded += "=" * (-len(encoded) % 4)
         try:
-            # Decode the base64 path (URL-safe variant)
-            # Restore padding
-            padding = 4 - (len(encoded) % 4)
-            if padding != 4:
-                encoded += "=" * padding
-            # Restore standard base64 chars
-            encoded = encoded.replace("-", "+").replace("_", "/")
-            path_str = base64.b64decode(encoded).decode("utf-8")
-
-            path = Path(path_str).resolve()
-            if not path.is_file():
-                return Response("File not found", status_code=404)
-
-            content = path.read_text(encoding="utf-8")
-            # Return as JavaScript so browser DevTools can parse it
-            return Response(content, media_type="text/plain")
-        except Exception as e:
-            logger.debug(f"_handle_file exception: {e}")
-            return Response(str(e), status_code=500)
+            path_str = base64.urlsafe_b64decode(encoded).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError):
+            return Response("File not found", status_code=404)
+        content = self._read_source(path_str)
+        if content is None:
+            return Response("File not found", status_code=404)
+        return Response(content, media_type="text/plain")
 
     async def _handle_devtools_json(self, request: Request) -> JSONResponse:
         """Serve Chrome DevTools project settings for automatic workspace folders."""
-        if not (self._is_dev_mode and self.debug):
+        if not self._dev_route_allowed(request):
             return JSONResponse({}, status_code=404)
 
         import hashlib
@@ -1763,6 +1764,16 @@ class PyWire:
         )
         return HTMLResponse(html_content, status_code=500)
 
+    def _client_error(self, exc: BaseException) -> str:
+        """What a browser is told about a failed event.
+
+        The exception text can carry internals (a query, a connection URL, a
+        path), so it is only sent with ``debug=True``; the log always has it.
+        """
+        if self.debug:
+            return f"{type(exc).__name__}: {exc}"
+        return "An error occurred"
+
     def _instantiate_page(
         self,
         page_class: Any,
@@ -1787,7 +1798,12 @@ class PyWire:
         if routes:
             url_helper = URLHelper(cast(dict[str, str], routes))
 
-        return page_class(request, params, query, path=path_info, url=url_helper)
+        page = page_class(request, params, query, path=path_info, url=url_helper)
+        if self.stateless:
+            from pywire.runtime.session_serializer import remember_initial_state
+
+            remember_initial_state(page)
+        return page
 
     def _live_every_ms(self, page: Any, *, strict: bool = True) -> int:
         """How often (ms) a stateless page re-reads shared state; 0 = never.
@@ -1888,36 +1904,27 @@ class PyWire:
         if resolved_user is not None:
             page.user = resolved_user
 
-        # In non-interactive mode, restore session state if available. The
-        # session holds one snapshot, of the last page served: it is restored
-        # only into that same page, and identity always comes from the request.
+        # In non-interactive mode, restore this page's state in the session:
+        # each page and path has its own record, restored only for the user
+        # it was saved for. Identity always comes from the request.
         session_id = request.scope.get("pywire_session_id")
         if not self.interactive_server_mode and session_id:
-            session_data = request.scope.get("pywire_session_data")
-            if session_data and session_data.get("route_path") == request.url.path:
-                from pywire.runtime.session_serializer import restore_page_state
+            from pywire.runtime.session_serializer import (
+                page_state_key,
+                restore_page_state,
+            )
 
-                restore_page_state(
-                    page, {k: v for k, v in session_data.items() if k != "user"}
-                )
+            saved = await self.session_store.get(page_state_key(session_id, page))
+            if saved:
+                restore_page_state(page, saved, principal=resolved_user)
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
-            # Auth guard BEFORE any dispatch — a forged handler name must
-            # never reach user code on a protected page (mirrors
-            # BasePage.render()'s short-circuit). The redirect reaches the
-            # client with SPA-nav semantics, matching the WS/stateless
-            # transports' navigate message.
-            if getattr(page.__class__, "__auth_required__", False):
-                from pywire.auth.guard import run_auth_guard
+            from pywire.auth.guard import AuthDenied
 
-                denied = await run_auth_guard(page)
-                if denied is not None:
-                    location = denied.headers.get("location")
-                    if location:
-                        page._pending_navigation = location
-                    return JSONResponse({"type": "navigate", "path": location or "/"})
-            # Handle event
+            # handle_event runs the !auth guard before any dispatch; a
+            # denial reaches the client with SPA-nav semantics, matching
+            # the WS/stateless transports' navigate message.
             try:
                 event_data = await request.json()
                 update = await page.handle_event(
@@ -1926,8 +1933,14 @@ class PyWire:
                 if isinstance(update, dict):
                     return JSONResponse(update)
                 response = cast(Response, update)
+            except AuthDenied as denied:
+                return JSONResponse({"type": "navigate", "path": denied.location})
+            except HandlerArgsError as e:
+                logger.warning("Refused an event: %s", e)
+                return JSONResponse({"error": REFUSED}, status_code=400)
             except Exception as e:
-                return JSONResponse({"error": str(e)}, status_code=500)
+                logger.exception("Event handler failed")
+                return JSONResponse({"error": self._client_error(e)}, status_code=500)
         elif (
             request.method == "POST"
             and "X-PyWire-Event" not in request.headers
@@ -1988,10 +2001,15 @@ class PyWire:
 
         # In non-interactive mode, persist session state after handling
         if not self.interactive_server_mode and session_id:
-            from pywire.runtime.session_serializer import snapshot_page_state
+            from pywire.runtime.session_serializer import (
+                page_state_key,
+                snapshot_page_state,
+            )
 
             snapshot = snapshot_page_state(page, warn_size=self.session_warn_size)
-            await self.session_store.set(session_id, snapshot, ttl=self.session_ttl)
+            await self.session_store.set(
+                page_state_key(session_id, page), snapshot, ttl=self.session_ttl
+            )
 
         # Script injection is now handled by the compiler (generator.py)
         # to ensure it's present in both dev and production.
@@ -2055,7 +2073,7 @@ class PyWire:
         fragment (init=False) for the client to morph in.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
-        if _is_cross_site(request):
+        if is_cross_site(request.headers):
             return PlainTextResponse(
                 "PyWire: cross-site form POST refused", status_code=403
             )
@@ -2200,6 +2218,41 @@ class PyWire:
                     self._runtime_dir / "upload_token.key"
                 )
         return self._upload_token_key
+
+    def _handler_args_key(self) -> bytes:
+        """The key inline handler arguments are signed with (``handler_args``).
+
+        Like the upload key: derived from ``secret_key`` when there is one,
+        else shared by the processes on this machine, since a page rendered by
+        one process sends its events to whichever one holds its socket.
+        """
+        if self._args_key is None:
+            if self.signing_secret_shared:
+                self._args_key = hmac.new(
+                    self.signing_secret, b"pywire.args", hashlib.sha256
+                ).digest()
+            else:
+                self._args_key = machine_key(self._runtime_dir / "handler_args.key")
+        return self._args_key
+
+    # Bytes one client address may stage per hour, in max_upload_size units.
+    upload_budget_files = 20
+
+    def _upload_budget_left(self, client: str, size: int) -> bool:
+        """Count ``size`` bytes against ``client``'s hourly staging budget;
+        False (and nothing counted) when it would go over."""
+        now = time.time()
+        if len(self._upload_usage) > 10_000:
+            self._upload_usage = {
+                c: u for c, u in self._upload_usage.items() if now - u[0] < 3600
+            }
+        start, used = self._upload_usage.get(client, (now, 0))
+        if now - start >= 3600:
+            start, used = now, 0
+        if used + size > self.upload_budget_files * self.max_upload_size:
+            return False
+        self._upload_usage[client] = (start, used + size)
+        return True
 
     def _issue_upload_token(self) -> str:
         body = f"{int(time.time()):x}_{secrets.token_hex(16)}"

@@ -1,3 +1,5 @@
+import os
+
 from pywire import PyWire
 
 # Create application instance
@@ -5,5 +7,7 @@ app = PyWire(
     path_based_routing=False,
     pages_dir="{{ pages_dir }}",
     enable_pjax=True,
-    debug=True,
+    # Error pages with stack traces: on under `pywire dev`, off in
+    # `pywire run`, Docker and deploys unless PYWIRE_DEBUG=1.
+    debug=os.environ.get("PYWIRE_DEBUG", os.environ.get("PYWIRE_DEV_MODE")) == "1",
 )

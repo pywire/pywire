@@ -16,7 +16,7 @@ def _run(coro):
 def _make_idp() -> LocalIdP:
     return LocalIdP(
         store=MemoryAuthStore(),
-        secret="x" * 64,
+        secret="test-signing-key-0123456789abcdef-test-signing-key-0123456789abcdef",
         issuer="test-issuer",
         audience="test-app",
     )
@@ -56,6 +56,29 @@ def test_unknown_email_returns_none() -> None:
     assert (
         _run(idp.verify_credentials(email="nobody@example.com", password="x")) is None
     )
+
+
+def test_unknown_email_costs_a_password_check() -> None:
+    """A missing user takes as long as a wrong password (no enumeration)."""
+    idp = _make_idp()
+    calls = []
+    real_verify = idp._verify
+
+    async def verify(pw_hash: str, password: str) -> bool:
+        calls.append(pw_hash)
+        return await real_verify(pw_hash, password)
+
+    idp._verify = verify  # type: ignore[method-assign]
+    _run(idp.verify_credentials(email="nobody@example.com", password="x"))
+    assert len(calls) == 1
+
+
+def test_legacy_mixed_case_account_still_signs_in() -> None:
+    idp = _make_idp()
+    uid = _run(idp.create_user(email="old@example.com", password="pw"))
+    # An account linked before emails were normalized.
+    _run(idp.store.link_provider(uid, "local", "Old@Example.com"))
+    assert _run(idp.verify_credentials(email="Old@Example.com", password="pw"))
 
 
 def test_duplicate_email_rejected() -> None:
@@ -125,11 +148,13 @@ def test_principal_from_id_token() -> None:
 
 
 def test_hs256_public_jwks_raises() -> None:
-    issuer = TokenIssuer(issuer="x", algorithm="HS256", secret="x" * 32)
+    issuer = TokenIssuer(
+        issuer="x", algorithm="HS256", secret="test-signing-key-0123456789abcdef"
+    )
     with pytest.raises(RuntimeError):
         issuer.public_jwks()
 
 
 def test_unsupported_algorithm_rejected() -> None:
     with pytest.raises(ValueError):
-        TokenIssuer(algorithm="ES256", secret="x" * 32)
+        TokenIssuer(algorithm="ES256", secret="test-signing-key-0123456789abcdef")

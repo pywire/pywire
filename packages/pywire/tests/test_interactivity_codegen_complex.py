@@ -26,11 +26,12 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         self.assertIn("async def _handler_0(self, arg0, arg1, *, event=None):", code)
         self.assertIn("await self.delete_item(arg0, arg1)", code)
 
-        # Verify render template - serializes expr results for each arg
-        self.assertIn("data-arg-0", code)
-        self.assertIn("json.dumps(unwrap_wire(self.item.id))", code)
-        self.assertIn("data-arg-1", code)
-        self.assertIn("json.dumps(unwrap_wire('confirmed'))", code)
+        # Verify render template - signs the expr results for the handler
+        self.assertIn(
+            "attrs['data-pw-args-click'] = self._pw_sign_args('_handler_0', "
+            "unwrap_wire(self.item.id), unwrap_wire('confirmed'))",
+            code,
+        )
 
     def test_multiple_handlers_complex(self) -> None:
         """Verify behavior with multiple handlers having arguments and modifiers."""
@@ -45,18 +46,17 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         module_ast = self.generator.generate(parsed)
         code = ast.unparse(module_ast)
 
-        # AST codegen produces wrapper call: wrapper(self.id1)
-        # _h['args'] = [self.key]
-        self.assertIn("_h['args'] = [unwrap_wire(self.id1)]", code)
-        self.assertIn("_h['args'] = [unwrap_wire(self.id2)]", code)
-        # Verify modifiers are collected (order is unstable because of set())
-        modifiers_line = [
-            line
-            for line in code.split("\n")
-            if "attrs['data-modifiers-click'] =" in line
-        ][0]
-        self.assertIn("stop", modifiers_line)
-        self.assertIn("prevent", modifiers_line)
+        # Each handler's args are signed for that handler
+        self.assertIn(
+            "_h['args'] = self._pw_sign_args('_handler_0', unwrap_wire(self.id1))",
+            code,
+        )
+        self.assertIn(
+            "_h['args'] = self._pw_sign_args('_handler_1', unwrap_wire(self.id2))",
+            code,
+        )
+        # Modifiers are collected in a stable order
+        self.assertIn("attrs['data-modifiers-click'] = 'prevent stop'", code)
 
     def test_loop_click_handler_id_based(self) -> None:
         """Regression: @click={handler(item.get('id',''))} inside $for serializes id expr, not full item."""
@@ -75,9 +75,10 @@ class TestInteractivityCodegenComplex(unittest.TestCase):
         # Handler receives arg0 (the serialized expr result = id string)
         self.assertIn("async def _handler_0(self, arg0, *, event=None):", code)
         self.assertIn("self.delete_by_id(arg0)", code)
-        # data-arg-0 serializes item.get('id','') result (string), not full item
-        self.assertIn("data-arg-0", code)
-        self.assertIn("item.get('id', '')", code)
+        # The signed arg is the item.get('id','') result, not the full item
+        self.assertIn(
+            "self._pw_sign_args('_handler_0', unwrap_wire(item.get('id', '')))", code
+        )
         self.assertNotIn("json.dumps(item)", code)
 
 

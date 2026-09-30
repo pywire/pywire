@@ -1,3 +1,4 @@
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as https from 'https'
@@ -15,7 +16,24 @@ import {
 const LS_PACKAGE = 'pywire-language-server'
 const DEFAULT_PYTHON_VERSION = '3.12'
 const PYPI_URL = `https://pypi.org/pypi/${LS_PACKAGE}/json`
-const UV_LATEST_BASE = 'https://github.com/astral-sh/uv/releases/latest/download'
+// The uv the extension downloads when none is on PATH: a pinned release,
+// checked against these digests before it runs.
+const UV_VERSION = '0.12.21'
+const UV_RELEASE_BASE = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`
+const UV_SHA256: Record<string, string> = {
+  'uv-aarch64-apple-darwin.tar.gz':
+    'b88bda573e566ef9bced66b155fe0408626fbbc053aee1c30ba686f0728c9447',
+  'uv-x86_64-apple-darwin.tar.gz':
+    '2b336763b396ec6afa20c5a8b083538ca7402445b868311979d740a4344c17d8',
+  'uv-aarch64-unknown-linux-gnu.tar.gz':
+    '030b69227b40af8c1981b7301793dc66e71ed3c796ea8688209dd268bd91ec51',
+  'uv-x86_64-unknown-linux-gnu.tar.gz':
+    '23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0',
+  'uv-aarch64-pc-windows-msvc.zip':
+    '93ed53b94e9cec000cacdfd18ca67bc4cb2b6a5f5ec041edd7f2a3dae365ce79',
+  'uv-x86_64-pc-windows-msvc.zip':
+    '5d223efa0bf00208c3853246af09420419dfbd352536aa6bb8163d6170e23890',
+}
 
 export interface LSResolved {
   venvPython: string
@@ -82,10 +100,14 @@ function httpsGet(url: string, maxRedirects = 5): Promise<{ statusCode: number; 
   })
 }
 
-async function httpsDownload(url: string, destPath: string): Promise<void> {
+async function httpsDownload(url: string, destPath: string, sha256: string): Promise<void> {
   const { statusCode, body } = await httpsGet(url)
   if (statusCode !== 200) {
     throw new Error(`Download failed (${statusCode}): ${url}`)
+  }
+  const digest = crypto.createHash('sha256').update(body).digest('hex')
+  if (digest !== sha256) {
+    throw new Error(`Checksum mismatch for ${url}: expected ${sha256}, got ${digest}`)
   }
   fs.writeFileSync(destPath, body)
 }
@@ -157,10 +179,11 @@ async function ensureUv(globalStorageDir: string, log: OutputChannel): Promise<s
     log.appendLine(`Using cached uv: ${cached}`)
     return cached
   }
-  log.appendLine('Downloading uv from GitHub releases...')
+  log.appendLine(`Downloading uv ${UV_VERSION} from GitHub releases...`)
   const asset = uvAssetName()
-  const tmpArchive = path.join(os.tmpdir(), asset.name)
-  await httpsDownload(`${UV_LATEST_BASE}/${asset.name}`, tmpArchive)
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pywire-uv-'))
+  const tmpArchive = path.join(tmpDir, asset.name)
+  await httpsDownload(`${UV_RELEASE_BASE}/${asset.name}`, tmpArchive, UV_SHA256[asset.name])
   const extractDir = path.join(globalStorageDir, 'uv-extract')
   fs.rmSync(extractDir, { recursive: true, force: true })
   await extractArchive(tmpArchive, extractDir, asset.archive, log)
@@ -170,32 +193,37 @@ async function ensureUv(globalStorageDir: string, log: OutputChannel): Promise<s
   fs.copyFileSync(found, cached)
   if (process.platform !== 'win32') fs.chmodSync(cached, 0o755)
   fs.rmSync(extractDir, { recursive: true, force: true })
-  fs.rmSync(tmpArchive, { force: true })
+  fs.rmSync(tmpDir, { recursive: true, force: true })
   log.appendLine(`Installed uv: ${cached}`)
   return cached
 }
 
 async function resolveUserPython(log: OutputChannel): Promise<string | null> {
+  // pywire.pythonPath is a restricted setting (package.json): in an untrusted
+  // workspace VS Code only returns the user's own value.
   const config = workspace.getConfiguration('pywire')
   const configured = config.get<string>('pythonPath')
   if (configured && configured !== 'python3') {
     return configured
   }
-  try {
-    const pythonExt = extensions.getExtension('ms-python.python')
-    if (pythonExt) {
-      if (!pythonExt.isActive) await pythonExt.activate()
-      const exportsApi = pythonExt.exports
-      if (exportsApi?.settings?.getExecutionDetails) {
-        const details = exportsApi.settings.getExecutionDetails(
-          workspace.workspaceFolders?.[0]?.uri
-        )
-        const p = details?.execCommand?.[0]
-        if (p) return p
+  // A workspace's chosen interpreter could be any program in the repository.
+  if (workspace.isTrusted) {
+    try {
+      const pythonExt = extensions.getExtension('ms-python.python')
+      if (pythonExt) {
+        if (!pythonExt.isActive) await pythonExt.activate()
+        const exportsApi = pythonExt.exports
+        if (exportsApi?.settings?.getExecutionDetails) {
+          const details = exportsApi.settings.getExecutionDetails(
+            workspace.workspaceFolders?.[0]?.uri
+          )
+          const p = details?.execCommand?.[0]
+          if (p) return p
+        }
       }
+    } catch (e) {
+      log.appendLine(`ms-python.python discovery failed: ${String(e)}`)
     }
-  } catch (e) {
-    log.appendLine(`ms-python.python discovery failed: ${String(e)}`)
   }
   if (configured) return configured
   if (await commandExists('python3')) return 'python3'
@@ -247,7 +275,7 @@ async function installLS(
 
 export async function getInstalledLSVersion(venvPython: string): Promise<string | null> {
   if (!fs.existsSync(venvPython)) return null
-  const res = await execCapture(venvPython, ['-m', 'pip', 'show', LS_PACKAGE])
+  const res = await execCapture(venvPython, ['-I', '-m', 'pip', 'show', LS_PACKAGE])
   if (res.code !== 0) return null
   const match = res.stdout.match(/^Version:\s*(\S+)/m)
   return match ? match[1] : null
@@ -281,6 +309,9 @@ export async function ensureLSInstalled(
   log: OutputChannel
 ): Promise<LSResolved> {
   const config = workspace.getConfiguration('pywire')
+  const globalStorageDir = context.globalStorageUri.fsPath
+  // Also the server's working directory, whichever interpreter runs it.
+  fs.mkdirSync(globalStorageDir, { recursive: true })
   const customPath = config.get<string>('languageServer.customPath')
   if (customPath) {
     const version = (await getInstalledLSVersion(customPath)) ?? 'unknown'
@@ -289,8 +320,6 @@ export async function ensureLSInstalled(
   }
 
   const versionPref = config.get<string>('languageServer.version') || 'latest'
-  const globalStorageDir = context.globalStorageUri.fsPath
-  fs.mkdirSync(globalStorageDir, { recursive: true })
   const venvPath = path.join(globalStorageDir, 'ls-venv')
   const venvPython = venvPythonPath(venvPath)
 

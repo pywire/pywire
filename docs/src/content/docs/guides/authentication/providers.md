@@ -29,6 +29,10 @@ https://yourapp.com/auth/{provider_name}/callback
 
 where `{provider_name}` is `google`, `github`, `microsoft`, `facebook`, `auth0`, or whatever `name=` you set on a `GenericOIDCProvider`.
 
+pywire-auth sends the callback URL built from `connect_auth(app, ..., base_url="https://yourapp.com")`. Without `base_url` it is built from the request's `Host` header; set it in production so the URL never depends on what a client sends.
+
+Every login uses PKCE (S256). OIDC providers must return a signed `id_token`; its `iss`, `aud`, `exp` and the login's `nonce` are checked, and userinfo is only merged in when it describes the same `sub`.
+
 ## Google
 
 - **Console**: <https://console.cloud.google.com/apis/credentials>
@@ -126,7 +130,9 @@ Then in the Keycloak admin console: create realm `demo`, client `pywire-demo` (C
 
 Identity claims (`sub`, `email`, `email_verified`, `name`, `picture`) are owned by the IdP. They refresh on every login via the id_token or userinfo endpoint — if a user updates their Google name, the next login reflects it.
 
-Authorization claims (`role`, `tier`, tenant membership, feature flags) live in **your** `auth_store`. They're added via `app.state.auth.grant(...)` and merged over the IdP's identity claims on every callback — so `role=admin` survives logout/login, across providers.
+Authorization claims (`role`, `tier`, tenant membership, feature flags) live in **your** `auth_store`. They're added via `app.state.auth.grant(...)` and merged over the IdP's identity claims on every callback — so `role=admin` survives logout/login.
+
+Users are identified by provider _and_ subject: `google` user `123` and `github` user `123` are two different people with two rows, since a subject is only unique within its provider. The principal's `user_id` is `<provider>:<row id>`, where the row id is the `auth_store`'s own id for the user.
 
 Never store authorization claims on the IdP. If you can't delete an admin claim without editing the IdP's config, you've coupled your access control to someone else's product.
 

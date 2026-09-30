@@ -214,6 +214,36 @@ def test_only_what_the_page_rendered_editable_is_written(tmp_path):
     assert page.plan.value == "pro"
 
 
+HIDES = """---
+open = wire(True)
+name = wire("a")
+
+def close():
+    open.value = False
+---
+<div id="box">
+  <input id="name" $if={open} $bind={name}>
+</div>
+<button id="close" @click={close}>x</button>
+"""
+
+
+def test_an_element_hidden_later_stops_taking_writes(tmp_path):
+    page = _load(tmp_path, HIDES)
+    html = _render(page)
+    name = _handler(_tag(html, r'<input[^>]*id="name"[^>]*>'), "input")
+    asyncio.run(page.handle_event(name, {"type": "input", "value": "b"}))
+    assert page.name.value == "b"
+
+    # The box goes away in a partial update, as over a live connection.
+    close = _handler(_tag(html, r'<button[^>]*id="close"[^>]*>'), "click")
+    update = asyncio.run(page.handle_event(close, {"type": "click"}))
+    assert 'id="name"' not in str(update)
+    assert isinstance(update, dict) and update.get("type") == "regions", update
+    asyncio.run(page.handle_event(name, {"type": "input", "value": "forged"}))
+    assert page.name.value == "b"
+
+
 def test_wires_keep_their_type(tmp_path):
     page = _load(tmp_path, GUARDED)
     html = _render(page)

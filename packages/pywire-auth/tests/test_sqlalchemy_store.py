@@ -98,7 +98,7 @@ async def test_link_provider_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_localidp_round_trip_with_store() -> None:
     store = await _fresh_store()
-    idp = LocalIdP(store=store, secret="s" * 32)
+    idp = LocalIdP(store=store, secret="test-signing-key-0123456789abcdef")
     user_id = await idp.create_user(
         email="a@b.c", password="pw", name="Alice", claims={"role": "admin"}
     )
@@ -118,13 +118,13 @@ async def test_persists_across_sessions() -> None:
 
         store1 = SQLAlchemyAuthStore(url)
         await store1.init_schema()
-        idp1 = LocalIdP(store=store1, secret="s" * 32)
+        idp1 = LocalIdP(store=store1, secret="test-signing-key-0123456789abcdef")
         await idp1.create_user(email="a@b.c", password="pw")
         await store1.close()
 
         # Fresh store/engine against same DB file.
         store2 = SQLAlchemyAuthStore(url)
-        idp2 = LocalIdP(store=store2, secret="s" * 32)
+        idp2 = LocalIdP(store=store2, secret="test-signing-key-0123456789abcdef")
         principal = await idp2.verify_credentials(email="a@b.c", password="pw")
         assert principal is not None
         assert principal.has_claim("email", "a@b.c")

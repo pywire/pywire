@@ -1,33 +1,57 @@
-import { cosmiconfigSync } from 'cosmiconfig'
+import * as fs from 'fs'
+import * as path from 'path'
 import { parse as parseToml } from '@iarna/toml'
 
 export type RuffFormatConfig = Record<string, unknown>
 
-const explorer = cosmiconfigSync('ruff', {
-  searchPlaces: ['pyproject.toml', 'ruff.toml', '.ruff.toml'],
-  loaders: {
-    '.toml': (filepath, content) => parseToml(content),
-  },
-})
+type Table = Record<string, unknown>
 
+function readToml(file: string): Table | null {
+  let content: string
+  try {
+    content = fs.readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+  try {
+    return parseToml(content) as Table
+  } catch {
+    return null
+  }
+}
+
+function asTable(value: unknown): Table {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Table) : {}
+}
+
+// Ruff's own settings with its [format] section laid over them.
+function flatten(ruff: Table): RuffFormatConfig {
+  return { ...ruff, ...asTable(ruff.format) }
+}
+
+/**
+ * The Ruff settings that apply to `filePath`, found the way Ruff finds them:
+ * the closest directory with a `.ruff.toml`, `ruff.toml`, or a
+ * `pyproject.toml` that has a `[tool.ruff]` table.
+ *
+ * Only these TOML files are read. Nothing is executed, so formatting a file
+ * in an untrusted checkout can't run code from it.
+ */
 export function loadRuffConfig(filePath?: string | null): RuffFormatConfig {
-  const result = explorer.search(filePath ?? process.cwd())
-  if (!result || !result.config) {
-    return {}
-  }
-
-  if (result.filepath.endsWith('pyproject.toml')) {
-    const toolConfig = (result.config as Record<string, unknown>).tool ?? {}
-    const ruffConfig = (toolConfig as Record<string, unknown>).ruff ?? {}
-    const formatConfig = (ruffConfig as Record<string, unknown>).format ?? {}
-
-    return {
-      ...(ruffConfig as Record<string, unknown>),
-      ...(formatConfig as Record<string, unknown>),
+  const start = path.resolve(filePath ?? process.cwd())
+  let dir = fs.existsSync(start) && fs.statSync(start).isDirectory() ? start : path.dirname(start)
+  for (;;) {
+    for (const name of ['.ruff.toml', 'ruff.toml']) {
+      const config = readToml(path.join(dir, name))
+      if (config) return flatten(config)
     }
+    const pyproject = readToml(path.join(dir, 'pyproject.toml'))
+    const ruff = pyproject && asTable(pyproject.tool).ruff
+    if (ruff) return flatten(asTable(ruff))
+    const parent = path.dirname(dir)
+    if (parent === dir) return {}
+    dir = parent
   }
-
-  return result.config as Record<string, unknown>
 }
 
 export function resolveRuffFormatOptions(

@@ -91,27 +91,73 @@ def test_snapshot_is_compressed():
     assert len(decode_snapshot(blob, secret=SECRET)["attrs"]["rows"]) == 1000
 
 
-def test_signed_but_corrupt_body_rejected():
+def _seal_body(body: bytes) -> str:
+    """A blob sealed with SECRET around an already-compressed ``body``."""
     import hashlib
     import hmac
 
-    body = b"not zlib at all"
-    sig = hmac.new(SECRET, body, hashlib.sha256).digest()
-    blob = base64.urlsafe_b64encode(sig + body).decode()
+    from pywire.runtime import snapshot_codec as codec
+
+    enc, mac = codec._keys(SECRET)
+    nonce = b"\1" * codec._NONCE_LEN
+    sealed = codec._xor_stream(enc, nonce, body)
+    sig = hmac.new(mac, codec._FORMAT + nonce + sealed, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(codec._FORMAT + sig + nonce + sealed).decode()
+
+
+def test_signed_but_corrupt_body_rejected():
     with pytest.raises(SnapshotError, match="corrupt"):
-        decode_snapshot(blob, secret=SECRET)
+        decode_snapshot(_seal_body(b"not zlib at all"), secret=SECRET)
 
 
 def test_inflated_size_is_capped(monkeypatch):
-    import hashlib
-    import hmac
     import zlib
 
     from pywire.runtime import snapshot_codec
 
     monkeypatch.setattr(snapshot_codec, "MAX_SNAPSHOT_RAW_LEN", 1024)
-    body = zlib.compress(b"\0" * 100_000)
-    sig = hmac.new(SECRET, body, hashlib.sha256).digest()
-    blob = base64.urlsafe_b64encode(sig + body).decode()
     with pytest.raises(SnapshotError, match="too large"):
-        decode_snapshot(blob, secret=SECRET)
+        decode_snapshot(_seal_body(zlib.compress(b"\0" * 100_000)), secret=SECRET)
+
+
+def test_snapshot_is_encrypted():
+    import zlib
+
+    p = make_page()
+    p.note = wire("a-distinctive-plaintext-value")
+    blob = encode_snapshot(p, secret=SECRET, route="/")
+    data = base64.urlsafe_b64decode(blob)
+    assert b"distinctive" not in data
+    for start in range(len(data)):
+        try:
+            assert b"distinctive" not in zlib.decompress(data[start:])
+        except zlib.error:
+            pass
+    # A fresh nonce each time: the same state never seals the same way.
+    assert encode_snapshot(p, secret=SECRET, route="/") != blob
+
+
+def test_expired_snapshot_rejected(monkeypatch):
+    import time
+
+    blob = encode_snapshot(make_page(), secret=SECRET, route="/")
+    assert decode_snapshot(blob, secret=SECRET, max_age=60)
+    later = time.time() + 61
+    monkeypatch.setattr(time, "time", lambda: later)
+    with pytest.raises(SnapshotError, match="expired"):
+        decode_snapshot(blob, secret=SECRET, max_age=60)
+
+
+def test_initial_plain_values_stay_on_the_server():
+    from pywire.runtime.session_serializer import remember_initial_state
+
+    p = make_page()
+    p.api_key = "sk_live_do_not_leak"
+    p.config = {"db": "postgres://secret"}
+    p.picked = "none"
+    remember_initial_state(p)
+    p.picked = "row-3"  # a handler changed it: it must travel
+    snap = decode_snapshot(encode_snapshot(p, secret=SECRET, route="/"), secret=SECRET)
+    assert "api_key" not in snap["attrs"] and "config" not in snap["attrs"]
+    assert snap["attrs"]["picked"] == "row-3"
+    assert snap["attrs"]["count"] == 7  # wires always travel

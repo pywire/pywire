@@ -1,0 +1,12 @@
+# The Dockerfile copies the whole build context into the image: keep secrets,
+# local environments and databases out of it.
+.env
+.env.*
+.venv/
+.venv-workers/
+.git/
+__pycache__/
+*.pyc
+*.db
+*.sqlite3
+.pywire/deploy/

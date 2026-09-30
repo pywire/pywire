@@ -3,16 +3,19 @@
 Handles 'webtransport' scope type from Hypercorn.
 """
 
+import inspect
 import json
 import logging
 import uuid
 from typing import Any, Dict, Set, cast
-from urllib.parse import urlparse
 
-from pywire.runtime.base_path import prefix_of, strip_base
+from pywire.auth.guard import AuthDenied, enforce_auth
+
+from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page import BasePage
 from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
+from pywire.runtime.session_serializer import page_state_key, restore_page_state
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +51,13 @@ class WebTransportHandler:
             logger.debug(f"Error receiving connect message: {e}")
             return
 
-        # 2. Accept connection
+        # 2. Accept connection — unless a page on another site opened it: the
+        # session would act with the visitor's cookies.
+        from starlette.datastructures import Headers
+
+        if is_cross_site(Headers(scope=scope)):
+            logger.warning("Refused cross-site WebTransport session")
+            return
         await send({"type": "webtransport.accept"})
         logger.debug("WebTransport connection accepted")
 
@@ -146,58 +155,50 @@ class WebTransportHandler:
                     if session_id:
                         self.app.session_persister.schedule(session_id, page)
 
-                except Exception as e:
-                    # Like the WebSocket handler: the exception text can carry
-                    # internals (queries, paths), so only dev mode sends it.
-                    if getattr(self.app, "_is_dev_mode", False):
-                        error = str(e)
-                    else:
-                        logger.exception("WebTransport event failed")
-                        error = f"{type(e).__name__}: An error occurred"
+                except AuthDenied as denied:
+                    del self.connection_pages[connection_id]
                     await self._send_response(
                         send,
                         stream_id,
-                        with_ack({"type": "error", "error": error}, ack),
+                        with_ack({"type": "navigate", "path": denied.location}, ack),
+                    )
+                except HandlerArgsError as e:
+                    logger.warning("Refused an event: %s", e)
+                    await self._send_response(
+                        send,
+                        stream_id,
+                        with_ack({"type": "error", "error": REFUSED}, ack),
+                    )
+                except Exception as e:
+                    # The exception text can carry internals (queries,
+                    # paths), so only debug=True sends it.
+                    logger.exception("WebTransport event failed")
+                    await self._send_response(
+                        send,
+                        stream_id,
+                        with_ack(
+                            {"type": "error", "error": self.app._client_error(e)}, ack
+                        ),
                     )
 
         elif msg_type == "init":
             # Initialize page for this connection (similar to WS)
             # Parse path and instantiate page
             path = data.get("path", "/")
-            match = self.app.router.match(
-                strip_base(urlparse(path).path, prefix_of(scope))
-            )
-            if match:
-                page_class, params, variant_name = match
-                # Mock request object? Or extract from scope
-                # We need a Request-like object for Page init
-                from starlette.requests import Request
+            # Built like a WebSocket init: an HTTP scope for the page's own
+            # URL (a webtransport scope isn't one Starlette's Request takes).
+            from pywire.runtime.page_resolver import resolve_page
 
-                request = Request(scope)
-                query = dict(request.query_params)
-
-                # Build path info dict
-                path_info = {}
-                if hasattr(page_class, "__routes__"):
-                    for name in page_class.__routes__.keys():
-                        path_info[name] = name == variant_name
-                elif hasattr(page_class, "__route__"):
-                    path_info["main"] = True
-
-                # Build URL helper
-                from pywire.runtime.router import URLHelper
-
-                url_helper = None
-                if hasattr(page_class, "__routes__"):
-                    url_helper = URLHelper(page_class.__routes__)
-
-                page = page_class(
-                    request, params, query, path=path_info, url=url_helper
-                )
+            result = resolve_page(self.app.router, path, base_scope=dict(scope))
+            if result:
+                page = result[0]
+                # Identity comes from the connection, never from a snapshot.
+                user = None
                 if hasattr(self.app, "get_user"):
-                    page.user = self.app.get_user(request)
-
-                self.connection_pages[connection_id] = page
+                    user = self.app.get_user(page.request)
+                    if inspect.isawaitable(user):
+                        user = await user
+                page._act_as(user)
 
                 # Session ID: reuse from reconnect or generate new
                 client_session_id = data.get("session_id")
@@ -205,9 +206,12 @@ class WebTransportHandler:
                 if client_session_id:
                     try:
                         await self.app.session_persister.settle(client_session_id)
-                        snapshot = await self.app.session_store.get(client_session_id)
-                        if snapshot:
-                            restore_page_state(page, snapshot)
+                        snapshot = await self.app.session_store.get(
+                            page_state_key(client_session_id, page)
+                        )
+                        if snapshot and restore_page_state(
+                            page, snapshot, principal=user
+                        ):
                             session_id = client_session_id
                     except Exception:
                         logger.warning(
@@ -216,6 +220,18 @@ class WebTransportHandler:
                         )
                 if session_id is None:
                     session_id = str(uuid.uuid4())
+
+                # A page its !auth guard refuses is never attached.
+                try:
+                    await enforce_auth(page)
+                except AuthDenied as denied:
+                    self.connection_pages.pop(connection_id, None)
+                    await self._send_response(
+                        send, stream_id, {"type": "navigate", "path": denied.location}
+                    )
+                    return
+
+                self.connection_pages[connection_id] = page
                 self.session_ids[connection_id] = session_id
 
     async def _send_response(

@@ -105,7 +105,7 @@ def test_stateless_app_boots_without_pywire_parser(tmp_path):
         "import sys\n"
         "sys.modules['pywire_parser'] = None  # importing it raises ImportError\n"
         "from pywire.runtime.app import PyWire\n"
-        f"PyWire(pages_dir={str(tmp_path)!r}, stateless=True, secret_key='k' * 32)\n"
+        f"PyWire(pages_dir={str(tmp_path)!r}, stateless=True, secret_key='test-signing-key-0123456789abcdef')\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=60

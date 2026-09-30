@@ -3,30 +3,7 @@
 import ast
 from typing import Dict, Optional, Set
 
-# Mapping from Python snake_case field names to JS camelCase field names.
-# This must stay in sync with the field names used in runtime/events.py
-# and client/src/events/handler.ts.
-SNAKE_TO_CAMEL = {
-    "client_x": "clientX",
-    "client_y": "clientY",
-    "offset_x": "offsetX",
-    "offset_y": "offsetY",
-    "page_x": "pageX",
-    "page_y": "pageY",
-    "screen_x": "screenX",
-    "screen_y": "screenY",
-    "alt_key": "altKey",
-    "ctrl_key": "ctrlKey",
-    "meta_key": "metaKey",
-    "shift_key": "shiftKey",
-    "key_code": "keyCode",
-    "input_type": "inputType",
-    "form_data": "formData",
-    "target_id": "id",
-    "target_name": "name",
-    "target_tag": "tagName",
-}
-
+from pywire.runtime.events import EVENT_PARAMS
 
 # FormEventData reads like a mapping of the submitted fields.
 FORM_MAPPING_METHODS = frozenset({"keys", "values", "items"})
@@ -98,7 +75,7 @@ class _EventFieldVisitor(ast.NodeVisitor):
                 self.fields.add("formData")
             else:
                 snake = node.attr
-                camel = SNAKE_TO_CAMEL.get(snake, snake)
+                camel = EVENT_PARAMS.get(snake, snake)
                 self.fields.add(camel)
         self.generic_visit(node)
 
@@ -120,7 +97,7 @@ class _EventFieldVisitor(ast.NodeVisitor):
                 node.slice.value, str
             ):
                 snake = node.slice.value
-                camel = SNAKE_TO_CAMEL.get(snake, snake)
+                camel = EVENT_PARAMS.get(snake, snake)
                 self.fields.add(camel)
                 # Submit handlers subscript form fields: data["title"].
                 self.fields.add("formData")

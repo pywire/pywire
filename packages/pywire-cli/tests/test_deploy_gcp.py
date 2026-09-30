@@ -93,7 +93,7 @@ def _make_app(root: Path, *, module_name: str, stateless: bool) -> None:
     (pages / "index.wire").write_text("---\ncount = wire(0)\n---\n<p>{count}</p>\n")
     (root / f"{module_name}.py").write_text(
         "from pywire import PyWire\n"
-        f"app = PyWire(pages_dir='pages', stateless={stateless!r}, secret_key='test' * 8)\n"
+        f"app = PyWire(pages_dir='pages', stateless={stateless!r}, secret_key='test-signing-key-0123456789abcdef')\n"
     )
     (root / "pyproject.toml").write_text("[project]\nname='test'\n")
 
@@ -202,7 +202,7 @@ def test_gcp_functions_build_produces_self_contained_deploy_dir(
         )
         (root / "gcp_isolated_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test-signing-key-0123456789abcdef')\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(

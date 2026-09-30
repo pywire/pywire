@@ -18,7 +18,7 @@ import enum
 import math
 from typing import Any, Dict, List, Mapping, Optional, Set
 
-from pywire.core.wire import WireBase, WireList, WireSet
+from pywire.core.wire import WireBase, WireList, WireSet, _render_context
 from pywire.runtime.escape import escape_html
 
 TEXT_TYPES = frozenset({"text", "email", "url", "tel", "search", "password"})
@@ -73,8 +73,41 @@ def _record(page: Any, handler: str, writable: bool, options: Any) -> None:
     state = page.__dict__.get("_pw_bind_state")
     if state is None:
         state = page.__dict__["_pw_bind_state"] = {}
+    # The region rendering the element: when that region renders again,
+    # the entry goes, and comes back only if the element is still there.
+    context = _render_context.get()
+    region = context[1] if context and context[0] is page else None
     # Components prefix handler names; the page dispatches the bare name.
-    state[handler.rsplit(":", 1)[-1]] = {"writable": writable, "options": options}
+    state[handler.rsplit(":", 1)[-1]] = {
+        "writable": writable,
+        "options": options,
+        "region": region,
+    }
+
+
+def forget_region_binds(page: Any, region_id: Optional[str]) -> None:
+    """Drop what elements rendered in ``region_id`` (and regions inside it)
+    accept: the region is rendering again. ``None`` is a full render."""
+    if region_id is None:
+        page.__dict__["_pw_bind_state"] = {}
+        page.__dict__["_pw_region_parent"] = {}
+        return
+    state = page.__dict__.get("_pw_bind_state")
+    if not state:
+        return
+    parents: Dict[str, Optional[str]] = page.__dict__.get("_pw_region_parent") or {}
+
+    def inside(region: Optional[str]) -> bool:
+        seen: Set[str] = set()
+        while region is not None and region not in seen:
+            if region == region_id:
+                return True
+            seen.add(region)
+            region = parents.get(region)
+        return False
+
+    for name in [n for n, entry in state.items() if inside(entry.get("region"))]:
+        del state[name]
 
 
 def field_attrs(

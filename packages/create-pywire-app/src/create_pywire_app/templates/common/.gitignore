@@ -9,3 +9,9 @@ _pywire_build/
 _routes.py
 pywire_do.py
 _pywire_version.py
+
+# Secrets and local databases
+.env
+.env.*
+!.env.example
+*.db

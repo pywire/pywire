@@ -454,26 +454,41 @@ describe('UnifiedEventHandler', () => {
     expect(preventDefaultSpy).toHaveBeenCalled()
   })
 
-  it('should handle explicit arguments in JSON handlers', () => {
+  it('sends the signed args of a JSON handler back unchanged', () => {
     document.body.innerHTML = `
-            <button id="args" 
-                data-on-click='[{"handler": "save", "modifiers": [], "args": [1, "test"]}]'
+            <button id="args"
+                data-on-click='[{"handler": "save", "modifiers": [], "args": "WzEsInRlc3QiXQ.sig"}]'
             ></button>
         `
-    const btn = document.getElementById('args')!
-
     handler.init()
-    btn.click()
+    document.getElementById('args')!.click()
 
     expect(appMock.sendEvent).toHaveBeenCalledWith(
       'save',
-      expect.objectContaining({
-        args: {
-          arg0: 1,
-          arg1: 'test',
-        },
-      })
+      expect.objectContaining({ args: 'WzEsInRlc3QiXQ.sig' })
     )
+  })
+
+  it('sends the signed args of the event that fired', () => {
+    document.body.innerHTML = `<button id="b" data-on-click="del" data-pw-args-click="click.sig"
+        data-on-mouseover="peek" data-pw-args-mouseover="over.sig"></button>`
+    handler.init()
+    document.getElementById('b')!.click()
+
+    expect(appMock.sendEvent).toHaveBeenCalledWith(
+      'del',
+      expect.objectContaining({ args: 'click.sig' })
+    )
+  })
+
+  it('never sends data-arg-* attributes the page did not sign', () => {
+    // An attacker-controlled attribute must not become handler arguments.
+    document.body.innerHTML = '<button id="b" data-on-click="del" data-arg0="999"></button>'
+    handler.init()
+    document.getElementById('b')!.click()
+
+    const data = appMock.sendEvent.mock.calls[0][1] as Record<string, unknown>
+    expect(data.args).toBeUndefined()
   })
 
   it('should fallback to e.code for key modifiers', () => {

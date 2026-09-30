@@ -36,7 +36,8 @@ jobs:
           node-version: '24'
       - name: Deploy
         working-directory: examples/demo-site
-        run: npx --yes wrangler@4 deploy
+        # Same wrangler version as the lockfile entry for docs/package.json.
+        run: npx --yes wrangler@4.136.3 deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -90,7 +91,7 @@ jobs:
 
       - name: Deploy
         working-directory: examples/${{ matrix.example }}
-        run: uv run --with workers-py pywrangler deploy
+        run: uv run --with workers-py==1.17.5 pywrangler deploy
         env:
           # Vendor a copy of the workspace pywire, not a link back to it.
           UV_NO_EDITABLE: '1'

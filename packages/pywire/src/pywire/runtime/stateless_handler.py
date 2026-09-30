@@ -17,9 +17,14 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pywire.core.wire import WireBase
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
+from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page_resolver import resolve_page
-from pywire.runtime.protocol import build_update_payload
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.protocol import build_update_payload, unpack_client_message
+from pywire.runtime.session_serializer import (
+    remember_initial_state,
+    restore_page_state,
+)
 from pywire.runtime.snapshot_codec import (
     MAX_SNAPSHOT_LEN,
     SnapshotError,
@@ -29,6 +34,30 @@ from pywire.runtime.snapshot_codec import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The largest request body this endpoint reads: a snapshot at its cap plus
+# the event around it.
+MAX_BODY_LEN = MAX_SNAPSHOT_LEN + 2048
+
+
+class _TooLarge(Exception):
+    pass
+
+
+async def _read_body(request: Request) -> bytes:
+    """The request body, refusing to buffer more than ``MAX_BODY_LEN``.
+
+    Counted as it streams in, so a chunked body with no Content-Length (or a
+    false one) can't make the server hold more.
+    """
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_LEN:
+            raise _TooLarge
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _drop_unchanged_live(
@@ -69,39 +98,46 @@ class StatelessHandler:
     async def build_page(
         self, request: Request, path: str, snapshot: dict
     ) -> Optional[Any]:
-        """Resolve, instantiate, restore state, re-resolve user from request."""
+        """Resolve, instantiate, resolve the user from the request, restore state.
+
+        Raises ``SnapshotError`` when the snapshot is of another page or was
+        taken for another user.
+        """
         result = resolve_page(self.app.router, path, base_scope=dict(request.scope))
         if result is None:
             return None
         page, _params, _variant_name = result
-        snapshot.pop("user", None)  # defense in depth: identity never from client
-        restore_page_state(page, snapshot)
+        remember_initial_state(page)
         # Identity ALWAYS from the request (middleware/session), never the client
         resolved_user = self.app._resolve_user_for_request(request)
         if resolved_user is not None:
             page.user = resolved_user
+        if not restore_page_state(page, snapshot, principal=resolved_user):
+            raise SnapshotError("snapshot is of another page or user")
         return page
 
     async def handle_event(self, request: Request) -> Response:
-        # CSRF: snapshots aren't bound to a user, so a cross-site page could
-        # mint one and make a victim's browser post it with their cookies.
-        # A form or no-cors fetch can't send this content type, and a CORS
-        # fetch that does needs a preflight this endpoint never answers.
+        # CSRF: a cross-site page could post a snapshot it loaded (anonymous
+        # ones are anyone's) with the victim's cookies. A form or no-cors
+        # fetch can't send this content type, a CORS fetch that does needs a
+        # preflight this endpoint never answers, and the browser's
+        # Sec-Fetch-Site / Origin say where the request came from.
         content_type = request.headers.get("content-type", "")
         if content_type.split(";")[0].strip().lower() != "application/x-msgpack":
             return self._err(415, "expected application/x-msgpack")
-        if request.headers.get("sec-fetch-site", "same-origin") not in (
-            "same-origin",
-            "none",
-        ):
+        if is_cross_site(request.headers):
             return self._err(403, "cross-site request")
-        # Defense in depth: a declared length over the snapshot cap cannot
-        # hold a valid request — reject before buffering the body at all.
+        # A declared length over the cap is a cheap reject; the stream is
+        # counted too, for bodies that declare none (or lie).
         declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > MAX_SNAPSHOT_LEN + 2048:
+        if declared.isdigit() and int(declared) > MAX_BODY_LEN:
             return self._err(413, "request body too large")
         try:
-            data = msgpack.unpackb(await request.body(), raw=False)
+            body = await _read_body(request)
+        except _TooLarge:
+            return self._err(413, "request body too large")
+        try:
+            data = unpack_client_message(body)
             if not isinstance(data, dict):
                 raise ValueError("body is not a mapping")
         except Exception:
@@ -176,6 +212,9 @@ class StatelessHandler:
             nav = self._take_navigation(page)
             if nav is not None:  # handler called navigate()
                 return nav
+        except HandlerArgsError as exc:
+            logger.warning("stateless: refused an event: %s", exc)
+            return self._err(400, REFUSED)
         except Exception:
             logger.exception("stateless: event failed")
             return self._err(500, "event failed")

@@ -42,7 +42,11 @@ LOCAL_AUTH_DB=sqlite+aiosqlite:///./local-auth.db
 - `POST /auth/local/verify-token` — verify a JWT and return decoded claims
 - `POST /auth/local/revoke` — clear session + fire `channel.revoke(user_id)`
 
-On failure each route redirects to the `Referer` page with `?error=<code>` so your form page can display the message.
+On failure each route redirects to the `Referer` page (or the form's `error_next` path) with `?error=<code>` so your form page can display the message: `missing`, `exists` (register), `invalid` (login: unknown email and wrong password look the same, and take the same time) or `throttled`.
+
+Emails are compared case-insensitively (`Alice@Example.com` and `alice@example.com` are one account). Password hashing runs in a worker thread, so a burst of logins doesn't stall the server.
+
+`LocalIdP` limits attempts in each process: 20 per 5 minutes per client address and per email for login (failed attempts count, a success resets the email's count), and 20 registrations per 5 minutes per client address. Tune it with `LocalIdP(throttle=Throttle(limit=..., window=...))` (`from pywire_auth import Throttle`), or pass `throttle=None` to turn it off. Behind a reverse proxy, trust its forwarded headers (`uvicorn --proxy-headers`) so the client address is the user's, not the proxy's.
 
 ## Schema
 
@@ -122,14 +126,20 @@ error = self.query.get("error") if hasattr(self, "query") else None
     <input type="email" name="email" required />
     <input type="password" name="password" required />
     <input type="text" name="name" placeholder="Display name" />
-    <!-- Optional: grant an initial claim -->
-    <input type="text" name="role" placeholder="admin / editor" />
-    <input type="checkbox" name="email_verified" /> email_verified
     <button type="submit">Register</button>
 </form>
 ```
 
-Register accepts `email`, `password`, `name`, `role`, `email_verified` (checkbox) and any `next` / `error_next` redirect targets.
+Register reads `email`, `password`, `name` and the `next` / `error_next` redirect targets. It never takes claims from the form: a field such as `role` or `email_verified` is ignored, since anyone can post it. The new user's only claims are `sub` and `email`.
+
+Grant roles and other claims on the server, once your own check has passed (an invite code, a record in your database), with [`AuthActions`](./live-auth/) from a handler of the signed-in user's page:
+
+```python
+# e.g. in the handler that redeems an invite, after checking it
+await app.state.auth.grant(self.user, self.request, "role", "editor")
+```
+
+Mark an email as verified the same way, and only after the user has proved they control it (for example, by opening a link you emailed them).
 
 ## First-time DB setup checklist
 

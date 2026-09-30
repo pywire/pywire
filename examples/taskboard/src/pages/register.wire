@@ -5,9 +5,9 @@ error = ERRORS.get(query.get("error") or "", "")
 <h1>Create an account</h1>
 <p class="error" $if={error}>{error}</p>
 <!--
-    Only email, password and name. pywire-auth's register route also reads
-    `role` and `email_verified` from the form, so anyone could post those;
-    this app never reads claims for access, it uses its own memberships table.
+    Only email, password and name: pywire-auth's register route takes no
+    claims from the form. This app never reads claims for access anyway,
+    it uses its own memberships table.
 -->
 <form class="stack" method="post" action="/auth/local/register">
     <input type="hidden" name="next" value="/boards" />

@@ -19,18 +19,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from pywire.auth import (
-    ANONYMOUS,
-    clear_principal_from_session,
-    read_principal_from_session,
-    write_principal_to_session,
-)
+from pywire.auth import ANONYMOUS, read_principal_from_session
+
+from pywire_auth._http import is_cross_site, safe_next
+from pywire_auth.local.idp import normalize_email
+from pywire_auth.sessions import sign_in, sign_out
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +61,12 @@ def _error_redirect(request: Request, form: Any, fallback: str, error: str) -> s
     2. ``Referer`` header (the form page the user came from)
     3. ``fallback`` (framework-provided default, e.g. ``/auth/logout``)
 
-    The ``error`` code is appended as a query param. Always safe because
-    we only use same-origin URLs: form-field and Referer are origin-checked
-    via a simple path-prefix test.
+    The ``error`` code is appended as a query param. Only paths on this
+    site are used: the form field must be one, and the Referer must name
+    this host.
     """
-    explicit = str(form.get("error_next") or "").strip() if form else ""
-    if explicit.startswith("/"):
+    explicit = safe_next(str(form.get("error_next") or "").strip() if form else "", "")
+    if explicit:
         return _with_query(explicit, "error", error)
     referer = request.headers.get("referer", "")
     if referer:
@@ -75,8 +74,9 @@ def _error_redirect(request: Request, form: Any, fallback: str, error: str) -> s
             from urllib.parse import urlparse
 
             parsed = urlparse(referer)
-            if parsed.netloc == request.url.netloc and parsed.path:
-                return _with_query(parsed.path, "error", error)
+            path = safe_next(parsed.path, "")
+            if parsed.netloc == request.url.netloc and path:
+                return _with_query(path, "error", error)
         except Exception:
             pass
     return _with_query(fallback, "error", error)
@@ -94,18 +94,18 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
     ``idp`` is the configured ``LocalIdP`` instance.
     """
 
+    def client_key(request: Request) -> str:
+        return f"client:{request.client.host if request.client else ''}"
+
     async def register(request: Request) -> Response:
-        sid = _session_id(request)
+        if is_cross_site(request):
+            return Response("Cross-site request refused", status_code=403)
         form = await request.form()
         email = str(form.get("email") or "").strip()
         password = str(form.get("password") or "")
         name = str(form.get("name") or "").strip()
-        role = str(form.get("role") or "").strip()
-        email_verified = str(form.get("email_verified") or "") == "on"
-        next_url = (
-            request.query_params.get("next")
-            or str(form.get("next") or "")
-            or ctx.default_next
+        next_url = ctx.next_url(
+            request.query_params.get("next") or str(form.get("next") or "")
         )
 
         fallback = f"{prefix}/logout"  # always present
@@ -113,16 +113,22 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
             return RedirectResponse(
                 _error_redirect(request, form, fallback, "missing"), status_code=303
             )
+        # Every registration hashes a password: count them per client.
+        if idp.throttle is not None:
+            if idp.throttle.blocked(client_key(request)):
+                return RedirectResponse(
+                    _error_redirect(request, form, fallback, "throttled"),
+                    status_code=303,
+                )
+            idp.throttle.hit(client_key(request))
 
-        claims: Dict[str, Any] = {"email": email}
-        if role:
-            claims["role"] = role
-        if email_verified:
-            claims["email_verified"] = "true"
-
+        # Only the email becomes a claim. Anything else the form carries
+        # (`role`, `email_verified`, ...) is the visitor's say-so: roles
+        # are granted server-side with AuthActions, and an email is
+        # verified only by proving control of it.
         try:
             user_id = await idp.create_user(
-                email=email, password=password, name=name, claims=claims
+                email=email, password=password, name=name, claims={"email": email}
             )
         except ValueError:
             return RedirectResponse(
@@ -140,48 +146,39 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
                 f"{prefix}/local/register?error=unknown", status_code=303
             )
 
-        if sid:
-            data = await ctx.session_store.get(sid) or {}
-            write_principal_to_session(data, principal)
-            await ctx.session_store.set(sid, data, ttl=ctx.session_ttl)
-
-        if ctx.on_login:
-            try:
-                await ctx.on_login(principal, request)
-            except Exception:
-                logger.warning("on_login callback raised", exc_info=True)
-
+        await sign_in(ctx, request, principal)
+        await ctx.after_login(principal, request)
         return RedirectResponse(next_url, status_code=303)
 
     async def login(request: Request) -> Response:
-        sid = _session_id(request)
+        if is_cross_site(request):
+            return Response("Cross-site request refused", status_code=403)
         form = await request.form()
         email = str(form.get("email") or "").strip()
         password = str(form.get("password") or "")
-        next_url = (
-            request.query_params.get("next")
-            or str(form.get("next") or "")
-            or ctx.default_next
+        next_url = ctx.next_url(
+            request.query_params.get("next") or str(form.get("next") or "")
         )
 
+        keys = (client_key(request), f"email:{normalize_email(email)}")
+        if idp.throttle is not None and idp.throttle.blocked(*keys):
+            return RedirectResponse(
+                _error_redirect(request, form, f"{prefix}/logout", "throttled"),
+                status_code=303,
+            )
         principal = await idp.verify_credentials(email=email, password=password)
         if principal is None:
+            if idp.throttle is not None:
+                idp.throttle.hit(*keys)
             return RedirectResponse(
                 _error_redirect(request, form, f"{prefix}/logout", "invalid"),
                 status_code=303,
             )
+        if idp.throttle is not None:
+            idp.throttle.reset(keys[1])
 
-        if sid:
-            data = await ctx.session_store.get(sid) or {}
-            write_principal_to_session(data, principal)
-            await ctx.session_store.set(sid, data, ttl=ctx.session_ttl)
-
-        if ctx.on_login:
-            try:
-                await ctx.on_login(principal, request)
-            except Exception:
-                logger.warning("on_login callback raised", exc_info=True)
-
+        await sign_in(ctx, request, principal)
+        await ctx.after_login(principal, request)
         return RedirectResponse(next_url, status_code=303)
 
     async def token(request: Request) -> Response:
@@ -221,30 +218,11 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
         return JSONResponse({"valid": True, "decoded": decoded})
 
     async def revoke(request: Request) -> Response:
-        sid = _session_id(request)
-        next_url = await _next_from_form_or_query(request) or ctx.default_next
-        if not sid:
-            return RedirectResponse(next_url, status_code=303)
-
-        data = await ctx.session_store.get(sid) or {}
-        principal = read_principal_from_session(data) or ANONYMOUS
-
-        clear_principal_from_session(data)
-        data.pop("_refresh_token", None)
-        await ctx.session_store.set(sid, data, ttl=ctx.session_ttl)
-
-        if principal.is_authenticated and principal.user_id:
-            try:
-                await ctx.auth_channel.revoke(principal.user_id)
-            except Exception:
-                logger.warning("AuthChannel.revoke failed", exc_info=True)
-
-        if ctx.on_logout:
-            try:
-                await ctx.on_logout(principal, request)
-            except Exception:
-                logger.warning("on_logout callback raised", exc_info=True)
-
+        if is_cross_site(request):
+            return Response("Cross-site request refused", status_code=403)
+        next_url = ctx.next_url(await _next_from_form_or_query(request))
+        principal = await sign_out(ctx, request)
+        await ctx.after_logout(principal, request)
         return RedirectResponse(next_url, status_code=303)
 
     return [

@@ -1,6 +1,6 @@
 import { BaseTransport, ServerMessage } from './base'
 import { logger } from '../logger'
-import { getMountPath } from '../mount-path'
+import { getMountPath } from '../spa-meta'
 
 /**
  * WebTransport implementation using the browser's native WebTransport API.

@@ -652,11 +652,15 @@ export function activate(context: ExtensionContext) {
         VIRTUAL_ENV: path.dirname(venvBinDir),
       }
 
+      // Isolated mode (-I) and a working directory outside the workspace, so
+      // a repository can't shadow the server with its own
+      // pywire_language_server/ folder (or PYTHONPATH) and run code on open.
       const serverOptions: ServerOptions = {
         command: venvPython,
-        args: ['-m', 'pywire_language_server'],
+        args: ['-I', '-m', 'pywire_language_server'],
         options: {
           env: childEnv,
+          cwd: context.globalStorageUri.fsPath,
         },
       }
 

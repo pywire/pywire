@@ -12,10 +12,20 @@ import msgpack
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import logging
+from pywire.auth.guard import AuthDenied, enforce_auth
 from pywire.runtime.logging import log_callback_ctx
+from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page import BasePage
-from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
+from pywire.runtime.protocol import (
+    ClientMessageError,
+    dropped,
+    event_ack,
+    for_another_page,
+    unpack_client_message,
+    with_ack,
+)
+from pywire.runtime.session_serializer import page_state_key, restore_page_state
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -64,9 +74,26 @@ class WebSocketHandler:
         # subsequent reconciles we trust the client (a user can legitimately
         # clear a non-HttpOnly cookie in JS).
         self._connection_reconciled: Set[WebSocket] = set()
+        # The principal each connection acts as: resolved from the handshake
+        # once, then kept current by the live-auth channel, so a revoke
+        # still holds for pages the connection opens afterwards.
+        self._connection_users: Dict[WebSocket, Any] = {}
 
     async def handle(self, websocket: WebSocket) -> None:
         """Handle new WebSocket connection."""
+        # Browsers send cookies on a cross-site WebSocket handshake and the
+        # same-origin policy does not apply to sockets: without this check
+        # any site could drive the visitor's session (or, under `pywire
+        # dev`, relocate to debug endpoints). Closing before accept makes
+        # the handshake fail with 403.
+        if is_cross_site(websocket.headers):
+            logger.warning(
+                "Refused cross-site WebSocket from origin %r",
+                websocket.headers.get("origin"),
+            )
+            await websocket.close(code=1008)
+            return
+
         # Optional: Auth check hook
         if hasattr(self.app, "on_ws_connect"):
             if not await self.app.on_ws_connect(websocket):
@@ -92,7 +119,14 @@ class WebSocketHandler:
         try:
             while True:
                 data_bytes = await websocket.receive_bytes()
-                data = msgpack.unpackb(data_bytes, raw=False)
+                try:
+                    data = unpack_client_message(data_bytes)
+                except ClientMessageError as e:
+                    logger.warning("Refused a client message: %s", e)
+                    await websocket.send_bytes(
+                        msgpack.packb({"type": "error", "error": "invalid message"})
+                    )
+                    continue
                 await self._process_message(websocket, data)
 
         except WebSocketDisconnect:
@@ -106,17 +140,37 @@ class WebSocketHandler:
             self._cleanup_connection(websocket)
 
     async def _resolve_user(self, websocket: WebSocket) -> Any:
-        """Invoke ``app.get_user``, awaiting if it returns a coroutine.
+        """The connection's principal.
 
-        ``get_user`` is sync by default but ``pywire-auth`` overrides it
-        with an async implementation that reads from the session store.
+        Resolved through ``app.get_user`` (awaited if it returns a
+        coroutine) on first use, then the value live-auth events keep
+        current: re-reading the handshake scope would resurrect a principal
+        revoked since the socket opened.
         """
+        if websocket in self._connection_users:
+            return self._connection_users[websocket]
         if not hasattr(self.app, "get_user"):
             return None
         maybe = self.app.get_user(websocket)
         if inspect.isawaitable(maybe):
             maybe = await maybe
+        self._connection_users[websocket] = maybe
         return maybe
+
+    async def _deny(
+        self, websocket: WebSocket, location: str, ack: Optional[int] = None
+    ) -> None:
+        """Send the client away from a page its ``!auth`` guard refused.
+
+        The connection keeps no page afterwards: a later event resolves (and
+        guards) its page afresh instead of reaching the refused one.
+        """
+        page = self.connection_pages.pop(websocket, None)
+        if page is not None:
+            page._unmount()
+        await websocket.send_bytes(
+            msgpack.packb(with_ack({"type": "navigate", "path": location}, ack))
+        )
 
     def _subscribe_auth(self, websocket: WebSocket, principal: Any) -> None:
         """Spawn a live-auth listener for the connected principal.
@@ -156,58 +210,49 @@ class WebSocketHandler:
         try:
             async with channel.subscribe(user_id) as subscription:
                 async for event in subscription:
-                    page = self.connection_pages.get(websocket)
-                    if page is None:
-                        return
+                    user = self._connection_users.get(websocket)
                     kind = getattr(event, "kind", "")
                     if kind == "revoke":
-                        page.user = ANONYMOUS
+                        user = ANONYMOUS
                     elif getattr(event, "principal", None) is not None:
-                        page.user = event.principal
-                    else:
+                        user = event.principal
+                    elif user is not None and hasattr(user, "claims"):
                         # Only claims provided — rebuild a principal patch on
                         # top of the current one so existing name / user_id
                         # don't get wiped.
+                        from dataclasses import replace
+
                         claims = getattr(event, "claims", None) or []
-                        current = getattr(page, "user", None)
-                        if current is not None and hasattr(current, "claims"):
-                            from dataclasses import replace
-
-                            try:
-                                page.user = replace(current, claims=list(claims))
-                            except TypeError:
-                                pass
-                    # If the page has an !auth guard, re-evaluate against
-                    # the new principal. A newly-denied page (common after
-                    # revoke / role downgrade) emits a navigate so the
-                    # client leaves the protected page instead of silently
-                    # re-rendering with ANONYMOUS.
-                    if getattr(page.__class__, "__auth_required__", False):
-                        from pywire.auth.guard import run_auth_guard
-
                         try:
-                            denied = await run_auth_guard(page)
-                        except Exception:
-                            logger.warning(
-                                "live-auth: guard evaluation failed", exc_info=True
-                            )
-                            denied = None
-                        if denied is not None:
-                            location = denied.headers.get("location") or "/"
+                            user = replace(user, claims=list(claims))
+                        except TypeError:
+                            pass
+                    # Kept for the connection, not just the page: pages it
+                    # opens later act as the updated (or revoked) principal.
+                    self._connection_users[websocket] = user
+                    page = self.connection_pages.get(websocket)
+                    if page is None:
+                        continue
+                    page.user = user
+                    # A newly-denied page (common after revoke / role
+                    # downgrade) is detached and the client navigated away,
+                    # instead of silently re-rendering with ANONYMOUS.
+                    if getattr(page.__class__, "__auth_required__", False):
+                        try:
+                            await enforce_auth(page)
+                        except AuthDenied as denied:
                             try:
-                                await websocket.send_bytes(
-                                    msgpack.packb(
-                                        {"type": "navigate", "path": location}
-                                    )
-                                )
+                                await self._deny(websocket, denied.location)
                             except Exception:
                                 logger.debug(
                                     "live-auth: navigate send failed",
                                     exc_info=True,
                                 )
-                            # Stop pumping — the client will reconnect on
-                            # the new path and start a fresh subscription.
-                            return
+                            continue
+                        except Exception:
+                            logger.warning(
+                                "live-auth: guard evaluation failed", exc_info=True
+                            )
 
                     # Root-scope invalidation triggers a full re-render on
                     # the next render_update call (see page.render_update).
@@ -247,6 +292,7 @@ class WebSocketHandler:
         self._connection_cookies.pop(websocket, None)
         self._connection_httponly.pop(websocket, None)
         self._connection_reconciled.discard(websocket)
+        self._connection_users.pop(websocket, None)
         sub_task = self._auth_subs.pop(websocket, None)
         if sub_task and not sub_task.done():
             sub_task.cancel()
@@ -328,16 +374,16 @@ class WebSocketHandler:
         ``ack`` is the id of the client event that failed, echoed so the
         client settles exactly that event's optimistic prediction.
         """
-        # Gate on debug mode + dev mode
-        # If not in dev mode, send generic error message only
-        if not (getattr(self.app, "_is_dev_mode", False)):
+        # The exception text and trace can carry internals (queries, paths,
+        # source), so they are only sent under `pywire dev` with debug=True.
+        if not (
+            getattr(self.app, "debug", False)
+            and getattr(self.app, "_is_dev_mode", False)
+        ):
             await websocket.send_bytes(
                 msgpack.packb(
                     with_ack(
-                        {
-                            "type": "error",
-                            "error": f"{type(error).__name__}: An error occurred",
-                        },
+                        {"type": "error", "error": "An error occurred"},
                         ack,
                     )
                 )
@@ -453,18 +499,30 @@ class WebSocketHandler:
 
             page, _params, _variant_name = result
 
+            # Populate principal on initial page (parity with _handle_event and
+            # _handle_relocate — previously missed here so the first render
+            # always saw user=None). Only overwrite when resolution yields a
+            # real principal; without auth installed, `user` may be a page
+            # script variable we must not clobber.
+            resolved_user = await self._resolve_user(websocket)
+            page._act_as(resolved_user)
+
             # Session ID: reuse from reconnect or generate new
             client_session_id = data.get("session_id")
             session_id = None
             session_restored = False
 
             if client_session_id:
-                # Attempt to restore session state from store
+                # Restore this page's state, if the session has some for it
+                # and it was saved for the same user.
                 try:
                     await self.app.session_persister.settle(client_session_id)
-                    snapshot = await self.app.session_store.get(client_session_id)
-                    if snapshot:
-                        restore_page_state(page, snapshot)
+                    snapshot = await self.app.session_store.get(
+                        page_state_key(client_session_id, page)
+                    )
+                    if snapshot and restore_page_state(
+                        page, snapshot, principal=resolved_user
+                    ):
                         session_id = client_session_id
                         session_restored = True
                         logger.debug("Restored session %s", session_id)
@@ -478,15 +536,9 @@ class WebSocketHandler:
             if session_id is None:
                 session_id = str(uuid.uuid4())
 
-            # Populate principal on initial page (parity with _handle_event and
-            # _handle_relocate — previously missed here so the first render
-            # always saw user=None). Only overwrite when resolution yields a
-            # real principal; without auth installed, `user` may be a page
-            # script variable we must not clobber.
-            resolved_user = await self._resolve_user(websocket)
-            if resolved_user is not None:
-                page.user = resolved_user
-
+            # A refused page is never attached, so no handler, render hook
+            # or @mount hook of it runs for this connection.
+            await enforce_auth(page)
             previous = self.connection_pages.get(websocket)
             if previous is not None and previous is not page:
                 previous._unmount()
@@ -544,6 +596,8 @@ class WebSocketHandler:
             # Run @mount hooks after first render delivered to client
             await page._run_hooks(page.MOUNT_HOOKS)
 
+        except AuthDenied as denied:
+            await self._deny(websocket, denied.location)
         except Exception as e:
             logger.exception("Error initializing page")
             await self._send_error_trace(websocket, e)
@@ -578,10 +632,8 @@ class WebSocketHandler:
                     return
 
                 page, _params, _variant_name = result
-                resolved_user = await self._resolve_user(websocket)
-                if resolved_user is not None:
-                    page.user = resolved_user
-
+                page._act_as(await self._resolve_user(websocket))
+                await enforce_auth(page)
                 self.connection_pages[websocket] = page
 
                 # Force initial render to establish wire tracking
@@ -602,10 +654,12 @@ class WebSocketHandler:
 
             async with page._update_cycle():
                 if handler_name:
+                    # Runs the page's !auth guard before dispatching.
                     update = await page.handle_event(
                         cast(str, handler_name), event_data
                     )
                 else:
+                    await enforce_auth(page)
                     update = await page.render_update(init=False)
 
                 # Check for pending navigation
@@ -631,6 +685,13 @@ class WebSocketHandler:
             if session_id:
                 self.app.session_persister.schedule(session_id, page)
 
+        except AuthDenied as denied:
+            await self._deny(websocket, denied.location, ack)
+        except HandlerArgsError as e:
+            logger.warning("Refused an event: %s", e)
+            await websocket.send_bytes(
+                msgpack.packb(with_ack({"type": "error", "error": REFUSED}, ack))
+            )
         except Exception as e:
             logger.exception("Error handling event")
             await self._send_error_trace(websocket, e, ack)
@@ -698,7 +759,8 @@ class WebSocketHandler:
                 )
                 return
 
-            if response.status >= 400:
+            content_type = response.headers.get("content-type", "")
+            if response.status >= 400 or not content_type.startswith("text/html"):
                 # Error response — the body is the server's error page, a
                 # *different* document than the current SPA page. Morphing
                 # it into the live DOM would leak the error template's
@@ -709,6 +771,9 @@ class WebSocketHandler:
                 # by `history.pushState` before the relocate fired), so
                 # the browser will fetch and render the error page fresh
                 # with its own <head>.
+                # Anything that isn't HTML (JSON, text, a debug endpoint's
+                # file contents) is not a page either: the browser loads
+                # it itself, and its body never travels over the socket.
                 self._connection_in_error.add(websocket)
                 payload: Dict[str, Any] = {"type": "reload"}
                 if cookie_commands:
@@ -730,6 +795,13 @@ class WebSocketHandler:
             result = resolve_page(
                 self.app.router, path, base_scope=dict(websocket.scope)
             )
+            if result:
+                # The connection's principal: the one that will act on the
+                # new page's events. The internal dispatch guarded the
+                # request's cookies; this guards the socket's identity.
+                new_page = result[0]
+                new_page._act_as(await self._resolve_user(websocket))
+                await enforce_auth(new_page)
 
             html = response.body.decode("utf-8")
             payload: Dict[str, Any] = {"type": "update", "html": html}
@@ -755,14 +827,6 @@ class WebSocketHandler:
             #    — this instance is for handling subsequent events on the new page.)
             if result:
                 new_page, _params, _variant_name = result
-
-                # Migrate persistent user state from old page
-                if old_page:
-                    new_page.user = getattr(old_page, "user", None)
-                else:
-                    resolved_user = await self._resolve_user(websocket)
-                    if resolved_user is not None:
-                        new_page.user = resolved_user
 
                 # Replace page instance for this connection
                 if old_page is not None:
@@ -797,6 +861,8 @@ class WebSocketHandler:
                 if session_id:
                     self.app.session_persister.schedule(session_id, new_page)
 
+        except AuthDenied as denied:
+            await self._deny(websocket, denied.location)
         except Exception as e:
             # If relocation fails, force a full reload so the browser
             # hits the server and gets the proper error page

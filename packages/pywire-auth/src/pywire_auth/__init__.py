@@ -20,7 +20,7 @@ from pywire_auth._protocols import AuthStore, OIDCProvider
 from pywire_auth.actions import AuthActions
 from pywire_auth.integration import connect_auth
 from pywire_auth.middleware import AuthMiddleware
-from pywire_auth.local import LocalIdP, TokenIssuer
+from pywire_auth.local import LocalIdP, Throttle, TokenIssuer
 from pywire_auth.providers import (
     Auth0Provider,
     BaseOAuth2Provider,
@@ -53,6 +53,7 @@ __all__ = [
     "MemoryAuthStore",
     "MicrosoftProvider",
     "SQLAlchemyAuthStore",
+    "Throttle",
     "OIDCProvider",
     "TokenIssuer",
     "connect_auth",

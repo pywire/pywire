@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from pywire.runtime.session_persist import SessionPersister
+from pywire.runtime.session_serializer import page_state_key
 
 
 class RecordingStore:
@@ -73,8 +74,8 @@ async def test_sessions_are_throttled_independently() -> None:
     await settle_tasks()
 
     assert sorted((w["session_id"], w["count"]) for w in store.writes) == [
-        ("a", 1),
-        ("b", 2),
+        (page_state_key("a", Page(1)), 1),
+        (page_state_key("b", Page(2)), 2),
     ]
     await persister.drain()
     persister.flush("a")

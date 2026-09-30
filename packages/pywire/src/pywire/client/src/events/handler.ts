@@ -156,7 +156,7 @@ export class UnifiedEventHandler {
   private getHandlers(
     element: HTMLElement,
     eventType: string
-  ): Array<{ name: string; modifiers: string[]; args?: unknown[] }> {
+  ): Array<{ name: string; modifiers: string[]; args?: string }> {
     const handlerAttr = `data-on-${eventType}`
     const attrValue = element.getAttribute(handlerAttr)
     if (!attrValue) return []
@@ -176,7 +176,9 @@ export class UnifiedEventHandler {
                 ? handler.modifiers.filter((m: unknown): m is string => typeof m === 'string')
                 : []
 
-            const args = 'args' in handler && Array.isArray(handler.args) ? handler.args : undefined
+            // Signed by the server; sent back as-is.
+            const args =
+              'args' in handler && typeof handler.args === 'string' ? handler.args : undefined
 
             return [{ name, modifiers, args }]
           })
@@ -188,7 +190,8 @@ export class UnifiedEventHandler {
       // Legacy single handler
       const modifiersAttr = element.getAttribute(`data-modifiers-${eventType}`)
       const modifiers = modifiersAttr ? modifiersAttr.split(' ').filter((m) => m) : []
-      return [{ name: attrValue, modifiers, args: undefined }]
+      const args = element.getAttribute(`data-pw-args-${eventType}`) ?? undefined
+      return [{ name: attrValue, modifiers, args }]
     }
     return []
   }
@@ -316,7 +319,7 @@ export class UnifiedEventHandler {
     handlerName: string,
     modifiers: string[],
     e: Event,
-    explicitArgs?: unknown[]
+    args?: string
   ): void {
     this.debugLog('[processEvent]', eventType, 'handler:', handlerName, 'modifiers:', modifiers)
 
@@ -449,7 +452,7 @@ export class UnifiedEventHandler {
     const elementId = element.id || this.getUniqueId(element)
     const eventKey = `${elementId}-${eventType}-${handlerName}`
     const send = (): void => {
-      void this.dispatchEvent(element, eventType, handlerName, modifiers, e, explicitArgs)
+      void this.dispatchEvent(element, eventType, handlerName, modifiers, e, args)
     }
     this.schedule(eventKey, this.timingFor(eventType, modifiers, e.target), send)
   }
@@ -552,7 +555,6 @@ export class UnifiedEventHandler {
       type: 'validate',
       id: form.id || undefined,
       tagName: form.tagName,
-      args: {},
       field,
       formData: {
         ...this.formFields(form),
@@ -693,7 +695,7 @@ export class UnifiedEventHandler {
     handler: string,
     modifiers: string[],
     e: Event,
-    explicitArgs?: unknown[]
+    args?: string
   ): Promise<void> {
     // Double-submit guard: while an optimistic response is pending, the control
     // carries `data-pw-pending`. Ignore re-dispatches until the next update or
@@ -724,16 +726,6 @@ export class UnifiedEventHandler {
       return
     }
 
-    // Merge explicit args (from JSON) into args payload
-    let args: Record<string, unknown> = {}
-    if (explicitArgs && explicitArgs.length > 0) {
-      explicitArgs.forEach((val, i) => {
-        args[`arg${i}`] = val
-      })
-    } else {
-      args = this.getArgs(element)
-    }
-
     // Check for field mask — if present, only send listed fields.
     // null = attribute absent (no mask, send all fields)
     // empty string = attribute present but empty (send no event-specific fields)
@@ -746,8 +738,9 @@ export class UnifiedEventHandler {
       id: element.id || undefined,
       name: (element as HTMLElement & { name?: string }).name || undefined,
       tagName: element.tagName,
-      args: args,
     }
+    // The server-signed arguments of an inline call (`@click={delete(item.id)}`).
+    if (args) eventData.args = args
 
     // Attach ref info if present
     const refId = element.getAttribute('data-pw-ref')
@@ -910,21 +903,5 @@ export class UnifiedEventHandler {
       element.id = 'pywire-uid-' + Math.random().toString(36).substr(2, 9)
     }
     return element.id
-  }
-
-  private getArgs(element: Element): Record<string, unknown> {
-    const args: Record<string, unknown> = {}
-    if (element instanceof HTMLElement) {
-      for (const key in element.dataset) {
-        if (key.startsWith('arg')) {
-          try {
-            args[key] = JSON.parse(element.dataset[key] || 'null')
-          } catch {
-            args[key] = element.dataset[key]
-          }
-        }
-      }
-    }
-    return args
   }
 }

@@ -239,6 +239,12 @@ pywire dev --ssl-keyfile key.pem --ssl-certfile cert.pem
 
 In production, terminate SSL at a reverse proxy (Nginx, Caddy, or your cloud provider's load balancer) rather than at the application level.
 
+The WebSocket and long-poll endpoints refuse connections a browser opened from another site, so a page elsewhere can't act with your visitors' cookies. Browsers mark their own requests with `Sec-Fetch-Site`; for older browsers PyWire compares `Origin` with the `Host` header, or `X-Forwarded-Host` when a proxy rewrites `Host`. Clients that aren't browsers send neither and are unaffected.
+
+Anyone can open a long-poll session or fetch an upload token, so both are bounded per process: at most 20 long-poll sessions per client address and 1,000 in all (opening one more drops the session polled longest ago, and its tab opens a new one), and each client address may stage `20 × max_upload_size` bytes an hour through `/_pywire/upload` (more gets a 429). Behind a reverse proxy, run the server with forwarded headers trusted (`uvicorn --proxy-headers`) so the client address is the visitor's.
+
+With `debug=False` a failed event is answered with `An error occurred` on every transport; the exception, which can hold a query or a connection URL, only goes to the server log.
+
 ## Compression
 
 PyWire gzips text responses itself: pages, the client runtime, CSS, JSON and HTTP-transport updates. The client runtime is compressed once and cached, so a cold load of a small page is about 25 KB instead of 84 KB. Images, fonts and other already-compressed files pass through untouched.

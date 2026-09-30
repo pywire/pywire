@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { PyWireApp } from './app'
+import { resetSpaMeta } from './spa-meta'
+
+/** The server's config script, as page.py renders it. */
+function addMeta(meta: object): void {
+  const el = document.createElement('script')
+  el.id = '_pywire_spa_meta'
+  el.type = 'application/json'
+  el.textContent = JSON.stringify(meta)
+  document.body.appendChild(el)
+}
 
 // Mock dependencies
 vi.mock('./transport-manager', () => {
@@ -38,15 +48,13 @@ describe('PyWireApp', () => {
     document.body.innerHTML = ''
     // Remove any leftover SPA metadata from previous tests
     document.getElementById('_pywire_spa_meta')?.remove()
+    resetSpaMeta()
     app = new PyWireApp({ autoInit: false })
   })
 
   it('should intercept link clicks for sibling paths', async () => {
     // Setup metadata
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({ sibling_paths: ['/a'] })
-    document.head.appendChild(meta)
+    addMeta({ sibling_paths: ['/a'] })
 
     await app.init()
 
@@ -66,10 +74,7 @@ describe('PyWireApp', () => {
 
   it('should NOT intercept link clicks with data-pw-reload', async () => {
     // Setup metadata (enable pjax with matching route to ensure it would otherwise intercept)
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/reload'] })
-    document.head.appendChild(meta)
+    addMeta({ enable_pjax: true, all_paths: ['/reload'] })
 
     await app.init()
 
@@ -89,14 +94,11 @@ describe('PyWireApp', () => {
   })
 
   it('should NOT intercept clicks on static asset links', async () => {
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({
+    addMeta({
       enable_pjax: true,
       all_paths: ['/'],
       static_path: '/static',
     })
-    document.head.appendChild(meta)
 
     await app.init()
 
@@ -115,14 +117,11 @@ describe('PyWireApp', () => {
   })
 
   it('should NOT intercept clicks on static links with custom static_path', async () => {
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({
+    addMeta({
       enable_pjax: true,
       all_paths: ['/'],
       static_path: '/assets',
     })
-    document.head.appendChild(meta)
 
     await app.init()
 
@@ -141,10 +140,7 @@ describe('PyWireApp', () => {
   })
 
   it('should NOT intercept non-wire links when pjax enabled', async () => {
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/', '/about'] })
-    document.head.appendChild(meta)
+    addMeta({ enable_pjax: true, all_paths: ['/', '/about'] })
 
     await app.init()
 
@@ -163,10 +159,7 @@ describe('PyWireApp', () => {
   })
 
   it('should intercept wire links when pjax enabled', async () => {
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/', '/about'] })
-    document.head.appendChild(meta)
+    addMeta({ enable_pjax: true, all_paths: ['/', '/about'] })
 
     await app.init()
 
@@ -185,10 +178,7 @@ describe('PyWireApp', () => {
   })
 
   it('should intercept parameterized wire paths when pjax enabled', async () => {
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({ enable_pjax: true, all_paths: ['/users/:id'] })
-    document.head.appendChild(meta)
+    addMeta({ enable_pjax: true, all_paths: ['/users/:id'] })
 
     await app.init()
 
@@ -269,14 +259,11 @@ describe('PyWireApp', () => {
     ['/', false],
     ['/other', false],
   ])('under a URL prefix, link to %s is intercepted: %s', async (href, intercepted) => {
-    const meta = document.createElement('script')
-    meta.id = '_pywire_spa_meta'
-    meta.textContent = JSON.stringify({
+    addMeta({
       enable_pjax: true,
       mount_path: '/demo',
       all_paths: ['/demo/', '/demo/about'],
     })
-    document.head.appendChild(meta)
 
     await app.init()
 

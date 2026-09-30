@@ -43,8 +43,11 @@ async def test_event_argument_is_not_evaluated_at_render(page) -> None:
     assert len(inputs) == 4
     # `event.value` is read in the handler, so the client only sends `value`.
     assert all('data-pw-fields-input="value"' in tag for tag in inputs)
-    # Render-time names in the same call are still lifted per row.
-    assert 'data-arg-0="1"' in inputs[2] and 'data-arg-0="2"' in inputs[3]
+    # Render-time names in the same call are still lifted (and signed) per row.
+    tokens = [re.search(r'data-pw-args-input="([^"]+)"', tag) for tag in inputs]
+    assert tokens[0] is None and tokens[1] is None
+    assert tokens[2] and tokens[2].group(1) == page._pw_sign_args("_handler_2", 1)
+    assert tokens[3] and tokens[3].group(1) == page._pw_sign_args("_handler_2", 2)
 
 
 @pytest.mark.asyncio
@@ -58,6 +61,7 @@ async def test_event_argument_reads_the_fired_event(page) -> None:
     assert page.search_query.peek() == "alias"
 
     await page.handle_event(
-        "_handler_2", {"type": "input", "value": "x", "args": {"arg-0": 2}}
+        "_handler_2",
+        {"type": "input", "value": "x", "args": page._pw_sign_args("_handler_2", 2)},
     )
     assert page.renamed == [(2, "x")]

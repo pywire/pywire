@@ -267,7 +267,7 @@ def cloudflare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import pywire_do
 
     env = types.SimpleNamespace(
-        PYWIRE_SECRET_KEY="k" * 32,
+        PYWIRE_SECRET_KEY="test-signing-key-0123456789abcdef",
         APP_GREETING="hello",
         ASSETS=object(),
     )

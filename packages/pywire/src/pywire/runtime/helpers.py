@@ -1,4 +1,14 @@
+import logging
+import re
 from typing import Any, AsyncIterator
+
+from pywire.runtime.attrs import URL_ATTRS, safe_url
+
+logger = logging.getLogger(__name__)
+
+# An attribute name that can't end the tag or start another attribute
+# (Alpine/Vue-style ``@click`` and ``:class`` included).
+_ATTR_NAME = re.compile(r"[A-Za-z_:@][A-Za-z0-9_:.@-]*\Z")
 
 
 async def ensure_async_iterator(iterable: Any) -> AsyncIterator[Any]:
@@ -32,6 +42,10 @@ def render_attrs(
     - spread_attrs override defined_attrs, EXCEPT:
     - class: merged (appended).
     - style: merged (concatenated).
+
+    Spread attributes may come from data, so they are checked: a name that
+    isn't a plain attribute name, or is an inline ``on*`` event handler, is
+    dropped, and a URL attribute with a script URL is neutralized.
     """
     if not spread_attrs:
         spread_attrs = {}
@@ -40,6 +54,17 @@ def render_attrs(
     final_attrs = defined_attrs.copy()
 
     for k, v in spread_attrs.items():
+        k = str(k)
+        if not _ATTR_NAME.match(k) or k.lower().startswith("on"):
+            logger.warning("Dropped spread attribute %r", k)
+            continue
+        if (
+            k.lower() in URL_ATTRS
+            and v is not True
+            and v is not False
+            and v is not None
+        ):
+            v = safe_url(k, v)
         if k == "class" and "class" in final_attrs:
             final_attrs["class"] = f"{final_attrs['class']} {v}".strip()
         elif k == "style" and "style" in final_attrs:

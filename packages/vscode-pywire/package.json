@@ -23,6 +23,18 @@
   "extensionDependencies": [
     "ms-python.python"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace the language server only runs executables set in your user settings, never ones named by the workspace.",
+      "restrictedConfigurations": [
+        "pywire.pythonPath",
+        "pywire.tyPath",
+        "pywire.languageServer.customPath",
+        "pywire.languageServer.version"
+      ]
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -61,6 +73,7 @@
         "pywire.pythonPath": {
           "type": "string",
           "default": "python3",
+          "scope": "machine-overridable",
           "description": "Path to Python interpreter"
         },
         "pywire.trace.server": {
@@ -75,6 +88,7 @@
         },
         "pywire.tyPath": {
           "type": "string",
+          "scope": "machine-overridable",
           "description": "Path to the Ty language server executable. If not set, 'ty' is expected to be in the PATH."
         },
         "pywire.disableUpdateNotifications": {
@@ -89,6 +103,7 @@
         },
         "pywire.languageServer.customPath": {
           "type": "string",
+          "scope": "machine-overridable",
           "description": "Absolute path to a Python interpreter in a venv that already has pywire-language-server installed. When set, bypasses the extension-managed venv."
         }
       }
@@ -157,7 +172,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run sync-node-deps && pnpm run package",
+    "vscode:prepublish": "pnpm --dir ../prettier-plugin-pywire run build && pnpm run package",
     "compile": "pnpm run check-types && node build.js",
     "watch": "concurrently \"pnpm run watch:esbuild\" \"pnpm run watch:tsc\"",
     "watch:esbuild": "node build.js --watch",
@@ -165,7 +180,6 @@
     "package": "pnpm run check-types && node build.js --production",
     "vsix": "pnpm run vscode:prepublish && npx @vscode/vsce package --no-dependencies",
     "check-types": "tsc --noEmit -p ./",
-    "sync-node-deps": "./scripts/sync-node-deps",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

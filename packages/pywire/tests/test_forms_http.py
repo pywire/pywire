@@ -130,15 +130,40 @@ def test_the_handler_itself_is_not_reachable(client):
     assert "not a registered event handler" in r.text
 
 
+PNG = b"\x89PNG\r\n\x1a\n"
+
+
 def test_multipart_file_is_sized_from_bytes(client):
     handler = _handler(client)
     r = client.post(
         "/",
         data={"__pywire_handler": handler, **VALID},
-        files={"avatar": ("a.png", b"x" * 100, "image/png")},
+        files={"avatar": ("a.png", PNG + b"x" * 92, "image/png")},
     )
     assert r.status_code == 200
     assert "|100|user</p>" in r.text
+
+
+@pytest.mark.parametrize(
+    "name,body,ctype",
+    [
+        # Declared an image, isn't one.
+        ("a.png", b"x" * 100, "image/png"),
+        # SVG can carry script: image/* never admits it.
+        ("a.svg", b'<svg xmlns="http://www.w3.org/2000/svg"></svg>', "image/svg+xml"),
+        ("a.png", b"<svg onload=alert(1)>", "image/png"),
+        ("a.png", b"<!doctype html><script>alert(1)</script>", "image/png"),
+    ],
+)
+def test_image_accept_checks_the_bytes(client, name, body, ctype):
+    handler = _handler(client)
+    r = client.post(
+        "/",
+        data={"__pywire_handler": handler, **VALID},
+        files={"avatar": (name, body, ctype)},
+    )
+    assert r.status_code == 422
+    assert "FILE:Choose a file of type image/*" in r.text
 
 
 def test_upload_field_rules_render_and_apply(client):

@@ -32,7 +32,7 @@ content = "<strong>Bold</strong> and <em>italic</em>"
 ```
 
 > [!CAUTION]
-> Never use `{$html ...}` with untrusted user input.
+> Never use `{$html ...}` with untrusted user input. A browser doesn't run a `<script>` set through `innerHTML`, but pywire does: it runs every `<script>` in an update it applies, the way a full page load would, so a script that reaches the page through `{$html}` runs on the next update. Sanitize HTML you didn't write (for example with `nh3` or `bleach`) before rendering it raw, and consider a Content-Security-Policy.
 
 ## Attribute Binding
 
@@ -67,6 +67,8 @@ id = "main-image"
 <img {src} {id} />
 ```
 
+Bound values are HTML-escaped. A URL attribute (`href`, `src`, `action`, `formaction`, `poster`, …) built from an expression is also checked: a `javascript:` or `vbscript:` URL, or a `data:` URL in `href`/`action`/`formaction`, renders as `about:invalid#blocked`, so a link made from user data can't run script. (`data:` images in `src` still work, and a URL written literally in the template is left alone.)
+
 ### `class` and `style` Bindings
 
 The `class` and `style` attributes accept structured values in addition to plain strings, so you don't have to build the string yourself.
@@ -95,7 +97,7 @@ size = wire("lg")
 **`style`:**
 
 - **String** — passes through unchanged.
-- **Dict** — `key: value` pairs are joined with `;`. Entries with `None` values are dropped.
+- **Dict** — `key: value` pairs are joined with `;`. Entries with `None` values are dropped, and so is an entry whose key isn't a CSS property name or whose value could end the declaration or load or run something (`;`, `{`, `}`, `<`, `>`, `\`, `url(`, `image-set(`, `expression(`, `javascript:`). A style that needs `url()` is written as a string.
 
 ```pywire
 ---
@@ -143,3 +145,5 @@ from components.custom_input import CustomInput
 ```
 
 All three attributes (`placeholder`, `type`, `class`) pass through to the `<input>` element.
+
+Spread attributes may come from data, so they are checked as they render: a key that isn't a plain attribute name (letters, digits, `-`, `_`, `.`, `:`, `@`) or that names an inline `on…` event handler is dropped, and URL attributes get the same scheme check as bound ones. Handle events with `@click` and friends, not `onclick`.

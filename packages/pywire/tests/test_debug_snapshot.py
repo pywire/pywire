@@ -7,11 +7,9 @@ blob is a 4xx, never a decode. The signing secret is never echoed.
 
 import asyncio
 import base64
-import zlib
 from pathlib import Path
 
 import msgpack
-import pytest
 from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
@@ -38,12 +36,15 @@ def _blob(html: str) -> str:
 
 
 def _raw_state(blob: str) -> dict:
-    body = zlib.decompress(base64.urlsafe_b64decode(blob)[32:])
-    return msgpack.unpackb(body, raw=False)
+    from pywire.runtime.snapshot_codec import verify
+
+    return verify(blob, secret=SECRET.encode())
 
 
 def test_debug_on_returns_decoded_client_snapshot():
-    with TestClient(_app(debug=True), raise_server_exceptions=False) as c:
+    with TestClient(
+        _app(debug=True), base_url="http://localhost", raise_server_exceptions=False
+    ) as c:
         blob = _blob(c.get("/").text)
         # The client sends this blob back on the event POST …
         r = c.post(
@@ -96,6 +97,7 @@ def test_oversized_blob_rejected_without_decode(monkeypatch):
     monkeypatch.setattr("pywire.runtime.snapshot_codec.decode_snapshot", mock)
     app = _app(debug=True)
     request = MagicMock()
+    request.headers = {"host": "localhost"}
     request.query_params = {"blob": "A" * (MAX_SNAPSHOT_LEN + 1)}
     r = asyncio.run(app._handle_debug_snapshot(request))
     assert r.status_code == 413
@@ -103,7 +105,9 @@ def test_oversized_blob_rejected_without_decode(monkeypatch):
 
 
 def test_tampered_blob_4xx():
-    with TestClient(_app(debug=True), raise_server_exceptions=False) as c:
+    with TestClient(
+        _app(debug=True), base_url="http://localhost", raise_server_exceptions=False
+    ) as c:
         raw = bytearray(base64.urlsafe_b64decode(_blob(c.get("/").text)))
         raw[-1] ^= 0xFF
         r = c.get(
@@ -114,6 +118,8 @@ def test_tampered_blob_4xx():
 
 
 def test_missing_blob_400():
-    with TestClient(_app(debug=True), raise_server_exceptions=False) as c:
+    with TestClient(
+        _app(debug=True), base_url="http://localhost", raise_server_exceptions=False
+    ) as c:
         r = c.get("/_pywire/debug/snapshot")
         assert r.status_code == 400

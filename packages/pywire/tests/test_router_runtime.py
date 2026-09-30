@@ -14,6 +14,14 @@ class TestRouterRuntime(unittest.TestCase):
         self.assertIsNotNone(route.regex.match("/test"))
         self.assertIsNone(route.regex.match("/test/other"))
 
+    def test_trailing_newline_is_not_the_same_path(self) -> None:
+        # /admin%0A decodes to "/admin\n"; `$` would match before the newline.
+        for pattern in ("/admin", "/", "/user/:id:int"):
+            route = Route(pattern, MockPage, "p")
+            path = pattern.replace(":id:int", "1")
+            self.assertIsNotNone(route.match(path))
+            self.assertIsNone(route.match(path + "\n"))
+
     def test_route_compilation_params(self) -> None:
         # Test :param syntax
         route1 = Route("/user/:id", MockPage, "user")

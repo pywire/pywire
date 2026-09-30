@@ -135,12 +135,35 @@ def test_revocation_takes_effect_on_next_stateless_request():
         assert "RESOLVED-True" in html  # minted while allowed
         blob = _blob(html)
 
-        _PRINCIPAL["value"] = None  # revoked
+        # Same user, role revoked
+        _PRINCIPAL["value"] = ClaimsPrincipal(
+            is_authenticated=True, name="test", user_id="x:1"
+        )
         r = _stateless_post(client, blob)
         assert r.status_code == 200
         body = _payload_text(msgpack.unpackb(r.content, raw=False))
         assert "RESOLVED-False" in body, "cached verdict survived revocation"
         assert "RESOLVED-True" not in body
+    finally:
+        _PRINCIPAL["value"] = ADMIN
+        shutil.rmtree(td, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    "other",
+    [None, ClaimsPrincipal(is_authenticated=True, name="bob", user_id="x:2")],
+)
+def test_snapshot_of_one_user_is_refused_for_another(other):
+    """State minted for one user never rebuilds a page for someone else
+    (logged out, or another account in the same browser): the client gets
+    ``invalid snapshot`` and reloads for a fresh page."""
+    client, td = _make_client(ADMIN)
+    try:
+        blob = _blob(client.get("/authy").text)
+        _PRINCIPAL["value"] = other
+        r = _stateless_post(client, blob)
+        assert r.status_code == 400
+        assert msgpack.unpackb(r.content, raw=False) == {"error": "invalid snapshot"}
     finally:
         _PRINCIPAL["value"] = ADMIN
         shutil.rmtree(td, ignore_errors=True)

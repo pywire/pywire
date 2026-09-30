@@ -2,8 +2,9 @@
 
 Transport handlers (WS, HTTP long-poll, WebTransport) subscribe to an
 ``AuthChannel`` keyed by ``user_id`` and translate events into per-transport
-push messages. The default ``MemoryAuthChannel`` is in-process; multi-worker
-deployments plug in a ``RedisAuthChannel`` from ``pywire-auth[redis]``.
+push messages. The default ``MemoryAuthChannel`` is in-process; to reach tabs
+connected to other workers, implement the ``AuthChannel`` protocol over a
+shared pub/sub.
 """
 
 from __future__ import annotations
@@ -88,8 +89,9 @@ class AuthSubscription:
 class MemoryAuthChannel:
     """In-process AuthChannel implementation.
 
-    Works for single-worker deployments. Multi-worker apps should swap in
-    a cross-process backend (``RedisAuthChannel`` from ``pywire-auth[redis]``).
+    Its events only reach tabs connected to this process. Multi-worker apps
+    that need live pushes everywhere implement ``AuthChannel`` over a shared
+    pub/sub.
     """
 
     def __init__(self) -> None:

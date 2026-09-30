@@ -1,7 +1,7 @@
 import { BaseTransport, ServerMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
 import { logger } from '../logger'
-import { getMountPath } from '../mount-path'
+import { getMountPath } from '../spa-meta'
 
 const DEBUG_CONNECTION = false
 

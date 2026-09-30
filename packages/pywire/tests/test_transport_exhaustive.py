@@ -58,6 +58,7 @@ class TestTransportExhaustive:
     def setup_method(self, method) -> None:
         self.app = MagicMock()
         self.app.router = MagicMock()
+        self.app._client_error.return_value = "An error occurred"
         self.handler = HTTPTransportHandler(self.app)
 
     def test_session_expiry(self) -> None:

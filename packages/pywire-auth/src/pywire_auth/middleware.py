@@ -26,6 +26,8 @@ from pywire.auth import (
 from pywire.auth.session import AUTH_KEY
 from pywire.runtime.session_middleware import _verify_session_id
 
+from pywire_auth.sessions import UserSessions
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +42,7 @@ class AuthMiddleware:
         secret_key: str,
         policy_engine: Any,
         auth_channel: Any,
+        user_sessions: Optional[UserSessions] = None,
         cookie_name: str = "pywire_session",
     ) -> None:
         self.app = app
@@ -47,6 +50,7 @@ class AuthMiddleware:
         self.secret_key = secret_key
         self.policy_engine = policy_engine
         self.auth_channel = auth_channel
+        self.user_sessions = user_sessions
         self.cookie_name = cookie_name
 
     async def __call__(
@@ -104,7 +108,18 @@ class AuthMiddleware:
             # Some apps may not use the wrapper; look for a bare principal dict
             # under the same key.
             principal = read_principal_from_session({AUTH_KEY: data.get(AUTH_KEY)})
-        return principal or ANONYMOUS
+        if principal is None:
+            return ANONYMOUS
+        if self.user_sessions is not None:
+            # Claim changes and sign-outs made for this user elsewhere.
+            try:
+                principal = await self.user_sessions.reconcile(
+                    session_id, data, principal
+                )
+            except Exception:
+                logger.warning("User session record read failed", exc_info=True)
+                return ANONYMOUS
+        return principal
 
     def _extract_session_id(self, scope: dict) -> Optional[str]:
         headers = scope.get("headers", [])

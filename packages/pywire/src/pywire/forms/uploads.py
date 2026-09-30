@@ -6,18 +6,32 @@
 
 The rules render as ``accept=`` and size and count hints the client checks
 before it uploads anything, and the server checks them again on submit.
-``accept`` compares the name and the type the browser declared, as the
-browser does; to trust the bytes, inspect them in the handler.
+The server also looks at the file's first bytes: a type pattern
+(``image/*``, ``application/pdf``) needs a file whose bytes are that type,
+and a file that is a page or SVG is refused unless ``accept`` names its
+type (``image/svg+xml``) outright. ``image/*`` never admits SVG, which can
+carry script.
 """
 
 from __future__ import annotations
 
+import mimetypes
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence, Tuple, Union
 
 from pydantic_core import PydanticCustomError, core_schema
 
-from pywire.runtime.uploads import Upload, format_size, parse_size
+from pywire.runtime.uploads import (
+    ACTIVE_TYPES,
+    SNIFFABLE_TYPES,
+    Upload,
+    format_size,
+    parse_size,
+)
+
+
+# Top-level kinds whose formats are all recognized by their first bytes.
+_SNIFFED_KINDS = frozenset({"image/", "audio/", "video/"})
 
 
 @dataclass(frozen=True, init=False)
@@ -51,16 +65,39 @@ class UploadField:
             return True
         name = upload.filename.lower()
         ctype = upload.content_type.split(";", 1)[0].strip().lower()
+        sniffed = upload.sniffed_type
+        if sniffed is not None:
+            # A page or SVG is only welcome where accept names its type or
+            # extension outright (``image/svg+xml``, ``.svg``).
+            if sniffed in ACTIVE_TYPES and sniffed not in self._named_types():
+                return False
+            # Where the bytes are a known format, they decide the type.
+            ctype = sniffed or ctype
         for token in self.accept:
             if token.startswith("."):
                 if name.endswith(token):
                     return True
             elif token.endswith("/*"):
-                if ctype.startswith(token[:-1]):
+                if not ctype.startswith(token[:-1]) or ctype in ACTIVE_TYPES:
+                    continue
+                # A type pattern needs bytes of that kind when the format is
+                # one that can be recognized (every common image, audio and
+                # video format can).
+                if sniffed is None or sniffed or token[:-1] not in _SNIFFED_KINDS:
                     return True
             elif ctype == token:
-                return True
+                if sniffed is None or sniffed or token not in SNIFFABLE_TYPES:
+                    return True
         return False
+
+    def _named_types(self) -> set[str]:
+        named = {t for t in self.accept if "/" in t and not t.endswith("/*")}
+        for token in self.accept:
+            if token.startswith("."):
+                guessed = mimetypes.guess_type("x" + token)[0]
+                if guessed:
+                    named.add(guessed)
+        return named
 
     def _check_one(self, upload: Upload) -> None:
         if self.max_size is not None and upload.size > self.max_size:

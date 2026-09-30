@@ -454,3 +454,69 @@ def test_a_list_of_secrets_is_a_secret():
 
     with pytest.raises(TypeError, match="keys.api_keys is a secret"):
         wizard(Setup)
+
+
+LOCKED_PAGE = """---
+from pydantic import BaseModel
+from pywire import wizard
+
+class Account(BaseModel):
+    email: str
+    plan: str = "free"
+
+class About(BaseModel):
+    name: str
+
+class Signup(BaseModel):
+    account: Account
+    about: About
+
+signup = wizard(Signup, initial={"account": {"email": "", "plan": "free"}})
+done = wire("")
+
+def create(data: Signup):
+    done.value = f"{data.account.email}/{data.account.plan}/{data.about.name}"
+---
+<form $bind={signup} @submit={create}>
+  <input $if={signup.step == "account"} $bind={signup.account.email}>
+  <input $if={signup.step == "account"} $bind={signup.account.plan} LOCK>
+  <input $if={signup.step == "about"} $bind={signup.about.name}>
+  <button type="submit">{"Create" if signup.on_last_step else "Next"}</button>
+</form>
+<p id="done">{done}</p>
+"""
+
+
+@pytest.mark.parametrize("lock", ["readonly", "disabled", "disabled={True}"])
+@pytest.mark.parametrize("stateless", [False, True])
+def test_a_locked_field_keeps_the_server_value_to_the_last_step(lock, stateless):
+    root = Path(tempfile.mkdtemp())
+    (root / "pages").mkdir()
+    (root / "pages" / "index.wire").write_text(LOCKED_PAGE.replace("LOCK", lock))
+    app = PyWire(pages_dir=str(root / "pages"), secret_key=SECRET, stateless=stateless)
+    try:
+        with TestClient(app) as c:
+            html = c.get("/").text
+            handler = _hidden(html, "__pywire_handler")
+            forged = {"account.plan": "enterprise"}
+            r = c.post(
+                "/",
+                data={
+                    "__pywire_handler": handler,
+                    STATE: _hidden(html, STATE),
+                    "account.email": "a@b.co",
+                    **forged,
+                },
+            )
+            r = c.post(
+                "/",
+                data={
+                    "__pywire_handler": handler,
+                    STATE: _hidden(r.text, STATE),
+                    "about.name": "Al",
+                    **forged,
+                },
+            )
+            assert re.findall(r'id="done"[^>]*>([^<]*)<', r.text) == ["a@b.co/free/Al"]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)

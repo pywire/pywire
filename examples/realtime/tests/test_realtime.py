@@ -17,7 +17,7 @@ def test_a_vote_in_one_tab_updates_the_other(client):
         a.drain()
         b.drain()
 
-        assert "1 votes." in a.event(name, *args)
+        assert "1 votes." in a.event(name, args)
         assert "1 votes." in b.html()  # pushed; B did nothing
 
 
@@ -27,7 +27,7 @@ def test_votes_for_unknown_options_are_refused(client):
     with client.websocket_connect("/_pywire/ws") as ws:
         tab = Session(ws, "/")
         tab.drain()
-        # Handler arguments come from the browser, so a client can send any.
+        # The page signs the arguments it renders: any other value is refused.
         tab.send({"type": "event", "handler": name, "data": {"args": {"arg0": "Nope"}}})
         assert tab.recv()["type"] in ("error", "error_trace")
         assert live.total_votes.value == 0

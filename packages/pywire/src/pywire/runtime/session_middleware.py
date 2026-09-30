@@ -15,7 +15,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class SessionMiddleware:
         secret_key: Optional[str] = None,
         cookie_name: str = COOKIE_NAME,
         cookie_path: str = "/",
-        cookie_secure: bool = False,
+        cookie_secure: Optional[bool] = None,
         cookie_httponly: bool = True,
         cookie_samesite: str = "lax",
     ) -> None:
@@ -92,19 +92,11 @@ class SessionMiddleware:
         scope["pywire_session_id"] = session_id
         scope["pywire_session_is_new"] = is_new_session
 
-        # Load existing session data into scope
-        if not is_new_session:
-            data = await self.session_store.get(session_id)
-            scope["pywire_session_data"] = data
-        else:
-            scope["pywire_session_data"] = None
-
-        # Wrap send to inject Set-Cookie header for new sessions
-        if is_new_session:
-            assert session_id is not None
-            send = self._wrap_send(send, session_id)
-
-        await self.app(scope, receive, send)
+        # The cookie is (re)issued when the session is new, or when the app
+        # swapped in a new id (``rotate_session``, e.g. at login) — the id
+        # is read when the response starts, after the app has run.
+        issued = None if is_new_session else session_id
+        await self.app(scope, receive, self._wrap_send(send, scope, issued))
 
     def _get_session_id_from_scope(self, scope: dict) -> Optional[str]:
         """Extract and verify session ID from the Cookie header."""
@@ -123,8 +115,7 @@ class SessionMiddleware:
                 return _verify_session_id(signed_value, self.secret_key)
         return None
 
-    def _wrap_send(self, send: Any, session_id: str) -> Any:
-        """Wrap ASGI send to inject Set-Cookie on response start."""
+    def _cookie(self, scope: dict, session_id: str) -> str:
         signed = _sign_session_id(session_id, self.secret_key)
         cookie_parts = [
             f"{self.cookie_name}={signed}",
@@ -134,15 +125,53 @@ class SessionMiddleware:
         ]
         if self.cookie_httponly:
             cookie_parts.append("HttpOnly")
-        if self.cookie_secure:
+        secure = self.cookie_secure
+        if secure is None:
+            # Auto: a session cookie served over HTTPS never travels over
+            # plain HTTP. Behind a TLS-terminating proxy the scheme is only
+            # right when the server trusts its forwarded headers (uvicorn
+            # --proxy-headers); pass cookie_secure=True to force it.
+            secure = scope.get("scheme") == "https"
+        if secure:
             cookie_parts.append("Secure")
-        cookie_value = "; ".join(cookie_parts)
+        return "; ".join(cookie_parts)
+
+    def _wrap_send(self, send: Any, scope: dict, issued: Optional[str]) -> Any:
+        """Wrap ASGI send to inject Set-Cookie when the session id changed."""
 
         async def wrapped_send(message: dict) -> None:
             if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers.append((b"set-cookie", cookie_value.encode("latin-1")))
-                message = {**message, "headers": headers}
+                session_id = scope.get("pywire_session_id")
+                if session_id and session_id != issued:
+                    headers = list(message.get("headers", []))
+                    cookie = self._cookie(scope, session_id)
+                    headers.append((b"set-cookie", cookie.encode("latin-1")))
+                    message = {**message, "headers": headers}
             await send(message)
 
         return wrapped_send
+
+
+async def rotate_session(
+    scope: dict,
+    session_store: Any,
+    ttl: int,
+    data: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Move this request's session to a fresh id and return it.
+
+    Call it whenever the session's privilege changes (login, logout): an id
+    an attacker planted or saw before the change is worthless after it. The
+    session's data (or ``data``, when given) moves to the new id, the old id
+    is deleted, and ``SessionMiddleware`` sends the new cookie with the
+    response.
+    """
+    old = scope.get("pywire_session_id")
+    new = secrets.token_urlsafe(SESSION_ID_BYTES)
+    if data is None and old:
+        data = await session_store.get(old)
+    await session_store.set(new, dict(data or {}), ttl=ttl)
+    if old:
+        await session_store.delete(old)
+    scope["pywire_session_id"] = new
+    return new
