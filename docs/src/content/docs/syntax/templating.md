@@ -32,7 +32,7 @@ content = "<strong>Bold</strong> and <em>italic</em>"
 ```
 
 > [!CAUTION]
-> Never use `{$html ...}` with untrusted user input.
+> Never use `{$html ...}` with untrusted user input. A browser doesn't run a `<script>` set through `innerHTML`, but pywire does: it runs every `<script>` in an update it applies, the way a full page load would, so a script that reaches the page through `{$html}` runs on the next update. Sanitize HTML you didn't write (for example with `nh3` or `bleach`) before rendering it raw, and consider a Content-Security-Policy.
 
 ## Attribute Binding
 
