@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import msgpack
 from pywire.runtime.page import BasePage
 from pywire.runtime.session_persist import SessionPersister
+from pywire.runtime.session_serializer import page_state_key, snapshot_page_state
 from pywire.runtime.session_store import MemorySessionStore
 from pywire.runtime.websocket import WebSocketHandler
 from starlette.requests import Request
@@ -68,9 +69,22 @@ class MockPage(BasePage):
         return "<div>Test Page</div>"
 
 
+def _page_at(path: str) -> MockPage:
+    """A MockPage for ``path``, as ``resolve_page`` builds one on init."""
+    scope = {
+        "type": "http",
+        "path": path,
+        "headers": [],
+        "query_string": b"",
+        "method": "GET",
+    }
+    return MockPage(Request(scope), {}, {})
+
+
 class TestWebSocketHandler:
     def setup_method(self, method) -> None:
         self.app = MagicMock()
+        self.app.get_user.return_value = None
         self.app.router = MagicMock()
         self.app.session_persist_interval = 60
         self.app.session_persister = SessionPersister(self.app)
@@ -179,8 +193,12 @@ class TestWebSocketHandler:
         ws = MockWebSocket()
         store = MemorySessionStore()
         # Pre-populate a session
+        saved = _page_at("/")
+        saved.count = 5
         await store.set(
-            "existing-session", {"attrs": {"count": 5}, "wire_tags": {}}, ttl=60
+            page_state_key("existing-session", saved),
+            snapshot_page_state(saved),
+            ttl=60,
         )
 
         self.app.session_store = store
@@ -264,14 +282,14 @@ class TestWebSocketHandler:
         self.app.session_warn_size = 256 * 1024
         persister = self.app.session_persister
 
-        old_page = MockPage(MagicMock(), {}, {})
+        old_page = _page_at("/")
         old_page.count = 1
         persister.schedule("sess", old_page)
         for _ in range(3):
             await asyncio.sleep(0)
         old_page.count = 2
         persister.schedule("sess", old_page)  # held until the window closes
-        stored = await store.get("sess")
+        stored = await store.get(page_state_key("sess", old_page))
         assert stored is not None and stored["attrs"]["count"] == 1
 
         ws = MockWebSocket()
@@ -281,3 +299,82 @@ class TestWebSocketHandler:
         assert getattr(self.handler.connection_pages[ws], "count") == 2
         persister.flush("sess")
         await asyncio.sleep(0)
+
+
+class _OtherMockPage(MockPage):
+    pass
+
+
+class TestReconnectRestoresOnlyItsOwnPage:
+    """A client-sent session id restores state only into the page (class and
+    path) it was saved from, for the same user, and never restores the user."""
+
+    def setup_method(self, method) -> None:
+        self.app = MagicMock()
+        self.app.get_user.return_value = None
+        self.app.router = MagicMock()
+        self.app.session_persist_interval = 60
+        self.app.session_persister = SessionPersister(self.app)
+        self.app.session_store = MemorySessionStore()
+        self.app.debug = False
+        self.app._is_dev_mode = False
+        self.app.session_ttl = 60
+        self.app.session_warn_size = 256 * 1024
+        self.handler = WebSocketHandler(self.app)
+
+    async def _save(self, page: MockPage) -> None:
+        self.app.session_persister.schedule("sess", page)
+        await self.app.session_persister.settle("sess")
+
+    async def _reconnect(self, page_class: type, path: str) -> tuple[Any, Any]:
+        self.app.router.match.return_value = (page_class, {}, "main")
+        ws = MockWebSocket()
+        await self.handler._handle_init(
+            cast(WebSocket, ws), {"type": "init", "path": path, "session_id": "sess"}
+        )
+        ack = next(m for m in ws.sent_messages if m["type"] == "init_ack")
+        return self.handler.connection_pages[ws], ack
+
+    @pytest.mark.asyncio
+    async def test_same_page_restores(self) -> None:
+        saved = _page_at("/a")
+        saved.note = "secret-A"
+        await self._save(saved)
+        page, ack = await self._reconnect(MockPage, "/a")
+        assert ack["session_restored"] is True
+        assert getattr(page, "note") == "secret-A"
+
+    @pytest.mark.asyncio
+    async def test_other_path_does_not_restore(self) -> None:
+        saved = _page_at("/a")
+        saved.note = "secret-A"
+        await self._save(saved)
+        page, ack = await self._reconnect(MockPage, "/b")
+        assert ack["session_restored"] is False
+        assert not hasattr(page, "note")
+
+    @pytest.mark.asyncio
+    async def test_other_page_class_does_not_restore(self) -> None:
+        saved = _page_at("/a")
+        saved.note = "secret-A"
+        await self._save(saved)
+        page, ack = await self._reconnect(_OtherMockPage, "/a")
+        assert ack["session_restored"] is False
+        assert not hasattr(page, "note")
+
+    @pytest.mark.asyncio
+    async def test_user_is_never_restored(self) -> None:
+        saved = _page_at("/a")
+        saved.note = "alice's"
+        saved.user = {"id": "alice"}
+        await self._save(saved)
+        # Alice logged out: the reconnecting request resolves nobody.
+        page, ack = await self._reconnect(MockPage, "/a")
+        assert ack["session_restored"] is False
+        assert page.user is None
+        assert not hasattr(page, "note")
+        # Alice again: her state, with the user from the request.
+        self.app.get_user.return_value = {"id": "alice"}
+        page, ack = await self._reconnect(MockPage, "/a")
+        assert ack["session_restored"] is True
+        assert getattr(page, "note") == "alice's"

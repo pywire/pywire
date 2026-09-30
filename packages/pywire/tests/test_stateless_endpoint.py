@@ -50,12 +50,12 @@ def _error(r) -> str:
 
 
 def _sign(snapshot: dict) -> str:
-    """A snapshot sealed the way the server seals one, issued now to nobody."""
+    """A snapshot sealed the way the server seals one, issued now."""
     import time
 
     from pywire.runtime.snapshot_codec import sign
 
-    stamped = {"iat": int(time.time()), "sub": "", **snapshot}
+    stamped = {"iat": int(time.time()), **snapshot}
     return sign(stamped, secret=SECRET.encode())
 
 

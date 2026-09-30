@@ -92,13 +92,6 @@ class SessionMiddleware:
         scope["pywire_session_id"] = session_id
         scope["pywire_session_is_new"] = is_new_session
 
-        # Load existing session data into scope
-        if not is_new_session:
-            data = await self.session_store.get(session_id)
-            scope["pywire_session_data"] = data
-        else:
-            scope["pywire_session_data"] = None
-
         # The cookie is (re)issued when the session is new, or when the app
         # swapped in a new id (``rotate_session``, e.g. at login) — the id
         # is read when the response starts, after the app has run.
@@ -181,5 +174,4 @@ async def rotate_session(
     if old:
         await session_store.delete(old)
     scope["pywire_session_id"] = new
-    scope["pywire_session_data"] = data
     return new

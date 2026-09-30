@@ -72,15 +72,12 @@ def encode_snapshot(
     ``live`` maps each shared-state region to a digest of the HTML the client
     shows for it, so a poll can skip regions that haven't changed.
     """
+    # Holds no identity (re-resolved per request), only whose state it is.
     snap = snapshot_page_state(page)
-    # Never trust the client with identity — re-resolved per request.
-    snap.pop("user", None)
     _drop_initial_values(page, snap)
     snap["route"] = route
-    # Issued-at, and who it was issued to: a snapshot is only accepted for a
-    # while, and only for the same signed-in user.
+    # Issued-at: a snapshot is only accepted for a while.
     snap["iat"] = int(time.time())
-    snap["sub"] = snapshot_subject(page)
     if live:
         snap["live"] = live
     raw = msgpack.packb(snap)
@@ -94,14 +91,6 @@ def encode_snapshot(
             warn_size,
         )
     return _seal(raw, secret)
-
-
-def snapshot_subject(page: Any) -> str:
-    """Who a snapshot belongs to: the signed-in user's id, or "" if anonymous."""
-    user = getattr(page, "user", None)
-    if user is None or not getattr(user, "is_authenticated", False):
-        return ""
-    return str(getattr(user, "user_id", "") or "")
 
 
 def _drop_initial_values(page: Any, snap: Dict[str, Any]) -> None:

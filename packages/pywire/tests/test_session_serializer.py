@@ -9,6 +9,9 @@ from pywire.core.wire import (
 )
 from pywire.runtime.page import BasePage
 from pywire.runtime.session_serializer import (
+    page_identity,
+    page_state_key,
+    principal_key,
     restore_page_state,
     snapshot_page_state,
 )
@@ -28,6 +31,15 @@ def _make_request():
         url=MagicMock(path="/test"),
         query_params={},
         headers={},
+    )
+
+
+def _restore(page, snap, principal=None):
+    """Restore a hand-built snapshot as if taken from ``page``."""
+    return restore_page_state(
+        page,
+        {"page": page_identity(page), **snap},
+        principal=principal,
     )
 
 
@@ -100,11 +112,13 @@ class TestSnapshotPageState:
         snap = snapshot_page_state(page)
         assert snap["loading"] == {"fetch": True}
 
-    def test_user_serializable(self):
+    def test_user_never_in_snapshot(self):
         page = _make_page()
-        page.user = {"id": 1, "name": "test"}
+        page.user = {"id": 1, "name": "Alice"}
         snap = snapshot_page_state(page)
-        assert snap["user"] == {"id": 1, "name": "test"}
+        assert "user" not in snap
+        assert "Alice" not in repr(snap)
+        assert snap["principal"] == principal_key({"id": 1, "name": "Alice"})
 
     def test_user_none(self):
         page = _make_page()
@@ -122,7 +136,7 @@ class TestSnapshotPageState:
     def test_page_class_and_route_path(self):
         page = _make_page()
         snap = snapshot_page_state(page)
-        assert snap["page_class"] == "BasePage"
+        assert snap["page"] == page_identity(page)
         assert snap["route_path"] == "/test"
 
     def test_await_states(self):
@@ -155,7 +169,7 @@ class TestRestorePageState:
             "attrs": {"count": 42},
             "wire_tags": {"count": "primitive"},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert page.count.peek() == 42
 
     def test_restore_list_wire(self):
@@ -164,7 +178,7 @@ class TestRestorePageState:
             "attrs": {"items": [1, 2, 3]},
             "wire_tags": {"items": "list"},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert list(page.items) == [1, 2, 3]
 
     def test_restore_dict_wire(self):
@@ -173,7 +187,7 @@ class TestRestorePageState:
             "attrs": {"data": {"a": 1}},
             "wire_tags": {"data": "dict"},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert dict(page.data) == {"a": 1}
 
     def test_restore_set_wire(self):
@@ -182,7 +196,7 @@ class TestRestorePageState:
             "attrs": {"tags": ["x", "y"]},
             "wire_tags": {"tags": "set"},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert set(page.tags) == {"x", "y"}
 
     def test_restore_namespace_wire(self):
@@ -191,13 +205,13 @@ class TestRestorePageState:
             "attrs": {"pos": {"x": 10, "y": 20}},
             "wire_tags": {"pos": "namespace"},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert page.pos.peek() == {"x": 10, "y": 20}
 
     def test_restore_plain_attr(self):
         page = _make_page(title="old")
         snap = {"attrs": {"title": "new"}, "wire_tags": {}}
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert page.title == "new"
 
     def test_restore_new_wire_attr(self):
@@ -207,7 +221,7 @@ class TestRestorePageState:
             "attrs": {"count": 5},
             "wire_tags": {"count": "primitive"},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert isinstance(page.count, WirePrimitive)
         assert page.count.peek() == 5
 
@@ -218,18 +232,18 @@ class TestRestorePageState:
             "wire_tags": {},
             "loading": {"save": True},
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert page.loading == {"save": True}
 
-    def test_restore_user(self):
+    def test_restore_never_sets_user(self):
         page = _make_page()
         snap = {
             "attrs": {},
             "wire_tags": {},
             "user": {"id": 1, "name": "Alice"},
         }
-        restore_page_state(page, snap)
-        assert page.user == {"id": 1, "name": "Alice"}
+        _restore(page, snap)
+        assert page.user is None
 
     def test_restore_await_states(self):
         page = _make_page()
@@ -240,7 +254,7 @@ class TestRestorePageState:
                 "a1": {"status": "pending", "result": None, "error": None}
             },
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert page._await_states == {
             "a1": {"status": "pending", "result": None, "error": None}
         }
@@ -257,7 +271,7 @@ class TestRestorePageState:
                 },
             },
         }
-        restore_page_state(page, snap)
+        _restore(page, snap)
         assert "counter-1" in page._component_state_snapshots
         comp = page._component_state_snapshots["counter-1"]
         assert isinstance(comp["count"], WirePrimitive)
@@ -291,7 +305,7 @@ class TestRoundTrip:
             title="",
             flag=False,
         )
-        restore_page_state(page2, snap1)
+        assert restore_page_state(page2, snap1, principal={"id": 1})
 
         # Verify state matches
         assert page2.count.peek() == 42
@@ -300,7 +314,8 @@ class TestRoundTrip:
         assert page2.title == "My Page"
         assert page2.flag is True
         assert page2.loading == {"action": True}
-        assert page2.user == {"id": 1}
+        # Identity is the request's, never the snapshot's
+        assert page2.user is None
 
         # Snapshot again and compare
         snap2 = snapshot_page_state(page2)
@@ -313,7 +328,7 @@ class TestRoundTrip:
         snap1 = snapshot_page_state(page1)
 
         page2 = _make_page(tags=wire(set()))
-        restore_page_state(page2, snap1)
+        restore_page_state(page2, snap1, principal=None)
 
         # Sets are serialized as lists, so compare as sets
         assert set(page2.tags) == {"a", "b", "c"}
@@ -336,9 +351,7 @@ class TestSharedWires:
         shared = wire(3)
         page = _make_page()
         page.votes = shared
-        restore_page_state(
-            page, {"attrs": {"votes": 0}, "wire_tags": {"votes": "primitive"}}
-        )
+        _restore(page, {"attrs": {"votes": 0}, "wire_tags": {"votes": "primitive"}})
         assert shared.value == 3
 
     def test_wires_created_by_page_construction_are_owned(self):
@@ -349,3 +362,58 @@ class TestSharedWires:
 
         page = _Page(_make_request(), {}, {})
         assert snapshot_page_state(page)["attrs"]["count"] == 5
+
+
+class _OtherPage(BasePage):
+    pass
+
+
+class TestSnapshotOwnership:
+    """A snapshot restores only into the page it was taken from, for the
+    user it was taken for (H4)."""
+
+    def test_other_page_class_is_refused(self):
+        page = _make_page(note=wire("secret-A"))
+        snap = snapshot_page_state(page)
+        other = _OtherPage(_make_request(), {}, {})
+        other.note = wire("public-B")
+        other.note._owner = other._owner_token
+        assert restore_page_state(other, snap, principal=None) is False
+        assert other.note.peek() == "public-B"
+
+    def test_other_user_is_refused(self):
+        page = _make_page(note=wire("alice's draft"))
+        page.user = {"id": "alice"}
+        snap = snapshot_page_state(page)
+        fresh = _make_page(note=wire(""))
+        assert restore_page_state(fresh, snap, principal={"id": "bob"}) is False
+        assert restore_page_state(fresh, snap, principal=None) is False
+        assert fresh.note.peek() == ""
+        assert restore_page_state(fresh, snap, principal={"id": "alice"})
+        assert fresh.note.peek() == "alice's draft"
+
+    def test_snapshot_without_owner_is_refused(self):
+        page = _make_page(count=wire(0))
+        assert (
+            restore_page_state(
+                page,
+                {"attrs": {"count": 9}, "wire_tags": {"count": "primitive"}},
+                principal=None,
+            )
+            is False
+        )
+        assert page.count.peek() == 0
+
+    def test_each_page_of_a_session_has_its_own_key(self):
+        page = _make_page()
+        other_route = _make_page()
+        other_route.request.url.path = "/other"
+        other_class = _OtherPage(_make_request(), {}, {})
+        keys = {
+            page_state_key("s1", page),
+            page_state_key("s1", other_route),
+            page_state_key("s1", other_class),
+            page_state_key("s2", page),
+        }
+        assert len(keys) == 4
+        assert page_state_key("s1", page) == page_state_key("s1", _make_page())

@@ -148,21 +148,6 @@ def test_expired_snapshot_rejected(monkeypatch):
         decode_snapshot(blob, secret=SECRET, max_age=60)
 
 
-def test_snapshot_names_its_user():
-    class User:
-        is_authenticated = True
-        user_id = "local:42"
-
-    p = make_page()
-    p.user = User()
-    snap = decode_snapshot(encode_snapshot(p, secret=SECRET, route="/"), secret=SECRET)
-    assert snap["sub"] == "local:42"
-    anon = decode_snapshot(
-        encode_snapshot(make_page(), secret=SECRET, route="/"), secret=SECRET
-    )
-    assert anon["sub"] == ""
-
-
 def test_initial_plain_values_stay_on_the_server():
     from pywire.runtime.session_serializer import remember_initial_state
 

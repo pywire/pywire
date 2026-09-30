@@ -16,8 +16,16 @@ from pywire.auth.guard import AuthDenied, enforce_auth
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page import BasePage
-from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
+from pywire.runtime.protocol import (
+    ClientMessageError,
+    dropped,
+    event_ack,
+    for_another_page,
+    unpack_client_message,
+    with_ack,
+)
+from pywire.runtime.session_serializer import page_state_key, restore_page_state
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -111,7 +119,14 @@ class WebSocketHandler:
         try:
             while True:
                 data_bytes = await websocket.receive_bytes()
-                data = msgpack.unpackb(data_bytes, raw=False)
+                try:
+                    data = unpack_client_message(data_bytes)
+                except ClientMessageError as e:
+                    logger.warning("Refused a client message: %s", e)
+                    await websocket.send_bytes(
+                        msgpack.packb({"type": "error", "error": "invalid message"})
+                    )
+                    continue
                 await self._process_message(websocket, data)
 
         except WebSocketDisconnect:
@@ -484,18 +499,30 @@ class WebSocketHandler:
 
             page, _params, _variant_name = result
 
+            # Populate principal on initial page (parity with _handle_event and
+            # _handle_relocate — previously missed here so the first render
+            # always saw user=None). Only overwrite when resolution yields a
+            # real principal; without auth installed, `user` may be a page
+            # script variable we must not clobber.
+            resolved_user = await self._resolve_user(websocket)
+            page._act_as(resolved_user)
+
             # Session ID: reuse from reconnect or generate new
             client_session_id = data.get("session_id")
             session_id = None
             session_restored = False
 
             if client_session_id:
-                # Attempt to restore session state from store
+                # Restore this page's state, if the session has some for it
+                # and it was saved for the same user.
                 try:
                     await self.app.session_persister.settle(client_session_id)
-                    snapshot = await self.app.session_store.get(client_session_id)
-                    if snapshot:
-                        restore_page_state(page, snapshot)
+                    snapshot = await self.app.session_store.get(
+                        page_state_key(client_session_id, page)
+                    )
+                    if snapshot and restore_page_state(
+                        page, snapshot, principal=resolved_user
+                    ):
                         session_id = client_session_id
                         session_restored = True
                         logger.debug("Restored session %s", session_id)
@@ -509,18 +536,9 @@ class WebSocketHandler:
             if session_id is None:
                 session_id = str(uuid.uuid4())
 
-            # Populate principal on initial page (parity with _handle_event and
-            # _handle_relocate — previously missed here so the first render
-            # always saw user=None). Only overwrite when resolution yields a
-            # real principal; without auth installed, `user` may be a page
-            # script variable we must not clobber.
-            resolved_user = await self._resolve_user(websocket)
-            page._act_as(resolved_user)
-
             # A refused page is never attached, so no handler, render hook
             # or @mount hook of it runs for this connection.
             await enforce_auth(page)
-
             previous = self.connection_pages.get(websocket)
             if previous is not None and previous is not page:
                 previous._unmount()
@@ -669,6 +687,11 @@ class WebSocketHandler:
 
         except AuthDenied as denied:
             await self._deny(websocket, denied.location, ack)
+        except HandlerArgsError as e:
+            logger.warning("Refused an event: %s", e)
+            await websocket.send_bytes(
+                msgpack.packb(with_ack({"type": "error", "error": REFUSED}, ack))
+            )
         except Exception as e:
             logger.exception("Error handling event")
             await self._send_error_trace(websocket, e, ack)

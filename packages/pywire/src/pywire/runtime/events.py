@@ -1,5 +1,43 @@
 from typing import Any, Dict, Optional
 
+# The event fields a handler can take by parameter name
+# (``def on_input(value)``), each with its key in the event data the client
+# sends. The client controls every one of them: they describe what the user
+# did. Anything else it sends is only reachable through ``event``, and never
+# fills another parameter: inline call arguments (``@click={delete(item.id)}``)
+# come from the server alone (see ``handler_args``).
+EVENT_PARAMS: Dict[str, str] = {
+    "type": "type",
+    "id": "id",
+    "name": "name",
+    "target_id": "id",
+    "target_name": "name",
+    "target_tag": "tagName",
+    "value": "value",
+    "values": "values",
+    "checked": "checked",
+    "input_type": "inputType",
+    "form_data": "formData",
+    "detail": "detail",
+    "key": "key",
+    "code": "code",
+    "key_code": "keyCode",
+    "alt_key": "altKey",
+    "ctrl_key": "ctrlKey",
+    "meta_key": "metaKey",
+    "shift_key": "shiftKey",
+    "client_x": "clientX",
+    "client_y": "clientY",
+    "offset_x": "offsetX",
+    "offset_y": "offsetY",
+    "page_x": "pageX",
+    "page_y": "pageY",
+    "screen_x": "screenX",
+    "screen_y": "screenY",
+    "button": "button",
+    "buttons": "buttons",
+}
+
 
 class EventData:
     """Base event — universal fields only."""

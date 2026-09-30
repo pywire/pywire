@@ -74,24 +74,13 @@ function tick(el: HTMLElement, app: PyWireApp): void {
   // its response, so a slow handler can't pile up concurrent requests.
   state.inFlight = true
 
-  // Lifted args (e.g. `@poll={tick(idx)}` inside `$for`) arrive via data-arg-*,
-  // mirroring the click path's getArgs().
-  const args: Record<string, unknown> = {}
-  for (const key in el.dataset) {
-    if (key.startsWith('arg')) {
-      try {
-        args[key] = JSON.parse(el.dataset[key] || 'null')
-      } catch {
-        args[key] = el.dataset[key]
-      }
-    }
-  }
-
   const eventData: EventData = {
     type: 'poll',
     id: el.id || undefined,
     tagName: el.tagName,
-    args,
   }
+  // Signed args of a lifted call (`@poll={tick(idx)}` inside `$for`).
+  const args = el.getAttribute('data-pw-args-poll')
+  if (args) eventData.args = args
   app.sendEvent(handler, eventData)
 }

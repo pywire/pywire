@@ -316,7 +316,9 @@ async def test_table_and_select_items_carry_their_own_region(tmp_path):
     assert f'<tr data-pw-region="{row_site}#c">' in html
     assert f'<option data-pw-region="{option_site}#c">second</option>' in html
 
-    update = await page.handle_event("_handler_0", {"args": {"arg0": 1}})
+    update = await page.handle_event(
+        "_handler_0", {"args": page._pw_sign_args("_handler_0", 1)}
+    )
     [region] = [r for r in update["regions"] if r["region"].startswith(row_site)]
     assert region["region"] == f"{row_site}#c"
     assert region["html"].startswith(f'<tr data-pw-region="{row_site}#c">')

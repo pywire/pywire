@@ -2,11 +2,12 @@
 
 import hashlib
 import inspect
+import json
 import re
 import asyncio
 from collections import defaultdict
 from contextlib import contextmanager
-from .events import create_event_data
+from .events import EVENT_PARAMS, create_event_data
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
 from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
+from pywire.runtime.handler_args import HandlerArgsError, sign_args, verify_args
 from pywire.runtime.style_collector import StyleCollector
 from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
 from pywire.core.snippet import HeadBuffer, Snippet
@@ -100,6 +102,76 @@ _RAW_TEXT_SPAN_RE = re.compile(
     r"<(script|style|textarea|title)\b[^>]*>.*?</\1\s*>",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+def json_for_script(value: Any) -> str:
+    """``value`` as JSON that can sit inside a ``<script>`` element.
+
+    ``<``, ``>`` and ``&`` are written as JSON escapes, so no string in it can
+    close the element (``</script>``) or open a comment (``<!--``).
+    """
+    return (
+        json.dumps(value)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
+def _bind_handler(
+    sig: inspect.Signature, args: List[Any], fields: Dict[str, Any]
+) -> Tuple[List[Any], Dict[str, Any]]:
+    """How to call a handler: its signed ``args`` first, then event fields.
+
+    Parameters after the signed arguments get the event (``event`` /
+    ``event_data``), an event field by name (``value``, ``key``; see
+    ``EVENT_PARAMS``), or their default. The first required one left is given
+    the event, as ``def on_click(e)`` expects. Nothing else the client sends
+    reaches a parameter: ``def rename(name, is_admin=False)`` keeps its
+    default whatever the event data holds.
+    """
+    params = list(sig.parameters.values())
+    positional = [
+        p
+        for p in params
+        if p.kind
+        in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    takes_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+    if len(args) > len(positional) and not takes_varargs:
+        raise ValueError(
+            f"Handler takes {len(positional)} arguments, {len(args)} were signed"
+        )
+    filled = {p.name for p in positional[: len(args)]}
+    event_obj: Any = None
+
+    def event() -> Any:
+        nonlocal event_obj
+        if event_obj is None:
+            event_obj = create_event_data(fields)
+        return event_obj
+
+    kwargs: Dict[str, Any] = {}
+    fallback_used = False
+    for param in params:
+        if param.name in filled or param.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.VAR_POSITIONAL,
+        ):
+            continue
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            for name, key in EVENT_PARAMS.items():
+                if key in fields and name not in kwargs:
+                    kwargs[name] = fields[key]
+            continue
+        if param.name in ("event", "event_data"):
+            kwargs[param.name] = event()
+        elif EVENT_PARAMS.get(param.name) in fields:
+            kwargs[param.name] = fields[EVENT_PARAMS[param.name]]
+        elif param.default is inspect.Parameter.empty and not fallback_used:
+            kwargs[param.name] = event()
+            fallback_used = True
+    return list(args), kwargs
 
 
 def _raw_text_spans(html: str) -> List[Tuple[int, int]]:
@@ -864,6 +936,10 @@ class BasePage(metaclass=_PageMeta):
             raise ValueError(f"Malformed component event '{event_name}'")
         return comp_key, remainder
 
+    def _pw_sign_args(self, handler: str, *args: Any) -> str:
+        """The signed arguments an inline call renders with (``data-pw-args-*``)."""
+        return sign_args(self, handler, *args)
+
     def _pw_file_fields(self) -> Optional[Set[str]]:
         """Names of the plain file inputs in this page and its components,
         or None when one has a name only known at render time."""
@@ -923,6 +999,9 @@ class BasePage(metaclass=_PageMeta):
             )
             return
 
+        # Inline call arguments come only from what this page signed.
+        args = verify_args(self, event_name, event_data.get("args"))
+
         form_data = event_data.get("formData")
         if isinstance(form_data, Mapping) and has_upload_refs(form_data):
             # Files arrive as ids of staged uploads; handlers get Uploads.
@@ -941,56 +1020,8 @@ class BasePage(metaclass=_PageMeta):
                 handler(event_data)
             return
 
-        args = event_data.get("args", {})
-        normalized_args = {}
-        for key, value in args.items():
-            if key.startswith("arg"):
-                normalized_args[key.replace("-", "")] = value
-                continue
-            normalized_args[key] = value
-
-        call_kwargs = {k: v for k, v in event_data.items() if k != "args"}
-        call_kwargs.update(normalized_args)
-
-        sig = inspect.signature(handler)
-        bound_kwargs = {}
-
-        has_var_kw = False
-        for param in sig.parameters.values():
-            if param.kind == inspect.Parameter.VAR_KEYWORD:
-                has_var_kw = True
-                break
-
-        if has_var_kw:
-            bound_kwargs = call_kwargs
-        else:
-            for name in sig.parameters:
-                if name == "event_data" or name == "event":
-                    bound_kwargs[name] = create_event_data(call_kwargs)
-                    continue
-                if name in call_kwargs:
-                    bound_kwargs[name] = call_kwargs[name]
-
-            # Parity with the non-interactive form-post path (which calls
-            # ``handler(event_data)`` positionally): if a required positional
-            # param is still unbound, give it the event-data object so
-            # handlers like ``def on_click(e):`` or ``def handler(_):`` work
-            # across both dispatch paths.
-            event_obj: Any = None
-            for name, param in sig.parameters.items():
-                if name in bound_kwargs:
-                    continue
-                if param.kind not in (
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                    inspect.Parameter.KEYWORD_ONLY,
-                ):
-                    continue
-                if param.default is not inspect.Parameter.empty:
-                    continue
-                if event_obj is None:
-                    event_obj = create_event_data(call_kwargs)
-                bound_kwargs[name] = event_obj
-                break
+        fields = {k: v for k, v in event_data.items() if k != "args"}
+        call_args, call_kwargs = _bind_handler(inspect.signature(handler), args, fields)
 
         from pywire.shell import _request_ctx
         from pywire.core.dispatch import _page_context
@@ -999,9 +1030,9 @@ class BasePage(metaclass=_PageMeta):
         page_token = _page_context.set(self)
         try:
             if inspect.iscoroutinefunction(handler):
-                await handler(**bound_kwargs)
+                await handler(*call_args, **call_kwargs)
             else:
-                handler(**bound_kwargs)
+                handler(*call_args, **call_kwargs)
         finally:
             _page_context.reset(page_token)
             _request_ctx.reset(request_token)
@@ -1430,9 +1461,7 @@ class BasePage(metaclass=_PageMeta):
                     "page_interactive": not page_no_interactive,
                     "dev_reload_url": dev_reload_url,
                 }
-                import json
-
-                meta_json = json.dumps(meta)
+                meta_json = json_for_script(meta)
                 meta_script = f'<script id="_pywire_spa_meta" type="application/json">{meta_json}</script>'
 
                 # Determine client script URL
@@ -1921,6 +1950,9 @@ class BasePage(metaclass=_PageMeta):
         try:
             with self._owning():
                 await self._dispatch_event(event_name, event_data)
+        except HandlerArgsError:
+            # A forged request, not an app error: no @error hooks.
+            raise
         except Exception as exc:
             # Run @error hooks — if any returns truthy, suppress the error
             if await self._run_error_hooks(exc):

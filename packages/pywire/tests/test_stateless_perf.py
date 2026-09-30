@@ -7,7 +7,6 @@ above measurement so slow CI hosts never flake — they only trip on
 algorithmic regressions (e.g. shipping the whole loop instead of one row).
 """
 
-import json
 import re
 import statistics
 import time
@@ -103,16 +102,15 @@ async def test_1000_row_toggle_payload_under_2kb(tmp_path):
 
     m = re.search(
         r'data-pw-region="[^"]+#500"[^>]*>.*?data-on-click="([^"]+)"[^>]*'
-        r'data-arg-0="([^"]+)"',
+        r'data-pw-args-click="([^"]+)"',
         html,
         re.S,
     )
     assert m, "row-500 keyed wrapper with toggle button not found"
-    handler, arg = m.group(1), json.loads(m.group(2))
-    assert arg == 500
+    handler, token = m.group(1), m.group(2)
 
     update = await page.handle_event(
-        handler, {"type": "click", "tagName": "BUTTON", "args": {"arg0": arg}}
+        handler, {"type": "click", "tagName": "BUTTON", "args": token}
     )
     assert update["type"] == "regions"
     total = sum(len(r["html"]) for r in update["regions"])

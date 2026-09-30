@@ -56,16 +56,10 @@ describe('UnifiedEventHandler — @poll scheduling', () => {
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
   })
 
-  it('lifts data-arg-* into event args and parses the every value', () => {
-    // Codegen emits `data-arg-0` for `@poll={tick(idx)}` inside `$for`.
-    // Browsers expose that as dataset key `arg-0` (hyphen kept before a
-    // digit) and the server strips the hyphen to bind `arg0`
-    // (runtime/page.py `_dispatch_handler`). happy-dom's dataset enumeration
-    // omits hyphenated keys entirely, so `data-arg-0` is invisible to the
-    // production for-in lift loop here — `data-arg0` drives the same loop and
-    // produces the same `arg0` wire key the server-side pin asserts.
+  it('sends the signed args and parses the every value', () => {
+    // Codegen signs `@poll={tick(idx)}` args into `data-pw-args-poll`.
     document.body.innerHTML =
-      '<button id="poll" data-pw-poll="tick" data-arg0="1" data-pw-poll-every="100">Poll</button>'
+      '<button id="poll" data-pw-poll="tick" data-pw-args-poll="WzFd.sig" data-pw-poll-every="100">Poll</button>'
     handler.init()
 
     // every=100 parsed (not the 1000ms default): first tick at 100ms.
@@ -75,7 +69,7 @@ describe('UnifiedEventHandler — @poll scheduling', () => {
     vi.advanceTimersByTime(1)
     expect(appMock.sendEvent).toHaveBeenCalledWith(
       'tick',
-      expect.objectContaining({ type: 'poll', id: 'poll', args: { arg0: 1 } })
+      expect.objectContaining({ type: 'poll', id: 'poll', args: 'WzFd.sig' })
     )
   })
 

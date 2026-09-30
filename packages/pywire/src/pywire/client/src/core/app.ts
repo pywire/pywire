@@ -18,6 +18,14 @@ import { clearPollInFlight } from '../events/poll'
 import { RefManager } from './ref-manager'
 import { ReconnectOverlay } from './reconnect-overlay'
 import { logger } from './logger'
+import {
+  SpaMeta,
+  bootSpaMeta,
+  findSpaMetaScript,
+  getMountPath,
+  isSameOriginPath,
+  parseSpaMeta,
+} from './spa-meta'
 
 export interface PyWireConfig extends TransportConfig {
   /** Auto-initialize on DOMContentLoaded */
@@ -246,60 +254,65 @@ export class PyWireApp {
   }
 
   /**
-   * Load SPA navigation metadata from injected script tag.
+   * Apply the server-rendered config this page booted with (see spa-meta.ts).
+   * Read once: transport URLs, stateless mode and debug never change after.
    */
   protected loadSPAMetadata(): void {
-    const metaScript = document.getElementById('_pywire_spa_meta')
-    if (metaScript) {
-      try {
-        const meta = JSON.parse(metaScript.textContent || '{}')
-        this.siblingPaths = meta.sibling_paths || []
-        this.allPaths = meta.all_paths || []
-        this.pjaxEnabled = !!meta.enable_pjax
-        this.staticPath = meta.static_path || '/static'
-        this.mountPath = typeof meta.mount_path === 'string' ? meta.mount_path : ''
-        if (meta.interactive !== undefined) {
-          this.config.interactive = !!meta.interactive
-        }
-        if (meta.page_interactive !== undefined) {
-          this.config.pageInteractive = !!meta.page_interactive
-        }
-        if (meta.event_defaults && typeof meta.event_defaults === 'object') {
-          this.config.eventDefaults = meta.event_defaults as Record<string, string>
-        }
-        // Stateless (client-held state) mode: branch to the fetch-based
-        // transport BEFORE the WS/WebTransport/HTTP fallback order —
-        // stateless servers mount none of those endpoints.
-        if (meta.stateless) {
-          this.transport.useStatelessTransport()
-        }
-        if (meta.debug !== undefined) {
-          this.config.debug = !!meta.debug
-          logger.setDebug(this.config.debug)
-        }
-        // Apply reconnect config from server metadata
-        if (meta.reconnect_max_attempts !== undefined) {
-          this.config.reconnectMaxAttempts = meta.reconnect_max_attempts
-        }
-        if (meta.reconnect_overlay !== undefined) {
-          this.reconnectOverlay = new ReconnectOverlay({
-            enabled: meta.reconnect_overlay,
-          })
-        }
-        // Convert path patterns to regexes for matching
-        this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
-        this.allPathRegexes = this.allPaths.map((p) => this.patternToRegex(p))
-
-        // Dev-only SSE reload channel for non-interactive mode. The server
-        // only populates this field when running under `pywire dev` with
-        // interactive_server_mode=False, so it is a no-op in production.
-        if (typeof meta.dev_reload_url === 'string' && meta.dev_reload_url) {
-          this.connectDevReload(meta.dev_reload_url)
-        }
-      } catch (e) {
-        logger.warn('PyWire: Failed to parse SPA metadata', e)
-      }
+    const meta = bootSpaMeta()
+    this.allPaths = stringList(meta.all_paths)
+    this.pjaxEnabled = !!meta.enable_pjax
+    this.staticPath = isSameOriginPath(meta.static_path) ? meta.static_path : '/static'
+    this.mountPath = getMountPath()
+    if (meta.interactive !== undefined) {
+      this.config.interactive = !!meta.interactive
     }
+    if (meta.event_defaults && typeof meta.event_defaults === 'object') {
+      this.config.eventDefaults = meta.event_defaults as Record<string, string>
+    }
+    // Stateless (client-held state) mode: branch to the fetch-based
+    // transport BEFORE the WS/WebTransport/HTTP fallback order —
+    // stateless servers mount none of those endpoints.
+    if (meta.stateless) {
+      this.transport.useStatelessTransport()
+    }
+    if (meta.debug !== undefined) {
+      this.config.debug = !!meta.debug
+      logger.setDebug(this.config.debug)
+    }
+    if (typeof meta.reconnect_max_attempts === 'number') {
+      this.config.reconnectMaxAttempts = meta.reconnect_max_attempts
+    }
+    if (meta.reconnect_overlay !== undefined) {
+      this.reconnectOverlay = new ReconnectOverlay({
+        enabled: !!meta.reconnect_overlay,
+      })
+    }
+    this.allPathRegexes = this.allPaths.map((p) => this.patternToRegex(p))
+    this.applyPageMeta(meta)
+
+    // Dev-only SSE reload channel for non-interactive mode. The server
+    // only populates this field when running under `pywire dev` with
+    // interactive_server_mode=False, so it is a no-op in production.
+    if (isSameOriginPath(meta.dev_reload_url)) {
+      this.connectDevReload(meta.dev_reload_url)
+    }
+  }
+
+  /**
+   * Re-read the per-page part of the meta after a full-page update: whether
+   * the page is interactive and which paths are its SPA siblings.
+   */
+  protected refreshPageMeta(): void {
+    const meta = parseSpaMeta(findSpaMetaScript())
+    if (meta) this.applyPageMeta(meta)
+  }
+
+  private applyPageMeta(meta: SpaMeta): void {
+    if (meta.page_interactive !== undefined) {
+      this.config.pageInteractive = !!meta.page_interactive
+    }
+    this.siblingPaths = stringList(meta.sibling_paths)
+    this.pathRegexes = this.siblingPaths.map((p) => this.patternToRegex(p))
   }
 
   /**
@@ -534,7 +547,7 @@ export class PyWireApp {
       this.eventHandler?.refreshListeners()
       // The new page may have a different `!no_interactive` setting —
       // re-read the meta script so the per-page flag is current.
-      this.loadSPAMetadata()
+      this.refreshPageMeta()
 
       document.dispatchEvent(
         new CustomEvent('pywire:navigate', {
@@ -682,7 +695,7 @@ export class PyWireApp {
           this.eventHandler.refreshListeners()
           // Full HTML replacement (e.g. WS-driven PJAX nav) — re-read meta
           // so per-page `!no_interactive` flag tracks the current page.
-          this.loadSPAMetadata()
+          this.refreshPageMeta()
         }
 
         // An update message is the "request finished" signal: the morph already
@@ -921,4 +934,9 @@ export class PyWireApp {
     this.reconnectOverlay.hide()
     this.transport.disconnect()
   }
+}
+
+/** The strings in a meta list field; anything else is dropped. */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 }

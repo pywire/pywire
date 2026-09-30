@@ -14,7 +14,8 @@ from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page import BasePage
 from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
+from pywire.runtime.session_serializer import page_state_key, restore_page_state
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,13 @@ class WebTransportHandler:
                         stream_id,
                         with_ack({"type": "navigate", "path": denied.location}, ack),
                     )
+                except HandlerArgsError as e:
+                    logger.warning("Refused an event: %s", e)
+                    await self._send_response(
+                        send,
+                        stream_id,
+                        with_ack({"type": "error", "error": REFUSED}, ack),
+                    )
                 except Exception as e:
                     # Like the WebSocket handler: the exception text can carry
                     # internals (queries, paths), so only dev mode sends it.
@@ -216,9 +224,12 @@ class WebTransportHandler:
                 if client_session_id:
                     try:
                         await self.app.session_persister.settle(client_session_id)
-                        snapshot = await self.app.session_store.get(client_session_id)
-                        if snapshot:
-                            restore_page_state(page, snapshot)
+                        snapshot = await self.app.session_store.get(
+                            page_state_key(client_session_id, page)
+                        )
+                        if snapshot and restore_page_state(
+                            page, snapshot, principal=page.user
+                        ):
                             session_id = client_session_id
                     except Exception:
                         logger.warning(
