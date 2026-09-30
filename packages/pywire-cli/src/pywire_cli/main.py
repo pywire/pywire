@@ -664,11 +664,19 @@ def build(
 
         from pywire.compiler.build_artifacts import generate_cf_bundle
 
-        cf_bundle_dir = Path.cwd() / "_pywire_build"
+        from pywire_cli.deploy import edge_worker_layout
+
+        # The edge Worker lives in the app's source folder when it has one,
+        # so wrangler doesn't upload tests or .venv-workers.
+        worker_dir, worker_app = "", app or "src.main:app"
+        if platform == "cloudflare-edge":
+            worker_dir, worker_app = edge_worker_layout(Path.cwd(), worker_app)
+        worker_root = Path.cwd() / worker_dir
+        cf_bundle_dir = worker_root / "_pywire_build"
         routes_path = generate_cf_bundle(
             build_dir=Path(out_dir),
             cf_bundle_dir=cf_bundle_dir,
-            app_import=app,
+            app_import=worker_app if platform == "cloudflare-edge" else app,
             durable_objects=platform == "cloudflare",
         )
 
@@ -723,16 +731,31 @@ def build(
                 generate_cf_edge_wrangler_toml,
             )
 
-            (Path.cwd() / "entry.py").write_text(
-                generate_cf_edge_entry(Path.cwd(), app or "src.main:app")
+            main = f"{worker_dir}/entry.py" if worker_dir else "entry.py"
+            (worker_root / "entry.py").write_text(
+                generate_cf_edge_entry(Path.cwd(), worker_app)
             )
-            (Path.cwd() / "wrangler.toml").write_text(
-                generate_cf_edge_wrangler_toml(Path.cwd(), Path.cwd().name)
-            )
+            # wrangler.toml is the app's own config (routes, vars) once it
+            # exists, like `pywire deploy` scaffolds it; only create it.
+            wrangler_toml = Path.cwd() / "wrangler.toml"
+            prefix = f"{worker_dir}/" if worker_dir else ""
+            generated = [f"{prefix}_pywire_build/", f"{prefix}_routes.py", main]
+            if not wrangler_toml.exists():
+                wrangler_toml.write_text(
+                    generate_cf_edge_wrangler_toml(
+                        Path.cwd(), Path.cwd().name, main=main
+                    )
+                )
+                generated.append("wrangler.toml")
+            elif f'main = "{main}"' not in wrangler_toml.read_text():
+                console.print(
+                    f'[yellow]⚠ wrangler.toml should have main = "{main}"; '
+                    "the Worker's modules are there now.[/]"
+                )
             console.print(
-                f"✅ Generated [cyan]_pywire_build/[/], [cyan]{routes_path.name}[/], "
-                f"[cyan]entry.py[/], and [cyan]wrangler.toml[/] for the Cloudflare "
-                "edge Worker (stateless, no Durable Objects)"
+                "✅ Generated "
+                + ", ".join(f"[cyan]{name}[/]" for name in generated)
+                + " for the Cloudflare edge Worker (stateless, no Durable Objects)"
             )
         console.print(
             "✅ Static assets → [cyan].pywire/deploy/public/[/] "
@@ -1114,14 +1137,20 @@ def deploy(
                 )
             )
         else:
+            from pywire_cli.deploy import edge_worker_layout
+
+            worker_dir, worker_app = edge_worker_layout(project_root, app)
+            main = f"{worker_dir}/entry.py" if worker_dir else "entry.py"
             files_to_write.append(
                 (
                     "wrangler.toml",
-                    generate_cf_edge_wrangler_toml(project_root, project_name),
+                    generate_cf_edge_wrangler_toml(
+                        project_root, project_name, main=main
+                    ),
                 )
             )
             files_to_write.append(
-                ("entry.py", generate_cf_edge_entry(project_root, app_string=app))
+                (main, generate_cf_edge_entry(project_root, app_string=worker_app))
             )
         # Exclude local .venv from CF bundle to avoid duplicate packages
         files_to_write.append(
