@@ -20,7 +20,7 @@ status = wire("queued")
 
 The element is a conditional-render stop rule: when the handler reaches a terminal state, render the element conditionally so it unmounts. PyWire has no `.while` condition in v1. The timer rescans after morphs and removes unmounted elements. Use an explicit interval (for example `.every-500` or `.every-2000`); the default is 1000 ms.
 
-The overlap guard is **best effort in v1**: a poll element skips a tick while its request is in flight, but any response clears the in-flight flags globally. Do not treat this as a distributed scheduling guarantee. Protect the job with an idempotent store operation.
+The overlap guard is **best effort in v1**: a tick that comes due while a poll element's request is in flight waits for a response, but any response clears the in-flight flags globally. Do not treat this as a distributed scheduling guarantee. Protect the job with an idempotent store operation.
 
 ## Per-platform cookbook
 

@@ -103,20 +103,51 @@ describe('UnifiedEventHandler — @poll scheduling', () => {
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
   })
 
-  it('skips a tick while a prior dispatch is in flight', () => {
+  it('holds a tick that comes due while a prior dispatch is in flight', () => {
     mountPoll(400)
     handler.init()
 
     vi.advanceTimersByTime(400)
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
 
-    // No response yet → the next tick is skipped (overlap guard).
+    // No response yet → the next tick waits (overlap guard).
     vi.advanceTimersByTime(400)
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
 
-    // Response arrives (even an empty update) → in-flight cleared.
-    clearPollInFlight()
+    // The response arrives at 1000ms → the held tick goes out right away.
+    vi.advanceTimersByTime(200)
+    clearPollInFlight(appMock as unknown as PyWireApp)
+    vi.advanceTimersByTime(0)
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+
+    // The interval restarts from that tick: the next one is 400ms later.
+    clearPollInFlight(appMock as unknown as PyWireApp)
+    vi.advanceTimersByTime(399)
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+    vi.advanceTimersByTime(1)
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not send a held tick for an element the response unmounted', () => {
+    const el = mountPoll(400)
+    handler.init()
+
+    vi.advanceTimersByTime(800) // one sent, one held
+    el.remove()
+    clearPollInFlight(appMock as unknown as PyWireApp)
+    vi.advanceTimersByTime(1000)
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends nothing extra when the response beats the interval', () => {
+    mountPoll(400)
+    handler.init()
+
     vi.advanceTimersByTime(400)
+    clearPollInFlight(appMock as unknown as PyWireApp)
+    vi.advanceTimersByTime(399)
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(1)
     expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
   })
 

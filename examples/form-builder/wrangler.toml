@@ -19,3 +19,7 @@ PYWIRE_BASE_PATH = "/form-builder"
 # Cloudflare sets CF-Connecting-IP itself, so the rate limiter can trust it.
 CLIENT_IP_HEADER = "cf-connecting-ip"
 
+
+# Workers Logs: each request's CPU and wall time, in the dashboard.
+[observability]
+enabled = true

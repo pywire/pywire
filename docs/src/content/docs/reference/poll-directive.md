@@ -20,7 +20,7 @@ The compiled attributes are `data-pw-poll` and `data-pw-poll-every`. Every tick 
 - Timers are rescanned after every morph, navigation, and response.
 - Conditional render is the stop rule: remove the polled element when the work is terminal.
 - There is no `.while` condition in v1.
-- A per-element in-flight flag skips ticks while that element's request is pending.
+- A per-element in-flight flag holds a tick that comes due while that element's request is pending. The held tick goes out when a response arrives, and the interval restarts from it.
 - The guard is best effort: any response clears in-flight flags globally. An empty update only clears those flags; it does not trigger a poll rescan.
 
 ## Example: bounded background work

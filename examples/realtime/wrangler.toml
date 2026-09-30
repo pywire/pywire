@@ -26,3 +26,7 @@ new_sqlite_classes = ["PyWireAppDO"]
 PYWIRE_BASE_PATH = "/realtime"
 # One app object for every visitor, so everyone shares the poll and the chat.
 PYWIRE_PLACEMENT = "global"
+
+# Workers Logs: each request's CPU and wall time, in the dashboard.
+[observability]
+enabled = true

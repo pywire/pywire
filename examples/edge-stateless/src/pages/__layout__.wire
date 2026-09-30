@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Edge Stateless Demo</title>
+    <link rel="icon" href="data:,">
     <style>
         body { font-family: system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
         nav a { margin-right: 1rem; }

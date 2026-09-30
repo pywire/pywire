@@ -719,13 +719,15 @@ def build(
             generate_cf_edge_wrangler_toml,
             generate_cf_entry,
             generate_wrangler_toml,
+            snapshot_imports,
         )
 
         generated = [f"{prefix}_pywire_build/", f"{prefix}_routes.py", main]
+        preload = snapshot_imports(worker_root)
         if platform == "cloudflare":
             (worker_root / "entry.py").write_text(generate_cf_entry(Path.cwd()))
             (worker_root / "pywire_do.py").write_text(
-                generate_cf_durable_object(Path.cwd(), worker_app)
+                generate_cf_durable_object(Path.cwd(), worker_app, preload)
             )
             generated.append(f"{prefix}pywire_do.py")
             wrangler_content = generate_wrangler_toml(
@@ -740,7 +742,7 @@ def build(
             kind = "Cloudflare Workers (one app Durable Object per region)"
         else:
             (worker_root / "entry.py").write_text(
-                generate_cf_edge_entry(Path.cwd(), worker_app)
+                generate_cf_edge_entry(Path.cwd(), worker_app, preload)
             )
             wrangler_content = generate_cf_edge_wrangler_toml(
                 Path.cwd(), Path.cwd().name, main=main

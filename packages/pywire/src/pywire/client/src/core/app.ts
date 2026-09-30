@@ -607,7 +607,7 @@ export class PyWireApp {
       // Flush optimistic predictions the morph reconciled (see handleMessage).
       clearPending()
       settleForms()
-      clearPollInFlight()
+      clearPollInFlight(this)
       this.eventHandler?.refreshListeners()
 
       document.dispatchEvent(
@@ -692,7 +692,7 @@ export class PyWireApp {
         settleForms(msg.ack ?? null)
         // Same signal for @poll: a response arrived (even an empty one), so
         // clear the per-element in-flight overlap guard.
-        clearPollInFlight()
+        clearPollInFlight(this)
 
         // Per-update meta (sent by server `render_update`) — keeps
         // `pageInteractive` in sync after SPA nav, since SPA-nav responses
@@ -746,7 +746,7 @@ export class PyWireApp {
         releaseForms(msg.ack)
         // A poll dispatch that errored is no longer in flight — let the next
         // tick retry.
-        clearPollInFlight()
+        clearPollInFlight(this)
         break
 
       case 'error_trace':
@@ -754,7 +754,7 @@ export class PyWireApp {
         logger.error('PyWire: Error:', msg.error)
         revertPending(msg.ack)
         releaseForms(msg.ack)
-        clearPollInFlight()
+        clearPollInFlight(this)
         break
 
       case 'console':

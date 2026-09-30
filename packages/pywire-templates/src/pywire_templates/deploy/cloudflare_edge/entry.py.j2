@@ -1,4 +1,5 @@
 """PyWire edge worker — stateless, no Durable Objects."""
+import importlib
 import os
 import sys
 from urllib.parse import urlparse
@@ -6,6 +7,39 @@ from urllib.parse import urlparse
 from workers import Response, WorkerEntrypoint
 
 from pywire.adapters.oneshot import OneShotASGIAdapter
+
+# Imported here, modules go into the deploy-time memory snapshot instead of
+# being loaded by each new isolate's first request. The app itself can't be:
+# it reads its settings and secrets from `env`, which only exists inside a
+# request. So this imports what every request needs, then every library the
+# app's code imports (`pywire build` lists them).
+_SNAPSHOT = [
+    ("anyio._backends._asyncio", ""),
+    ("anyio.lowlevel", ""),
+    ("anyio.streams.memory", ""),
+    ("anyio.streams.stapled", ""),
+    ("starlette.middleware.base", ""),
+    ("pywire.runtime.attrs", ""),
+    ("pywire.runtime.escape", ""),
+    ("pywire.runtime.helpers", ""),
+    ("pywire.runtime.loader", ""),
+    ("pywire.runtime.page_resolver", ""),
+    ("pywire.runtime.session_persist", ""),
+    ("pywire.runtime.session_store", ""),
+    ("pywire.runtime.snapshot_codec", ""),
+    ("pywire.runtime.stateless_handler", ""),
+    ("pywire.shell", ""),
+{% for module, name in preload %}
+    ({{ module | tojson }}, {{ name | tojson }}),
+{% endfor %}
+]
+for _module, _name in _SNAPSHOT:
+    try:
+        _loaded = importlib.import_module(_module)
+        if _name and not hasattr(_loaded, _name):  # `from pkg import submodule`
+            importlib.import_module(f"{_module}.{_name}")
+    except Exception:  # anything that can't load now loads on first use
+        pass
 
 # Like `pywire dev`: for an app at src.main, both the bundle root and src/
 # are importable, so main.py can import its sibling packages.

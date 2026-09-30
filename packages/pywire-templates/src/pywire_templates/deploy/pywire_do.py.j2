@@ -13,6 +13,7 @@ shared state.
 """
 
 import asyncio
+import importlib
 import os
 import sys
 from urllib.parse import urlsplit
@@ -28,6 +29,20 @@ from workers import DurableObject
 # from `env`, which only exists inside a request.
 import msgpack  # noqa: F401
 import pywire.runtime.app  # noqa: F401
+
+# Every library the app's code imports (`pywire build` lists them) goes into
+# the snapshot too.
+for _module, _name in [
+{% for module, name in preload %}
+    ({{ module | tojson }}, {{ name | tojson }}),
+{% endfor %}
+]:
+    try:
+        _loaded = importlib.import_module(_module)
+        if _name and not hasattr(_loaded, _name):  # `from pkg import submodule`
+            importlib.import_module(f"{_module}.{_name}")
+    except Exception:  # anything that can't load now loads on first use
+        pass
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 # Sibling imports resolve the way `pywire run {{ app_module }}:{{ app_attr }}` does:

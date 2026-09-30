@@ -18,6 +18,8 @@ const DEFAULT_INTERVAL = 1000
 interface PollState {
   timer: number
   inFlight: boolean
+  /** A tick came due while the previous one was in flight. */
+  due: boolean
 }
 
 /** Running timers per element. Dead entries are dropped on the next rescan. */
@@ -35,7 +37,7 @@ export function schedulePolls(app: PyWireApp): void {
       live.add(node)
       if (!polls.has(node)) {
         const timer = window.setInterval(() => tick(node, app), pollInterval(node))
-        polls.set(node, { timer, inFlight: false })
+        polls.set(node, { timer, inFlight: false, due: false })
       }
     }
   })
@@ -52,9 +54,21 @@ export function schedulePolls(app: PyWireApp): void {
  * response (success or error) — including empty updates, where no morph runs
  * and therefore no rescan happens. Without this, a poll whose handler changes
  * nothing would stay permanently "in flight" and stop ticking.
+ *
+ * A tick that came due while the request was in flight is sent now rather
+ * than dropped, and the interval restarts from it: a response slower than
+ * the interval sets the pace instead of waiting for the next whole interval.
  */
-export function clearPollInFlight(): void {
-  for (const state of polls.values()) state.inFlight = false
+export function clearPollInFlight(app: PyWireApp): void {
+  for (const [el, state] of polls) {
+    state.inFlight = false
+    if (!state.due) continue
+    state.due = false
+    window.clearInterval(state.timer)
+    state.timer = window.setInterval(() => tick(el, app), pollInterval(el))
+    // After the current response's morph, which may unmount the element.
+    window.setTimeout(() => tick(el, app), 0)
+  }
 }
 
 function pollInterval(el: HTMLElement): number {
@@ -66,12 +80,17 @@ function pollInterval(el: HTMLElement): number {
 
 function tick(el: HTMLElement, app: PyWireApp): void {
   const state = polls.get(el)
-  if (!state || state.inFlight || !el.isConnected) return
+  if (!state || !el.isConnected) return
+  if (state.inFlight) {
+    state.due = true
+    return
+  }
   const handler = el.getAttribute('data-pw-poll')
   if (!handler) return
 
-  // Overlap guard: skip this tick while the prior dispatch is still awaiting
-  // its response, so a slow handler can't pile up concurrent requests.
+  // Overlap guard: a tick that comes due while the prior dispatch is still
+  // awaiting its response waits for it (see clearPollInFlight), so a slow
+  // handler can't pile up concurrent requests.
   state.inFlight = true
 
   // Lifted args (e.g. `@poll={tick(idx)}` inside `$for`) arrive via data-arg-*,
