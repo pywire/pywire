@@ -1,0 +1,4 @@
+# The maintainer owns every path, including workflows, release scripts and
+# the monorepo graph tooling. Code owner review is only enforced if the main
+# branch ruleset turns on "Require review from Code Owners".
+* @reecelikesramen

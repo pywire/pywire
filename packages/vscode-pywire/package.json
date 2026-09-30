@@ -157,7 +157,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run sync-node-deps && pnpm run package",
+    "vscode:prepublish": "pnpm --dir ../prettier-plugin-pywire run build && pnpm run package",
     "compile": "pnpm run check-types && node build.js",
     "watch": "concurrently \"pnpm run watch:esbuild\" \"pnpm run watch:tsc\"",
     "watch:esbuild": "node build.js --watch",
@@ -165,7 +165,6 @@
     "package": "pnpm run check-types && node build.js --production",
     "vsix": "pnpm run vscode:prepublish && npx @vscode/vsce package --no-dependencies",
     "check-types": "tsc --noEmit -p ./",
-    "sync-node-deps": "./scripts/sync-node-deps",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

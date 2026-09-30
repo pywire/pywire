@@ -13,7 +13,8 @@ and root orchestrator scripts. Subcommands:
   bump-floors [--expect N=V]  raise stale floors (pyproject + _FLOORS) to published
   check-ci                    ci.yml fan-out vs graph-derived fan-out
   check-publishable PKG       PKG's floors satisfiable by published versions
-  release-order [PKGS...]     topological merge order (auto-detects release PRs)
+  release-order [PKGS...]     topological merge order (auto-detects release PRs;
+                              --author LOGIN or $RELEASE_AUTHOR pins the opener)
   check-scripts               local-tooling contract (scripts/check, orchestrators)
 """
 
@@ -537,12 +538,49 @@ def release_order(mono: Monorepo, pkgs: list[str]) -> list[tuple[str, bool]]:
     return result
 
 
+RELEASE_BRANCH_PREFIX = "release-please--"
+RELEASE_LABEL = "autorelease: pending"
+
+
+def is_release_pr(pr: dict, author: str | None = None) -> bool:
+    """True for an open PR release-please itself opened, given `gh pr list
+    --json headRefName,isCrossRepository,labels,author` data. The branch
+    name alone proves nothing (a fork PR can pick any name), so the head
+    must live in this repo, carry the `autorelease: pending` label (only
+    triage+ accounts can label) and, when AUTHOR is given, come from the
+    release account. Keep in step with .github/scripts/stamp-release-prs.sh."""
+    if not pr.get("headRefName", "").startswith(RELEASE_BRANCH_PREFIX):
+        return False
+    if pr.get("isCrossRepository", True):
+        return False
+    if RELEASE_LABEL not in {label.get("name") for label in pr.get("labels") or []}:
+        return False
+    return author is None or (pr.get("author") or {}).get("login") == author
+
+
+def release_prs(prs: list[dict], author: str | None = None) -> tuple[list[str], list[dict]]:
+    """Split `gh pr list` rows into release components (one per trusted
+    component release PR) and the release-please--* rows that were ignored."""
+    components: list[str] = []
+    ignored: list[dict] = []
+    for pr in prs:
+        branch = pr.get("headRefName", "")
+        if not branch.startswith(RELEASE_BRANCH_PREFIX):
+            continue
+        if not is_release_pr(pr, author):
+            ignored.append(pr)
+            continue
+        component = release_component_from_branch(branch)
+        if component:
+            components.append(component)
+    return components, ignored
+
+
 def release_component_from_branch(branch: str) -> str | None:
     """'release-please--main--pywire' -> 'pywire'; grouped PRs -> None."""
-    prefix = "release-please--"
-    if not branch.startswith(prefix):
+    if not branch.startswith(RELEASE_BRANCH_PREFIX):
         return None
-    segments = branch[len(prefix):].split("--")
+    segments = branch[len(RELEASE_BRANCH_PREFIX):].split("--")
     if "components" in segments:
         idx = segments.index("components")
         return segments[idx + 1] if idx + 1 < len(segments) else None
@@ -758,10 +796,11 @@ def _cmd_check_publishable(mono: Monorepo, pkg: str, fresh: bool) -> int:
     return 1 if violations else 0
 
 
-def _cmd_release_order(mono: Monorepo, pkgs: list[str]) -> int:
+def _cmd_release_order(mono: Monorepo, pkgs: list[str], author: str | None) -> int:
     if not pkgs:
+        fields = "number,headRefName,isCrossRepository,labels,author"
         result = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName"],
+            ["gh", "pr", "list", "--state", "open", "--limit", "100", "--json", fields],
             capture_output=True,
             text=True,
             check=False,
@@ -769,11 +808,14 @@ def _cmd_release_order(mono: Monorepo, pkgs: list[str]) -> int:
         if result.returncode != 0:
             print("error: could not list open PRs with `gh pr list`", file=sys.stderr)
             return 2
-        pkgs = []
-        for pr in json.loads(result.stdout):
-            component = release_component_from_branch(pr["headRefName"])
-            if component:
-                pkgs.append(component)
+        pkgs, ignored = release_prs(json.loads(result.stdout), author)
+        for pr in ignored:
+            print(
+                f"ignoring PR #{pr.get('number')} ({pr['headRefName']}): not a release-please PR"
+                f" (needs a same-repo branch, the {RELEASE_LABEL!r} label"
+                + (f" and author {author})" if author else ")"),
+                file=sys.stderr,
+            )
         if not pkgs:
             print("no open release-please PRs")
             return 0
@@ -817,6 +859,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fresh", action="store_true", help="also fail while a floor is below published")
     p = subs.add_parser("release-order", help="merge order (default: open release-please PRs)")
     p.add_argument("pkgs", nargs="*", default=[])
+    p.add_argument("--author", default=os.environ.get("RELEASE_AUTHOR") or None,
+                   help="only count release PRs opened by this login (default: $RELEASE_AUTHOR)")
     subs.add_parser("check-scripts", help="local-tooling contract")
     ns = sub.parse_args(rest)
 
@@ -835,7 +879,7 @@ def main(argv: list[str] | None = None) -> int:
     if ns.command == "check-publishable":
         return _cmd_check_publishable(mono, ns.pkg, ns.fresh)
     if ns.command == "release-order":
-        return _cmd_release_order(mono, ns.pkgs)
+        return _cmd_release_order(mono, ns.pkgs, ns.author)
     if ns.command == "check-scripts":
         return _cmd_check_scripts(root)
     return 2

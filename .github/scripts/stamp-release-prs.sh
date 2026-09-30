@@ -3,9 +3,11 @@
 # PRs only bump versions and changelogs) and a real Release Floors Gate.
 #
 # Only PRs that release-please itself opened count: head branch in this
-# repo (not a fork) and authored by the RELEASE_PAT account. Matching on the
-# branch name alone let a fork PR named release-please--… get every
-# required check stamped green.
+# repo (not a fork), authored by the RELEASE_PAT account and labelled
+# "autorelease: pending" (only accounts with triage access can label).
+# Matching on the branch name alone let a fork PR named release-please--…
+# get every required check stamped green. Keep in step with
+# is_release_pr() in scripts/monorepo_graph.py.
 #
 # Env: GH_TOKEN (statuses: write), GITHUB_REPOSITORY, RELEASE_AUTHOR (login).
 set -euo pipefail
@@ -13,11 +15,12 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?}" "${RELEASE_AUTHOR:?}"
 
 prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
-  --json number,headRefOid,headRefName,isCrossRepository,author \
+  --json number,headRefOid,headRefName,isCrossRepository,author,labels \
   | jq -c --arg author "$RELEASE_AUTHOR" '[.[]
       | select(.headRefName | startswith("release-please--"))
       | select(.isCrossRepository | not)
-      | select(.author.login == $author)]')
+      | select(.author.login == $author)
+      | select(any(.labels[]; .name == "autorelease: pending"))]')
 
 if [ "$prs" = "[]" ]; then
   echo "No open release-please PRs"
