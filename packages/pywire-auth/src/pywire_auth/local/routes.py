@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -100,8 +100,6 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
         email = str(form.get("email") or "").strip()
         password = str(form.get("password") or "")
         name = str(form.get("name") or "").strip()
-        role = str(form.get("role") or "").strip()
-        email_verified = str(form.get("email_verified") or "") == "on"
         next_url = (
             request.query_params.get("next")
             or str(form.get("next") or "")
@@ -114,15 +112,13 @@ def build_local_routes(ctx: Any, prefix: str, idp: Any) -> List[Route]:
                 _error_redirect(request, form, fallback, "missing"), status_code=303
             )
 
-        claims: Dict[str, Any] = {"email": email}
-        if role:
-            claims["role"] = role
-        if email_verified:
-            claims["email_verified"] = "true"
-
+        # Only the email becomes a claim. Anything else the form carries
+        # (`role`, `email_verified`, ...) is the visitor's say-so: roles
+        # are granted server-side with AuthActions, and an email is
+        # verified only by proving control of it.
         try:
             user_id = await idp.create_user(
-                email=email, password=password, name=name, claims=claims
+                email=email, password=password, name=name, claims={"email": email}
             )
         except ValueError:
             return RedirectResponse(
