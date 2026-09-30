@@ -12,7 +12,6 @@ pip install pywire-auth
 Optional extras:
 
 - `pywire-auth[sqlalchemy]` — persistent user store (see [Local IdP & Persistence](./authentication/local-idp/))
-- `pywire-auth[redis]` — cross-worker live-auth channel
 
 ## Mental model
 
@@ -134,15 +133,25 @@ def greet():
 
 ## Mutating claims at runtime
 
-`app.state.auth` (an `AuthActions` helper) bundles three writes — the persistent user row, the current session snapshot, and a live fan-out event — into one call:
+`app.state.auth` (an `AuthActions` helper) bundles three writes — the persistent user row, every session the user is signed in with, and a live fan-out event — into one call. It acts on the user you pass, so an admin page can manage other users the same way:
 
 ```python
-await app.state.auth.grant(self.user, self.request, "role", "admin")
-await app.state.auth.revoke_claim(self.user, self.request, "role")
-await app.state.auth.revoke_session(self.user, self.request)
+await app.state.auth.grant(user, "role", "admin")
+await app.state.auth.revoke_claim(user, "role")
+await app.state.auth.revoke_sessions(user)  # sign out everywhere
 ```
 
 Changes persist across hard reloads and survive logout/login. Every tab the user has open re-renders immediately. See [Live Auth Updates](./authentication/live-auth/).
+
+## Session security
+
+`connect_auth` takes care of the usual session attacks:
+
+- Signing in or out moves the session to a new id, so an id planted in a browser before login is useless after it.
+- The session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` on requests that arrived over HTTPS. Behind a proxy that terminates TLS, run the server with forwarded headers trusted (`uvicorn --proxy-headers`) or pass `connect_auth(..., cookie_secure=True)`.
+- `next=` and `error_next=` only redirect to a path on your own site (`/dashboard`), never to another host.
+- Logout is `POST` only, and the login, register and logout routes refuse cross-site requests.
+- OAuth logins use PKCE, require a signed `id_token` with the login's `nonce` from OIDC providers, and build callback URLs from `connect_auth(..., base_url="https://app.example.com")` when you pass it (otherwise from the request's Host header).
 
 ## Where to go next
 

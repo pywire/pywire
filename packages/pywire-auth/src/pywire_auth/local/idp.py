@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -13,6 +14,7 @@ from pywire.auth import Claim, ClaimsPrincipal
 from pywire.config import env as _env
 
 from pywire_auth._protocols import AuthStore
+from pywire_auth.local.throttle import Throttle
 from pywire_auth.local.token import TokenIssuer
 from pywire_auth.stores.memory import MemoryAuthStore
 
@@ -21,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 def _default_store() -> AuthStore:
     return MemoryAuthStore()
+
+
+def normalize_email(email: str) -> str:
+    """One spelling per address, so ``Alice@X.com`` can't be a second account."""
+    return email.strip().lower()
 
 
 @dataclass
@@ -50,7 +57,11 @@ class LocalIdP:
     issuer: str = "pywire-auth-local"
     audience: str = ""
     token_issuer: Optional[TokenIssuer] = None
+    # Limits password sign-in and registration attempts per client address
+    # and per email (see the default routes). None turns it off.
+    throttle: Optional[Throttle] = field(default_factory=Throttle)
     _hasher: PasswordHasher = field(default_factory=PasswordHasher, repr=False)
+    _dummy_hash: str = field(default="", init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.token_issuer is None:
@@ -71,6 +82,33 @@ class LocalIdP:
         if not self.audience:
             self.audience = self.issuer
 
+    # --- Password hashing (off the event loop: Argon2 takes ~50ms of CPU) ---
+
+    async def _hash(self, password: str) -> str:
+        return await asyncio.to_thread(self._hasher.hash, password)
+
+    async def _verify(self, pw_hash: str, password: str) -> bool:
+        try:
+            return await asyncio.to_thread(self._hasher.verify, pw_hash, password)
+        except VerifyMismatchError:
+            return False
+        except Exception:
+            logger.warning("Unexpected argon2 verify error", exc_info=True)
+            return False
+
+    async def _burn_verify(self, password: str) -> None:
+        """Spend a real verify's time, so a missing user looks like a wrong password."""
+        if not self._dummy_hash:
+            self._dummy_hash = await self._hash("pywire-auth-dummy-password")
+        await self._verify(self._dummy_hash, password)
+
+    async def _find_local(self, email: str) -> Optional[Dict[str, Any]]:
+        record = await self.store.find_by_provider("local", normalize_email(email))
+        if record is None and email.strip() != normalize_email(email):
+            # Accounts registered before emails were normalized.
+            record = await self.store.find_by_provider("local", email.strip())
+        return record
+
     # --- Registration + credential flows ---
 
     async def create_user(
@@ -82,14 +120,15 @@ class LocalIdP:
         name: str = "",
         **extra: Any,
     ) -> str:
-        existing = await self.store.find_by_provider("local", email)
+        existing = await self._find_local(email)
         if existing is not None:
             raise ValueError(f"User with email {email!r} already exists")
 
+        email = normalize_email(email)
+        pw_hash = await self._hash(password)
         user_id = await self.store.create_user(
             email=email, name=name, claims=claims or {}, **extra
         )
-        pw_hash = self._hasher.hash(password)
         await self.store.set_password_hash(user_id, pw_hash)
         await self.store.link_provider(
             user_id, "local", email, claims=claims or {"email": email}
@@ -99,28 +138,17 @@ class LocalIdP:
     async def verify_credentials(
         self, *, email: str, password: str
     ) -> Optional[ClaimsPrincipal]:
-        record = await self.store.find_by_provider("local", email)
-        if record is None:
+        record = await self._find_local(email)
+        user_id = record.get("user_id") if record else None
+        pw_hash = await self.store.get_password_hash(user_id) if user_id else None
+        if not user_id or not pw_hash:
+            await self._burn_verify(password)
             return None
-        user_id = record.get("user_id")
-        if not user_id:
-            return None
-
-        pw_hash = await self.store.get_password_hash(user_id)
-        if not pw_hash:
-            return None
-
-        try:
-            self._hasher.verify(pw_hash, password)
-        except VerifyMismatchError:
-            return None
-        except Exception:
-            logger.warning("Unexpected argon2 verify error", exc_info=True)
+        if not await self._verify(pw_hash, password):
             return None
 
         if self._hasher.check_needs_rehash(pw_hash):
-            new_hash = self._hasher.hash(password)
-            await self.store.set_password_hash(user_id, new_hash)
+            await self.store.set_password_hash(user_id, await self._hash(password))
 
         return await self.principal_for_user(user_id)
 
@@ -128,18 +156,14 @@ class LocalIdP:
         self, *, user_id: str, old_password: str, new_password: str
     ) -> bool:
         pw_hash = await self.store.get_password_hash(user_id)
-        if not pw_hash:
+        if not pw_hash or not await self._verify(pw_hash, old_password):
             return False
-        try:
-            self._hasher.verify(pw_hash, old_password)
-        except VerifyMismatchError:
-            return False
-        await self.store.set_password_hash(user_id, self._hasher.hash(new_password))
+        await self.store.set_password_hash(user_id, await self._hash(new_password))
         return True
 
     async def reset_password(self, *, user_id: str, new_password: str) -> None:
         """Admin-side password reset (skips old-password check)."""
-        await self.store.set_password_hash(user_id, self._hasher.hash(new_password))
+        await self.store.set_password_hash(user_id, await self._hash(new_password))
 
     # --- Principal + token flows ---
 

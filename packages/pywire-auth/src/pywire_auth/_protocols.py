@@ -53,11 +53,17 @@ class OIDCProvider(Protocol):
     scopes: List[str]
 
     async def authorize_url(
-        self, *, redirect_uri: str, state: str, nonce: str
+        self, *, redirect_uri: str, state: str, nonce: str, code_challenge: str
     ) -> str: ...
 
     async def exchange_code(
-        self, *, code: str, redirect_uri: str, state: str, nonce: str
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        state: str,
+        nonce: str,
+        code_verifier: str,
     ) -> Tuple[ClaimsPrincipal, Dict[str, Any]]: ...
 
     async def refresh(

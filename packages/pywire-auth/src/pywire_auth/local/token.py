@@ -13,7 +13,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-from authlib.jose import JsonWebKey, jwt
+from authlib.jose import JsonWebKey, JsonWebToken
+
+# Claims the issuer owns. Caller-supplied claims never replace them: a
+# token's issuer, audience, subject and lifetime are what verifiers trust.
+RESERVED_CLAIMS = frozenset({"iss", "sub", "aud", "iat", "exp", "nbf", "jti"})
 
 
 @dataclass
@@ -33,6 +37,9 @@ class TokenIssuer:
     default_ttl: int = 3600
     kid: str = "local"
     _public_jwk: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
+    # Accepts only this issuer's algorithm, so a token can't pick another
+    # (e.g. HS256 keyed with the RS256 public key).
+    _jwt: JsonWebToken = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.algorithm == "HS256":
@@ -45,6 +52,7 @@ class TokenIssuer:
             raise ValueError(
                 f"Unsupported algorithm {self.algorithm!r} — use HS256 or RS256"
             )
+        self._jwt = JsonWebToken([self.algorithm])
 
     def issue(
         self,
@@ -54,38 +62,52 @@ class TokenIssuer:
         claims: Optional[Dict[str, Any]] = None,
         ttl: Optional[int] = None,
     ) -> str:
+        """Sign a token for ``subject``.
+
+        ``claims`` add to the token; the registered claims (``iss``, ``sub``,
+        ``aud``, ``iat``, ``exp``, ``nbf``, ``jti``) always come from the
+        issuer and the arguments here, never from ``claims``.
+        """
         now = int(time.time())
         payload: Dict[str, Any] = {
-            "iss": self.issuer,
-            "sub": subject,
-            "aud": audience,
-            "iat": now,
-            "exp": now + (ttl or self.default_ttl),
+            k: v for k, v in (claims or {}).items() if k not in RESERVED_CLAIMS
         }
-        if claims:
-            payload.update(claims)
+        payload.update(
+            iss=self.issuer,
+            sub=subject,
+            aud=audience,
+            iat=now,
+            exp=now + (ttl or self.default_ttl),
+        )
         header = {"alg": self.algorithm, "kid": self.kid}
         key = self.secret if self.algorithm == "HS256" else self.private_key_pem
-        token = jwt.encode(header, payload, key)
+        token = self._jwt.encode(header, payload, key)
         return token.decode("utf-8") if isinstance(token, bytes) else token
 
     def verify(
         self, token: str, *, audience: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
-        """Return the decoded claims dict if valid; None otherwise."""
+        """Return the decoded claims dict if valid; None otherwise.
+
+        Valid means signed by this issuer, issued by it (``iss``), not
+        expired (``exp`` is required) and, when ``audience`` is given, for
+        that audience.
+        """
         key = (
             self.secret
             if self.algorithm == "HS256"
             else (self.public_key_pem or self.private_key_pem)
         )
+        options: Dict[str, Any] = {
+            "iss": {"essential": True, "value": self.issuer},
+            "exp": {"essential": True},
+        }
+        if audience is not None:
+            options["aud"] = {"essential": True, "value": audience}
         try:
-            claims = jwt.decode(token, key)
-            if audience is not None:
-                claims.options = {"aud": {"essential": True, "value": audience}}
+            claims = self._jwt.decode(token, key, claims_options=options)
             claims.validate()
         except Exception:
-            return None
-        if claims.get("iss") != self.issuer:
             return None
         return dict(claims)
 

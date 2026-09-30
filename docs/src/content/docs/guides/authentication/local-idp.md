@@ -42,7 +42,11 @@ LOCAL_AUTH_DB=sqlite+aiosqlite:///./local-auth.db
 - `POST /auth/local/verify-token` — verify a JWT and return decoded claims
 - `POST /auth/local/revoke` — clear session + fire `channel.revoke(user_id)`
 
-On failure each route redirects to the `Referer` page with `?error=<code>` so your form page can display the message.
+On failure each route redirects to the `Referer` page (or the form's `error_next` path) with `?error=<code>` so your form page can display the message: `missing`, `exists` (register), `invalid` (login: unknown email and wrong password look the same, and take the same time) or `throttled`.
+
+Emails are compared case-insensitively (`Alice@Example.com` and `alice@example.com` are one account). Password hashing runs in a worker thread, so a burst of logins doesn't stall the server.
+
+`LocalIdP` limits attempts in each process: 20 per 5 minutes per client address and per email for login (failed attempts count, a success resets the email's count), and 20 registrations per 5 minutes per client address. Tune it with `LocalIdP(throttle=Throttle(limit=..., window=...))` (`from pywire_auth import Throttle`), or pass `throttle=None` to turn it off. Behind a reverse proxy, trust its forwarded headers (`uvicorn --proxy-headers`) so the client address is the user's, not the proxy's.
 
 ## Schema
 

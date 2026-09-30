@@ -11,7 +11,6 @@ pip install pywire-auth
 Optional extras:
 
 - `pywire-auth[sqlalchemy]` — persistent `SQLAlchemyAuthStore` for the local IdP (SQLite / Postgres / MySQL / any async SQLA driver; ships `aiosqlite` for the default SQLite URL)
-- `pywire-auth[redis]` — cross-worker `RedisAuthChannel` (coming)
 
 Providers ship as config-only extras; the HTTP layer is `httpx` + `authlib` which are always installed:
 
@@ -64,9 +63,11 @@ engine.add_policy("AdminOnly", requires_claim=("role", "admin"))
 
 - `GET /auth/{provider}/login` + `GET /auth/{provider}/callback` — one pair per OIDC provider in the list
 - `POST /auth/local/{register,login,token,verify-token,revoke}` — only when `local_idp=...` is passed
-- `GET /auth/logout` — clears session + fires an `AuthChannel.revoke`
+- `POST /auth/logout` — clears session + fires an `AuthChannel.revoke`
 
 and exposes the `AuthActions` helper at `app.state.auth` for one-call claim mutations.
+
+Signing in or out moves the session to a new id (so a session id planted before login is useless), the session cookie is `Secure` on HTTPS requests (force it with `connect_auth(cookie_secure=True)` behind a TLS-terminating proxy), `next=` / `error_next=` only redirect to paths on your own site, and the POST routes refuse cross-site requests. OAuth logins use PKCE; pass `base_url="https://app.example.com"` so callback URLs don't depend on the request's Host header. `LocalIdP` limits password attempts per client and per email (`LocalIdP(throttle=Throttle(limit=20, window=300))`, `throttle=None` to turn off).
 
 ## Protecting pages
 
@@ -111,16 +112,16 @@ See the [Local IdP setup guide](https://pywire.dev/guides/authentication/local-i
 
 ## Live auth
 
-`AuthActions` writes claim changes to all three layers in one call:
+`AuthActions` applies a change to the user you pass it: their stored row, every session they're signed in with (any browser, any device), and their live tabs:
 
 ```python
-# In a page handler
-await app.state.auth.grant(self.user, self.request, "role", "admin")
-await app.state.auth.revoke_claim(self.user, self.request, "role")
-await app.state.auth.revoke_session(self.user, self.request)
+# In a page handler: the current user, or any user an admin page loaded
+await app.state.auth.grant(user, "role", "admin")
+await app.state.auth.revoke_claim(user, "role")
+await app.state.auth.revoke_sessions(user)  # sign out everywhere
 ```
 
-Store → session → `AuthChannel` in that order: the change persists across logins, survives a hard reload, and re-renders every connected tab for that user without a page refresh.
+The change persists across logins, reaches each of the user's sessions on its next request, and re-renders every connected tab for that user without a page refresh.
 
 ## Providers
 

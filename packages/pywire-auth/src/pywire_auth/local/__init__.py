@@ -15,6 +15,7 @@ Usage:
 
 from pywire_auth.local.idp import LocalIdP
 from pywire_auth.local.routes import build_local_routes
+from pywire_auth.local.throttle import Throttle
 from pywire_auth.local.token import TokenIssuer
 
-__all__ = ["LocalIdP", "TokenIssuer", "build_local_routes"]
+__all__ = ["LocalIdP", "Throttle", "TokenIssuer", "build_local_routes"]

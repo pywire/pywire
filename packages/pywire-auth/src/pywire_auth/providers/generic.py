@@ -10,11 +10,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from pywire.auth import Claim
+from pywire.auth import Claim, ClaimsPrincipal
 
 from pywire_auth.providers.base import BaseOIDCProvider
 
@@ -75,18 +75,33 @@ class GenericOIDCProvider(BaseOIDCProvider):
             self.issuer = doc["issuer"]
             self._discovered = True
 
-    async def authorize_url(self, *, redirect_uri: str, state: str, nonce: str) -> str:
+    async def authorize_url(
+        self, *, redirect_uri: str, state: str, nonce: str, code_challenge: str
+    ) -> str:
         await self._ensure_discovered()
         return await super().authorize_url(
-            redirect_uri=redirect_uri, state=state, nonce=nonce
+            redirect_uri=redirect_uri,
+            state=state,
+            nonce=nonce,
+            code_challenge=code_challenge,
         )
 
     async def exchange_code(
-        self, *, code: str, redirect_uri: str, state: str, nonce: str
-    ):
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        state: str,
+        nonce: str,
+        code_verifier: str,
+    ) -> Tuple[ClaimsPrincipal, Dict[str, Any]]:
         await self._ensure_discovered()
         return await super().exchange_code(
-            code=code, redirect_uri=redirect_uri, state=state, nonce=nonce
+            code=code,
+            redirect_uri=redirect_uri,
+            state=state,
+            nonce=nonce,
+            code_verifier=code_verifier,
         )
 
     def map_claims(self, raw: Dict[str, Any]) -> List[Claim]:

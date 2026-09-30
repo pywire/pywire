@@ -21,6 +21,7 @@ from starlette.requests import Request
 from pywire_auth.actions import AuthActions
 from pywire_auth.middleware import AuthMiddleware
 from pywire_auth.routes import _RouteContext, build_routes
+from pywire_auth.sessions import UserSessions
 
 
 def connect_auth(
@@ -34,6 +35,8 @@ def connect_auth(
     default_next: str = "/",
     session_ttl: Optional[int] = None,
     secret_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    cookie_secure: Optional[bool] = None,
     on_login: Optional[Callable[[ClaimsPrincipal, Request], Awaitable[None]]] = None,
     on_logout: Optional[Callable[[ClaimsPrincipal, Request], Awaitable[None]]] = None,
 ) -> Any:
@@ -46,6 +49,11 @@ def connect_auth(
 
     Pass ``local_idp=LocalIdP(...)`` to mount default password/JWT
     endpoints at ``{prefix}/local/{register,login,token,verify-token,revoke}``.
+
+    ``base_url`` (e.g. ``"https://app.example.com"``) is where OAuth
+    callback URLs point; without it they're built from the request's Host
+    header. ``cookie_secure`` forces the session cookie's ``Secure`` flag on
+    or off; by default it is set on requests that arrived over HTTPS.
     """
     engine = policy_engine or PolicyEngine()
     channel = auth_channel or MemoryAuthChannel()
@@ -60,6 +68,7 @@ def connect_auth(
         default_next=default_next,
         on_login=on_login,
         on_logout=on_logout,
+        base_url=base_url,
     )
 
     for route in build_routes(ctx, prefix, local_idp=local_idp):
@@ -78,14 +87,16 @@ def connect_auth(
     # apps skip it by default (WS owns state), but connect_auth's routes
     # and AuthMiddleware both need scope["pywire_session_id"] to exist on
     # HTTP requests.
-    _ensure_session_middleware(app, effective_secret)
+    _ensure_session_middleware(app, effective_secret, cookie_secure)
 
+    user_sessions = UserSessions(app.session_store, effective_secret, ctx.session_ttl)
     app.add_middleware(
         AuthMiddleware,
         session_store=app.session_store,
         secret_key=effective_secret,
         policy_engine=engine,
         auth_channel=channel,
+        user_sessions=user_sessions,
     )
 
     app._auth_engine = engine
@@ -105,12 +116,14 @@ def connect_auth(
     # Single entry point for claim/session mutations — bundles
     # auth_store + session + channel writes so app code never reaches
     # into all three directly. See pywire_auth.actions.AuthActions.
-    _app_state.auth = AuthActions(app)
+    _app_state.auth = AuthActions(app, user_sessions)
 
     return engine
 
 
-def _ensure_session_middleware(app: Any, secret: str) -> None:
+def _ensure_session_middleware(
+    app: Any, secret: str, cookie_secure: Optional[bool]
+) -> None:
     """Install ``SessionMiddleware`` if it isn't already on the stack."""
     from pywire.runtime.session_middleware import SessionMiddleware
 
@@ -123,6 +136,7 @@ def _ensure_session_middleware(app: Any, secret: str) -> None:
         session_store=app.session_store,
         session_ttl=getattr(app, "session_ttl", 1800),
         secret_key=secret,
+        cookie_secure=cookie_secure,
     )
 
 

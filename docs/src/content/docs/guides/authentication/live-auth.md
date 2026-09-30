@@ -9,43 +9,45 @@ When an admin grants a role or revokes a session, every tab that user has open s
 
 A claim change touches three stores with different lifetimes:
 
-| Layer                   | Lifetime                  | What it does                                           |
-| ----------------------- | ------------------------- | ------------------------------------------------------ |
-| **`AuthStore`** row     | permanent                 | Survives logout/login. The canonical user record.      |
-| **Session snapshot**    | per-login                 | Survives hard reloads. Written by `SessionMiddleware`. |
-| **`AuthChannel` event** | memory, per-WS-connection | Fans out to every live tab for this user_id.           |
+| Layer                   | Lifetime                  | What it does                                                   |
+| ----------------------- | ------------------------- | -------------------------------------------------------------- |
+| **`AuthStore`** row     | permanent                 | Survives logout/login. The canonical user record.              |
+| **Sessions**            | per-login                 | Survive hard reloads. One per browser the user signed in with. |
+| **`AuthChannel` event** | memory, per-WS-connection | Fans out to every live tab for this user_id.                   |
 
 Any single-layer write is wrong:
 
-- Only store → needs a reload to reflect.
-- Only session → wiped on logout.
+- Only store → needs a sign-in again to reflect.
+- Only the current session → the user's other browsers and devices keep the old claims.
 - Only channel → in-memory; next request reads stale session.
 
-`AuthActions` writes all three in order.
+`AuthActions` writes all three.
 
 ## `AuthActions` API
 
-Constructed by `connect_auth` and exposed at `app.state.auth`. All methods take the current `principal` and `request` so the helper can locate the right session id:
+Constructed by `connect_auth` and exposed at `app.state.auth`. Every method acts on the user whose principal you pass, whoever is calling: a settings page passes `self.user`, an admin page passes the principal of the user it manages (for local users, `await idp.principal_for_user(user_id)`).
 
 ```python
 # Page handler, inside a .wire script block
 async def grant_admin():
-    await app.state.auth.grant(self.user, self.request, "role", "admin")
+    await app.state.auth.grant(self.user, "role", "admin")
 
 async def revoke_admin():
-    await app.state.auth.revoke_claim(self.user, self.request, "role")
+    await app.state.auth.revoke_claim(self.user, "role")
 
 async def update_claims():
     await app.state.auth.update_claims(
-        self.user, self.request,
+        self.user,
         [Claim(type="role", value="admin"), Claim(type="tier", value="beta")],
     )
 
-async def revoke_session():
-    await app.state.auth.revoke_session(self.user, self.request)
+async def sign_out_everywhere():
+    await app.state.auth.revoke_sessions(self.user)
 ```
 
-`grant` is sugar over `update_claims` for the common "add one claim" case. `revoke_claim` drops every claim of a given type. `revoke_session` clears the session's auth key and fires a channel revoke — the next request lands on the guard's redirect.
+`grant` is sugar over `update_claims` for the common "add one claim" case. `revoke_claim` drops every claim of a given type. `revoke_sessions` signs the user out of every session they have and fires a channel revoke: live tabs navigate away now, and every other browser's next request is anonymous, landing on the guard's redirect.
+
+Sessions pick the change up on their next request: `connect_auth` keeps a small per-user record in the session store saying when the user's claims last changed and when their sessions were last revoked, and `AuthMiddleware` brings each older session up to date. The record is keyed by the principal's `user_id` (`<provider>:<id>`).
 
 ## How the live push works
 
@@ -68,13 +70,13 @@ A demo page that toggles the current user's admin claim live:
 from pywire import app
 
 async def grant_admin():
-    await app.state.auth.grant(self.user, self.request, "role", "admin")
+    await app.state.auth.grant(self.user, "role", "admin")
 
 async def revoke_admin():
-    await app.state.auth.revoke_claim(self.user, self.request, "role")
+    await app.state.auth.revoke_claim(self.user, "role")
 
-async def revoke_session():
-    await app.state.auth.revoke_session(self.user, self.request)
+async def sign_out_everywhere():
+    await app.state.auth.revoke_sessions(self.user)
 ---
 
 <h1>Live auth</h1>
@@ -90,23 +92,18 @@ async def revoke_session():
 <div>
     <button @click={grant_admin()}>Grant admin</button>
     <button @click={revoke_admin()}>Revoke admin</button>
-    <button @click={revoke_session()}>Sign out</button>
+    <button @click={sign_out_everywhere()}>Sign out everywhere</button>
 </div>
 ```
 
-Open the page in two tabs. Click "Grant admin" in one — both tabs' admin region flips to visible instantly. Click "Sign out" — both tabs redirect to login.
+Open the page in two tabs. Click "Grant admin" in one — both tabs' admin region flips to visible instantly. Click "Sign out everywhere" — both tabs redirect to login, and so does any other browser on its next request.
 
 ## Cross-worker deployments
 
-The default `MemoryAuthChannel` is in-process. Fine for single-worker (which PyWire's dev server and small prod deployments typically are), but if you run multiple uvicorn/hypercorn workers behind a load balancer the channel event only reaches workers holding the connection. Swap in the Redis-backed channel once it ships:
+The default `MemoryAuthChannel` is in-process: its events only reach tabs connected to the worker that sent them. pywire-auth doesn't ship a cross-process channel. With several workers:
 
-```python
-from pywire_auth import RedisAuthChannel  # coming
-
-connect_auth(app, auth_channel=RedisAuthChannel(url=os.environ["REDIS_URL"]))
-```
-
-Same interface; events fan out via Redis pub/sub.
+- Claim changes and `revoke_sessions` still reach every session on its next request, as long as the session store is shared (e.g. `RedisSessionStore`): the per-user record lives there.
+- Live tabs connected to other workers only update on their next request or reconnect. To push to them too, pass your own `auth_channel=` implementing the `AuthChannel` protocol (`update_principal`, `revoke`, `subscribe`) over your pub/sub of choice.
 
 ## Channel semantics
 

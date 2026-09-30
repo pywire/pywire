@@ -7,22 +7,46 @@ Two abstract bases:
 
 - ``BaseOIDCProvider`` — OIDC discovery doc + id_token validation. Used
   by Google, Microsoft, Auth0, the generic provider, and the local IdP.
+
+Both use PKCE (S256): the login route makes a ``code_verifier``, sends its
+challenge with the authorize request and the verifier with the code
+exchange, so a stolen authorization code is useless on its own.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 import urllib.parse
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from authlib.jose import jwt
+from authlib.jose import JsonWebKey, JsonWebToken
+from authlib.jose.errors import JoseError
 
 from pywire.auth import Claim, ClaimsPrincipal
 
 logger = logging.getLogger(__name__)
+
+# Signature algorithms accepted on id_tokens. Asymmetric only: the keys come
+# from the provider's JWKS, and a token must not be able to choose HMAC.
+ID_TOKEN_ALGORITHMS = [
+    "RS256",
+    "RS384",
+    "RS512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "EdDSA",
+]
+# Least time between two JWKS fetches caused by an unknown key id, so tokens
+# naming made-up keys can't turn the app into a JWKS request pump.
+_JWKS_REFETCH_INTERVAL = 60.0
 
 
 @dataclass(kw_only=True)
@@ -37,13 +61,17 @@ class BaseOAuth2Provider(ABC):
     userinfo_endpoint: str
     scopes: List[str] = field(default_factory=list)
 
-    async def authorize_url(self, *, redirect_uri: str, state: str, nonce: str) -> str:
+    async def authorize_url(
+        self, *, redirect_uri: str, state: str, nonce: str, code_challenge: str
+    ) -> str:
         params = {
             "response_type": "code",
             "client_id": self.client_id,
             "redirect_uri": redirect_uri,
             "scope": " ".join(self.scopes),
             "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
         # OIDC providers bind the nonce into the returned id_token; without
         # sending it here the id_token's `nonce` claim is absent and
@@ -54,24 +82,45 @@ class BaseOAuth2Provider(ABC):
         query = urllib.parse.urlencode(params)
         return f"{self.authorize_endpoint}?{query}"
 
+    async def _exchange(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str,
+    ) -> Dict[str, Any]:
+        token_resp = await client.post(
+            self.token_endpoint,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "code_verifier": code_verifier,
+            },
+            headers={"Accept": "application/json"},
+        )
+        token_resp.raise_for_status()
+        return token_resp.json()
+
     async def exchange_code(
-        self, *, code: str, redirect_uri: str, state: str, nonce: str
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        state: str,
+        nonce: str,
+        code_verifier: str,
     ) -> Tuple[ClaimsPrincipal, Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            token_resp = await client.post(
-                self.token_endpoint,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                },
-                headers={"Accept": "application/json"},
+            token_data = await self._exchange(
+                client,
+                code=code,
+                redirect_uri=redirect_uri,
+                code_verifier=code_verifier,
             )
-            token_resp.raise_for_status()
-            token_data = token_resp.json()
-
             access_token = token_data["access_token"]
             userinfo_resp = await client.get(
                 self.userinfo_endpoint,
@@ -136,7 +185,10 @@ class BaseOIDCProvider(BaseOAuth2Provider, ABC):
     """OAuth2 + OIDC id_token validation.
 
     Subclasses supply a ``discovery_url`` or override the endpoints
-    directly. The id_token ``iss``/``aud``/``exp``/``nonce`` are checked.
+    directly. Sign-in requires an id_token signed by a key in the
+    provider's JWKS, with the expected ``iss`` and ``aud``, an ``exp`` in
+    the future and the ``nonce`` this login sent. Userinfo only adds to it,
+    and only when it describes the same ``sub``.
     """
 
     issuer: str = ""
@@ -144,82 +196,86 @@ class BaseOIDCProvider(BaseOAuth2Provider, ABC):
 
     # Populated lazily
     _jwks_cache: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
+    _jwks_fetched_at: float = field(default=0.0, init=False, repr=False)
 
     async def exchange_code(
-        self, *, code: str, redirect_uri: str, state: str, nonce: str
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        state: str,
+        nonce: str,
+        code_verifier: str,
     ) -> Tuple[ClaimsPrincipal, Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            token_resp = await client.post(
-                self.token_endpoint,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                },
-                headers={"Accept": "application/json"},
+            token_data = await self._exchange(
+                client,
+                code=code,
+                redirect_uri=redirect_uri,
+                code_verifier=code_verifier,
             )
-            token_resp.raise_for_status()
-            token_data = token_resp.json()
-
             id_token = token_data.get("id_token")
-            if id_token:
-                claims_dict = await self._verify_id_token(
-                    id_token, nonce=nonce, client=client
-                )
-                raw = dict(claims_dict)
-                # Some providers omit userinfo; skip call when id_token is
-                # sufficient and `email`/`name` already present.
-                if "email" not in raw or "name" not in raw:
-                    access_token = token_data.get("access_token")
-                    if access_token:
-                        ui = await client.get(
-                            self.userinfo_endpoint,
-                            headers={"Authorization": f"Bearer {access_token}"},
-                        )
-                        if ui.status_code < 400:
-                            raw.update(ui.json())
-            else:
-                access_token = token_data["access_token"]
-                ui = await client.get(
-                    self.userinfo_endpoint,
-                    headers={"Authorization": f"Bearer {access_token}"},
-                )
-                ui.raise_for_status()
-                raw = ui.json()
+            if not id_token:
+                raise ValueError("token response has no id_token")
+            raw = await self._verify_id_token(id_token, nonce=nonce, client=client)
+            # Some providers leave profile claims out of the id_token.
+            if "email" not in raw or "name" not in raw:
+                access_token = token_data.get("access_token")
+                if access_token and self.userinfo_endpoint:
+                    ui = await client.get(
+                        self.userinfo_endpoint,
+                        headers={"Authorization": f"Bearer {access_token}"},
+                    )
+                    if ui.status_code < 400:
+                        info = ui.json()
+                        if str(info.get("sub")) != str(raw["sub"]):
+                            raise ValueError("userinfo sub differs from id_token sub")
+                        raw = {**info, **raw}
 
         return self._build_principal(raw), token_data
 
     async def _verify_id_token(
         self, id_token: str, *, nonce: str, client: httpx.AsyncClient
     ) -> Dict[str, Any]:
-        jwks = await self._get_jwks(client)
-        claims = jwt.decode(id_token, jwks)
+        if not nonce:
+            raise ValueError("id_token check needs the login's nonce")
+        options: Dict[str, Any] = {
+            "sub": {"essential": True},
+            "exp": {"essential": True},
+            "nonce": {"essential": True, "value": nonce},
+        }
+        if self.issuer:
+            options["iss"] = {"essential": True, "value": self.issuer}
+        if self.client_id:
+            options["aud"] = {"essential": True, "value": self.client_id}
+        claims = await self._decode_id_token(id_token, client, options)
         claims.validate()
-
-        if self.issuer and claims.get("iss") != self.issuer:
-            raise ValueError(
-                f"id_token issuer mismatch: {claims.get('iss')!r} != {self.issuer!r}"
-            )
-        if self.client_id and claims.get("aud") not in (
-            self.client_id,
-            [self.client_id],
-        ):
-            aud = claims.get("aud")
-            if not (isinstance(aud, list) and self.client_id in aud):
-                raise ValueError("id_token audience mismatch")
-        if nonce and claims.get("nonce") != nonce:
-            raise ValueError("id_token nonce mismatch")
-
         return dict(claims)
 
-    async def _get_jwks(self, client: httpx.AsyncClient) -> Dict[str, Any]:
-        if self._jwks_cache is not None:
+    async def _decode_id_token(
+        self, id_token: str, client: httpx.AsyncClient, options: Dict[str, Any]
+    ) -> Any:
+        jwt = JsonWebToken(ID_TOKEN_ALGORITHMS)
+        try:
+            keys = JsonWebKey.import_key_set(await self._get_jwks(client))
+            return jwt.decode(id_token, keys, claims_options=options)
+        except (JoseError, ValueError):
+            # Providers rotate keys: a token signed with a key we haven't
+            # seen gets one fresh look at the JWKS (rate-limited).
+            if time.monotonic() - self._jwks_fetched_at < _JWKS_REFETCH_INTERVAL:
+                raise
+            keys = JsonWebKey.import_key_set(await self._get_jwks(client, refresh=True))
+            return jwt.decode(id_token, keys, claims_options=options)
+
+    async def _get_jwks(
+        self, client: httpx.AsyncClient, *, refresh: bool = False
+    ) -> Dict[str, Any]:
+        if self._jwks_cache is not None and not refresh:
             return self._jwks_cache
         if not self.jwks_uri:
             raise RuntimeError(f"Provider {self.name!r} has no jwks_uri configured")
         resp = await client.get(self.jwks_uri)
         resp.raise_for_status()
         self._jwks_cache = resp.json()
+        self._jwks_fetched_at = time.monotonic()
         return self._jwks_cache
