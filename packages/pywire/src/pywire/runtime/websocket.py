@@ -14,8 +14,14 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
-from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.protocol import (
+    dropped,
+    event_ack,
+    for_another_page,
+    unpack_client_message,
+    with_ack,
+)
+from pywire.runtime.session_serializer import page_state_key, restore_page_state
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -92,7 +98,7 @@ class WebSocketHandler:
         try:
             while True:
                 data_bytes = await websocket.receive_bytes()
-                data = msgpack.unpackb(data_bytes, raw=False)
+                data = unpack_client_message(data_bytes)
                 await self._process_message(websocket, data)
 
         except WebSocketDisconnect:
@@ -453,18 +459,31 @@ class WebSocketHandler:
 
             page, _params, _variant_name = result
 
+            # Populate principal on initial page (parity with _handle_event and
+            # _handle_relocate — previously missed here so the first render
+            # always saw user=None). Only overwrite when resolution yields a
+            # real principal; without auth installed, `user` may be a page
+            # script variable we must not clobber.
+            resolved_user = await self._resolve_user(websocket)
+            if resolved_user is not None:
+                page.user = resolved_user
+
             # Session ID: reuse from reconnect or generate new
             client_session_id = data.get("session_id")
             session_id = None
             session_restored = False
 
             if client_session_id:
-                # Attempt to restore session state from store
+                # Restore this page's state, if the session has some for it
+                # and it was saved for the same user.
                 try:
                     await self.app.session_persister.settle(client_session_id)
-                    snapshot = await self.app.session_store.get(client_session_id)
-                    if snapshot:
-                        restore_page_state(page, snapshot)
+                    snapshot = await self.app.session_store.get(
+                        page_state_key(client_session_id, page)
+                    )
+                    if snapshot and restore_page_state(
+                        page, snapshot, principal=resolved_user
+                    ):
                         session_id = client_session_id
                         session_restored = True
                         logger.debug("Restored session %s", session_id)
@@ -477,15 +496,6 @@ class WebSocketHandler:
 
             if session_id is None:
                 session_id = str(uuid.uuid4())
-
-            # Populate principal on initial page (parity with _handle_event and
-            # _handle_relocate — previously missed here so the first render
-            # always saw user=None). Only overwrite when resolution yields a
-            # real principal; without auth installed, `user` may be a page
-            # script variable we must not clobber.
-            resolved_user = await self._resolve_user(websocket)
-            if resolved_user is not None:
-                page.user = resolved_user
 
             previous = self.connection_pages.get(websocket)
             if previous is not None and previous is not page:

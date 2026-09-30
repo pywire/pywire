@@ -246,7 +246,8 @@ async def test_loop_click_handler_id_based_runtime(tmp_path) -> None:
 
     # Simulate click on first row's delete - handler receives id "a"
     update = await page.handle_event(
-        "_handler_0", {"type": "click", "args": {"arg0": "a"}}
+        "_handler_0",
+        {"type": "click", "args": page._pw_sign_args("_handler_0", "a")},
     )
     assert update["type"] in ("regions", "full")
     assert page.deleted_ids.value == ["a"]
@@ -353,7 +354,8 @@ async def test_button_in_for_nested_list_no_recursion(tmp_path):
     sys.setrecursionlimit(200)
     try:
         update = await page.handle_event(
-            "_handler_0", {"type": "click", "args": {"arg0": [1, 2]}}
+            "_handler_0",
+            {"type": "click", "args": page._pw_sign_args("_handler_0", [1, 2])},
         )
     finally:
         sys.setrecursionlimit(old_limit)

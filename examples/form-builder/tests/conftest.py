@@ -204,13 +204,16 @@ class Tab:
             if data["type"] != "console":
                 return data
 
-    def fire(self, handler: str, *args: Any, **data: Any) -> str:
-        """Send one event and return the HTML of the reply."""
+    def fire(self, handler: str, args: Optional[str] = None, **data: Any) -> str:
+        """Send one event and return the HTML of the reply.
+
+        ``args`` is the signed ``data-pw-args-*`` token the element rendered.
+        """
         payload = {**data}
         if "formData" in payload:
             payload.setdefault("type", "submit")
         if args:
-            payload["args"] = {f"arg{i}": arg for i, arg in enumerate(args)}
+            payload["args"] = args
         if self.stateless:
             response = self.client.post(
                 "/_pywire/stateless",
@@ -245,18 +248,15 @@ class Tab:
 
     # -- finding things ---------------------------------------------------------
 
-    def handler(self, event: str, label: str) -> tuple[str, list]:
-        """Handler and args of the latest ``@event`` element with this text."""
+    def handler(self, event: str, label: str) -> tuple[str, Optional[str]]:
+        """Handler and signed args of the latest ``@event`` element with this text."""
         found = None
         for match in re.finditer(r"<(\w+)([^>]*)>([^<]*)(?=<)", self.page):
             attrs, text = match.group(2), match.group(3)
             name = re.search(rf'data-on-{event}="([^"]+)"', attrs)
             if name and text.strip() == label:
-                args = [
-                    json.loads(html_lib.unescape(v))
-                    for _, v in sorted(re.findall(r'data-arg-(\d+)="([^"]*)"', attrs))
-                ]
-                found = (name.group(1), args)
+                args = re.search(rf'data-pw-args-{event}="([^"]*)"', attrs)
+                found = (name.group(1), args.group(1) if args else None)
         assert found, f"no @{event} element labelled {label!r}"
         return found
 

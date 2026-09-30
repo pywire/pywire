@@ -14,7 +14,12 @@ from starlette.responses import Response
 
 from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.page import BasePage
-from pywire.runtime.protocol import dropped, event_ack, for_another_page
+from pywire.runtime.protocol import (
+    dropped,
+    event_ack,
+    for_another_page,
+    unpack_client_message,
+)
 from pywire import __version__
 
 logger = logging.getLogger(__name__)
@@ -71,7 +76,7 @@ class HTTPTransportHandler:
                 data = {}
             else:
                 try:
-                    data = msgpack.unpackb(body, raw=False)
+                    data = unpack_client_message(body)
                 except Exception:
                     # Fallback to JSON for compatibility if needed, or error
                     import json
@@ -180,7 +185,7 @@ class HTTPTransportHandler:
 
         try:
             body = await request.body()
-            data = msgpack.unpackb(body, raw=False)
+            data = unpack_client_message(body)
             handler_name = data.get("handler")
             event_data = data.get("data", {})
 

@@ -1,5 +1,5 @@
 import { StackFrame } from '../core/transports'
-import { getMountPath } from '../core/mount-path'
+import { getMountPath } from '../core/spa-meta'
 
 /**
  * Handles error traces from the server in development mode.

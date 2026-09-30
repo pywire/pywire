@@ -25,13 +25,6 @@ class EventAttributeCodegen(AttributeCodegen):
             field_list = ",".join(sorted(attr.field_mask))
             attrs.append(f'data-pw-fields-{attr.event_type}="{field_list}"')
 
-        # Lifted arguments support
-        if hasattr(attr, "args") and attr.args:
-            for i, arg in enumerate(attr.args):
-                # We need to escape quotes in the argument value for HTML
-                escaped_arg = str(arg).replace('"', "&quot;")
-                attrs.append(f'data-arg-{i}="{escaped_arg}"')
-
         return " ".join(attrs)
 
     def generate_handler(self, attr: SpecialAttribute) -> Optional[ast.FunctionDef]:

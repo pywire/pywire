@@ -1,6 +1,7 @@
 """Main code generator orchestrator."""
 
 import ast
+import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
@@ -728,8 +729,24 @@ class CodeGenerator:
                 ),
             )
         )
+        # Signed inline-handler arguments are bound to a digest of this
+        # class's code (see runtime.handler_args): a token rendered by one
+        # page never calls another page's `_handler_3`, nor this page's
+        # after its code changed.
+        class_name = self._get_class_name(parsed)
+        code = ast.dump(ast.Module(body=class_body, type_ignores=[]))
+        class_body.append(
+            ast.Assign(
+                targets=[ast.Name(id="__pw_scope__", ctx=ast.Store())],
+                value=ast.Constant(
+                    value=hashlib.sha256(f"{class_name}\n{code}".encode()).hexdigest()[
+                        :32
+                    ]
+                ),
+            )
+        )
         cls_def = ast.ClassDef(
-            name=self._get_class_name(parsed),
+            name=class_name,
             bases=[ast.Name(id=base_id, ctx=ast.Load())],
             keywords=[],
             body=class_body,
@@ -1323,8 +1340,8 @@ class CodeGenerator:
                         or arg_str in ("self", "event")
                     ):
                         if arg_str in known_vars:
-                            # Known vars resolve server-side (never lifted to
-                            # data-arg-*), but the handler must still receive
+                            # Known vars resolve server-side (never lifted into
+                            # the signed args), but the handler must still receive
                             # the VALUE like every other arg path — a live
                             # Wire silently breaks dict keys/JSON (its hash
                             # is id(), not the value's).

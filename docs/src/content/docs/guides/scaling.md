@@ -54,8 +54,12 @@ app = PyWire(session_persist_interval=0.25)
 - Wire values (via `.peek()`)
 - Component state snapshots
 - `errors` and `loading` dicts
-- `user` attribute
-- Route path and page class
+
+Each page of a session (its page class and URL path) has its own record, and a
+record is restored only into that page, for the user it was saved for. The
+`user` itself is never persisted: it always comes from the request, so after a
+logout or a different login, a page starts fresh instead of showing the
+previous user's state.
 
 **What gets rebuilt naturally:**
 

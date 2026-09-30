@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -159,3 +161,28 @@ function demo() {
     assert response.text.rfind("_pywire_spa_meta") > response.text.rfind(
         "w.document.write('</body></html>');"
     )
+
+
+def test_meta_json_cannot_leave_its_script() -> None:
+    from pywire.runtime.page import json_for_script
+
+    value = {"path": "</script><script>alert(1)</script>", "c": "<!-- & -->"}
+    out = json_for_script(value)
+    assert "<" not in out and ">" not in out and "&" not in out
+    assert json.loads(out) == value
+
+
+def test_meta_is_a_json_script_right_before_the_client(tmp_path: Path) -> None:
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "index.wire").write_text("<h1>Index</h1>")
+    html = TestClient(PyWire(pages_dir=str(pages_dir)).app).get("/").text
+    # The client only trusts a JSON script, and prefers the one right before
+    # its own <script> tag.
+    m = re.search(
+        r'<script id="_pywire_spa_meta" type="application/json">(.*?)</script>'
+        r'<script src="[^"]*/_pywire/static/pywire\.',
+        html,
+    )
+    assert m
+    assert json.loads(m.group(1))["mount_path"] == ""

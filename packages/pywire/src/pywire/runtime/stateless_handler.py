@@ -18,7 +18,7 @@ from starlette.responses import Response
 
 from pywire.core.wire import WireBase
 from pywire.runtime.page_resolver import resolve_page
-from pywire.runtime.protocol import build_update_payload
+from pywire.runtime.protocol import build_update_payload, unpack_client_message
 from pywire.runtime.session_serializer import restore_page_state
 from pywire.runtime.snapshot_codec import (
     MAX_SNAPSHOT_LEN,
@@ -69,17 +69,21 @@ class StatelessHandler:
     async def build_page(
         self, request: Request, path: str, snapshot: dict
     ) -> Optional[Any]:
-        """Resolve, instantiate, restore state, re-resolve user from request."""
+        """Resolve, instantiate, resolve the user from the request, restore state.
+
+        Raises ``SnapshotError`` when the snapshot is of another page or was
+        taken for another user.
+        """
         result = resolve_page(self.app.router, path, base_scope=dict(request.scope))
         if result is None:
             return None
         page, _params, _variant_name = result
-        snapshot.pop("user", None)  # defense in depth: identity never from client
-        restore_page_state(page, snapshot)
         # Identity ALWAYS from the request (middleware/session), never the client
         resolved_user = self.app._resolve_user_for_request(request)
         if resolved_user is not None:
             page.user = resolved_user
+        if not restore_page_state(page, snapshot, principal=resolved_user):
+            raise SnapshotError("snapshot is of another page or user")
         return page
 
     async def handle_event(self, request: Request) -> Response:
@@ -101,7 +105,7 @@ class StatelessHandler:
         if declared.isdigit() and int(declared) > MAX_SNAPSHOT_LEN + 2048:
             return self._err(413, "request body too large")
         try:
-            data = msgpack.unpackb(await request.body(), raw=False)
+            data = unpack_client_message(await request.body())
             if not isinstance(data, dict):
                 raise ValueError("body is not a mapping")
         except Exception:

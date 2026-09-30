@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { encode, decode } from '@msgpack/msgpack'
 import { StatelessTransport } from './stateless'
+import { resetSpaMeta } from '../spa-meta'
 import type { ServerMessage } from './base'
 
 const fetchMock = vi.fn()
@@ -39,6 +40,7 @@ describe('StatelessTransport', () => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
     document.getElementById('_pywire_spa_meta')?.remove()
+    resetSpaMeta()
 
     const snap = document.createElement('script')
     snap.id = '_pywire_snapshot'
