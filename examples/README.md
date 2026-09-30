@@ -17,7 +17,7 @@ examples/scripts/check           # format, lint, pywire check and tests for all 
 
 ## demo.pywire.dev
 
-The stateless examples run at demo.pywire.dev/<name>, with a landing page from [demo-site](demo-site). The [Deploy Examples](../.github/workflows/deploy-examples.yml) workflow redeploys them from `main` whenever an example or pywire itself changes, so the demos always run the latest code. Each deployed example has its own `wrangler.toml`; the routes and DNS are in pywire/pywire.dev's Terraform. To run one in Cloudflare's local runtime:
+The stateless examples run at demo.pywire.dev/<name>, with a landing page from [demo-site](demo-site). The [Deploy Examples](../.github/workflows/deploy-examples.yml) workflow redeploys them from `main` whenever an example or pywire itself changes, so the demos always run the latest code. Each deployed example has its own `wrangler.toml` for its code and vars. The Workers themselves, their routes and DNS are in pywire/pywire.dev's Terraform. To run one in Cloudflare's local runtime:
 
 ```sh
 cd examples/form-builder
@@ -25,7 +25,7 @@ PYWIRE_SECRET_KEY=... PYWIRE_BASE_PATH=/form-builder uv run pywire build --platf
 UV_NO_EDITABLE=1 uv run --with workers-py pywrangler dev   # secrets from .dev.vars
 ```
 
-Secrets are set once per Worker, not by the workflow:
+Secrets are set once per Worker, after Terraform has created it, and never by the workflow:
 
 ```sh
 npx wrangler secret put PYWIRE_SECRET_KEY --name pywire-demo-edge-stateless
