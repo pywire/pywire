@@ -180,18 +180,17 @@ cache_valid
         console.log('[Worker] PyPI mode: installing pywire from PyPI...')
         postMessage({ type: 'STDOUT', message: 'Installing from PyPI...' })
 
-        // Add PyWire CDN as a package index alongside PyPI. The CDN hosts the
-        // tree-sitter-pywire WASM wheel (not on PyPI). Packages not on the CDN
-        // return 404, so micropip falls through to PyPI automatically.
-        await pyodide.runPythonAsync(
-          'import micropip; micropip.set_index_urls(["https://pywire.dev/cdn/simple", "https://pypi.org/simple"])',
-        )
+        // Only tree-sitter-pywire comes from the PyWire CDN: it hosts the WASM
+        // wheel PyPI doesn't have. Everything else resolves against PyPI alone,
+        // so the CDN can't stand in for pywire or its dependencies.
         await micropip.install('typing-extensions>=4.10.0', { target: sitePackages })
         await micropip.install('starlette', { target: sitePackages })
         // jinja2 backs PyWire's compile-error page renderer; the tutorial
         // shim sets _is_dev_mode=True so error rendering is reachable.
         await micropip.install('jinja2>=3.1.0', { target: sitePackages })
-        await micropip.install('tree-sitter-pywire', { target: sitePackages })
+        await pyodide.runPythonAsync(
+          'import micropip\nawait micropip.install("tree-sitter-pywire", index_urls=["https://pywire.dev/cdn/simple"])',
+        )
         await micropip.install('pywire-parser', { target: sitePackages })
         await micropip.install('pywire', { target: sitePackages, deps: false })
         console.log('[Worker] All packages installed from PyPI')
