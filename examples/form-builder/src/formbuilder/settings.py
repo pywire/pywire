@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Tuple
 
 
 def _int(name: str, default: int) -> int:
@@ -19,12 +20,11 @@ def _int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class Settings:
-    groq_api_key: str
+    openrouter_api_key: str
     typesafe_api_key: str
-    # Drafts the form and rewrites it on refine.
-    writer_model: str
-    # Small jobs: options for a choice field, sample answers.
-    helper_model: str
+    # OpenRouter models tried in order for every writing step: drafting the
+    # form, options for a choice field, sample answers.
+    writer_models: Tuple[str, ...]
     jev_model: str
     stateless: bool
     # Header holding the visitor's real IP, set by a proxy you trust
@@ -37,15 +37,30 @@ class Settings:
 
     @property
     def configured(self) -> bool:
-        return bool(self.groq_api_key and self.typesafe_api_key)
+        return bool(self.openrouter_api_key and self.typesafe_api_key)
+
+
+# Free first: a stealth model while it lasts, then the best free open models,
+# then a cheap paid one so the demo keeps working when the free ones don't.
+WRITER_MODELS = (
+    "stealth/space-bunny-alpha",
+    "qwen/qwen3.8-27b:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "deepseek/deepseek-v4-flash",
+)
+
+
+def _models(name: str, default: Tuple[str, ...]) -> Tuple[str, ...]:
+    value = os.environ.get(name, "")
+    models = tuple(m.strip() for m in value.split(",") if m.strip())
+    return models or default
 
 
 def load() -> Settings:
     return Settings(
-        groq_api_key=os.environ.get("GROQ_API_KEY", ""),
+        openrouter_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
         typesafe_api_key=os.environ.get("TYPESAFE_API_KEY", ""),
-        writer_model=os.environ.get("WRITER_MODEL", "openai/gpt-oss-120b"),
-        helper_model=os.environ.get("HELPER_MODEL", "openai/gpt-oss-20b"),
+        writer_models=_models("WRITER_MODELS", WRITER_MODELS),
         jev_model=os.environ.get("JEV_MODEL", "jev-latest"),
         stateless=os.environ.get("STATELESS", "1") != "0",
         client_ip_header=os.environ.get("CLIENT_IP_HEADER", "").lower(),

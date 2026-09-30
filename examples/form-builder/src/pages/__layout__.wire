@@ -12,7 +12,7 @@
         {$render children}
     </main>
     <footer class="muted">
-        <p>Fields are written by Groq (gpt-oss) and decided by Jev from TypeSafe. Nothing you type is stored. Built with <a href="https://pywire.dev">pywire</a></p>
+        <p>Fields are written by an open model through OpenRouter and decided by Jev from TypeSafe. Nothing you type is stored. Built with <a href="https://pywire.dev">pywire</a></p>
     </footer>
 </body>
 </html>

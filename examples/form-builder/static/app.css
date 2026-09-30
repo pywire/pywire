@@ -9,7 +9,7 @@
     --error: #b42318;
     --ok: #177245;
     --warn-bg: #fff4e0;
-    --groq: #f55036;
+    --openrouter: #f55036;
     --jev: #5b4bdb;
     --code: #5d6874;
 }
@@ -24,7 +24,7 @@
         --error: #f97066;
         --ok: #47cd89;
         --warn-bg: #3a2c12;
-        --groq: #ff7a63;
+        --openrouter: #ff7a63;
         --jev: #9d92ff;
         --code: #9aa5b1;
     }
@@ -72,7 +72,7 @@ button.chip { background: transparent; color: var(--fg); border-color: var(--lin
 .step.failed .what { color: var(--error); }
 .step.pending .what { color: var(--muted); }
 .engine { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; align-self: center; }
-.engine.groq { color: var(--groq); }
+.engine.openrouter { color: var(--openrouter); }
 .engine.jev { color: var(--jev); }
 .engine.code { color: var(--code); }
 

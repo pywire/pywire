@@ -54,10 +54,10 @@ def _ready():
     """Both keys set and this visitor has a unit left to spend."""
     if not settings.configured:
         logging.getLogger("formbuilder").warning(
-            "GROQ_API_KEY and TYPESAFE_API_KEY must both be set"
+            "OPENROUTER_API_KEY and TYPESAFE_API_KEY must both be set"
         )
         notice.value = (
-            "Set GROQ_API_KEY and TYPESAFE_API_KEY in .env (see .env.example)."
+            "Set OPENROUTER_API_KEY and TYPESAFE_API_KEY in .env (see .env.example)."
             if os.environ.get("PYWIRE_DEV_MODE") == "1"
             else OUT_OF_USAGE
         )
@@ -155,7 +155,7 @@ def start_over():
 <div class="page">
     <header>
         <h1>Form builder</h1>
-        <p class="muted">Describe a form in a sentence. Groq writes the fields, Jev decides what type each one is and whether it's required, and pywire turns the result into a form you can fill in and send.</p>
+        <p class="muted">Describe a form in a sentence. An open model writes the fields, Jev decides what type each one is and whether it's required, and pywire turns the result into a form you can fill in and send.</p>
     </header>
 
     <section class="card" id="describe">
