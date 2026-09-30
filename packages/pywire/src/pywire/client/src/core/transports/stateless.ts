@@ -4,7 +4,7 @@ import { logger } from '../logger'
 import { getMountPath } from '../mount-path'
 
 /** Server response for a stateless POST: a WS-shaped message plus the next snapshot. */
-type StatelessResponse = ServerMessage & { snapshot?: unknown }
+type StatelessResponse = ServerMessage & { snapshot?: unknown; live_every?: unknown }
 
 /**
  * Transport for stateless (client-held state) mode. There is no persistent
@@ -13,6 +13,13 @@ type StatelessResponse = ServerMessage & { snapshot?: unknown }
  * SPA navigation is a plain GET whose HTML carries a fresh embedded
  * snapshot (``#_pywire_snapshot`` script tag). All state lives with the
  * client — the server keeps nothing between requests.
+ *
+ * Pages that show shared state (module-level wires, producers) can't be
+ * pushed to, so the server tells the client how often to re-read it
+ * (``data-live-every`` on the snapshot tag, ``live_every`` on replies, in
+ * ms). The transport then POSTs a handler-less refresh on that interval,
+ * paused while the tab is hidden; every reply restarts the countdown, since
+ * the server refreshes shared regions on every request.
  */
 export class StatelessTransport extends BaseTransport {
   readonly name = 'Stateless'
@@ -24,11 +31,26 @@ export class StatelessTransport extends BaseTransport {
    * predecessor, so at most one POST/relocate is in flight at a time.
    */
   private queue: Promise<void> = Promise.resolve()
+  /** Shared-state refresh interval in ms; 0 = this page has none. */
+  private liveEvery = 0
+  private liveTimer: number | null = null
+  /** A refresh is waiting in `queue`; don't stack another behind it. */
+  private liveQueued = false
+  private readonly onVisibilityChange = (): void => {
+    if (document.visibilityState === 'hidden') {
+      this.clearLiveTimer()
+    } else if (this.liveEvery > 0) {
+      // The tab missed updates while hidden: refresh now, not a tick later.
+      this.refreshLive()
+    }
+  }
 
   constructor(baseUrl?: string) {
     super()
     this.baseUrl = baseUrl || `${getMountPath()}/_pywire`
-    this.snapshot = document.getElementById('_pywire_snapshot')?.textContent?.trim() ?? ''
+    const tag = document.getElementById('_pywire_snapshot')
+    this.snapshot = tag?.textContent?.trim() ?? ''
+    this.liveEvery = parseLiveEvery(tag?.getAttribute('data-live-every'))
   }
 
   async connect(): Promise<void> {
@@ -36,11 +58,15 @@ export class StatelessTransport extends BaseTransport {
     // No server channel exists to push init (that's the point of stateless
     // mode) — emit it locally so version-aware handling in the app still fires.
     this.notifyHandlers({ type: 'init', version: this.readServerVersion() })
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+    this.scheduleLive()
   }
 
   send(message: object): void {
     const msg = message as Partial<EventMessage> & Partial<RelocateMessage>
     if (msg.type === 'event') {
+      // The event's reply refreshes shared state too and restarts the countdown.
+      this.clearLiveTimer()
       this.enqueue(() => this.postEvent(msg as EventMessage))
     } else if (msg.type === 'relocate') {
       this.enqueue(() => this.relocate(msg as RelocateMessage))
@@ -50,6 +76,8 @@ export class StatelessTransport extends BaseTransport {
   }
 
   disconnect(): void {
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    this.clearLiveTimer()
     this.notifyStatus(false)
   }
 
@@ -57,9 +85,42 @@ export class StatelessTransport extends BaseTransport {
     this.queue = this.queue
       .then(task)
       .catch((e) => logger.error('PyWire: stateless transport request failed', e))
+      .finally(() => this.scheduleLive())
+  }
+
+  private clearLiveTimer(): void {
+    if (this.liveTimer !== null) {
+      window.clearTimeout(this.liveTimer)
+      this.liveTimer = null
+    }
+  }
+
+  /** (Re)start the countdown to the next shared-state refresh. */
+  private scheduleLive(): void {
+    this.clearLiveTimer()
+    if (this.liveEvery <= 0 || document.visibilityState === 'hidden') return
+    this.liveTimer = window.setTimeout(() => this.refreshLive(), this.liveEvery)
+  }
+
+  private refreshLive(): void {
+    this.clearLiveTimer()
+    if (this.liveQueued) return
+    this.liveQueued = true
+    this.enqueue(async () => {
+      this.liveQueued = false
+      await this.postEvent({
+        type: 'event',
+        handler: '',
+        path: window.location.pathname + window.location.search,
+        data: { type: 'live' },
+      })
+    })
   }
 
   private async postEvent(msg: EventMessage): Promise<void> {
+    // A shared-state refresh is a server push in all but transport: no ack,
+    // and a failed one waits for the next tick instead of surfacing an error.
+    const isRefresh = !msg.handler
     try {
       const response = await fetch(`${this.baseUrl}/stateless`, {
         method: 'POST',
@@ -93,16 +154,25 @@ export class StatelessTransport extends BaseTransport {
           this.reloadForFreshSnapshot(error)
           return
         }
+        if (isRefresh) {
+          logger.warn(`PyWire: shared-state refresh failed: ${error}`)
+          return
+        }
         this.notifyHandlers({ type: 'error', error, ack: msg.id })
         return
       }
       if (typeof payload.snapshot === 'string') {
         this.snapshot = payload.snapshot
       }
-      this.notifyHandlers({ ...payload, ack: msg.id })
+      if (payload.live_every !== undefined) {
+        this.liveEvery = parseLiveEvery(payload.live_every)
+      }
+      this.notifyHandlers(isRefresh ? payload : { ...payload, ack: msg.id })
     } catch (e) {
       logger.error('PyWire: stateless event failed', e)
-      this.notifyHandlers({ type: 'error', error: 'stateless request failed', ack: msg.id })
+      if (!isRefresh) {
+        this.notifyHandlers({ type: 'error', error: 'stateless request failed', ack: msg.id })
+      }
     }
   }
 
@@ -144,7 +214,7 @@ export class StatelessTransport extends BaseTransport {
 
     try {
       const html = await response.text()
-      const snapshot = this.extractSnapshot(html)
+      const { snapshot, liveEvery } = this.extractSnapshot(html)
       if (!snapshot) {
         // No embedded snapshot (custom __error__ page etc.): this page can't
         // participate in stateless mode — fall back to full document behavior.
@@ -152,6 +222,7 @@ export class StatelessTransport extends BaseTransport {
         return
       }
       this.snapshot = snapshot
+      this.liveEvery = liveEvery
       this.notifyHandlers({ type: 'update', html })
     } catch (e) {
       logger.error('PyWire: stateless navigation failed', e)
@@ -159,16 +230,17 @@ export class StatelessTransport extends BaseTransport {
     }
   }
 
-  private extractSnapshot(html: string): string {
+  private extractSnapshot(html: string): { snapshot: string; liveEvery: number } {
     try {
-      return (
-        new DOMParser()
-          .parseFromString(html, 'text/html')
-          .getElementById('_pywire_snapshot')
-          ?.textContent?.trim() ?? ''
-      )
+      const tag = new DOMParser()
+        .parseFromString(html, 'text/html')
+        .getElementById('_pywire_snapshot')
+      return {
+        snapshot: tag?.textContent?.trim() ?? '',
+        liveEvery: parseLiveEvery(tag?.getAttribute('data-live-every')),
+      }
     } catch {
-      return ''
+      return { snapshot: '', liveEvery: 0 }
     }
   }
 
@@ -197,4 +269,10 @@ export class StatelessTransport extends BaseTransport {
     }
     return ''
   }
+}
+
+/** A refresh interval in ms from the server; anything unusable means none. */
+function parseLiveEvery(raw: unknown): number {
+  const ms = typeof raw === 'number' ? raw : Number.parseInt(String(raw ?? ''), 10)
+  return Number.isFinite(ms) && ms > 0 ? ms : 0
 }

@@ -87,3 +87,16 @@ def test_stateless_spa_nav_boots_one_client(page: Page, stateless_server: str):
     expect(page.locator("#c")).to_have_text("1")
     page.wait_for_timeout(300)
     assert len(posts) == 1, posts
+
+
+def test_shared_state_reaches_an_idle_tab(page: Page, stateless_server: str):
+    # A module-level wire written from one tab shows up in another tab that
+    # does nothing: the page's `!live 300ms` makes the client re-read it.
+    other = page.context.new_page()
+    page.goto(f"{stateless_server}/shared")
+    other.goto(f"{stateless_server}/shared")
+    start = int(other.locator("#shared").inner_text())
+
+    page.click("#shared-click")
+    expect(page.locator("#shared")).to_have_text(str(start + 1))
+    expect(other.locator("#shared")).to_have_text(str(start + 1), timeout=3000)

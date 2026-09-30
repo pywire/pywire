@@ -48,6 +48,21 @@ class NoInteractiveDirective(Directive):
 
 
 @dataclass
+class LiveDirective(Directive):
+    """!live 2s | !live 500ms | !live off
+
+    How often a stateless page re-reads shared state (module-level wires,
+    producers). Overrides ``PyWire(live_every=...)``; ignored on stateful
+    apps, which push shared changes instead.
+    """
+
+    every_ms: int  # 0 = off
+
+    def __str__(self) -> str:
+        return f"LiveDirective(every_ms={self.every_ms})"
+
+
+@dataclass
 class LayoutDirective(Directive):
     """!layout "path/to/layout.pywire" """
 

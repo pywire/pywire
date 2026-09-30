@@ -26,6 +26,22 @@ _render_context: ContextVar[Optional[Tuple[Any, Optional[str]]]] = ContextVar(
 )
 
 
+# Owner token of the page whose frontmatter or handler is running. A wire
+# created under it belongs to that page instance; a module-level wire (created
+# at import) has no owner and is shared by every page and every user.
+_owner_context: ContextVar[Optional[object]] = ContextVar(
+    "pywire_owner_context", default=None
+)
+
+
+def set_owner_context(token: object) -> Any:
+    return _owner_context.set(token)
+
+
+def reset_owner_context(token: Any) -> None:
+    _owner_context.reset(token)
+
+
 def set_render_context(page: Any, region_id: Optional[str]) -> Any:
     return _render_context.set((page, region_id))
 
@@ -95,6 +111,11 @@ class WireBase:
         self._subscription_effects: Optional[list] = None
         self._parent = parent
         self._field = field
+        # Owner token of the page that created this wire (see _owner_context);
+        # row proxies inherit their container's.
+        self._owner: Optional[object] = (
+            parent._owner if parent is not None else _owner_context.get()
+        )
         self._frozen = False
         self._locked = False
         # Per-wire write counter. Bumped on every `_notify_write`. Used

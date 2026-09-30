@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock
 
 from pywire.core.wire import (
+    WireBase,
     WirePrimitive,
     wire,
 )
@@ -34,6 +35,9 @@ def _make_page(**attrs):
     """Create a BasePage with user-defined attributes."""
     page = BasePage(_make_request(), {}, {})
     for name, value in attrs.items():
+        if isinstance(value, WireBase):
+            # Page state, as if the page's frontmatter had created it.
+            value._owner = page._owner_token
         setattr(page, name, value)
     return page
 
@@ -313,3 +317,35 @@ class TestRoundTrip:
 
         # Sets are serialized as lists, so compare as sets
         assert set(page2.tags) == {"a", "b", "c"}
+
+
+class TestSharedWires:
+    """A wire the page didn't create (a module-level wire aliased onto it) is
+    shared by every user: never snapshotted, never restored from a snapshot."""
+
+    def test_shared_wire_not_snapshotted(self):
+        shared = wire(3)
+        page = _make_page(count=wire(1))
+        page.votes = shared
+        snap = snapshot_page_state(page)
+        assert snap["attrs"]["count"] == 1
+        assert "votes" not in snap["attrs"]
+        assert "votes" not in snap["wire_tags"]
+
+    def test_shared_wire_not_restored(self):
+        shared = wire(3)
+        page = _make_page()
+        page.votes = shared
+        restore_page_state(
+            page, {"attrs": {"votes": 0}, "wire_tags": {"votes": "primitive"}}
+        )
+        assert shared.value == 3
+
+    def test_wires_created_by_page_construction_are_owned(self):
+        class _Page(BasePage):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.count = wire(5)
+
+        page = _Page(_make_request(), {}, {})
+        assert snapshot_page_state(page)["attrs"]["count"] == 5

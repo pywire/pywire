@@ -235,4 +235,134 @@ describe('StatelessTransport', () => {
     // Carries the snapshot from the first response, not the stale one
     expect(sentBody(1).snapshot).toBe('S2')
   })
+
+  describe('shared-state refresh', () => {
+    function liveTransport(ms: string | null): StatelessTransport {
+      const tag = document.getElementById('_pywire_snapshot')!
+      if (ms === null) tag.removeAttribute('data-live-every')
+      else tag.setAttribute('data-live-every', ms)
+      const t = new StatelessTransport()
+      t.onMessage((m) => messages.push(m))
+      return t
+    }
+
+    function setHidden(hidden: boolean): void {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => (hidden ? 'hidden' : 'visible'),
+      })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      transport.disconnect()
+      setHidden(false)
+      vi.useRealTimers()
+    })
+
+    it('POSTs a handler-less refresh on the interval from the snapshot tag', async () => {
+      fetchMock.mockResolvedValue(
+        msgpackRes(200, { type: 'update', regions: [], snapshot: 'SNAP_V2', live_every: 2000 })
+      )
+      transport = liveTransport('2000')
+      await transport.connect()
+
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(fetchMock).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(sentBody(0)).toMatchObject({
+        handler: '',
+        snapshot: 'SNAP_V1',
+        data: { type: 'live' },
+      })
+
+      // The reply restarts the countdown and carries the next snapshot.
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(sentBody(1).snapshot).toBe('SNAP_V2')
+    })
+
+    it('never refreshes a page without shared state', async () => {
+      transport = liveTransport(null)
+      await transport.connect()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('refresh replies carry no ack and a failed refresh raises no error', async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          msgpackRes(200, { type: 'update', regions: [], snapshot: 'S2', live_every: 1000 })
+        )
+        .mockResolvedValueOnce(msgpackRes(500, { error: 'event failed' }))
+      transport = liveTransport('1000')
+      await transport.connect()
+      messages.length = 0
+
+      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(messages).toHaveLength(1)
+      expect(messages[0].type).toBe('update')
+      expect(messages[0].ack).toBeUndefined()
+    })
+
+    it('an event reply sets the interval, and live_every 0 stops refreshing', async () => {
+      fetchMock.mockResolvedValueOnce(
+        msgpackRes(200, { type: 'update', regions: [], snapshot: 'S2', live_every: 500 })
+      )
+      fetchMock.mockResolvedValueOnce(
+        msgpackRes(200, { type: 'update', regions: [], snapshot: 'S3', live_every: 0 })
+      )
+      transport = liveTransport(null)
+      await transport.connect()
+      transport.send(eventMsg())
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(500)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('an event postpones the next refresh instead of queueing one behind it', async () => {
+      fetchMock.mockResolvedValue(
+        msgpackRes(200, { type: 'update', regions: [], snapshot: 'S2', live_every: 1000 })
+      )
+      transport = liveTransport('1000')
+      await transport.connect()
+
+      await vi.advanceTimersByTimeAsync(900)
+      transport.send(eventMsg())
+      await vi.advanceTimersByTimeAsync(100)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(sentBody(0).handler).toBe('increment')
+
+      await vi.advanceTimersByTimeAsync(900)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(sentBody(1).handler).toBe('')
+    })
+
+    it('pauses while the tab is hidden and refreshes as soon as it is visible', async () => {
+      fetchMock.mockResolvedValue(
+        msgpackRes(200, { type: 'update', regions: [], snapshot: 'S2', live_every: 1000 })
+      )
+      transport = liveTransport('1000')
+      await transport.connect()
+
+      setHidden(true)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(fetchMock).not.toHaveBeenCalled()
+
+      setHidden(false)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+  })
 })

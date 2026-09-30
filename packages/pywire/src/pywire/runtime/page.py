@@ -5,6 +5,7 @@ import inspect
 import re
 import asyncio
 from collections import defaultdict
+from contextlib import contextmanager
 from .events import create_event_data
 from typing import (
     TYPE_CHECKING,
@@ -15,6 +16,7 @@ from typing import (
     Dict,
     FrozenSet,
     Iterable,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -33,6 +35,7 @@ from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_
 from pywire.runtime.style_collector import StyleCollector
 from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
 from pywire.core.snippet import HeadBuffer, Snippet
+from pywire.core.wire import _owner_context, reset_owner_context, set_owner_context
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +183,23 @@ def _rewrite_snippet_typeerror(err: TypeError, site_id: str) -> TypeError:
     return TypeError(f"{{$render {name}}}{loc}: {msg}")
 
 
-class BasePage:
+class _PageMeta(type):
+    """Constructs each page as the owner of the wires its frontmatter creates.
+
+    Wraps the whole construction (the generated ``__init__`` runs the
+    frontmatter after ``BasePage.__init__``) under a fresh owner token that
+    ``BasePage.__init__`` keeps as ``_owner_token``.
+    """
+
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        token = set_owner_context(object())
+        try:
+            return super().__call__(*args, **kwargs)
+        finally:
+            reset_owner_context(token)
+
+
+class BasePage(metaclass=_PageMeta):
     """Base class for all compiled pages."""
 
     # Server push for writes made outside this page's own update cycle (a
@@ -201,6 +220,9 @@ class BasePage:
     # loops. Set by the .wire codegen; ``None`` (hand-rolled pages) means no
     # keyed regions — dirty ``{site}#{key}`` ids fall back to a full render.
     __keyed_region_renderers__: ClassVar[Optional[Dict[str, str]]] = None
+    # ``!live`` interval (ms, 0 = off) for re-reading shared state on the
+    # stateless tier; ``None`` defers to ``PyWire(live_every=...)``.
+    __live_every__: ClassVar[Optional[int]] = None
     # URL prefix the app is served under; set per instance from the request.
     base_path: str = ""
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
@@ -286,6 +308,9 @@ class BasePage:
         # Framework-managed state
         self.loading: Dict[str, bool] = {}
         self._pending_cookies: List[Dict[str, Any]] = []
+        # Marks the wires this instance creates (see _PageMeta and _owning);
+        # anything else it reads is shared with other pages and users.
+        self._owner_token: object = _owner_context.get() or object()
 
         # Component flag (internal)
         self.__is_component__ = kwargs.pop("__is_component__", False)
@@ -746,15 +771,21 @@ class BasePage:
                 restore_hooked,
             )
 
+            owners = instance._owner_tokens() | self._owner_tokens()
             for attr, value in snapshot.items():
                 current = getattr(instance, attr, None)
                 if isinstance(value, HookedState):
                     restore_hooked(current, value.state)
                     continue
-                if isinstance(current, WireBase) and current._locked:
-                    # Stale snapshot carrying an attr locked after signing:
-                    # keep the fresh frontmatter wire (still locked).
+                if isinstance(current, WireBase) and (
+                    current._locked or current._owner not in owners
+                ):
+                    # Stale snapshot carrying an attr locked after signing
+                    # (keep the fresh frontmatter wire, still locked), or an
+                    # alias of shared state (never the client's to set).
                     continue
+                if isinstance(value, WireBase):
+                    value._owner = instance._owner_token
                 try:
                     setattr(instance, attr, value)
                 except AttributeError:
@@ -1142,13 +1173,14 @@ class BasePage:
 
     async def _run_hooks(self, hook_list: List[str]) -> None:
         """Run a list of lifecycle hooks by method name."""
-        for hook_name in hook_list:
-            hook = getattr(self, hook_name, None)
-            if hook is not None:
-                if inspect.iscoroutinefunction(hook):
-                    await hook()
-                else:
-                    hook()
+        with self._owning():
+            for hook_name in hook_list:
+                hook = getattr(self, hook_name, None)
+                if hook is not None:
+                    if inspect.iscoroutinefunction(hook):
+                        await hook()
+                    else:
+                        hook()
 
     async def _run_before_update_hooks(self) -> bool:
         """Run @before_update hooks. Returns False if any hook returns False (skip update)."""
@@ -1568,6 +1600,122 @@ class BasePage:
 
         return result
 
+    @contextmanager
+    def _owning(self) -> Iterator[None]:
+        """Wires created inside this block belong to this page instance."""
+        token = set_owner_context(self._owner_token)
+        try:
+            yield
+        finally:
+            reset_owner_context(token)
+
+    def _owner_tokens(self) -> Set[object]:
+        """Owner tokens of this page and every component it renders."""
+        tokens = {self._owner_token}
+        for comp in self._components.values():
+            tokens |= comp._owner_tokens()
+        return tokens
+
+    @staticmethod
+    def _is_page_state(source: Any, tokens: Set[object]) -> bool:
+        """True when ``source`` is state of this page tree, restored from its
+        snapshot or rebuilt from its frontmatter.
+
+        Anything else (a module-level wire, any producer, a derived that reads
+        either) can change without this page doing anything.
+        """
+        from pywire.core.producer import Producer
+        from pywire.core.signals import Derived
+        from pywire.core.wire import WireBase
+
+        if isinstance(source, Producer):
+            return False
+        if isinstance(source, WireBase):
+            while source._parent is not None:
+                source = source._parent
+            return source._owner in tokens
+        if isinstance(source, Derived):
+            return all(
+                BasePage._is_page_state(dep, tokens) for dep in source.dependencies
+            )
+        return False
+
+    def _shared_sources(self) -> List[Any]:
+        """Shared state (see _is_page_state) read by the last render."""
+        tokens = self._owner_tokens()
+        pages: List[BasePage] = [self]
+        sources: List[Any] = []
+        while pages:
+            page = pages.pop()
+            pages.extend(page._components.values())
+            for source, _field in page._wire_subscribers:
+                if not self._is_page_state(source, tokens) and not any(
+                    source is seen for seen in sources
+                ):
+                    sources.append(source)
+        return sources
+
+    def _describe_shared_sources(self) -> List[str]:
+        """Readable names for _shared_sources, e.g. ``shared_state.votes``.
+
+        For error messages only: scans loaded modules for the global that
+        holds each source (or the object behind it, for a derived).
+        """
+        import sys
+
+        from pywire.core.wire import WireBase
+
+        names: List[str] = []
+        for source in self._shared_sources():
+            while isinstance(source, WireBase) and source._parent is not None:
+                source = source._parent
+            name = None
+            for module_name, module in list(sys.modules.items()):
+                if module is None or module_name.startswith(("pywire", "_")):
+                    continue
+                try:
+                    items = list(vars(module).items())
+                except TypeError:
+                    continue
+                for attr, value in items:
+                    if value is source:
+                        name = f"{module_name}.{attr}"
+                        break
+                if name:
+                    break
+            if name is None:
+                name = type(source).__name__
+            if name not in names:
+                names.append(name)
+        return names
+
+    def _live_regions(self) -> Set[Optional[str]]:
+        """Regions whose last render read shared state (``None`` = root).
+
+        A layout or component that reads shared state registers the read on
+        itself, so it maps to the root region, like any write it sees.
+        """
+        tokens = self._owner_tokens()
+        regions: Set[Optional[str]] = set()
+        for (source, _field), subscribed in self._wire_subscribers.items():
+            if not self._is_page_state(source, tokens):
+                regions |= subscribed
+
+        def components_read_shared(page: "BasePage") -> bool:
+            for comp in page._components.values():
+                if any(
+                    not self._is_page_state(source, tokens)
+                    for source, _field in comp._wire_subscribers
+                ):
+                    return True
+                if components_read_shared(comp):
+                    return True
+            return False
+
+        if components_read_shared(self):
+            regions.add(None)
+        return regions
+
     def _register_wire_read(self, wire_obj: Any, field: str, region_id: str) -> None:
         key = (wire_obj, field)
         regions = self._wire_subscribers.get(key)
@@ -1645,6 +1793,25 @@ class BasePage:
         request_push = getattr(root, "_request_push", None)
         if request_push is not None:
             request_push()
+
+    async def _dispatch_event(
+        self, event_name: str, event_data: dict[str, Any]
+    ) -> None:
+        parsed = self._parse_component_event(event_name)
+        if parsed:
+            comp_key, remainder = parsed
+            component = self._components.get(comp_key)
+            if component is None:
+                raise ValueError(f"Component '{comp_key}' not found")
+            await component._handle_component_event(remainder, event_data)
+        else:
+            await self._dispatch_handler(event_name, event_data)
+
+        # Drain server-intercepted dispatch handlers (from dispatch()
+        # with bubbles=False targeting a ref with a registered handler).
+        while self._pending_intercepted_handlers:
+            h_name, h_data = self._pending_intercepted_handlers.pop(0)
+            await self._dispatch_handler(h_name, h_data)
 
     def _attach_push(self, on_update: Callable[[], Awaitable[None]]) -> None:
         """Connect this page to a live connection that can take server pushes.
@@ -1724,21 +1891,8 @@ class BasePage:
     ) -> Dict[str, Any]:
         """Handle client event (from @click, etc.)."""
         try:
-            parsed = self._parse_component_event(event_name)
-            if parsed:
-                comp_key, remainder = parsed
-                component = self._components.get(comp_key)
-                if component is None:
-                    raise ValueError(f"Component '{comp_key}' not found")
-                await component._handle_component_event(remainder, event_data)
-            else:
-                await self._dispatch_handler(event_name, event_data)
-
-            # Drain server-intercepted dispatch handlers (from dispatch()
-            # with bubbles=False targeting a ref with a registered handler).
-            while self._pending_intercepted_handlers:
-                h_name, h_data = self._pending_intercepted_handlers.pop(0)
-                await self._dispatch_handler(h_name, h_data)
+            with self._owning():
+                await self._dispatch_event(event_name, event_data)
         except Exception as exc:
             # Run @error hooks — if any returns truthy, suppress the error
             if await self._run_error_hooks(exc):

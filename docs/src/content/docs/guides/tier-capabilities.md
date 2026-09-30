@@ -5,23 +5,24 @@ description: What works in stateless, stateful, and no-JavaScript PyWire deploym
 
 PyWire features fall into a kernel shared by both tiers, features that require a server-owned timeline, and a no-JavaScript floor. "Works statelessly" means the request can complete without holding a page instance or sending a server push.
 
-| Feature                                                                             | Stateless     | Stateful    | No-JS floor / note                                                                              |
-| ----------------------------------------------------------------------------------- | ------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| Interpolation, `{$if}`, `$show`, `{$try}`, `{$dynamic}`, snippets, layouts, spreads | Yes           | Yes         | Render-time                                                                                     |
-| DOM events, inline handler args, `.prevent`, `.stop`                                | Yes           | Yes         | `@submit` works through a native POST                                                           |
-| `@poll` and `.every-<ms>`                                                           | Yes           | Yes         | No polling without JS; use a submit/refresh flow                                                |
-| `bind:` and optimistic modifiers                                                    | Yes           | Yes         | JavaScript interaction only                                                                     |
-| Keyed `{$for ... key=...}`                                                          | Yes           | Yes         | Structural changes fall back to the whole loop in v1                                            |
-| Forms, validation, uploads                                                          | Yes           | Yes         | Form POST runs; stateless no-JS POST has no interactive snapshot, so non-persisted state resets |
-| Frontmatter wires and components                                                    | Yes           | Yes         | State differs by tier                                                                           |
-| `wire.lock()`                                                                       | Yes           | Yes         | Client-invisible and reconstructed from frontmatter                                             |
-| `page.user`, auth guards, middleware, `{$auth}`                                     | Yes           | Yes         | Identity is always resolved from the current request; auth verdicts are never snapshotted       |
-| File uploads and SPA navigation                                                     | Yes           | Yes         | Stateless falls back to full load when no snapshot exists                                       |
-| Debug snapshot inspector                                                            | Yes, dev only | No snapshot | Gated by stateless mode and dev/debug mode                                                      |
-| `{$await}`                                                                          | **No**        | Yes         | Compile error in a stateless build                                                              |
-| `push_state()`                                                                      | **No**        | Yes         | Compile error when statically visible; hidden helper/dynamic pushes need manual review          |
-| Per-token chat/streaming                                                            | **No**        | Yes         | Use WebSocket push; SSE is roadmap                                                              |
-| Rooms / shared push channels                                                        | No            | No          | Not implemented on either tier                                                                  |
+| Feature                                                                             | Stateless     | Stateful    | No-JS floor / note                                                                                      |
+| ----------------------------------------------------------------------------------- | ------------- | ----------- | ------------------------------------------------------------------------------------------------------- |
+| Interpolation, `{$if}`, `$show`, `{$try}`, `{$dynamic}`, snippets, layouts, spreads | Yes           | Yes         | Render-time                                                                                             |
+| DOM events, inline handler args, `.prevent`, `.stop`                                | Yes           | Yes         | `@submit` works through a native POST                                                                   |
+| `@poll` and `.every-<ms>`                                                           | Yes           | Yes         | No polling without JS; use a submit/refresh flow                                                        |
+| `bind:` and optimistic modifiers                                                    | Yes           | Yes         | JavaScript interaction only                                                                             |
+| Keyed `{$for ... key=...}`                                                          | Yes           | Yes         | Structural changes fall back to the whole loop in v1                                                    |
+| Forms, validation, uploads                                                          | Yes           | Yes         | Form POST runs; stateless no-JS POST has no interactive snapshot, so non-persisted state resets         |
+| Frontmatter wires and components                                                    | Yes           | Yes         | State differs by tier                                                                                   |
+| `wire.lock()`                                                                       | Yes           | Yes         | Client-invisible and reconstructed from frontmatter                                                     |
+| `page.user`, auth guards, middleware, `{$auth}`                                     | Yes           | Yes         | Identity is always resolved from the current request; auth verdicts are never snapshotted               |
+| File uploads and SPA navigation                                                     | Yes           | Yes         | Stateless falls back to full load when no snapshot exists                                               |
+| Debug snapshot inspector                                                            | Yes, dev only | No snapshot | Gated by stateless mode and dev/debug mode                                                              |
+| Shared state (module-level wires, producers)                                        | Refreshes     | Pushes      | Stateless re-reads on `live_every` or `!live`; see [Shared state](/guides/stateless-mode/#shared-state) |
+| `{$await}`                                                                          | **No**        | Yes         | Compile error in a stateless build                                                                      |
+| `push_state()`                                                                      | **No**        | Yes         | Compile error when statically visible; hidden helper/dynamic pushes need manual review                  |
+| Per-token chat/streaming                                                            | **No**        | Yes         | Use WebSocket push; SSE is roadmap                                                                      |
+| Rooms / shared push channels                                                        | No            | No          | Not implemented on either tier                                                                          |
 
 ## Shared kernel
 

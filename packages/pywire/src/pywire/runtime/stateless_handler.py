@@ -7,14 +7,16 @@ dispatched through the standard ``handle_event`` path (which enforces the
 compile-time ``__event_handlers__`` allowlist), then re-snapshotted.
 """
 
+import hashlib
 import logging
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Set, Tuple
 from urllib.parse import urlsplit
 
 import msgpack
 from starlette.requests import Request
 from starlette.responses import Response
 
+from pywire.core.wire import WireBase
 from pywire.runtime.page_resolver import resolve_page
 from pywire.runtime.protocol import build_update_payload
 from pywire.runtime.session_serializer import restore_page_state
@@ -29,9 +31,40 @@ from pywire.runtime.snapshot_codec import (
 logger = logging.getLogger(__name__)
 
 
+def _drop_unchanged_live(
+    update: Dict[str, Any],
+    live: Set[Optional[str]],
+    shown: Any,
+) -> Dict[str, str]:
+    """Drop re-rendered shared-state regions the client already shows.
+
+    ``shown`` is the region -> HTML digest map from the client's snapshot.
+    Every shared-state region is re-rendered on every request, so the map
+    returned here (for the next snapshot) is exactly what the client shows
+    once it applies ``update``. A full-page update carries no per-region
+    HTML: start over, and the next request sends every region once.
+    """
+    if update.get("type") != "regions":
+        return {}
+    digests: Dict[str, str] = dict(shown) if isinstance(shown, dict) else {}
+    kept = []
+    for entry in update.get("regions", []):
+        region = entry.get("region") if isinstance(entry, dict) else None
+        html = entry.get("html") if isinstance(entry, dict) else None
+        if region in live and isinstance(region, str) and isinstance(html, str):
+            digest = hashlib.blake2b(html.encode("utf-8"), digest_size=8).hexdigest()
+            if digests.get(region) == digest:
+                continue
+            digests[region] = digest
+        kept.append(entry)
+    update["regions"] = kept
+    return {r: d for r, d in digests.items() if r in live}
+
+
 class StatelessHandler:
     def __init__(self, app: Any) -> None:
         self.app = app
+        self._shared_write_warned: Set[str] = set()
 
     async def build_page(
         self, request: Request, path: str, snapshot: dict
@@ -120,6 +153,13 @@ class StatelessHandler:
             if nav is not None:  # auth guard rejected the rebuilt page
                 return nav
 
+            # Shared state (module wires, producers) may have changed since
+            # the client's last request, and nothing here marks it dirty:
+            # re-render the regions that show it on every request.
+            live = page._live_regions()
+            page._dirty_regions.update(live)
+            shared_seqs = self._shared_write_seqs(page)
+
             handler_name = data.get("handler")
             if handler_name:
                 # Pre-check the allowlist (like _handle_form_post) so probing
@@ -144,14 +184,48 @@ class StatelessHandler:
                 if not t.done():
                     t.cancel()
 
+        self._warn_shared_writes(page, shared_seqs)
+        live_digests = _drop_unchanged_live(update, live, snapshot.get("live"))
         payload = build_update_payload(update)
+        payload["live_every"] = self.app._live_every_ms(page, strict=False)
         payload["snapshot"] = encode_snapshot(
             page,
             secret=self.app._stateless_secret,
             route=route,
             warn_size=self.app.session_warn_size,
+            live=live_digests,
         )
         return self._msg(payload)
+
+    @staticmethod
+    def _shared_write_seqs(page: Any) -> Dict[int, Tuple[Any, int]]:
+        return {
+            id(source): (source, source._write_seq)
+            for source in page._shared_sources()
+            if isinstance(source, WireBase)
+        }
+
+    def _warn_shared_writes(
+        self, page: Any, before: Dict[int, Tuple[Any, int]]
+    ) -> None:
+        """Warn once when an event writes shared state in a stateless app.
+
+        Each server instance (and each FaaS isolate) has its own copy of a
+        module-level wire, so the write is invisible to users served by any
+        other instance, and lost on a cold start.
+        """
+        written = [s for s, seq in before.values() if s._write_seq != seq]
+        key = type(page).__qualname__
+        if not written or key in self._shared_write_warned:
+            return
+        self._shared_write_warned.add(key)
+        logger.warning(
+            "stateless: %s wrote shared state. Each server instance keeps its "
+            "own copy of module-level state, so users served by another "
+            "instance won't see the change and a restart loses it. Keep state "
+            "that users share in a database or key-value store.",
+            getattr(page, "__file_path__", key),
+        )
 
     @staticmethod
     def _refused(page: Any, handler_name: str) -> bool:

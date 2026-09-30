@@ -1,0 +1,9 @@
+!live 300ms
+---
+import shared_counter
+
+def click():
+    shared_counter.clicks.value += 1
+---
+<p id="shared">{shared_counter.clicks.value}</p>
+<button id="shared-click" @click={click}>Click</button>
