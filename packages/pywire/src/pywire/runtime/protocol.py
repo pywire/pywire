@@ -9,6 +9,38 @@ from __future__ import annotations
 from typing import Any, Mapping
 from urllib.parse import unquote, urlsplit
 
+import msgpack
+
+# What a client message may hold: msgpack's plain types. Extension types
+# (timestamps included) would reach handlers as objects no browser sends.
+_PLAIN = (type(None), bool, int, float, str, bytes)
+
+
+class ClientMessageError(ValueError):
+    """A client message holds something other than plain data."""
+
+
+def _refuse_ext(code: int, data: bytes) -> Any:
+    raise ClientMessageError(f"msgpack extension type {code} is not accepted")
+
+
+def unpack_client_message(data: bytes) -> Any:
+    """Decode a msgpack message from a client, refusing extension types."""
+    message = msgpack.unpackb(data, raw=False, ext_hook=_refuse_ext)
+    stack = [message]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+        elif not isinstance(value, _PLAIN):
+            # msgpack decodes timestamps without calling ext_hook.
+            raise ClientMessageError(
+                f"{type(value).__name__} is not accepted in a client message"
+            )
+    return message
+
 
 def build_update_payload(update: Any) -> dict[str, Any]:
     """Convert a page render update into a wire-protocol message dict.

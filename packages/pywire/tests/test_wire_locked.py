@@ -34,10 +34,11 @@ def test_locked_wire_survives_page_restore():
     # attr — restore must skip it so the fresh frontmatter value wins.
     p = make_page()
     snap = {
+        **snapshot_page_state(p),
         "attrs": {"public": 5, "token": "sk-stale-rotated"},
         "wire_tags": {"public": "primitive", "token": "primitive"},
     }
-    restore_page_state(p, snap)
+    assert restore_page_state(p, snap, principal=None)
     assert p.public.value == 5
     assert p.token.value == "sk-secret"
     assert p.token._locked

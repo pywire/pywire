@@ -1880,24 +1880,21 @@ class TemplateCodegen:
             node.end_col_offset = template_node.column + 1  # type: ignore
         return node
 
-    def _emit_event_arg_attrs(
+    def _signed_args_call(
         self,
         attr: EventAttribute,
-        body: List[ast.stmt],
         node: TemplateNode,
         local_vars: Set[str],
         known_globals: Optional[Set[str]],
         known_imports: Optional[Set[str]],
-    ) -> None:
-        """Emit ``data-arg-{i}`` attrs for an event handler's lifted args.
+    ) -> ast.expr:
+        """``self._pw_sign_args("<handler>", arg0, ...)`` for a handler's lifted args.
 
-        Shared by the single-handler event branch and the ``@poll`` branch so
-        ``@poll={tick(idx)}`` inside a ``$for`` lifts ``idx`` exactly like
-        ``@click={tick(idx)}`` does (the client lifts ``data-arg-*`` into the
-        dispatched args for both paths).
+        The values are evaluated at render time and signed for this handler,
+        so the client can send them back but never choose them.
         """
-        for i, arg_expr in enumerate(attr.args):
-            val = self._wrap_unwrap_wire(
+        values = [
+            self._wrap_unwrap_wire(
                 cast(
                     ast.expr,
                     self._transform_expr(
@@ -1910,26 +1907,50 @@ class TemplateCodegen:
                     ),
                 )
             )
-            body.append(
-                ast.Assign(
-                    targets=[
-                        ast.Subscript(
-                            value=ast.Name(id="attrs", ctx=ast.Load()),
-                            slice=ast.Constant(value=f"data-arg-{i}"),
-                            ctx=ast.Store(),
-                        )
-                    ],
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="json", ctx=ast.Load()),
-                            attr="dumps",
-                            ctx=ast.Load(),
-                        ),
-                        args=[val],
-                        keywords=[],
-                    ),
-                )
+            for arg_expr in attr.args
+        ]
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="self", ctx=ast.Load()),
+                attr="_pw_sign_args",
+                ctx=ast.Load(),
+            ),
+            args=[ast.Constant(value=attr.handler_name), *values],
+            keywords=[],
+        )
+
+    def _emit_event_arg_attrs(
+        self,
+        attr: EventAttribute,
+        event_type: str,
+        body: List[ast.stmt],
+        node: TemplateNode,
+        local_vars: Set[str],
+        known_globals: Optional[Set[str]],
+        known_imports: Optional[Set[str]],
+    ) -> None:
+        """Emit ``data-pw-args-{event}`` with an event handler's signed args.
+
+        Shared by the single-handler event branch and the ``@poll`` branch so
+        ``@poll={tick(idx)}`` inside a ``$for`` lifts ``idx`` exactly like
+        ``@click={tick(idx)}`` does.
+        """
+        if not attr.args:
+            return
+        body.append(
+            ast.Assign(
+                targets=[
+                    ast.Subscript(
+                        value=ast.Name(id="attrs", ctx=ast.Load()),
+                        slice=ast.Constant(value=f"data-pw-args-{event_type}"),
+                        ctx=ast.Store(),
+                    )
+                ],
+                value=self._signed_args_call(
+                    attr, node, local_vars, known_globals, known_imports
+                ),
             )
+        )
 
     # ---------------- Render region (snippet) codegen ----------------
 
@@ -4858,7 +4879,13 @@ class TemplateCodegen:
                     # Lift args exactly like the single-handler event branch so
                     # ``@poll={tick(idx)}`` in a ``$for`` delivers idx each tick.
                     self._emit_event_arg_attrs(
-                        attr, body, node, local_vars, known_globals, known_imports
+                        attr,
+                        "poll",
+                        body,
+                        node,
+                        local_vars,
+                        known_globals,
+                        known_imports,
                     )
                     continue
 
@@ -4924,9 +4951,14 @@ class TemplateCodegen:
                             )
                         )
 
-                    # Add args (lifted to data-arg-{i} on the client)
                     self._emit_event_arg_attrs(
-                        attr, body, node, local_vars, known_globals, known_imports
+                        attr,
+                        event_type,
+                        body,
+                        node,
+                        local_vars,
+                        known_globals,
+                        known_imports,
                     )
 
                     # Register handler on the ref for server-side dispatch interception
@@ -4996,23 +5028,7 @@ class TemplateCodegen:
                         )
 
                         if attr.args:
-                            # _args = [...]
-                            args_list = []
-                            for arg_expr in attr.args:
-                                val = self._wrap_unwrap_wire(
-                                    cast(
-                                        ast.expr,
-                                        self._transform_expr(
-                                            arg_expr,
-                                            local_vars,
-                                            known_globals,
-                                            known_imports,
-                                            line_offset=node.line,
-                                            col_offset=node.column,
-                                        ),
-                                    )
-                                )
-                                args_list.append(val)
+                            # _h["args"] = self._pw_sign_args("<handler>", ...)
                             body.append(
                                 ast.Assign(
                                     targets=[
@@ -5022,7 +5038,13 @@ class TemplateCodegen:
                                             ctx=ast.Store(),
                                         )
                                     ],
-                                    value=ast.List(elts=args_list, ctx=ast.Load()),
+                                    value=self._signed_args_call(
+                                        attr,
+                                        node,
+                                        local_vars,
+                                        known_globals,
+                                        known_imports,
+                                    ),
                                 )
                             )
 
@@ -5066,7 +5088,7 @@ class TemplateCodegen:
                     )
 
                     if all_modifiers:
-                        modifiers_str = " ".join(all_modifiers)
+                        modifiers_str = " ".join(sorted(all_modifiers))
                         body.append(
                             ast.Assign(
                                 targets=[

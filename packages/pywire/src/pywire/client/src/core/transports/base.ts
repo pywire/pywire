@@ -162,7 +162,8 @@ export interface EventData {
   checked?: boolean
   inputType?: string
   formData?: Record<string, unknown>
-  args?: Record<string, unknown>
+  /** Signed arguments of an inline handler call, exactly as the server rendered them. */
+  args?: string
   // Keyboard
   key?: string
   code?: string

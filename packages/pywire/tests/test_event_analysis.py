@@ -108,7 +108,7 @@ def handle(event):
 
 
 def test_unmapped_field_passes_through():
-    """Fields not in SNAKE_TO_CAMEL are passed through as-is."""
+    """Fields not in EVENT_PARAMS are passed through as-is."""
     source = """
 def handle(event):
     event.key

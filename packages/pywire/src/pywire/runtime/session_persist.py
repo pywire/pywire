@@ -15,7 +15,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Dict
 
-from pywire.runtime.session_serializer import snapshot_page_state
+from pywire.runtime.session_serializer import page_state_key, snapshot_page_state
 
 if TYPE_CHECKING:
     from pywire.runtime.page import BasePage
@@ -84,7 +84,9 @@ class SessionPersister:
                     page, warn_size=self._app.session_warn_size
                 )
                 await self._app.session_store.set(
-                    session_id, snapshot, ttl=self._app.session_ttl
+                    page_state_key(session_id, page),
+                    snapshot,
+                    ttl=self._app.session_ttl,
                 )
             except Exception:
                 logger.warning(

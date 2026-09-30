@@ -110,11 +110,11 @@ def test_poll_handler_is_allowlisted(tmp_path) -> None:
     assert page.count.value == 1
 
 
-def test_poll_lifts_args_as_data_arg() -> None:
-    """@poll={tick(item)} inside $for emits data-arg-0 like @click does."""
+def test_poll_signs_lifted_args() -> None:
+    """@poll={tick(item)} inside $for signs its args like @click does."""
     parsed = PyWireParser().parse(_ARG_FIXTURE)
     code = ast.unparse(CodeGenerator().generate(parsed))
-    assert "'data-arg-0'] =" in code
+    assert "attrs['data-pw-args-poll'] = self._pw_sign_args('_handler_0'" in code
     assert "'data-pw-poll'] =" in code
     assert "'data-pw-poll-every'] = '400'" in code
     # poll dispatch relies on __event_handlers__, not ref dispatch()
@@ -130,15 +130,16 @@ def test_poll_arg_reaches_handler(tmp_path) -> None:
     page = cls(request=Request(_SCOPE), params={}, query={}, path={"main": True})
     allowed = type(page).__event_handlers__
     assert allowed is not None and "_handler_0" in allowed
-    # Client lifts data-arg-0 into args.arg0 exactly as poll.ts getArgs does.
-    asyncio.run(page._dispatch_handler("_handler_0", {"args": {"arg0": 1}}))
+    # The client sends back the token the page rendered (poll.ts).
+    token = page._pw_sign_args("_handler_0", 1)
+    asyncio.run(page._dispatch_handler("_handler_0", {"args": token}))
     assert page.seen.value == [1]
 
 
 def test_poll_wire_arg_delivers_value_not_wire(tmp_path) -> None:
     """A bare wire name as a handler arg delivers its value, not the Wire.
 
-    Known names resolve server-side (never lifted to ``data-arg-*``), but the
+    Known names resolve server-side (never lifted into the signed args), but the
     handler must still receive plain data like every other arg path — a live
     Wire silently breaks dict lookups/JSON (its hash is ``id()``).
     """

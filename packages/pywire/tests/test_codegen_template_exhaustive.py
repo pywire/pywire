@@ -170,9 +170,11 @@ class TestCodegenTemplateExhaustive(unittest.TestCase):
 
         lines: list[ast.stmt] = []
         self.codegen._add_node(node, lines, local_vars={"user"})
-        # Should encode arguments to data-arg-0
+        # Arguments are signed for the handler, never sent as plain data
         self.assert_code_in(
-            "attrs['data-arg-0'] = json.dumps(unwrap_wire(user.id))", lines
+            "attrs['data-pw-args-click'] = "
+            "self._pw_sign_args('delete_user', unwrap_wire(user.id))",
+            lines,
         )
 
     def test_add_node_script_tag(self) -> None:

@@ -92,13 +92,6 @@ class SessionMiddleware:
         scope["pywire_session_id"] = session_id
         scope["pywire_session_is_new"] = is_new_session
 
-        # Load existing session data into scope
-        if not is_new_session:
-            data = await self.session_store.get(session_id)
-            scope["pywire_session_data"] = data
-        else:
-            scope["pywire_session_data"] = None
-
         # Wrap send to inject Set-Cookie header for new sessions
         if is_new_session:
             assert session_id is not None

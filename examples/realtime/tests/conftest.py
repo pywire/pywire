@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import anyio
 import msgpack
@@ -62,14 +62,16 @@ class Session:
         except TimeoutError:
             pass
 
-    def event(self, handler: str, *args: Any, **data: Any) -> str:
+    def event(self, handler: str, args: Optional[str] = None, **data: Any) -> str:
         """Fire a handler as the browser would and return the reply's HTML.
 
         ``handler`` is the name in the rendered ``data-on-<event>`` attribute;
-        positional ``args`` are the ones written in the template call, e.g.
-        ``@click={cast(option)}``.
+        ``args`` is the element's signed ``data-pw-args-<event>`` token, which
+        carries the arguments of the template call, e.g. ``@click={cast(option)}``.
         """
-        payload = {"args": {f"arg{i}": arg for i, arg in enumerate(args)}, **data}
+        payload = {**data}
+        if args:
+            payload["args"] = args
         # The browser stamps each event with its page's path.
         self.send(
             {"type": "event", "handler": handler, "path": self.path, "data": payload}
@@ -77,14 +79,12 @@ class Session:
         return self.html()
 
 
-def handler(html: str, event: str, label: str) -> tuple[str, list[Any]]:
-    """Handler name and template args of the element whose text is ``label``.
+def handler(html: str, event: str, label: str) -> tuple[str, Optional[str]]:
+    """Handler name and signed args of the element whose text is ``label``.
 
     Generated names such as ``_handler_0`` aren't stable, so tests find them
     in the rendered page the way the browser does.
     """
-    import html as html_lib
-    import json
     import re
 
     for match in re.finditer(r"<(\w+)([^>]*)>([^<]*)(?=<)", html):
@@ -94,11 +94,8 @@ def handler(html: str, event: str, label: str) -> tuple[str, list[Any]]:
         name = re.search(rf'data-on-{event}="([^"]+)"', attrs)
         if not name:
             continue
-        args = [
-            json.loads(html_lib.unescape(v))
-            for _, v in sorted(re.findall(r'data-arg-(\d+)="([^"]*)"', attrs))
-        ]
-        return name.group(1), args
+        args = re.search(rf'data-pw-args-{event}="([^"]*)"', attrs)
+        return name.group(1), args.group(1) if args else None
     raise AssertionError(f"no @{event} element labelled {label!r}")
 
 

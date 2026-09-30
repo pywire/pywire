@@ -32,6 +32,7 @@ from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
 from pywire.runtime.uploads import (
     Staging,
     machine_key,
@@ -399,6 +400,7 @@ class PyWire:
         self._upload_token_dir = self._runtime_dir / "upload_tokens"
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
         self._upload_token_key: Optional[bytes] = None
+        self._args_key: Optional[bytes] = None
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
@@ -1888,18 +1890,19 @@ class PyWire:
         if resolved_user is not None:
             page.user = resolved_user
 
-        # In non-interactive mode, restore session state if available. The
-        # session holds one snapshot, of the last page served: it is restored
-        # only into that same page, and identity always comes from the request.
+        # In non-interactive mode, restore this page's state in the session:
+        # each page and path has its own record, restored only for the user
+        # it was saved for. Identity always comes from the request.
         session_id = request.scope.get("pywire_session_id")
         if not self.interactive_server_mode and session_id:
-            session_data = request.scope.get("pywire_session_data")
-            if session_data and session_data.get("route_path") == request.url.path:
-                from pywire.runtime.session_serializer import restore_page_state
+            from pywire.runtime.session_serializer import (
+                page_state_key,
+                restore_page_state,
+            )
 
-                restore_page_state(
-                    page, {k: v for k, v in session_data.items() if k != "user"}
-                )
+            saved = await self.session_store.get(page_state_key(session_id, page))
+            if saved:
+                restore_page_state(page, saved, principal=resolved_user)
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
@@ -1926,6 +1929,9 @@ class PyWire:
                 if isinstance(update, dict):
                     return JSONResponse(update)
                 response = cast(Response, update)
+            except HandlerArgsError as e:
+                logger.warning("Refused an event: %s", e)
+                return JSONResponse({"error": REFUSED}, status_code=400)
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
         elif (
@@ -1988,10 +1994,15 @@ class PyWire:
 
         # In non-interactive mode, persist session state after handling
         if not self.interactive_server_mode and session_id:
-            from pywire.runtime.session_serializer import snapshot_page_state
+            from pywire.runtime.session_serializer import (
+                page_state_key,
+                snapshot_page_state,
+            )
 
             snapshot = snapshot_page_state(page, warn_size=self.session_warn_size)
-            await self.session_store.set(session_id, snapshot, ttl=self.session_ttl)
+            await self.session_store.set(
+                page_state_key(session_id, page), snapshot, ttl=self.session_ttl
+            )
 
         # Script injection is now handled by the compiler (generator.py)
         # to ensure it's present in both dev and production.
@@ -2200,6 +2211,22 @@ class PyWire:
                     self._runtime_dir / "upload_token.key"
                 )
         return self._upload_token_key
+
+    def _handler_args_key(self) -> bytes:
+        """The key inline handler arguments are signed with (``handler_args``).
+
+        Like the upload key: derived from ``secret_key`` when there is one,
+        else shared by the processes on this machine, since a page rendered by
+        one process sends its events to whichever one holds its socket.
+        """
+        if self._args_key is None:
+            if self.signing_secret_shared:
+                self._args_key = hmac.new(
+                    self.signing_secret, b"pywire.args", hashlib.sha256
+                ).digest()
+            else:
+                self._args_key = machine_key(self._runtime_dir / "handler_args.key")
+        return self._args_key
 
     def _issue_upload_token(self) -> str:
         body = f"{int(time.time()):x}_{secrets.token_hex(16)}"

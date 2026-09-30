@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 from pywire.compiler.exceptions import PyWireSyntaxError
 from pywire.runtime.app import PyWire
 from pywire.runtime.loader import PageLoader
+from pywire.runtime.snapshot_codec import decode_snapshot
 
 SECRET = "test-secret-key-at-least-32-bytes"
 _MSGPACK = {"Content-Type": "application/x-msgpack"}
@@ -57,14 +58,15 @@ def test_signed_snapshot_cannot_overwrite_request_query(tmp_path) -> None:
     with _client(tmp_path, READS_QUERY) as client:
         page = client.get("/?q=real")
         blob = page.text.split('_pywire_snapshot" type="text/plain">')[1]
-        snapshot = {
-            "attrs": {"seen": "", "query": {"q": "forged"}, "_region_cache": {}},
-            "wire_tags": {"seen": "primitive"},
-            "page_class": "IndexPage",
-            "route": "/?q=real",
+        blob = blob.split("</script>")[0]
+        snapshot = decode_snapshot(blob, secret=SECRET.encode())
+        snapshot["attrs"] = {
+            "seen": "",
+            "query": {"q": "forged"},
+            "_region_cache": {},
         }
         forged = _sign(snapshot)
-        assert forged != blob.split("</script>")[0]
+        assert forged != blob
 
         response = client.post(
             "/_pywire/stateless",

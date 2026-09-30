@@ -1,7 +1,7 @@
 import { BaseTransport, ServerMessage, EventMessage, RelocateMessage } from './base'
 import { encode, decode } from '@msgpack/msgpack'
 import { logger } from '../logger'
-import { getMountPath } from '../mount-path'
+import { bootSpaMeta, getMountPath } from '../spa-meta'
 
 /** Server response for a stateless POST: a WS-shaped message plus the next snapshot. */
 type StatelessResponse = ServerMessage & { snapshot?: unknown; live_every?: unknown }
@@ -48,7 +48,7 @@ export class StatelessTransport extends BaseTransport {
   constructor(baseUrl?: string) {
     super()
     this.baseUrl = baseUrl || `${getMountPath()}/_pywire`
-    const tag = document.getElementById('_pywire_snapshot')
+    const tag = findSnapshotTag(document)
     this.snapshot = tag?.textContent?.trim() ?? ''
     this.liveEvery = parseLiveEvery(tag?.getAttribute('data-live-every'))
   }
@@ -232,9 +232,7 @@ export class StatelessTransport extends BaseTransport {
 
   private extractSnapshot(html: string): { snapshot: string; liveEvery: number } {
     try {
-      const tag = new DOMParser()
-        .parseFromString(html, 'text/html')
-        .getElementById('_pywire_snapshot')
+      const tag = findSnapshotTag(new DOMParser().parseFromString(html, 'text/html'))
       return {
         snapshot: tag?.textContent?.trim() ?? '',
         liveEvery: parseLiveEvery(tag?.getAttribute('data-live-every')),
@@ -250,15 +248,8 @@ export class StatelessTransport extends BaseTransport {
    * version in prod, bundle mtime in dev).
    */
   private readServerVersion(): string {
-    const metaEl = document.getElementById('_pywire_spa_meta')
-    if (metaEl) {
-      try {
-        const meta = JSON.parse(metaEl.textContent || '{}')
-        if (typeof meta.version === 'string') return meta.version
-      } catch {
-        /* malformed meta — fall through */
-      }
-    }
+    const version = bootSpaMeta().version
+    if (typeof version === 'string') return version
     const script = document.querySelector<HTMLScriptElement>('script[src*="/_pywire/static/"]')
     if (script?.src) {
       try {
@@ -269,6 +260,17 @@ export class StatelessTransport extends BaseTransport {
     }
     return ''
   }
+}
+
+/**
+ * The snapshot the server embedded: a text `<script>` after all page markup,
+ * so the last one — never another element that carries the id.
+ */
+function findSnapshotTag(root: ParentNode): HTMLScriptElement | null {
+  const tags = root.querySelectorAll<HTMLScriptElement>(
+    'script#_pywire_snapshot[type="text/plain"]'
+  )
+  return tags.length ? tags[tags.length - 1] : null
 }
 
 /** A refresh interval in ms from the server; anything unusable means none. */
