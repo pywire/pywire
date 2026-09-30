@@ -91,7 +91,7 @@ jobs:
 
       - name: Deploy
         working-directory: examples/${{ matrix.example }}
-        run: uv run --with workers-py pywrangler deploy
+        run: uv run --with workers-py==1.17.5 pywrangler deploy
         env:
           # Vendor a copy of the workspace pywire, not a link back to it.
           UV_NO_EDITABLE: '1'

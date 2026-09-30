@@ -134,62 +134,83 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
 
+  # Build the pure-Python packages without the publish token in reach; each
+  # publish job below only downloads what was built and uploads it.
+  build-python:
+    name: "Build ${{ matrix.package }}"
+    if: inputs.pywire-parser || inputs.pywire-language-server || inputs.create-pywire-app
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [pywire-parser, pywire-language-server, create-pywire-app]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs[matrix.package]
+      - name: Append dev version suffix
+        if: inputs[matrix.package]
+        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
+        working-directory: packages/${{ matrix.package }}
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        if: inputs[matrix.package]
+      - run: uv build --out-dir dist
+        if: inputs[matrix.package]
+        working-directory: packages/${{ matrix.package }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs[matrix.package]
+        with:
+          name: ${{ matrix.package }}-dist
+          path: packages/${{ matrix.package }}/dist/*
+
   # Publish pywire-parser to Test PyPI
   publish-pywire-parser:
     name: "Publish pywire-parser to Test PyPI"
     if: inputs.pywire-parser
+    needs: build-python
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Append dev version suffix
-        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
-        working-directory: packages/pywire-parser
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv build --out-dir dist
-        working-directory: packages/pywire-parser
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pywire-parser-dist
+          path: dist
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
-          packages-dir: packages/pywire-parser/dist/
+          packages-dir: dist/
 
   # Publish pywire-language-server to Test PyPI
   publish-language-server:
     name: "Publish pywire-language-server to Test PyPI"
     if: inputs.pywire-language-server
+    needs: build-python
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Append dev version suffix
-        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
-        working-directory: packages/pywire-language-server
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv build --out-dir dist
-        working-directory: packages/pywire-language-server
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pywire-language-server-dist
+          path: dist
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
-          packages-dir: packages/pywire-language-server/dist/
+          packages-dir: dist/
 
   # Publish create-pywire-app to Test PyPI
   publish-create-app:
     name: "Publish create-pywire-app to Test PyPI"
     if: inputs.create-pywire-app
+    needs: build-python
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Append dev version suffix
-        run: sed -i 's/^version = "\(.*\)"/version = "\1.dev${{ github.run_number }}"/' pyproject.toml
-        working-directory: packages/create-pywire-app
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv build --out-dir dist
-        working-directory: packages/create-pywire-app
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: create-pywire-app-dist
+          path: dist
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
-          packages-dir: packages/create-pywire-app/dist/
+          packages-dir: dist/
