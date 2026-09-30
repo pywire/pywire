@@ -4,6 +4,11 @@ Invoked from ``BasePage.render()`` before user ``@before_load`` hooks. If
 access is denied, returns a ``RedirectResponse``; the page's ``render()``
 propagates that back to the transport without ever executing user code.
 
+``BasePage.handle_event()`` runs the same guard through ``enforce_auth``
+before every event, so each transport re-checks the connection's current
+principal (a revoke or logout takes effect on the next event) and no
+handler runs on a page its guard denies.
+
 ``evaluate_auth`` is the same decision as ``run_auth_guard`` but returns a
 bool — used by the ``{$auth}`` template directive to gate a region
 without redirecting the whole page.
@@ -24,6 +29,19 @@ from pywire.runtime.base_path import with_base
 logger = logging.getLogger(__name__)
 
 DEFAULT_REDIRECT = "/login"
+
+
+class AuthDenied(Exception):
+    """A page's ``!auth`` guard refused the connection's principal.
+
+    Raised before any user code runs. ``location`` is where the client
+    should navigate (the page's ``!auth`` redirect, under the base path).
+    Transports answer with a navigate message and detach the page.
+    """
+
+    def __init__(self, location: str) -> None:
+        super().__init__(location)
+        self.location = location
 
 
 async def evaluate_auth(
@@ -98,6 +116,13 @@ async def run_auth_guard(page: Any) -> Optional[Response]:
         return None
     # Under a URL prefix, "/login" means the app's own login page.
     return _deny(with_base(redirect, getattr(page, "base_path", "")))
+
+
+async def enforce_auth(page: Any) -> None:
+    """Raise ``AuthDenied`` if the page's ``!auth`` guard refuses ``page.user``."""
+    denied = await run_auth_guard(page)
+    if denied is not None:
+        raise AuthDenied(denied.headers.get("location") or "/")
 
 
 def _resolve_principal(page: Any) -> ClaimsPrincipal:

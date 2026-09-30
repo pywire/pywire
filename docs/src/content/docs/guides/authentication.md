@@ -71,6 +71,8 @@ from pywire import app
 
 If the guard denies, the page renders a 303 redirect to `redirect` (defaults to `/login`) and no `@before_load` / `@init` hooks run. User code is never reached on denial.
 
+The guard also runs before every event, on every transport (WebSocket, HTTP long-poll, event POSTs): a handler or `@mount` hook on an `!auth` page only runs for a principal the guard accepts at that moment. When a session is revoked or its user signs out, the next event is refused, the page is dropped from the connection and the browser is sent to `redirect`.
+
 Shorthand forms:
 
 ```pywire
@@ -114,6 +116,8 @@ Async form with an explicit "authorizing" state and a bound boolean:
 ```
 
 Each `{$auth}` region is evaluated independently, works inside `{$for}`, updates live via the `AuthChannel`, and fails closed when a policy is missing or raises.
+
+A region only decides what is rendered. Handlers are page methods: anyone who can load the page can send an event naming one, whether or not its button was rendered for them. Check the principal inside any handler that needs it, or put it on a page with its own `!auth`.
 
 ## Reading the principal
 

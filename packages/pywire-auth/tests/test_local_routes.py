@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, Optional
 
 from pywire.auth import MemoryAuthChannel
@@ -68,9 +69,10 @@ def test_register_happy_path() -> None:
     assert data["auth"]["user_id"].startswith("local:")
 
 
-def test_register_with_role_and_email_verified() -> None:
-    client, store, _idp, _ = _build()
-    client.post(
+def test_register_ignores_claims_posted_in_the_form() -> None:
+    """A visitor cannot grant themselves a role or a verified email."""
+    client, store, idp, _ = _build()
+    resp = client.post(
         "/auth/local/register",
         data={
             "email": "a@b.c",
@@ -78,11 +80,20 @@ def test_register_with_role_and_email_verified() -> None:
             "name": "Alice",
             "role": "admin",
             "email_verified": "on",
+            "claims": "role=admin",
         },
     )
-    claims = dict(store._data["sid-1"]["auth"]["claims"])
-    assert claims.get("role") == "admin"
-    assert claims.get("email_verified") == "true"
+    assert resp.status_code == 303
+    auth = store._data["sid-1"]["auth"]
+    claim_types = {c_type for c_type, _value in auth["claims"]}
+    assert "role" not in claim_types
+    assert "email_verified" not in claim_types
+
+    # Nor on the stored user: the next login must not pick them up either.
+    principal = asyncio.run(idp.principal_for_user(auth["user_id"].split(":", 1)[1]))
+    assert principal is not None
+    assert not principal.has_claim("role")
+    assert not principal.has_claim("email_verified")
 
 
 def test_register_duplicate_email_redirects_with_error() -> None:

@@ -239,6 +239,8 @@ pywire dev --ssl-keyfile key.pem --ssl-certfile cert.pem
 
 In production, terminate SSL at a reverse proxy (Nginx, Caddy, or your cloud provider's load balancer) rather than at the application level.
 
+The WebSocket and long-poll endpoints refuse connections a browser opened from another site, so a page elsewhere can't act with your visitors' cookies. Browsers mark their own requests with `Sec-Fetch-Site`; for older browsers PyWire compares `Origin` with the `Host` header, or `X-Forwarded-Host` when a proxy rewrites `Host`. Clients that aren't browsers send neither and are unaffected.
+
 ## Compression
 
 PyWire gzips text responses itself: pages, the client runtime, CSS, JSON and HTTP-transport updates. The client runtime is compressed once and cached, so a cold load of a small page is about 25 KB instead of 84 KB. Images, fonts and other already-compressed files pass through untouched.

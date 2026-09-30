@@ -1886,10 +1886,30 @@ class BasePage(metaclass=_PageMeta):
             except Exception:
                 logger.debug("server push failed", exc_info=True)
 
+    def _act_as(self, user: Any) -> None:
+        """Make ``user`` (from the transport's ``get_user``) this page's principal.
+
+        ``None`` means no auth is installed; on an unguarded page it leaves
+        ``user`` alone, since it may be a page variable. A guarded page always
+        takes it, so a principal restored from a session snapshot or left
+        from an earlier request never passes the guard.
+        """
+        if user is not None or getattr(type(self), "__auth_required__", False):
+            self.user = user
+
     async def handle_event(
         self, event_name: str, event_data: dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle client event (from @click, etc.)."""
+        """Handle client event (from @click, etc.).
+
+        Raises ``AuthDenied`` before dispatching anything when the page's
+        ``!auth`` guard refuses ``self.user``. Checked on every event, not
+        once per connection, so a revoke or logout stops the next event.
+        """
+        if getattr(self.__class__, "__auth_required__", False):
+            from pywire.auth.guard import enforce_auth
+
+            await enforce_auth(self)
         try:
             with self._owning():
                 await self._dispatch_event(event_name, event_data)

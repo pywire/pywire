@@ -9,7 +9,9 @@ import uuid
 from typing import Any, Dict, Set, cast
 from urllib.parse import urlparse
 
+from pywire.auth.guard import AuthDenied, enforce_auth
 from pywire.runtime.base_path import prefix_of, strip_base
+from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page import BasePage
 from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
 from pywire.runtime.session_serializer import restore_page_state
@@ -48,7 +50,13 @@ class WebTransportHandler:
             logger.debug(f"Error receiving connect message: {e}")
             return
 
-        # 2. Accept connection
+        # 2. Accept connection — unless a page on another site opened it: the
+        # session would act with the visitor's cookies.
+        from starlette.datastructures import Headers
+
+        if is_cross_site(Headers(scope=scope)):
+            logger.warning("Refused cross-site WebTransport session")
+            return
         await send({"type": "webtransport.accept"})
         logger.debug("WebTransport connection accepted")
 
@@ -146,6 +154,13 @@ class WebTransportHandler:
                     if session_id:
                         self.app.session_persister.schedule(session_id, page)
 
+                except AuthDenied as denied:
+                    del self.connection_pages[connection_id]
+                    await self._send_response(
+                        send,
+                        stream_id,
+                        with_ack({"type": "navigate", "path": denied.location}, ack),
+                    )
                 except Exception as e:
                     # Like the WebSocket handler: the exception text can carry
                     # internals (queries, paths), so only dev mode sends it.
@@ -194,10 +209,6 @@ class WebTransportHandler:
                 page = page_class(
                     request, params, query, path=path_info, url=url_helper
                 )
-                if hasattr(self.app, "get_user"):
-                    page.user = self.app.get_user(request)
-
-                self.connection_pages[connection_id] = page
 
                 # Session ID: reuse from reconnect or generate new
                 client_session_id = data.get("session_id")
@@ -216,6 +227,21 @@ class WebTransportHandler:
                         )
                 if session_id is None:
                     session_id = str(uuid.uuid4())
+
+                # Identity comes from the connection, never from a snapshot,
+                # and a page its !auth guard refuses is never attached.
+                if hasattr(self.app, "get_user"):
+                    page.user = self.app.get_user(request)
+                try:
+                    await enforce_auth(page)
+                except AuthDenied as denied:
+                    self.connection_pages.pop(connection_id, None)
+                    await self._send_response(
+                        send, stream_id, {"type": "navigate", "path": denied.location}
+                    )
+                    return
+
+                self.connection_pages[connection_id] = page
                 self.session_ids[connection_id] = session_id
 
     async def _send_response(
