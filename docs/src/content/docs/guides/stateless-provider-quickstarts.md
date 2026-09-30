@@ -9,12 +9,14 @@ For AWS Lambda, Azure Functions and Google Cloud Functions, the generated `requi
 
 ## Cloudflare edge Worker
 
-This target uses Python Workers/Pyodide and a plain Worker—no Durable Object. It is stateless-only. The build writes `wrangler.toml`, `entry.py`, and `_pywire_build/` to the project root and does not generate a deployment README.
+This target uses Python Workers/Pyodide and a plain Worker—no Durable Object. It is stateless-only. The build writes `entry.py`, `_routes.py` and `_pywire_build/` next to your app's code: in `src/` for a `src.main:app` layout, otherwise in the project root. Wrangler uploads every Python file in that folder, so keeping the Worker in `src/` leaves your tests and virtual environments out of the upload.
+
+The first build also writes `wrangler.toml`. After that the file is yours: add routes and `[vars]` to it, and later builds leave it alone. The Worker's dependencies are the `[project]` dependencies in `pyproject.toml`, so keep `pywire[cli]` and test tools in a dev dependency group.
 
 ```sh
 pywire build --platform cloudflare-edge
-npx wrangler dev
-npx wrangler deploy
+uv run --with workers-py pywrangler dev
+uv run --with workers-py pywrangler deploy
 ```
 
 Set `PYWIRE_SECRET_KEY` as a Wrangler secret; never commit it. For production, prefer the deployment's secret binding over a plain environment value. The real-worker gate measured an action p50 of about 2.65 ms, a 232 B counter snapshot, a 251 B 1000-row toggle, and about 79 ms Pyodide cold start. These are workerd measurements, not Cloudflare service promises.
