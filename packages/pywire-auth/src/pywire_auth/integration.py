@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
+from pywire.runtime.secret_key import GENERATE_HINT, weak_secret
 from pywire.auth import (
     ClaimsPrincipal,
     MemoryAuthChannel,
@@ -81,6 +82,13 @@ def connect_auth(
         raise RuntimeError(
             "connect_auth requires secret_key (or PYWIRE_SESSION_SECRET "
             "set on the app) for session cookie verification"
+        )
+    weakness = weak_secret(effective_secret)
+    if weakness is not None:
+        raise RuntimeError(
+            "connect_auth's secret_key signs session cookies and must be at "
+            f"least 32 random bytes, and this one isn't: {weakness}. "
+            f"{GENERATE_HINT}"
         )
 
     # Auto-install SessionMiddleware when missing — interactive-mode PyWire

@@ -15,6 +15,8 @@ from typing import Any, Dict, Optional
 
 from authlib.jose import JsonWebKey, JsonWebToken
 
+from pywire.runtime.secret_key import GENERATE_HINT, weak_secret
+
 # Claims the issuer owns. Caller-supplied claims never replace them: a
 # token's issuer, audience, subject and lifetime are what verifiers trust.
 RESERVED_CLAIMS = frozenset({"iss", "sub", "aud", "iat", "exp", "nbf", "jti"})
@@ -45,6 +47,13 @@ class TokenIssuer:
         if self.algorithm == "HS256":
             if not self.secret:
                 raise ValueError("HS256 issuer requires a non-empty secret")
+            # Anyone holding one token can test guesses offline.
+            weakness = weak_secret(self.secret)
+            if weakness is not None:
+                raise ValueError(
+                    "HS256 issuer secret must be at least 32 random bytes, and "
+                    f"this one isn't: {weakness}. {GENERATE_HINT}"
+                )
         elif self.algorithm == "RS256":
             if not self.private_key_pem:
                 raise ValueError("RS256 issuer requires private_key_pem")

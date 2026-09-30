@@ -55,7 +55,7 @@ def _build(
     store = _MemStore()
     store.jar["sid"] = session_id
     channel = MemoryAuthChannel()
-    idp = LocalIdP(store=MemoryAuthStore(), secret="s" * 32)
+    idp = LocalIdP(store=MemoryAuthStore(), secret="test-signing-key-0123456789abcdef")
     ctx = _RouteContext(
         providers={},
         session_store=store,

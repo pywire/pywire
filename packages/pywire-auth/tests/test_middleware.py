@@ -19,7 +19,7 @@ from pywire.runtime.session_middleware import _sign_session_id
 
 from pywire_auth.middleware import AuthMiddleware
 
-SECRET = "x" * 32
+SECRET = "test-signing-key-0123456789abcdef"
 
 
 def _run(coro):

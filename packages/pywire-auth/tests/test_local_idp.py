@@ -16,7 +16,7 @@ def _run(coro):
 def _make_idp() -> LocalIdP:
     return LocalIdP(
         store=MemoryAuthStore(),
-        secret="x" * 64,
+        secret="test-signing-key-0123456789abcdef-test-signing-key-0123456789abcdef",
         issuer="test-issuer",
         audience="test-app",
     )
@@ -148,11 +148,13 @@ def test_principal_from_id_token() -> None:
 
 
 def test_hs256_public_jwks_raises() -> None:
-    issuer = TokenIssuer(issuer="x", algorithm="HS256", secret="x" * 32)
+    issuer = TokenIssuer(
+        issuer="x", algorithm="HS256", secret="test-signing-key-0123456789abcdef"
+    )
     with pytest.raises(RuntimeError):
         issuer.public_jwks()
 
 
 def test_unsupported_algorithm_rejected() -> None:
     with pytest.raises(ValueError):
-        TokenIssuer(algorithm="ES256", secret="x" * 32)
+        TokenIssuer(algorithm="ES256", secret="test-signing-key-0123456789abcdef")

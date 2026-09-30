@@ -205,7 +205,7 @@ async def test_rotated_signing_key_refetches_jwks(idp) -> None:
 
 
 def test_token_issuer_claims_cannot_override_registered_claims() -> None:
-    issuer = TokenIssuer(secret="s" * 32)
+    issuer = TokenIssuer(secret="test-signing-key-0123456789abcdef")
     token = issuer.issue(
         subject="u1",
         audience="app",
@@ -220,8 +220,10 @@ def test_token_issuer_claims_cannot_override_registered_claims() -> None:
 
 
 def test_token_issuer_requires_exp() -> None:
-    issuer = TokenIssuer(secret="s" * 32)
+    issuer = TokenIssuer(secret="test-signing-key-0123456789abcdef")
     token = JsonWebToken(["HS256"]).encode(
-        {"alg": "HS256"}, {"iss": issuer.issuer, "sub": "u1", "aud": "app"}, "s" * 32
+        {"alg": "HS256"},
+        {"iss": issuer.issuer, "sub": "u1", "aud": "app"},
+        "test-signing-key-0123456789abcdef",
     )
     assert issuer.verify(token.decode(), audience="app") is None

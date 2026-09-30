@@ -20,7 +20,7 @@ from pywire_auth import AuthActions, LocalIdP, MemoryAuthStore
 from pywire_auth.middleware import AuthMiddleware
 from pywire_auth.sessions import AUTH_AT_KEY, UserSessions
 
-SECRET = "s" * 32
+SECRET = "test-signing-key-0123456789abcdef"
 
 
 class _SessionStore:
