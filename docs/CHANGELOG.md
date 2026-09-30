@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0](https://github.com/pywire/pywire/compare/pywire-docs-v0.8.0...pywire-docs-v0.9.0) (2026-09-30)
+
+
+### Features
+
+* **pywire-cli,examples:** realtime demo on the app Durable Object, in a src/ Worker ([#405](https://github.com/pywire/pywire/issues/405)) ([0c2ef24](https://github.com/pywire/pywire/commit/0c2ef24e4bc3386332816aa4d6f70607b2c405ab))
+* **pywire,examples:** real example apps and the framework fixes they needed ([#368](https://github.com/pywire/pywire/issues/368)) ([a9b9a74](https://github.com/pywire/pywire/commit/a9b9a745fe485f5fa172ff5306cad282afe719f3))
+* **pywire:** stateless pages refresh shared state on an interval ([#369](https://github.com/pywire/pywire/issues/369)) ([a43d999](https://github.com/pywire/pywire/commit/a43d999136b67e890206804ef772df0fb4674d0b))
+
+
+### Bug Fixes
+
+* **pywire-cli:** Cloudflare deploys work under base_path and on the current Workers runtime ([#384](https://github.com/pywire/pywire/issues/384)) ([6f55aa8](https://github.com/pywire/pywire/commit/6f55aa8a0377206e12e8f64a1f3c8a53601d7adf))
+* **pywire-cli:** edge Worker uploads only the app, and builds keep wrangler.toml ([#400](https://github.com/pywire/pywire/issues/400)) ([b132ef6](https://github.com/pywire/pywire/commit/b132ef6039b5e4cac058eb2f02dac73b286d78ef))
+* **pywire-templates:** run Cloudflare apps in regional Durable Objects ([#393](https://github.com/pywire/pywire/issues/393)) ([2a0833c](https://github.com/pywire/pywire/commit/2a0833ca53c62d691a18970a204661baafbb84f8))
+
 ## [0.6.1](https://github.com/pywire/pywire/compare/pywire-docs-v0.6.0...pywire-docs-v0.6.1) (2026-09-28)
 
 
