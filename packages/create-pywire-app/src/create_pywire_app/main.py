@@ -507,6 +507,9 @@ class ProjectGenerator:
         """Generate Dockerfile (templated with workers count)."""
         content = render_deploy_template("Dockerfile.j2", workers=self.workers)
         (self.project_path / "Dockerfile").write_text(content)
+        (self.project_path / ".dockerignore").write_text(
+            render_deploy_template("dockerignore.j2")
+        )
 
     def _generate_adapters(self) -> None:
         """Generate deployment adapter files."""

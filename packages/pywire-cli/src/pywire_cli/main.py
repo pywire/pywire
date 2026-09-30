@@ -990,6 +990,7 @@ def deploy(
     """Generate deployment configuration for your PyWire app."""
     from pywire_cli.deploy import (
         generate_dockerfile,
+        generate_dockerignore,
         generate_fly_toml,
         generate_railway_json,
         generate_render_yaml,
@@ -1184,6 +1185,16 @@ def deploy(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
         console.print(f"✅ Generated [cyan]{target}[/]")
+
+    # The Dockerfile copies the whole build context; without a .dockerignore
+    # that includes .env and local databases. An existing one is left alone.
+    dockerignore = out_path / ".dockerignore"
+    if (
+        any(name == "Dockerfile" for name, _ in files_to_write)
+        and not dockerignore.exists()
+    ):
+        dockerignore.write_text(generate_dockerignore())
+        console.print(f"✅ Generated [cyan]{dockerignore}[/]")
 
     # Next steps guidance
     redis_hint = (

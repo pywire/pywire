@@ -142,6 +142,21 @@ class TestDeployCommand:
             assert Path("Dockerfile").exists()
             content = Path("Dockerfile").read_text()
             assert "FROM python:3.12-slim" in content
+            assert "USER pywire" in content
+            assert ".env" in Path(".dockerignore").read_text().splitlines()
+
+    @patch("pywire.compiler.build.build_project")
+    def test_docker_keeps_existing_dockerignore(self, mock_build: MagicMock) -> None:
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            _make_app_dir(tmpdir)
+            Path(".dockerignore").write_text("mine\n")
+            result = runner.invoke(cli, ["deploy", "--platform", "docker"])
+            assert result.exit_code == 0, result.output
+            assert Path(".dockerignore").read_text() == "mine\n"
 
     @patch("pywire.compiler.build.build_project")
     def test_render_generates_yaml(self, mock_build: MagicMock) -> None:

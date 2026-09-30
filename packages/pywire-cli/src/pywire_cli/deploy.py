@@ -29,6 +29,11 @@ def generate_dockerfile(project_root: Path, workers: int = 1) -> str:
     return render_deploy_template("Dockerfile.j2", workers=workers)
 
 
+def generate_dockerignore() -> str:
+    """Generate the .dockerignore that keeps secrets out of the image."""
+    return render_deploy_template("dockerignore.j2")
+
+
 def generate_render_yaml(
     project_root: Path, project_name: str, redis: bool = False
 ) -> str:
