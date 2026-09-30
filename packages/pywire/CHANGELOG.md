@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.0](https://github.com/pywire/pywire/compare/pywire-v0.18.0...pywire-v0.19.0) (2026-09-30)
+
+
+### Features
+
+* **pywire,examples:** real example apps and the framework fixes they needed ([#368](https://github.com/pywire/pywire/issues/368)) ([a9b9a74](https://github.com/pywire/pywire/commit/a9b9a745fe485f5fa172ff5306cad282afe719f3))
+* **pywire:** stateless pages refresh shared state on an interval ([#369](https://github.com/pywire/pywire/issues/369)) ([a43d999](https://github.com/pywire/pywire/commit/a43d999136b67e890206804ef772df0fb4674d0b))
+
+
+### Bug Fixes
+
+* **pywire-templates:** run Cloudflare apps in regional Durable Objects ([#393](https://github.com/pywire/pywire/issues/393)) ([2a0833c](https://github.com/pywire/pywire/commit/2a0833ca53c62d691a18970a204661baafbb84f8))
+* **pywire,pywire-language-server:** bump floors to pywire-parser 0.9.0 ([#408](https://github.com/pywire/pywire/issues/408)) ([7e47024](https://github.com/pywire/pywire/commit/7e4702415eb5025a73b3c7eeeb0ab0b20258a37f))
+
 ## [0.18.0](https://github.com/pywire/pywire/compare/pywire-v0.17.0...pywire-v0.18.0) (2026-09-29)
 
 
