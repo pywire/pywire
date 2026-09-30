@@ -1,7 +1,7 @@
 """Wire protocol helpers shared between transport implementations.
 
-Used by both WebSocketHandler (standard server) and the Durable Object
-template (CF Workers) to avoid duplicating message construction logic.
+Used by WebSocketHandler and the stateless handler to avoid duplicating
+message construction logic.
 """
 
 from __future__ import annotations

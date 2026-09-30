@@ -1,6 +1,6 @@
 name = "{{ project_name }}"
 main = "entry.py"
-compatibility_date = "2025-01-01"
+compatibility_date = "2026-09-01"
 compatibility_flags = ["python_workers"]
 workers_dev = false
 preview_urls = false
@@ -10,9 +10,15 @@ directory = "./.pywire/deploy/public"
 binding = "ASSETS"
 
 [[durable_objects.bindings]]
-name = "PYWIRE_SESSION"
-class_name = "PyWireSessionDO"
+name = "PYWIRE_APP"
+class_name = "PyWireAppDO"
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PyWireSessionDO"]
+
+# v2: one object runs the whole app; the per-tab session objects are gone.
+[[migrations]]
+tag = "v2"
+deleted_classes = ["PyWireSessionDO"]
+new_sqlite_classes = ["PyWireAppDO"]

@@ -72,7 +72,16 @@ pywire deploy --platform cloudflare
 Cloudflare Python Workers requires a [Workers Paid plan](https://dash.cloudflare.com/workers/plans) ($5/month). The free plan's 3 MiB size limit and startup CPU limits are incompatible with Python frameworks.
 :::
 
-Cloudflare Workers use a fundamentally different architecture from container-based platforms. Instead of a long-running server, each user session runs in a **Durable Object** with persistent storage and WebSocket hibernation support. Static assets are served from Cloudflare's edge CDN.
+The app runs in **Durable Objects** placed near your visitors: one per Cloudflare region (western and eastern North America, South America, western and eastern Europe, Asia-Pacific, Oceania, Africa and the Middle East), created on first use. The Worker sends every page load, WebSocket and long-poll request to the object for the visitor's region. Each object runs the whole app, the way one `pywire run --workers 1` process does: each tab gets its own page, and module-level wires are shared by everyone in that region. Static assets are served from Cloudflare's edge CDN and never reach an object.
+
+Visitors in different regions don't share module-level wires, just as two worker processes on a server don't. To run one object for everyone, so that all visitors share them, set a Worker var in `wrangler.toml`:
+
+```toml
+[vars]
+PYWIRE_PLACEMENT = "global"
+```
+
+A single object lives near whoever reached it first, so visitors far from it pay the extra round trip.
 
 This target serves stateful apps, and the build refuses a `PyWire(stateless=True)` app. Deploy a stateless app to a plain Worker with `--platform cloudflare-edge` instead (see [Provider quickstarts](/guides/stateless-provider-quickstarts/)).
 
@@ -96,14 +105,14 @@ uv run pywrangler deploy
 
 **Architecture notes:**
 
-- Each session gets its own Durable Object instance with persistent storage
-- Real-time reactivity works out of the box via WebSocket hibernation
-- No Redis needed — Durable Objects handle session state
-- `--workers` and `--redis` flags are not applicable (Durable Objects replace both)
+- Each object runs one thing at a time, like one server process, so it suits the traffic one `pywire run --workers 1` process can take.
+- An object stays in memory while anyone is connected to it. When everyone has left, or after a deploy, Cloudflare may evict it, and its module-level state and open pages start over, as after a server restart.
+- Worker variables and secrets reach `os.environ` before your app is imported, so set `PYWIRE_SECRET_KEY` and your app's own settings with `wrangler secret put` or `[vars]`.
+- `--workers` and `--redis` flags are not applicable.
 
 **Current limitations:**
 
-- **Cold starts (2-4 seconds):** Cloudflare Python Workers + Durable Objects have inherent cold start latency due to Pyodide (WebAssembly Python) snapshot restoration and DO initialization. PyWire mitigates this by pre-warming the Durable Object during the initial HTTP request — the DO starts initializing while the browser loads HTML and JavaScript. Pages are server-rendered, so content is visible immediately; the cold start only affects interactivity.
+- **Cold starts (2-4 seconds):** Cloudflare Python Workers have cold start latency from restoring the Pyodide (WebAssembly Python) snapshot. Only the first visitor in a region after its object starts waits for it; later page loads and sockets reuse the running object.
 - **Pydantic needs a recent compatibility date:** `pywire[forms]` (pydantic) runs on Python Workers from compatibility date 2026-09-01 (Pyodide 0.28), which the generated `wrangler.toml` sets. Older dates fail when `pywrangler` installs the dependencies.
 - **Platform maturity:** Cloudflare Python Workers launched in late 2024 and is actively being improved. Cold start performance is expected to improve as Cloudflare optimizes Pyodide snapshot restoration and Durable Object initialization. Follow [Cloudflare's Python Workers changelog](https://developers.cloudflare.com/changelog/) for updates.
 

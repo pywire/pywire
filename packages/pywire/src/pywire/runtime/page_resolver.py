@@ -1,7 +1,7 @@
 """Resolve a URL path to a live Page instance.
 
-Shared between WebSocketHandler (standard server) and the Durable Object
-template (CF Workers). Eliminates duplicated page-instantiation logic.
+Shared by WebSocketHandler and the stateless handler. Eliminates duplicated
+page-instantiation logic.
 """
 
 from __future__ import annotations

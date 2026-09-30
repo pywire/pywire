@@ -55,12 +55,9 @@ def generate_wrangler_toml(project_root: Path, project_name: str) -> str:
     return render_deploy_template("wrangler.toml.j2", project_name=project_name)
 
 
-def generate_cf_entry(project_root: Path, app_string: str = "main:app") -> str:
-    """Generate entry.py for Cloudflare Workers with Durable Object routing."""
-    app_module, app_attr = _parse_app_string(app_string)
-    return render_deploy_template(
-        "entry.py.j2", app_module=app_module, app_attr=app_attr
-    )
+def generate_cf_entry(project_root: Path) -> str:
+    """Generate entry.py: the Worker that sends every request to the app's DO."""
+    return render_deploy_template("entry.py.j2")
 
 
 def edge_worker_layout(project_root: Path, app_string: str) -> tuple[str, str]:
@@ -164,7 +161,7 @@ def generate_aws_lambda_readme(project_root: Path, project_name: str) -> str:
 
 
 def generate_cf_durable_object(project_root: Path, app_string: str = "main:app") -> str:
-    """Generate pywire_do.py — the Durable Object class for PyWire sessions."""
+    """Generate pywire_do.py — the Durable Object that runs the whole app."""
     app_module, app_attr = _parse_app_string(app_string)
     return render_deploy_template(
         "pywire_do.py.j2", app_module=app_module, app_attr=app_attr
