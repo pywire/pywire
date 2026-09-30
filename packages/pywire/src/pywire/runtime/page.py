@@ -216,6 +216,9 @@ class BasePage(metaclass=_PageMeta):
     # Compile-time allowlist of names ``_dispatch_handler`` may invoke. Set by
     # the .wire codegen; ``None`` (hand-rolled pages) keeps dispatch permissive.
     __event_handlers__: ClassVar[Optional[frozenset[str]]] = None
+    # Handlers the template wires only inside ``{$auth}`` blocks, with the
+    # gates around them (see ``_handler_gate_open``). Set by the .wire codegen.
+    __auth_handlers__: ClassVar[Dict[str, Tuple[Tuple[Any, ...], ...]]] = {}
     # Site id → ``_pw_item_<site>`` renderer for keyed ``{$for ... key=}``
     # loops. Set by the .wire codegen; ``None`` (hand-rolled pages) means no
     # keyed regions — dirty ``{site}#{key}`` ids fall back to a full render.
@@ -901,6 +904,11 @@ class BasePage(metaclass=_PageMeta):
                 f"Handler '{event_name}' is not a registered event handler"
             )
         if not is_framework_handler and event_name.startswith("_"):
+            raise ValueError(f"Handler '{event_name}' not allowed")
+        # A button inside {$auth} only renders for users the block allows;
+        # the handler behind it must not run for anyone else either.
+        gates = self.__class__.__auth_handlers__.get(event_name)
+        if gates is not None and not await self._handler_gate_open(gates):
             raise ValueError(f"Handler '{event_name}' not allowed")
 
         handler = getattr(self, event_name, None)
@@ -2236,12 +2244,68 @@ class BasePage(metaclass=_PageMeta):
             )
             allowed = False
 
-        self._auth_states[region_id] = {"status": "allowed" if allowed else "denied"}
+        # What was checked stays with the verdict, so an event from inside
+        # the region can be checked again against the principal it runs as.
+        self._auth_states[region_id] = {
+            "status": "allowed" if allowed else "denied",
+            "policy": policy,
+            "claims": None if claims is None else list(claims),
+        }
         self._dirty_regions.add(region_id)
         try:
             await self.push_state()
         except Exception:
             pass
+
+    async def _handler_gate_open(self, chains: Tuple[Tuple[Any, ...], ...]) -> bool:
+        """Whether the current principal passes every gate of some chain.
+
+        A ``("static", policy, claims)`` gate is evaluated now. A
+        ``("region", static_id)`` gate (claims computed per render) passes
+        when some rendered instance of that block allows the principal now.
+        """
+        from pywire.auth.guard import evaluate_auth
+        from pywire.auth.principal import ANONYMOUS, ClaimsPrincipal
+
+        principal = getattr(self, "user", None)
+        if not isinstance(principal, ClaimsPrincipal):
+            principal = ANONYMOUS
+        request = getattr(self, "request", None)
+
+        async def passes(policy: Any, claims: Any) -> bool:
+            try:
+                return await evaluate_auth(
+                    principal, policy=policy, claims=claims, request=request
+                )
+            except Exception:
+                logger.warning("{$auth} handler check failed; denying", exc_info=True)
+                return False
+
+        for chain in chains:
+            for gate in chain:
+                if gate[0] == "static":
+                    _, policy, claims = gate
+                    if not await passes(policy, list(claims) if claims else None):
+                        break
+                else:
+                    static_id = gate[1]
+                    rendered = [
+                        state
+                        for rid, state in self._auth_states.items()
+                        if rid == static_id
+                        or (
+                            rid.startswith(static_id + "_")
+                            and len(rid) == len(static_id) + 9
+                        )
+                    ]
+                    for state in rendered:
+                        if await passes(state.get("policy"), state.get("claims")):
+                            break
+                    else:
+                        break
+            else:
+                return True
+        return False
 
     @staticmethod
     def _auth_region_id(static_id: str, claims: Any) -> str:

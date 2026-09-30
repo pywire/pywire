@@ -116,7 +116,7 @@ Async form with an explicit "authorizing" state and a bound boolean:
 
 Each `{$auth}` region is evaluated independently, works inside `{$for}`, updates live via the `AuthChannel`, and fails closed when a policy is missing or raises.
 
-A region only decides what is rendered. Handlers are page methods: anyone who can load the page can send an event naming one, whether or not its button was rendered for them. Check the principal inside any handler that needs it, or put it on a page with its own `!auth`.
+A handler the template wires only inside a region's allowed branch is gated too: an event naming it is refused unless the current principal passes that region's policy and claims, checked again when the event arrives (for claims computed per `{$for}` row, against the rows rendered). A handler also wired outside the region, in its `{$else}` branch, or behind `{$then allowed}` isn't gated, and neither are handlers inside components rendered in the region: check the principal inside any handler that needs it, or put it on a page with its own `!auth`.
 
 ## Reading the principal
 

@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union, cast
 
 from pywire.compiler.ast_nodes import (
+    AuthAttribute,
     AuthDirective,
     Directive,
     EventAttribute,
@@ -83,6 +84,9 @@ class CodeGenerator:
         self._collected_exposed_methods: List[str] = []
         # Bare user-def names the template wires as event handlers
         self._wired_handler_names: Set[str] = set()
+        # Handler name -> the {$auth} gates around each place the template
+        # wires it (an empty tuple: wired outside any gate).
+        self._handler_gates: Dict[str, List[Tuple[Any, ...]]] = {}
         # Submit handlers of bound forms -> the <form> node, for errors.
         self._bound_submits: Dict[str, TemplateNode] = {}
         # Generated wrappers of bound forms' submits (``_handler_N``).
@@ -570,6 +574,8 @@ class CodeGenerator:
             )
         )
 
+        class_body.append(self._auth_handlers_stmt())
+
         # Track exposed methods
         initial_exposed = ast.Assign(
             targets=[ast.Name(id="__exposed_methods__", ctx=ast.Store())],
@@ -934,7 +940,11 @@ class CodeGenerator:
 
         bind_count = 0
 
-        def visit_nodes(nodes: List[TemplateNode], loop_vars: Set[str]) -> None:
+        def visit_nodes(
+            nodes: List[TemplateNode],
+            loop_vars: Set[str],
+            gates: Tuple[Any, ...] = (),
+        ) -> None:
             nonlocal handler_count, bind_count
             for node in nodes:
                 in_scope = loop_vars | self._loop_names(node)
@@ -1056,7 +1066,23 @@ class CodeGenerator:
                             if source is not None:
                                 attr.field_mask = analyze_event_fields(source)
 
-                visit_nodes(node.children, in_scope)
+                self._record_gates(node, bind, gates)
+                auth = next(
+                    (
+                        a
+                        for a in node.special_attributes
+                        if isinstance(a, AuthAttribute)
+                    ),
+                    None,
+                )
+                if auth is None:
+                    visit_nodes(node.children, in_scope, gates)
+                else:
+                    gated = self._auth_allowed_children(node)
+                    gate = self._auth_gate(node, auth)
+                    for child in node.children:
+                        inner = gates + (gate,) if child in gated else gates
+                        visit_nodes([child], in_scope, inner)
 
         visit_nodes(parsed.template, set())
         for name, form_node in self._bound_submits.items():
@@ -1073,6 +1099,80 @@ class CodeGenerator:
                     column=form_node.column,
                 )
         return handlers
+
+    def _record_gates(
+        self,
+        node: TemplateNode,
+        bind: Optional[ReactiveAttribute],
+        gates: Tuple[Any, ...],
+    ) -> None:
+        """Note the {$auth} gates around every handler ``node`` wires."""
+        names = [
+            a.handler_name
+            for a in node.special_attributes
+            if isinstance(a, EventAttribute) and a.handler_name
+        ]
+        bind_handler = getattr(bind, "_pw_bind_handler", None) if bind else None
+        if bind_handler:
+            names.append(bind_handler)
+        for name in names:
+            self._handler_gates.setdefault(name, []).append(gates)
+
+    @staticmethod
+    def _auth_allowed_children(node: TemplateNode) -> List[TemplateNode]:
+        """The children of a ``{$auth}`` block rendered only when it allows.
+
+        Without ``{$then}`` that is everything before ``{$else}``. With
+        ``{$then allowed}`` the body renders either way (the template reads
+        ``allowed``), so nothing is gated by the block itself.
+        """
+        from pywire.compiler.ast_nodes import ElseAttribute, ThenAttribute
+
+        children = list(node.children)
+        if any(
+            isinstance(a, ThenAttribute) for c in children for a in c.special_attributes
+        ):
+            return []
+        gated: List[TemplateNode] = []
+        for child in children:
+            if any(isinstance(a, ElseAttribute) for a in child.special_attributes):
+                break
+            gated.append(child)
+        return gated
+
+    @staticmethod
+    def _auth_gate(node: TemplateNode, auth: AuthAttribute) -> Tuple[Any, ...]:
+        """What a ``{$auth}`` block requires, as the runtime checks it again.
+
+        Static claims and policies are re-evaluated on every event. Claims
+        computed per render (a loop variable) are identified by the block's
+        region id; the runtime re-checks each rendered instance.
+        """
+        if auth.claims_expr is not None:
+            region = f"auth_{node.line}_{node.column}".replace("-", "_")
+            return ("region", region)
+        claims = tuple(tuple(c) for c in auth.claims) if auth.claims else None
+        return ("static", auth.policy, claims)
+
+    def _auth_handlers_stmt(self) -> ast.stmt:
+        """``__auth_handlers__``: handlers wired only inside {$auth} blocks.
+
+        Maps each to the alternative gate chains (any one must pass, and
+        every gate in it). A handler wired anywhere outside a gate isn't
+        listed: that element renders for everyone who can load the page.
+        """
+        keys: List[Optional[ast.expr]] = []
+        values: List[ast.expr] = []
+        for name in sorted(self._handler_gates):
+            chains = self._handler_gates[name]
+            if not chains or any(not chain for chain in chains):
+                continue
+            keys.append(ast.Constant(value=name))
+            values.append(ast.Constant(value=tuple(dict.fromkeys(chains))))
+        return ast.Assign(
+            targets=[ast.Name(id="__auth_handlers__", ctx=ast.Store())],
+            value=ast.Dict(keys=keys, values=values),
+        )
 
     @staticmethod
     def _loop_names(node: TemplateNode) -> Set[str]:
