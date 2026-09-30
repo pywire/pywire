@@ -31,7 +31,15 @@ _process_key = secrets.token_bytes(32)
 
 
 class HandlerArgsError(ValueError):
-    """A client sent arguments the page did not sign for this handler."""
+    """A client sent arguments the page did not sign for this handler.
+
+    A client error: transports answer it with :data:`REFUSED` (HTTP 400) and
+    log a warning, never a traceback.
+    """
+
+
+# What a client is told when its event is refused.
+REFUSED = "invalid event arguments"
 
 
 def _root_page(page: Any) -> Any:

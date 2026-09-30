@@ -7,6 +7,7 @@ must not take ``is_admin`` from the event data.
 
 import asyncio
 import datetime
+import logging
 import os
 import re
 import subprocess
@@ -248,4 +249,135 @@ def test_stateless_endpoint_refuses_extension_types(tmp_path: Path) -> None:
         # The token the page rendered works over this transport too.
         token = _tokens(html)[0]
         assert post({"type": "click", "args": token}).status_code == 200
-        assert post({"type": "click", "args": {"arg0": 7}}).status_code == 500
+
+
+FORGED = ({"arg0": 7}, "Wzdd.AAAAAAAAAAAAAAAAAAAAAA", [7])
+
+
+def _assert_refused_quietly(caplog: pytest.LogCaptureFixture) -> None:
+    """A forged event is logged as a warning, never an error or traceback."""
+    records = [r for r in caplog.records if r.name.startswith("pywire")]
+    assert any(
+        "Refused" in r.getMessage() or "refused" in r.getMessage() for r in records
+    )
+    assert not [r for r in records if r.levelno >= logging.ERROR or r.exc_info]
+
+
+@pytest.fixture
+def interactive_app(tmp_path: Path) -> PyWire:
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "index.wire").write_text(OTHER)
+    return PyWire(pages_dir=str(pages))
+
+
+@pytest.mark.parametrize("forged", FORGED)
+def test_stateless_refuses_forged_args_with_400(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, forged: Any
+) -> None:
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "index.wire").write_text(OTHER)
+    app = PyWire(pages_dir=str(pages), stateless=True, secret_key="s" * 32)
+    with TestClient(app) as client:
+        html = client.get("/").text
+        snapshot = html.split('_pywire_snapshot" type="text/plain">')[1].split(
+            "</script>"
+        )[0]
+        r = client.post(
+            "/_pywire/stateless",
+            content=msgpack.packb(
+                {
+                    "path": "/",
+                    "handler": "_handler_0",
+                    "data": {"type": "click", "args": forged},
+                    "snapshot": snapshot,
+                }
+            ),
+            headers={"Content-Type": "application/x-msgpack"},
+        )
+    assert r.status_code == 400
+    assert msgpack.unpackb(r.content) == {"error": "invalid event arguments"}
+    _assert_refused_quietly(caplog)
+
+
+@pytest.mark.parametrize("forged", FORGED)
+def test_websocket_refuses_forged_args_with_an_error_message(
+    interactive_app: PyWire, caplog: pytest.LogCaptureFixture, forged: Any
+) -> None:
+    client = TestClient(interactive_app)
+
+    def recv(ws: Any) -> Any:
+        while (msg := msgpack.unpackb(ws.receive_bytes()))["type"] == "console":
+            pass
+        return msg
+
+    with client.websocket_connect("/_pywire/ws") as ws:
+        ws.send_bytes(msgpack.packb({"type": "init", "path": "/"}))
+        while recv(ws)["type"] != "init_ack":
+            pass
+        ws.send_bytes(
+            msgpack.packb(
+                {
+                    "type": "event",
+                    "handler": "_handler_0",
+                    "path": "/",
+                    "data": {"type": "click", "args": forged},
+                    "id": 3,
+                }
+            )
+        )
+        assert recv(ws) == {
+            "type": "error",
+            "error": "invalid event arguments",
+            "ack": 3,
+        }
+        # A message with an extension type is refused; the socket stays open.
+        ws.send_bytes(msgpack.packb({"type": "event", "x": msgpack.ExtType(1, b"")}))
+        assert recv(ws) == {"type": "error", "error": "invalid message"}
+        ws.send_bytes(msgpack.packb({"type": "ping"}))
+    _assert_refused_quietly(caplog)
+
+
+@pytest.mark.parametrize("forged", FORGED)
+def test_long_poll_refuses_forged_args_with_400(
+    interactive_app: PyWire, caplog: pytest.LogCaptureFixture, forged: Any
+) -> None:
+    client = TestClient(interactive_app)
+    session = msgpack.unpackb(
+        client.post(
+            "/_pywire/session",
+            content=msgpack.packb({"path": "/"}),
+            headers={"Content-Type": "application/x-msgpack"},
+        ).content
+    )["sessionId"]
+    r = client.post(
+        "/_pywire/event",
+        content=msgpack.packb(
+            {
+                "handler": "_handler_0",
+                "data": {"type": "click", "args": forged},
+            }
+        ),
+        headers={
+            "Content-Type": "application/x-msgpack",
+            "X-PyWire-Session": session,
+        },
+    )
+    assert r.status_code == 400
+    assert msgpack.unpackb(r.content)["error"] == "invalid event arguments"
+    _assert_refused_quietly(caplog)
+
+
+@pytest.mark.parametrize("forged", FORGED)
+def test_http_event_refuses_forged_args_with_400(
+    interactive_app: PyWire, caplog: pytest.LogCaptureFixture, forged: Any
+) -> None:
+    r = TestClient(interactive_app).post(
+        "/",
+        json={"handler": "_handler_0", "type": "click", "args": forged},
+        headers={"X-PyWire-Event": "1"},
+    )
+    assert r.status_code == 400
+    assert r.json() == {"error": "invalid event arguments"}
+    _assert_refused_quietly(caplog)

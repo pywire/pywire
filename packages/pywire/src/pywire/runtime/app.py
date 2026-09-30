@@ -32,6 +32,7 @@ from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
 from pywire.runtime.uploads import (
     Staging,
     machine_key,
@@ -1928,6 +1929,9 @@ class PyWire:
                 if isinstance(update, dict):
                     return JSONResponse(update)
                 response = cast(Response, update)
+            except HandlerArgsError as e:
+                logger.warning("Refused an event: %s", e)
+                return JSONResponse({"error": REFUSED}, status_code=400)
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
         elif (

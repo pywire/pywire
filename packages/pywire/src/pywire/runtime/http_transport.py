@@ -14,7 +14,9 @@ from starlette.responses import Response
 
 from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.page import BasePage
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
 from pywire.runtime.protocol import (
+    ClientMessageError,
     dropped,
     event_ack,
     for_another_page,
@@ -251,6 +253,13 @@ class HTTPTransportHandler:
                 media_type="application/x-msgpack",
             )
 
+        except (HandlerArgsError, ClientMessageError) as e:
+            logger.warning("Refused an event: %s", e)
+            return Response(
+                msgpack.packb({"type": "error", "error": REFUSED}),
+                status_code=400,
+                media_type="application/x-msgpack",
+            )
         except Exception as e:
             return Response(
                 msgpack.packb({"type": "error", "error": str(e)}),

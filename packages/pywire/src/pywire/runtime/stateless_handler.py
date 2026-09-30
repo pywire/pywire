@@ -17,6 +17,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pywire.core.wire import WireBase
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
 from pywire.runtime.page_resolver import resolve_page
 from pywire.runtime.protocol import build_update_payload, unpack_client_message
 from pywire.runtime.session_serializer import restore_page_state
@@ -180,6 +181,9 @@ class StatelessHandler:
             nav = self._take_navigation(page)
             if nav is not None:  # handler called navigate()
                 return nav
+        except HandlerArgsError as exc:
+            logger.warning("stateless: refused an event: %s", exc)
+            return self._err(400, REFUSED)
         except Exception:
             logger.exception("stateless: event failed")
             return self._err(500, "event failed")

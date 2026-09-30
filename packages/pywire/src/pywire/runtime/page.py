@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
 from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
-from pywire.runtime.handler_args import sign_args, verify_args
+from pywire.runtime.handler_args import HandlerArgsError, sign_args, verify_args
 from pywire.runtime.style_collector import StyleCollector
 from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
 from pywire.core.snippet import HeadBuffer, Snippet
@@ -1922,6 +1922,9 @@ class BasePage(metaclass=_PageMeta):
         try:
             with self._owning():
                 await self._dispatch_event(event_name, event_data)
+        except HandlerArgsError:
+            # A forged request, not an app error: no @error hooks.
+            raise
         except Exception as exc:
             # Run @error hooks — if any returns truthy, suppress the error
             if await self._run_error_hooks(exc):

@@ -14,7 +14,9 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import logging
 from pywire.runtime.logging import log_callback_ctx
 from pywire.runtime.page import BasePage
+from pywire.runtime.handler_args import REFUSED, HandlerArgsError
 from pywire.runtime.protocol import (
+    ClientMessageError,
     dropped,
     event_ack,
     for_another_page,
@@ -98,7 +100,14 @@ class WebSocketHandler:
         try:
             while True:
                 data_bytes = await websocket.receive_bytes()
-                data = unpack_client_message(data_bytes)
+                try:
+                    data = unpack_client_message(data_bytes)
+                except ClientMessageError as e:
+                    logger.warning("Refused a client message: %s", e)
+                    await websocket.send_bytes(
+                        msgpack.packb({"type": "error", "error": "invalid message"})
+                    )
+                    continue
                 await self._process_message(websocket, data)
 
         except WebSocketDisconnect:
@@ -641,6 +650,11 @@ class WebSocketHandler:
             if session_id:
                 self.app.session_persister.schedule(session_id, page)
 
+        except HandlerArgsError as e:
+            logger.warning("Refused an event: %s", e)
+            await websocket.send_bytes(
+                msgpack.packb(with_ack({"type": "error", "error": REFUSED}, ack))
+            )
         except Exception as e:
             logger.exception("Error handling event")
             await self._send_error_trace(websocket, e, ack)
