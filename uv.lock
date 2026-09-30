@@ -542,7 +542,7 @@ toml = [
 
 [[package]]
 name = "create-pywire-app"
-version = "0.13.2"
+version = "0.13.3"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
@@ -1980,7 +1980,7 @@ dev = [{ name = "mypy", specifier = ">=1.19.1" }]
 
 [[package]]
 name = "pywire-auth"
-version = "0.3.6"
+version = "0.4.0"
 source = { editable = "packages/pywire-auth" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -2024,7 +2024,7 @@ provides-extras = ["google", "github", "microsoft", "facebook", "apple", "auth0"
 
 [[package]]
 name = "pywire-cli"
-version = "0.4.2"
+version = "0.5.0"
 source = { editable = "packages/pywire-cli" }
 dependencies = [
     { name = "jinja2" },
@@ -2064,7 +2064,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.9.0"
+version = "0.10.0"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },
