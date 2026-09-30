@@ -378,14 +378,14 @@ class TestMultipleFormsPerPage:
 
 
 # ---------------------------------------------------------------------------
-# <Form /> component with Pydantic validation in SSR
+# Model-bound form with Pydantic validation in SSR
 # ---------------------------------------------------------------------------
 
 
-class TestFormComponentSSR:
-    """Verify the built-in `<Form model=...>` component works in
-    non-interactive mode — validation runs on the POSTed body, errors
-    render inline, and `on_submit` only fires on valid data.
+class TestBoundFormSSR:
+    """A model-bound form in non-interactive mode: the model validates the
+    POSTed body, errors render inline with the typed values kept, and the
+    handler only runs on valid data.
     """
 
     def setup_method(self):
@@ -394,26 +394,26 @@ class TestFormComponentSSR:
                 "signup": (
                     "---\n"
                     "from pydantic import BaseModel, Field\n"
-                    "from pywire.components import Form\n"
+                    "from pywire import form\n"
                     "\n"
                     "class SignupModel(BaseModel):\n"
                     "    username: str = Field(min_length=3)\n"
                     "    age: int\n"
                     "\n"
-                    "signup_form = ref()\n"
+                    "signup = form(SignupModel)\n"
                     "success = wire('')\n"
                     "\n"
-                    "async def handle_signup(user):\n"
+                    "async def handle_signup(user: SignupModel):\n"
                     "    success.value = f'Welcome {user.username}'\n"
                     "---\n"
                     "<p id='success'>{success}</p>\n"
-                    "<Form model={SignupModel} @submit={handle_signup} $ref={signup_form}>\n"
-                    "  <input name='username' />\n"
-                    "  <small id='err-username'>{signup_form.errors.username.message}</small>\n"
-                    "  <input name='age' />\n"
-                    "  <small id='err-age'>{signup_form.errors.age.message}</small>\n"
+                    "<form $bind={signup} @submit={handle_signup}>\n"
+                    "  <input $bind={signup.username} />\n"
+                    "  <small id='err-username'>{signup.username.error}</small>\n"
+                    "  <input $bind={signup.age} />\n"
+                    "  <small id='err-age'>{signup.age.error}</small>\n"
                     "  <button type='submit'>Sign up</button>\n"
-                    "</Form>\n"
+                    "</form>\n"
                 ),
             },
         )
@@ -422,52 +422,43 @@ class TestFormComponentSSR:
     def teardown_method(self):
         shutil.rmtree(self.app._test_dir, ignore_errors=True)
 
-    def test_get_renders_form_with_component_scoped_handler(self):
-        response = self.client.get("/signup")
-        assert response.status_code == 200
-        # Form component's internal `<form @submit={handle_submit}>` gets
-        # prefixed at runtime with `_comp:{key}:` so the POST routes to
-        # the component instance, not the page.
-        assert 'data-on-submit="_comp:' in response.text
-
-    def _extract_submit_value(self, html: str) -> str:
+    def _handler(self, html: str) -> str:
         import re
 
-        match = re.search(r'data-on-submit="([^"]+)"', html)
-        assert match is not None, "data-on-submit attribute not found"
+        match = re.search(r'name="__pywire_handler" value="([^"]+)"', html)
+        assert match is not None, "bound form renders its handler field"
         return match.group(1)
 
-    def test_valid_data_invokes_on_submit(self):
-        initial = self.client.get("/signup")
-        submit_value = self._extract_submit_value(initial.text)
+    def test_get_renders_a_real_form(self):
+        response = self.client.get("/signup")
+        assert response.status_code == 200
+        assert 'method="post"' in response.text
+        assert 'name="username"' in response.text
+        assert 'minlength="3"' in response.text
+        assert 'type="number"' in response.text
 
+    def test_valid_data_invokes_handler(self):
+        handler = self._handler(self.client.get("/signup").text)
         response = self.client.post(
             "/signup",
             data={"username": "alice", "age": "30"},
-            headers={"X-PyWire-Handler": submit_value},
+            headers={"X-PyWire-Handler": handler},
         )
         assert response.status_code == 200
         assert "Welcome alice" in response.text
 
-    def test_invalid_data_renders_errors_and_skips_on_submit(self):
-        initial = self.client.get("/signup")
-        submit_value = self._extract_submit_value(initial.text)
-
+    def test_invalid_data_renders_errors_and_skips_handler(self):
+        handler = self._handler(self.client.get("/signup").text)
         response = self.client.post(
             "/signup",
-            data={
-                "username": "al",  # too short
-                "age": "not-a-number",
-            },
-            headers={"X-PyWire-Handler": submit_value},
+            data={"__pywire_handler": handler, "username": "al", "age": "x"},
         )
-        assert response.status_code == 200
-        # on_submit should NOT have been called.
-        assert "Welcome" not in response.text
-        # Errors should appear inline for both fields.
+        assert response.status_code == 422
         body = response.text
-        assert "err-username" in body
-        assert "err-age" in body
+        assert "Welcome" not in body
+        assert "Use at least 3 characters" in body
+        assert "Enter a whole number" in body
+        assert 'value="al"' in body
 
 
 # ---------------------------------------------------------------------------

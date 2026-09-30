@@ -80,7 +80,16 @@ BLOCK_CLOSERS = {"if", "for", "await", "try", "snippet", "render", "head", "auth
 OPTIONAL_CLOSE = {"render"}
 
 # Valid attribute keywords: used as $keyword on HTML elements
-KNOWN_ATTRIBUTES = {"if", "show", "for", "key", "ref", "permanent", "reload"}
+KNOWN_ATTRIBUTES = {
+    "if",
+    "show",
+    "for",
+    "key",
+    "ref",
+    "permanent",
+    "reload",
+    "bind",
+}
 
 KNOWN_DIRECTIVES = {"!layout", "!path", "!no_spa", "!no_interactive", "!auth", "!live"}
 _LIVE_DIRECTIVE = re.compile(r"^!live\s+(?:off|\d+(?:\.\d+)?(?:ms|s))\s*(?:#.*)?$")
@@ -2136,6 +2145,7 @@ Example:
         "$ref": "**$ref** Attribute\n\nElement reference. Binds the DOM element to a Python variable in your component.\n\nExample: `$ref={my_element}`",
         "$permanent": "**$permanent** Attribute\n\nPersistent element. Prevents the element from being updated or removed during PJAX navigation or component refreshes.\n\nExample: `$permanent={True}`",
         "$reload": "**$reload** Attribute\n\nReload trigger. Forces the component to re-render when the value of this attribute changes.\n\nExample: `$reload={some_state}`",
+        "$bind": "**$bind** Attribute\n\nBinds a `<form>` to a form made with `form(Model)`, or an `<input>`, `<select>` or `<textarea>` to one of its fields. The model supplies the name, type, constraints, value and error state; the server validates every submit with the model.\n\nExample: `<form $bind={signup} @submit={create}>` and `<input $bind={signup.email}>`",
     }
 
     event_hover_docs = {
@@ -2973,6 +2983,11 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
                             ("$ref", "\\$ref={${1:my_ref}}", "Element reference."),
                             ("$permanent", "\\$permanent", "Persistent element."),
                             ("$reload", "\\$reload", "Reload trigger."),
+                            (
+                                "$bind",
+                                "\\$bind={${1:form}}",
+                                "Bind a form or field to a model.",
+                            ),
                         ]
 
                         framework_items = []
@@ -3267,6 +3282,7 @@ async def completions(ls: LanguageServer, params: CompletionParams) -> Completio
             ("$ref", "\\$ref={${1:my_ref}}", "Element reference."),
             ("$permanent", "\\$permanent", "Persistent element."),
             ("$reload", "\\$reload", "Reload trigger."),
+            ("$bind", "\\$bind={${1:form}}", "Bind a form or field to a model."),
         ]
 
         items = []

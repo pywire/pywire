@@ -1,0 +1,74 @@
+---
+title: Binding a wire
+tutorial: Basic PyWire
+section: Forms
+description: Keep an input and a wire in step with $bind, no model needed.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      fruit = ["apple", "apricot", "banana", "blueberry", "cherry", "grape", "mango"]
+      term = wire("")
+      limit = wire(3)
+
+      def results():
+        found = [f for f in fruit if term.value.lower() in f]
+        return found[: limit.value]
+      ---
+      <div>
+        <h1>Search</h1>
+
+        <!-- 1. Bind this input to term -->
+        <input type="search" placeholder="Search fruit" />
+
+        <!-- 2. Bind this input to limit -->
+        <label>Show <input type="number" min="1" max="7" value="3" /> results</label>
+
+        <ul>
+          <li $for={name in results()}>{name}</li>
+        </ul>
+      </div>
+    solution: |
+      ---
+      fruit = ["apple", "apricot", "banana", "blueberry", "cherry", "grape", "mango"]
+      term = wire("")
+      limit = wire(3)
+
+      def results():
+        found = [f for f in fruit if term.value.lower() in f]
+        return found[: limit.value]
+      ---
+      <div>
+        <h1>Search</h1>
+
+        <input type="search" placeholder="Search fruit" $bind={term} />
+
+        <label>Show <input type="number" min="1" max="7" $bind={limit} /> results</label>
+
+        <ul>
+          <li $for={name in results()}>{name}</li>
+        </ul>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Bind the search box with $bind={term}'
+    target: pages/index.wire
+    pattern: '$bind={term}'
+  - type: file_contains
+    description: 'Bind the number box with $bind={limit}'
+    target: pages/index.wire
+    pattern: '$bind={limit}'
+pagesDir: pages
+---
+
+Not every input needs a form and a model. `$bind` on an `<input>`, `<select>` or `<textarea>` with a wire keeps the two in step: the element shows the wire's value and editing the element writes the wire back.
+
+### Your Task
+
+1.  Bind the search box: `<input type="search" $bind={term} />`.
+2.  Bind the number box: `<input type="number" $bind={limit} />`.
+3.  Type `a` in the search box, then change the number of results.
+
+The value is converted to the type the wire holds. `limit` holds an `int`, so it gets an `int`, and a value that doesn't convert (text in a number box) leaves the wire as it was. A wire holding a `bool` binds to a checkbox, and a wire holding a list binds to a group of checkboxes or a `<select multiple>`. Text boxes send after a pause in typing, and everything else sends on change.
+
+The server only writes a wire through an element the page rendered, and never one that is `disabled`, `readonly` or `type="hidden"`. Nothing here is validated. When the value has rules, use a bound form.

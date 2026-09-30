@@ -2,7 +2,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from pywire_parser import PyWireParser
 from pywire_parser.ast_nodes import (
@@ -42,6 +42,148 @@ KNOWN_BLOCKS = {
 }
 BLOCK_CLOSERS = {"if", "for", "await", "try"}
 
+# Mirrors pywire.forms.form: members win over model field names, so a path
+# like ``signup.email.error`` is field ``email`` then member ``error``.
+FORM_MEMBERS = frozenset(
+    {
+        "model",
+        "value",
+        "valid",
+        "error",
+        "errors",
+        "dirty",
+        "submitted",
+        "fields",
+        "load",
+        "reset",
+        "step",
+        "steps",
+        "on_first_step",
+        "on_last_step",
+        "back_button",
+    }
+)
+FIELD_MEMBERS = frozenset(
+    {
+        "html_name",
+        "html_id",
+        "error_id",
+        "label",
+        "help",
+        "required",
+        "options",
+        "value",
+        "raw",
+        "error",
+        "errors",
+        "attrs",
+        "fields",
+        "add_button",
+        "remove_button",
+    }
+)
+_CHAIN_STEP = re.compile(r"\.([A-Za-z_]\w*)|\[\s*(\d+)\s*\]|\[[^\[\]]*\]")
+
+# A piece of rewritten text and the offset in the original it came from
+# (None for text the rewrite inserted).
+Piece = Tuple[str, Optional[int]]
+
+
+def _form_vars(python_ast: Optional[ast.Module]) -> List[str]:
+    """Top-level names assigned from ``form(...)`` or ``wizard(...)``."""
+    names: List[str] = []
+    for node in python_ast.body if python_ast else []:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if not isinstance(value, ast.Call):
+            continue
+        func = value.func
+        called = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr
+            if isinstance(func, ast.Attribute)
+            else None
+        )
+        if called not in ("form", "wizard"):
+            continue
+        names.extend(t.id for t in targets if isinstance(t, ast.Name))
+    return names
+
+
+def _local_form_names(
+    python_ast: Optional[ast.Module], form_vars: List[str]
+) -> Dict[int, Set[str]]:
+    """Lines (1-based) of functions that bind a form's name locally, such as
+    a handler parameter ``signup: Signup``, and which names they bind there.
+    Those names mean the local value on those lines, not the form."""
+    wanted = set(form_vars)
+    out: Dict[int, Set[str]] = {}
+    if python_ast is None or not wanted:
+        return out
+    for node in ast.walk(python_ast):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        a = node.args
+        params = [*a.posonlyargs, *a.args, *a.kwonlyargs, a.vararg, a.kwarg]
+        bound = {p.arg for p in params if p is not None}
+        declared: Set[str] = set()
+        body: List[ast.AST] = (
+            [node.body] if isinstance(node, ast.Lambda) else list(node.body)
+        )
+        for sub in body:
+            for n in ast.walk(sub):
+                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+                    bound.add(n.id)
+                elif isinstance(n, (ast.Global, ast.Nonlocal)):
+                    declared.update(n.names)
+        hit = (bound - declared) & wanted
+        for line in range(node.lineno, (node.end_lineno or node.lineno) + 1):
+            if hit:
+                out.setdefault(line, set()).update(hit)
+    return out
+
+
+def rewrite_form_chain(var: str, tail: str) -> List[Piece]:
+    """Rewrite ``var<tail>`` so ty checks each field step against the model.
+
+    ``signup.addr.street.error`` becomes
+    ``signup._pw_field(signup._pw_field(signup._pw_shape.addr)._pw_shape.street).error``
+    (see ``Form._pw_shape`` in pywire.forms). ``.fields.x`` names field ``x``
+    when it clashes with a member; list rows step by integer literals.
+    """
+    steps = [(m.group(0), m.start() + len(var), m) for m in _CHAIN_STEP.finditer(tail)]
+    pieces: List[Piece] = [(var, 0)]
+    members = FORM_MEMBERS
+    i = 0
+    while i < len(steps):
+        text, offset, match = steps[i]
+        name = match.group(1)
+        if name is not None:
+            if name == "fields" and i + 1 < len(steps):
+                follow = steps[i + 1][2].group(1)
+                if follow is None or follow.startswith("_"):
+                    break
+                i += 1
+                text, offset, match = steps[i]
+            elif name in members or name.startswith("_"):
+                break
+        elif match.group(2) is None or members is FORM_MEMBERS:
+            break  # form["x"], row[var]: left to the runtime types
+        pieces = (
+            [(f"{var}._pw_field(", None)]
+            + pieces
+            + [("._pw_shape", None), (text, offset), (")", None)]
+        )
+        members = FIELD_MEMBERS
+        i += 1
+    pieces.extend((text, offset) for text, offset, _ in steps[i:])
+    return pieces
+
 
 class Transpiler:
     def __init__(self, source: str):
@@ -58,6 +200,10 @@ class Transpiler:
         self.generated_line_idx = 0  # 0-indexed
 
         self.parser = PyWireParser()
+        self.form_chain_re: Optional[re.Pattern[str]] = None
+        # Original line index -> form names bound locally on that line.
+        self.local_form_names: Dict[int, Set[str]] = {}
+        self.shadowed: Set[str] = set()
 
     def transpile(self) -> Tuple[str, SourceMap]:
         """Convert .wire source to virtual .py source with source map."""
@@ -67,6 +213,13 @@ class Transpiler:
             # Fallback to empty if parse fails
             self.generated_code.append(f'"""Parse error: {str(e)}"""\n')
             return "".join(self.generated_code), self.source_map
+
+        form_vars = _form_vars(parsed.python_ast)
+        if form_vars:
+            names = "|".join(re.escape(v) for v in form_vars)
+            self.form_chain_re = re.compile(
+                rf"(?<![\w.])({names})((?:\.[A-Za-z_]\w*|\[[^\[\]]*\])+)"
+            )
 
         # 1. Directives
         if parsed.directives:
@@ -105,6 +258,12 @@ class Transpiler:
                 raw_lines = parsed.python_code.splitlines(keepends=True)
                 for i, line in enumerate(raw_lines):
                     python_lines.append((start_fence + 1 + i, line))
+                self.local_form_names = {
+                    start_fence + line: names
+                    for line, names in _local_form_names(
+                        parsed.python_ast, form_vars
+                    ).items()
+                }
 
         import_lines, body_lines = self._split_import_block(python_lines)
 
@@ -585,9 +744,13 @@ class Transpiler:
         self.generated_line_idx += 1
 
     def _emit_python_line_with_rewrites(self, line: str, orig_line_idx: int):
-        text = self._emit_rewritten_segment(
-            line.rstrip("\r\n"), orig_line_idx, 0, self.generated_line_idx, 0
-        )
+        self.shadowed = self.local_form_names.get(orig_line_idx, set())
+        try:
+            text = self._emit_rewritten_segment(
+                line.rstrip("\r\n"), orig_line_idx, 0, self.generated_line_idx, 0
+            )
+        finally:
+            self.shadowed = set()
         self.generated_code.append(text + "\n")
         self.generated_line_idx += 1
 
@@ -624,21 +787,48 @@ class Transpiler:
                 current_gen_col += len(suffix)
                 current_orig_col += len(part)
             else:
-                # Tokenize the remaining text into words and non-words
-                # We use a pattern that matches either a word or a sequence of non-words
-                tokens = re.findall(r"\w+|\W+", part)
-                for token in tokens:
-                    rewritten_parts.append(token)
-                    self.source_map.add_mapping(
-                        gen_line=gen_line,
-                        gen_col=current_gen_col,
-                        orig_line=orig_line,
-                        orig_col=current_orig_col,
-                        length=len(token),
-                    )
-                    current_gen_col += len(token)
-                    current_orig_col += len(token)
+                for text_piece, orig_offset in self._form_pieces(part):
+                    if orig_offset is None:
+                        # Inserted by a form-path rewrite: nothing to map.
+                        rewritten_parts.append(text_piece)
+                        current_gen_col += len(text_piece)
+                        continue
+                    orig_col = current_orig_col + orig_offset
+                    # Tokenize into words and non-words for granular mapping
+                    for token in re.findall(r"\w+|\W+", text_piece):
+                        rewritten_parts.append(token)
+                        self.source_map.add_mapping(
+                            gen_line=gen_line,
+                            gen_col=current_gen_col,
+                            orig_line=orig_line,
+                            orig_col=orig_col,
+                            length=len(token),
+                        )
+                        current_gen_col += len(token)
+                        orig_col += len(token)
+                current_orig_col += len(part)
         return "".join(rewritten_parts)
+
+    def _form_pieces(self, text: str) -> List[Piece]:
+        """Split text into pieces, rewriting form field paths (see
+        ``rewrite_form_chain``); plain text maps one to one."""
+        if self.form_chain_re is None:
+            return [(text, 0)]
+        pieces: List[Piece] = []
+        pos = 0
+        for match in self.form_chain_re.finditer(text):
+            if match.group(1) in self.shadowed:
+                continue
+            if match.start() > pos:
+                pieces.append((text[pos : match.start()], pos))
+            for piece, offset in rewrite_form_chain(match.group(1), match.group(2)):
+                pieces.append(
+                    (piece, None if offset is None else match.start() + offset)
+                )
+            pos = match.end()
+        if pos < len(text):
+            pieces.append((text[pos:], pos))
+        return pieces
 
     def _scan_directives_legacy(self):
         """Legacy regex-based directive scanner for robustness."""
@@ -703,7 +893,7 @@ class Transpiler:
             "from pywire.runtime.events import (\n    EventData,\n    UIEventData,\n    MouseEventData,\n    KeyboardEventData,\n    InputEventData,\n    FormEventData,\n)\n\n"
         )
         _append(
-            "path = _PathNamespace()\nurl = _UrlNamespace()\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\ndef asset(path: str) -> str: ...\ndef set_cookie(key: str, value: str = '', *, max_age: int | None = None, expires: int | None = None, path: str = '/', domain: str | None = None, secure: bool = False, httponly: bool = False, samesite: str | None = 'lax') -> None: ...\ndef delete_cookie(key: str, *, path: str = '/', domain: str | None = None) -> None: ...\n\n"
+            "path = _PathNamespace()\nurl = _UrlNamespace()\nbase_path: str = ''\nparams = _ParamsNamespace()\nquery = _QueryNamespace()\ndef navigate(path: str) -> None: ...\ndef asset(path: str) -> str: ...\ndef set_cookie(key: str, value: str = '', *, max_age: int | None = None, expires: int | None = None, path: str = '/', domain: str | None = None, secure: bool = False, httponly: bool = False, samesite: str | None = 'lax') -> None: ...\ndef delete_cookie(key: str, *, path: str = '/', domain: str | None = None) -> None: ...\n\n"
         )
         if self.has_auth:
             _append(

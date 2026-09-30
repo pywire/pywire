@@ -9,6 +9,7 @@ from pywire.compiler.ast_nodes import (
     AuthDirective,
     Directive,
     EventAttribute,
+    ForAttribute,
     LayoutDirective,
     NoInteractiveDirective,
     NoSpaDirective,
@@ -25,25 +26,6 @@ from pywire.compiler.codegen.directives.base import DirectiveCodegen
 from pywire.compiler.codegen.directives.path import PathDirectiveCodegen
 from pywire.compiler.codegen.template import TemplateCodegen
 from pywire.compiler.tier_gate import check_tier
-
-# BasePage attributes the runtime assigns per request (see runtime/page.py).
-RESERVED_PAGE_NAMES = frozenset({"request", "params", "query", "path", "url"})
-
-# HTML boolean attributes. `$checked={x}` is not a directive: it used to render
-# literally and break DOM diffing, while plain `checked={x}` already toggles.
-BOOLEAN_HTML_ATTRS = frozenset(
-    {
-        "checked",
-        "disabled",
-        "readonly",
-        "required",
-        "selected",
-        "hidden",
-        "open",
-        "multiple",
-        "autofocus",
-    }
-)
 
 # BasePage attributes the runtime assigns per request (see runtime/page.py).
 RESERVED_PAGE_NAMES = frozenset({"request", "params", "query", "path", "url"})
@@ -101,6 +83,10 @@ class CodeGenerator:
         self._collected_exposed_methods: List[str] = []
         # Bare user-def names the template wires as event handlers
         self._wired_handler_names: Set[str] = set()
+        # Submit handlers of bound forms -> the <form> node, for errors.
+        self._bound_submits: Dict[str, TemplateNode] = {}
+        # Generated wrappers of bound forms' submits (``_handler_N``).
+        self._bound_wrappers: Set[str] = set()
         self._wire_vars_from_decorators: Set[str] = set()
         self._collected_props: Optional[PropsDirective] = None
         module_body = []
@@ -261,11 +247,6 @@ class CodeGenerator:
             ast.ImportFrom(
                 module="pywire.core.refs",
                 names=[ast.alias(name="ref", asname=None)],
-                level=0,
-            ),
-            ast.ImportFrom(
-                module="pywire.runtime.pydantic_integration",
-                names=[ast.alias(name="validate_with_model", asname=None)],
                 level=0,
             ),
             ast.ImportFrom(
@@ -567,7 +548,9 @@ class CodeGenerator:
         # name (``@click={save}``) plus the generated ``_handler_N`` wrappers.
         # A def only reached through a wrapper (``@click={charge(price)}``)
         # stays off the list, so a client can't call it with its own
-        # arguments. Anything else is refused by ``BasePage._dispatch_handler``.
+        # arguments. Lifecycle hooks, @derived/@effect and @expose methods
+        # are never on it unless the template wires one directly. Anything
+        # else is refused by ``BasePage._dispatch_handler``.
         event_handlers = self._wired_handler_names | {h.name for h in handlers}
         class_body.append(
             ast.Assign(
@@ -632,6 +615,26 @@ class CodeGenerator:
                 ast.Assign(
                     targets=[ast.Name(id="__has_uploads__", ctx=ast.Store())],
                     value=ast.Constant(value=True),
+                )
+            )
+            # The fields a plain @submit handler may get files under.
+            names = self.template_codegen.file_input_names
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__file_fields__", ctx=ast.Store())],
+                    value=ast.parse(
+                        "None" if names is None else f"frozenset({sorted(names)!r})",
+                        mode="eval",
+                    ).body,
+                )
+            )
+        if self._bound_wrappers:
+            class_body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="__bound_handlers__", ctx=ast.Store())],
+                    value=ast.parse(
+                        f"frozenset({sorted(self._bound_wrappers)!r})", mode="eval"
+                    ).body,
                 )
             )
 
@@ -793,6 +796,14 @@ class CodeGenerator:
                         line=node.lineno,
                         column=node.col_offset,
                     )
+                if name.id.startswith(("_handler_", "_handle_bind_")):
+                    raise PyWireSyntaxError(
+                        f"'{name.id}' is reserved for the event handlers pywire "
+                        "generates, and would replace one of them. Rename it.",
+                        file_path=self.file_path,
+                        line=node.lineno,
+                        column=node.col_offset,
+                    )
 
     def _collect_global_names(
         self, python_ast: Optional[ast.Module]
@@ -813,6 +824,7 @@ class CodeGenerator:
             "navigate",
             "set_cookie",
             "delete_cookie",
+            "base_path",
         }
         async_methods = set()
 
@@ -920,9 +932,39 @@ class CodeGenerator:
                     except Exception:
                         pass  # ast.unparse can fail on malformed nodes; skip gracefully
 
-        def visit_nodes(nodes: List[TemplateNode]) -> None:
-            nonlocal handler_count
+        bind_count = 0
+
+        def visit_nodes(nodes: List[TemplateNode], loop_vars: Set[str]) -> None:
+            nonlocal handler_count, bind_count
             for node in nodes:
+                in_scope = loop_vars | self._loop_names(node)
+                bind = self._bind_attr(node)
+                tag = (node.tag or "").lower()
+                if bind is not None and tag == "form":
+                    self._bound_wrappers.add(f"_handler_{handler_count}")
+                    handlers.append(
+                        self._bound_form_handler(
+                            node,
+                            f"_handler_{handler_count}",
+                            known_methods,
+                            known_vars,
+                            in_scope,
+                        )
+                    )
+                    handler_count += 1
+                elif (
+                    bind is not None
+                    and tag in ("input", "select", "textarea")
+                    and bind.expr.strip() in known_vars
+                    # A $for variable of the same name is not the page's wire.
+                    and bind.expr.strip() not in in_scope
+                ):
+                    handlers.append(
+                        self._wire_bind_handler(
+                            bind, f"_handle_bind_{bind_count}", bind.expr.strip()
+                        )
+                    )
+                    bind_count += 1
                 # Check for events
                 for attr in node.special_attributes:
                     if isinstance(attr, EventAttribute):
@@ -932,6 +974,10 @@ class CodeGenerator:
                         raw = attr.handler_name.strip()
                         if raw.startswith("{") and raw.endswith("}"):
                             attr.handler_name = raw[1:-1].strip()
+
+                        if getattr(attr, "_pw_bound_form", False):
+                            # Generated by _bound_form_handler: already wrapped.
+                            continue
 
                         is_identifier = attr.handler_name.isidentifier()
                         # If it's an identifier but NOT a user-defined method, it's likely
@@ -1010,10 +1056,224 @@ class CodeGenerator:
                             if source is not None:
                                 attr.field_mask = analyze_event_fields(source)
 
-                visit_nodes(node.children)
+                visit_nodes(node.children, in_scope)
 
-        visit_nodes(parsed.template)
+        visit_nodes(parsed.template, set())
+        for name, form_node in self._bound_submits.items():
+            if name in self._wired_handler_names:
+                from pywire.compiler.exceptions import PyWireSyntaxError
+
+                raise PyWireSyntaxError(
+                    f"{name!r} handles a bound form's submit, so it only ever "
+                    "gets a validated model. Wiring it to another event as "
+                    "well would let a request call it with unvalidated data; "
+                    "give that event its own handler.",
+                    file_path=self.file_path,
+                    line=form_node.line,
+                    column=form_node.column,
+                )
         return handlers
+
+    @staticmethod
+    def _loop_names(node: TemplateNode) -> Set[str]:
+        """Names a ``$for`` on ``node`` binds for itself and its children."""
+        names: Set[str] = set()
+        for attr in node.special_attributes:
+            if isinstance(attr, ForAttribute):
+                try:
+                    target = ast.parse(attr.loop_vars.strip(), mode="eval").body
+                except SyntaxError:
+                    continue
+                names.update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+        return names
+
+    @staticmethod
+    def _bind_attr(node: TemplateNode) -> Optional[ReactiveAttribute]:
+        for attr in node.special_attributes:
+            if isinstance(attr, ReactiveAttribute) and attr.name == "$bind":
+                return attr
+        return None
+
+    def _bound_form_handler(
+        self,
+        node: TemplateNode,
+        method_name: str,
+        known_methods: Set[str],
+        known_vars: Set[str],
+        loop_vars: Set[str],
+    ) -> ast.AsyncFunctionDef:
+        """``<form $bind={f} @submit={h}>`` -> the form's one entry point.
+
+        ``async def _handler_N(self, *, event=None):
+               await self.f._pw_submit(self, self.h, event)``
+
+        The client can only reach ``h`` through this wrapper, which validates
+        the submission against the model first; ``h`` itself is never added
+        to the dispatch allowlist.
+        """
+        from pywire.compiler.ast_nodes import EventAttribute
+        from pywire.compiler.exceptions import PyWireSyntaxError
+
+        bind = self._bind_attr(node)
+        assert bind is not None
+
+        def fail(message: str) -> PyWireSyntaxError:
+            return PyWireSyntaxError(
+                message, file_path=self.file_path, line=node.line, column=node.column
+            )
+
+        try:
+            target = ast.parse(bind.expr.strip(), mode="eval").body
+        except SyntaxError:
+            raise fail(f"$bind={{{bind.expr}}} is not a valid expression")
+        root = target
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        if isinstance(root, ast.Name) and root.id in loop_vars:
+            raise fail(
+                f"$bind={{{bind.expr.strip()}}}: {root.id!r} is a $for loop "
+                "variable here. A bound form must be a form defined in the "
+                "frontmatter; render one form per item with a component that "
+                "defines its own form."
+            )
+        if not isinstance(root, ast.Name) or root.id not in known_vars:
+            raise fail(
+                f"$bind on <form> must name a form defined in this page's "
+                f"frontmatter (e.g. signup = form(Signup)), got {bind.expr.strip()!r}"
+            )
+        root_parent: Optional[ast.Attribute] = None
+        cursor = target
+        while isinstance(cursor, ast.Attribute):
+            root_parent = cursor
+            cursor = cursor.value
+        self_root = ast.Attribute(
+            value=ast.Name(id="self", ctx=ast.Load()), attr=root.id, ctx=ast.Load()
+        )
+        if root_parent is None:
+            target = self_root
+        else:
+            root_parent.value = self_root
+
+        submits = [
+            a
+            for a in node.special_attributes
+            if isinstance(a, EventAttribute) and a.event_type == "submit"
+        ]
+        if len(submits) > 1:
+            raise fail("A bound form takes one @submit handler")
+        handler: ast.expr = ast.Constant(value=None)
+        modifiers: List[str] = []
+        if submits:
+            submit = submits[0]
+            name = submit.handler_name.strip()
+            if name.startswith("{") and name.endswith("}"):
+                name = name[1:-1].strip()
+            if not name.isidentifier():
+                raise fail(
+                    "@submit on a bound form takes a function name, e.g. "
+                    "@submit={create}; it is called with the validated model"
+                )
+            self._bound_submits[name] = node
+            if name in known_methods or name in known_vars:
+                # A function, or a variable such as an ``on_*`` callback prop.
+                handler = ast.Attribute(
+                    value=ast.Name(id="self", ctx=ast.Load()), attr=name, ctx=ast.Load()
+                )
+            else:
+                handler = ast.Name(id=name, ctx=ast.Load())
+            modifiers = list(submit.modifiers)
+            node.special_attributes.remove(submit)
+
+        wrapper = EventAttribute(
+            name="@submit",
+            value="",
+            line=node.line,
+            column=node.column,
+            event_type="submit",
+            handler_name=method_name,
+            modifiers=modifiers,
+        )
+        # Marks the wrapper so later passes keep it (the parser's AST has no slot).
+        setattr(wrapper, "_pw_bound_form", True)
+        node.special_attributes.append(wrapper)
+        self._wired_handler_names.add(method_name)
+
+        call = ast.Await(
+            value=ast.Call(
+                func=ast.Attribute(value=target, attr="_pw_submit", ctx=ast.Load()),
+                args=[
+                    ast.Name(id="self", ctx=ast.Load()),
+                    handler,
+                    ast.Name(id="event", ctx=ast.Load()),
+                ],
+                keywords=[],
+            )
+        )
+        return ast.AsyncFunctionDef(
+            name=method_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self")],
+                vararg=None,
+                kwonlyargs=[ast.arg(arg="event")],
+                kw_defaults=[ast.Constant(value=None)],
+                defaults=[],
+            ),
+            body=[ast.Expr(value=call)],
+            decorator_list=[],
+            returns=None,
+        )
+
+    def _wire_bind_handler(
+        self, bind: ReactiveAttribute, method_name: str, name: str
+    ) -> ast.AsyncFunctionDef:
+        """``<input $bind={term}>`` -> the handler that writes the element's
+        value back into the page-level wire ``query``.
+
+        ``async def _handle_bind_N(self, event_data):
+               apply_bind_event(self.query, event_data)``
+
+        It only acts when ``query`` is a wire at run time; a bare name bound
+        to anything else renders through the forms helpers and never sends.
+        """
+        setattr(bind, "_pw_bind_handler", method_name)
+        self._wired_handler_names.add(method_name)
+        return ast.AsyncFunctionDef(
+            name=method_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self"), ast.arg(arg="event_data")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=[
+                ast.ImportFrom(
+                    module="pywire.runtime.bind",
+                    names=[ast.alias(name="apply_bind_event", asname=None)],
+                    level=0,
+                ),
+                ast.Expr(
+                    value=ast.Call(
+                        func=ast.Name(id="apply_bind_event", ctx=ast.Load()),
+                        args=[
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr=name,
+                                ctx=ast.Load(),
+                            ),
+                            ast.Name(id="event_data", ctx=ast.Load()),
+                            ast.Name(id="self", ctx=ast.Load()),
+                            ast.Constant(value=method_name),
+                        ],
+                        keywords=[],
+                    )
+                ),
+            ],
+            decorator_list=[],
+            returns=None,
+        )
 
     def _transform_inline_code(
         self,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UnifiedEventHandler } from './handler'
 import { PyWireApp } from '../core/app'
 
@@ -144,6 +144,18 @@ describe('UnifiedEventHandler', () => {
     vi.useRealTimers()
   })
 
+  it('sends every selected value of a multiple select', () => {
+    document.body.innerHTML = `<select id="s" multiple data-on-change="pick">
+        <option value="a" selected>A</option><option value="b">B</option>
+        <option value="c" selected>C</option></select>`
+    handler.init()
+    document.getElementById('s')!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(appMock.sendEvent).toHaveBeenCalledWith(
+      'pick',
+      expect.objectContaining({ values: ['a', 'c'] })
+    )
+  })
+
   it('should extract input value', () => {
     document.body.innerHTML = '<input id="input" value="hello" data-on-change="save">'
     const input = document.getElementById('input')!
@@ -181,120 +193,6 @@ describe('UnifiedEventHandler', () => {
         },
       })
     )
-  })
-
-  it('wraps single upload id as list for multiple file inputs', async () => {
-    document.body.innerHTML = `
-            <meta name="pywire-upload-token" content="tok">
-            <form id="form" data-on-submit="send">
-                <input id="docs" type="file" name="attachments" multiple>
-            </form>
-        `
-    const form = document.getElementById('form') as HTMLFormElement
-    const fileData = new FormData()
-    fileData.append('attachments', new Blob(['abc']), 'doc_one.pdf')
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ attachments: 'u1' }),
-    })
-    vi.stubGlobal('fetch', fetchMock as typeof fetch)
-
-    const result = await (
-      handler as unknown as {
-        uploadFiles: (
-          fileData: FormData,
-          form?: HTMLFormElement
-        ) => Promise<Record<string, unknown>>
-      }
-    ).uploadFiles(fileData, form)
-
-    expect(result).toEqual({ attachments: [{ _upload_id: 'u1' }] })
-    vi.unstubAllGlobals()
-  })
-
-  it('blocks submit when filename does not match data-allowed-names', () => {
-    document.body.innerHTML = `
-            <form id="form" data-on-submit="send">
-                <input id="avatar" type="file" name="avatar" data-allowed-names="^avatar_.*\\.(png|jpg)$">
-            </form>
-        `
-    const form = document.getElementById('form') as HTMLFormElement
-    const avatar = document.getElementById('avatar') as HTMLInputElement
-    const badFile = new File(['x'], 'evil.png', { type: 'image/png' })
-    Object.defineProperty(avatar, 'files', { value: [badFile], configurable: true })
-
-    const reportSpy = vi.spyOn(avatar, 'reportValidity').mockReturnValue(false)
-    handler.init()
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-
-    expect(avatar.validationMessage).toBe('Filename is not allowed')
-    expect(reportSpy).toHaveBeenCalled()
-    expect(appMock.sendEvent).not.toHaveBeenCalled()
-  })
-
-  it('accepts escaped backslash patterns in data-allowed-names', () => {
-    document.body.innerHTML = `
-            <form id="form" data-on-submit="send">
-                <input id="avatar" type="file" name="avatar">
-            </form>
-        `
-    const form = document.getElementById('form') as HTMLFormElement
-    const avatar = document.getElementById('avatar') as HTMLInputElement
-    avatar.setAttribute('data-allowed-names', '^avatar_.*\\\\.(png|jpg)$')
-
-    const goodFile = new File(['x'], 'avatar_ok.png', { type: 'image/png' })
-    Object.defineProperty(avatar, 'files', { value: [goodFile], configurable: true })
-
-    handler.init()
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-
-    expect(appMock.sendEvent).toHaveBeenCalledWith(
-      'send',
-      expect.objectContaining({ type: 'submit' })
-    )
-  })
-
-  it('skips html5 custom validity flow for FileInput component fields', () => {
-    document.body.innerHTML = `
-            <form id="form" data-on-submit="send">
-                <input id="avatar" type="file" name="avatar" data-pw-file-input="1" data-allowed-names="^avatar_.*\\.(png|jpg)$">
-            </form>
-        `
-    const form = document.getElementById('form') as HTMLFormElement
-    const avatar = document.getElementById('avatar') as HTMLInputElement
-    const badFile = new File(['x'], 'evil.png', { type: 'image/png' })
-    Object.defineProperty(avatar, 'files', { value: [badFile], configurable: true })
-
-    const reportSpy = vi.spyOn(avatar, 'reportValidity').mockReturnValue(false)
-    handler.init()
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-
-    expect(reportSpy).not.toHaveBeenCalled()
-    expect(appMock.sendEvent).toHaveBeenCalledWith(
-      'send',
-      expect.objectContaining({ type: 'submit' })
-    )
-  })
-
-  it('blocks submit when file exceeds data-max-size', () => {
-    document.body.innerHTML = `
-            <form id="form" data-on-submit="send">
-                <input id="avatar" type="file" name="avatar" data-max-size="2">
-            </form>
-        `
-    const form = document.getElementById('form') as HTMLFormElement
-    const avatar = document.getElementById('avatar') as HTMLInputElement
-    const bigFile = new File(['abc'], 'avatar_ok.png', { type: 'image/png' })
-    Object.defineProperty(avatar, 'files', { value: [bigFile], configurable: true })
-
-    const reportSpy = vi.spyOn(avatar, 'reportValidity').mockReturnValue(false)
-    handler.init()
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-
-    expect(avatar.validationMessage).toContain('File is too large')
-    expect(reportSpy).toHaveBeenCalled()
-    expect(appMock.sendEvent).not.toHaveBeenCalled()
   })
 
   it('clears stale custom validity on file change', () => {
@@ -343,17 +241,118 @@ describe('UnifiedEventHandler', () => {
     btn.click()
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
 
-    // Second click quickly - ignored
+    // More clicks inside the window collapse into one trailing send
+    btn.click()
     btn.click()
     expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
 
-    // Wait for throttle (default 250ms)
+    // Window ends (default 250ms): the last click arrives
     vi.advanceTimersByTime(300)
-
-    // Third click - works again
-    btn.click()
     expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+
+    // Quiet window, then a click sends at once again
+    vi.advanceTimersByTime(300)
+    btn.click()
+    expect(appMock.sendEvent).toHaveBeenCalledTimes(3)
     vi.useRealTimers()
+  })
+
+  describe('timing defaults', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    const fire = (el: Element, type: string): void => {
+      el.dispatchEvent(new Event(type, { bubbles: true }))
+    }
+
+    it('debounces @input on text inputs by default', () => {
+      document.body.innerHTML = '<input id="q" data-on-input="search">'
+      handler.init()
+      const q = document.getElementById('q')!
+      fire(q, 'input')
+      fire(q, 'input')
+      expect(appMock.sendEvent).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(260)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends @input from a checkbox at once', () => {
+      document.body.innerHTML = '<input id="c" type="checkbox" data-on-input="tick">'
+      handler.init()
+      fire(document.getElementById('c')!, 'input')
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('.immediate opts out of the default', () => {
+      document.body.innerHTML =
+        '<input id="q" data-on-input="search" data-modifiers-input="immediate">'
+      handler.init()
+      fire(document.getElementById('q')!, 'input')
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('flushes a pending debounced event before a click', () => {
+      document.body.innerHTML =
+        '<input id="q" data-on-input="search"><button id="b" data-on-click="save"></button>'
+      handler.init()
+      fire(document.getElementById('q')!, 'input')
+      ;(document.getElementById('b') as HTMLButtonElement).click()
+      expect(appMock.sendEvent.mock.calls.map((c) => c[0])).toEqual(['search', 'save'])
+      vi.advanceTimersByTime(500)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+    })
+
+    it('flushes waiting events in the order they happened', () => {
+      document.body.innerHTML =
+        '<div id="s" data-on-scroll="moved"></div><input id="q" data-on-input="search">' +
+        '<button id="b" data-on-click="save"></button>'
+      handler.init()
+      const s = document.getElementById('s')!
+      fire(s, 'scroll') // sent at once, opens the window
+      fire(s, 'scroll') // trailing, waiting
+      fire(document.getElementById('q')!, 'input') // debounced, waiting
+      ;(document.getElementById('b') as HTMLButtonElement).click()
+      expect(appMock.sendEvent.mock.calls.map((c) => c[0])).toEqual([
+        'moved',
+        'moved',
+        'search',
+        'save',
+      ])
+    })
+
+    it('waits 250ms for a configured timing without a duration', () => {
+      appMock.getConfig.mockReturnValue({ eventDefaults: { keyup: 'debounce' } })
+      document.body.innerHTML = '<input id="q" data-on-keyup="typed">'
+      handler.init()
+      fire(document.getElementById('q')!, 'keyup')
+      vi.advanceTimersByTime(200)
+      expect(appMock.sendEvent).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(100)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('throttles scroll with a trailing send', () => {
+      document.body.innerHTML = '<div id="s" data-on-scroll="moved"></div>'
+      handler.init()
+      const s = document.getElementById('s')!
+      fire(s, 'scroll')
+      fire(s, 'scroll')
+      fire(s, 'scroll')
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(110)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(2)
+    })
+
+    it('uses PyWire(event_defaults=...) from the page config', () => {
+      appMock.getConfig.mockReturnValue({ eventDefaults: { input: 'debounce.500ms' } })
+      document.body.innerHTML = '<input id="q" data-on-input="search">'
+      handler.init()
+      fire(document.getElementById('q')!, 'input')
+      vi.advanceTimersByTime(300)
+      expect(appMock.sendEvent).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(250)
+      expect(appMock.sendEvent).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('should support system modifiers like .shift.ctrl', () => {

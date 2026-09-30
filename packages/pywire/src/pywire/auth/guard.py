@@ -19,6 +19,7 @@ from starlette.responses import RedirectResponse, Response
 from pywire.auth.context import get_auth_context
 from pywire.auth.policy import PolicyContext
 from pywire.auth.principal import ANONYMOUS, ClaimsPrincipal
+from pywire.runtime.base_path import with_base
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,8 @@ async def run_auth_guard(page: Any) -> Optional[Response]:
     )
     if allowed:
         return None
-    return _deny(redirect)
+    # Under a URL prefix, "/login" means the app's own login page.
+    return _deny(with_base(redirect, getattr(page, "base_path", "")))
 
 
 def _resolve_principal(page: Any) -> ClaimsPrincipal:

@@ -94,12 +94,10 @@ class TestSnapshotPageState:
         for attr in ["request", "params", "query", "path", "url", "slots"]:
             assert attr not in snap["attrs"]
 
-    def test_errors_and_loading(self):
+    def test_loading(self):
         page = _make_page()
-        page.errors = {"email": "invalid"}
         page.loading = {"fetch": True}
         snap = snapshot_page_state(page)
-        assert snap["errors"] == {"email": "invalid"}
         assert snap["loading"] == {"fetch": True}
 
     def test_user_serializable(self):
@@ -213,16 +211,14 @@ class TestRestorePageState:
         assert isinstance(page.count, WirePrimitive)
         assert page.count.peek() == 5
 
-    def test_restore_errors_and_loading(self):
+    def test_restore_loading(self):
         page = _make_page()
         snap = {
             "attrs": {},
             "wire_tags": {},
-            "errors": {"email": "required"},
             "loading": {"save": True},
         }
         restore_page_state(page, snap)
-        assert page.errors == {"email": "required"}
         assert page.loading == {"save": True}
 
     def test_restore_user(self):
@@ -281,7 +277,6 @@ class TestRoundTrip:
             title="My Page",
             flag=True,
         )
-        page1.errors = {"field": "error"}
         page1.loading = {"action": True}
         page1.user = {"id": 1}
 
@@ -304,7 +299,6 @@ class TestRoundTrip:
         assert dict(page2.data) == {"key": "value"}
         assert page2.title == "My Page"
         assert page2.flag is True
-        assert page2.errors == {"field": "error"}
         assert page2.loading == {"action": True}
         assert page2.user == {"id": 1}
 
@@ -312,7 +306,6 @@ class TestRoundTrip:
         snap2 = snapshot_page_state(page2)
         assert snap1["attrs"] == snap2["attrs"]
         assert snap1["wire_tags"] == snap2["wire_tags"]
-        assert snap1["errors"] == snap2["errors"]
         assert snap1["loading"] == snap2["loading"]
 
     def test_round_trip_with_set(self):

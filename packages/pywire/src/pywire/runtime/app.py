@@ -3,14 +3,16 @@
 import logging
 import os
 import re
+import secrets
 import traceback
 import inspect
 import hashlib
+import hmac
 import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -19,12 +21,26 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
 from pywire import __version__
+from pywire.runtime.base_path import (
+    BasePathHeaders,
+    apply_base_path,
+    normalize_base_path,
+    prefix_of,
+    strip_base,
+)
 from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
-from pywire.runtime.upload_manager import upload_manager
+from pywire.runtime.uploads import (
+    Staging,
+    machine_key,
+    part_chunks,
+    private_dir,
+    runtime_parent,
+)
 from pywire.runtime.websocket import WebSocketHandler
+from pywire.storage import FileStore, LocalStore
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +59,141 @@ async def RequestContextMiddleware(scope, receive, send, app):
         await app(scope, receive, send)
     finally:
         _request_ctx.reset(token)
+
+
+_FORM_CONTENT_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
+
+
+def _is_form_content(request: Request) -> bool:
+    ctype = request.headers.get("content-type", "").split(";", 1)[0]
+    return ctype.strip().lower() in _FORM_CONTENT_TYPES
+
+
+def _is_multipart(request: Request) -> bool:
+    ctype = request.headers.get("content-type", "").split(";", 1)[0]
+    return ctype.strip().lower() == "multipart/form-data"
+
+
+def _is_cross_site(request: Request) -> bool:
+    """True when a browser says this POST came from another site.
+
+    ``Sec-Fetch-Site`` is set by the browser itself; ``Origin`` is the
+    fallback for browsers without it. A request with neither did not come
+    from a browser form, so CSRF does not apply.
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site.lower() not in ("same-origin", "none")
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False
+    if origin == "null":
+        return True
+    from urllib.parse import urlsplit
+
+    def hostname(netloc: str) -> str:
+        # Ports are left out: cookies are shared across ports anyway, and
+        # proxies often drop the port from Host.
+        return (urlsplit("//" + netloc.strip()).hostname or "").lower()
+
+    hosts = {hostname(request.headers.get("host", ""))}
+    forwarded = request.headers.get("x-forwarded-host")
+    if forwarded:
+        hosts.update(hostname(h) for h in forwarded.split(","))
+    return (urlsplit(origin).hostname or "").lower() not in hosts
+
+
+# A native form POST is read into memory before anything is known about its
+# sender, so its size is bounded up front: 1 MiB for the text fields, plus
+# ``_MAX_FORM_FILES`` files of at most ``max_upload_size`` each.
+_FORM_FIELDS_LIMIT = 1024 * 1024
+_MAX_FORM_FILES = 10
+
+
+class _FormBodyError(Exception):
+    """A form POST body that is too large or malformed; carries the response."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+async def _read_form(request: Request, max_upload_size: int) -> Any:
+    """Parse a form POST body without trusting its declared or real size.
+
+    Bodies over the limit are refused as they stream in (a chunked request
+    has no Content-Length to check). File parts are only spooled here; they
+    are read into memory after the handler has been accepted.
+    """
+    from starlette.datastructures import FormData
+    from starlette.formparsers import FormParser, MultiPartException, MultiPartParser
+
+    if not _is_form_content(request):
+        return FormData()
+    multipart = _is_multipart(request)
+    limit = _FORM_FIELDS_LIMIT + (max_upload_size * _MAX_FORM_FILES if multipart else 0)
+    declared = request.headers.get("content-length", "")
+    if declared.isdecimal() and int(declared) > limit:
+        raise _FormBodyError("PyWire: form body too large", 413)
+
+    async def stream() -> Any:
+        seen = 0
+        async for chunk in request.stream():
+            seen += len(chunk)
+            if seen > limit:
+                raise _FormBodyError("PyWire: form body too large", 413)
+            yield chunk
+
+    try:
+        if multipart:
+            return await MultiPartParser(
+                request.headers, stream(), max_files=_MAX_FORM_FILES
+            ).parse()
+        return await FormParser(request.headers, stream()).parse()
+    except MultiPartException as exc:
+        raise _FormBodyError(f"PyWire: {exc.message}", 400) from exc
+
+
+_EVENT_TIMING = re.compile(r"immediate|(debounce|throttle)(\.\d+ms)?")
+
+
+def _check_event_defaults(defaults: Mapping[str, str]) -> Dict[str, str]:
+    """``{"input": "debounce.400ms", "scroll": "throttle.50ms"}``, checked."""
+    checked: Dict[str, str] = {}
+    for event, timing in defaults.items():
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", str(event)) or not (
+            isinstance(timing, str) and _EVENT_TIMING.fullmatch(timing)
+        ):
+            raise ValueError(
+                f"event_defaults[{event!r}] = {timing!r}: use 'immediate', "
+                "'debounce', 'debounce.300ms', 'throttle' or 'throttle.100ms'"
+            )
+        checked[str(event)] = timing
+    return checked
+
+
+def _form_handler_refusal(target: Any, name: str) -> Optional[str]:
+    """Why a form POST may not call ``name`` on ``target``; None if it may.
+
+    The same rules as ``BasePage._dispatch_handler``, checked up front so a
+    refusal is a 400 rather than an error inside the handler.
+    """
+    try:
+        # getattr_static runs no descriptors: nothing is evaluated for a
+        # name the client made up.
+        inspect.getattr_static(target, name)
+    except AttributeError:
+        return f"PyWire: handler '{name}' not found"
+    allowed = target.__class__.__event_handlers__
+    if allowed is not None and name not in allowed:
+        return f"PyWire: handler '{name}' is not a registered event handler"
+    is_framework = name.startswith("_handle_bind_") or name.startswith("_handler_")
+    if not is_framework and name.startswith("_"):
+        return f"PyWire: handler '{name}' not allowed"
+    if not callable(getattr(target, name, None)):
+        return f"PyWire: handler '{name}' not found"
+    return None
 
 
 class PyWire:
@@ -122,6 +273,7 @@ class PyWire:
         static_dir: Optional[str] = None,
         static_route: Optional[str] = None,
         max_upload_size: int = 10 * 1024 * 1024,
+        upload_store: Optional[FileStore] = None,
         upload_token_ttl_seconds: int = 600,
         middleware: Optional[List] = None,
         session_store: Optional[Any] = None,
@@ -132,12 +284,14 @@ class PyWire:
         ws_ping_timeout: int = 10,
         reconnect_max_attempts: int = 10,
         reconnect_overlay: bool = True,
+        event_defaults: Optional[Mapping[str, str]] = None,
         interactive_server_mode: bool = True,
         fallthrough_404: bool = False,
         stateless: bool = False,
         live_every: Optional[float] = None,
         secret_key: Optional[str] = None,
         compress: bool = True,
+        base_path: Optional[str] = None,
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
@@ -239,22 +393,29 @@ class PyWire:
         runtime_key = hashlib.sha256(str(self.pages_dir).encode("utf-8")).hexdigest()[
             :16
         ]
-        self._runtime_dir = (
-            Path(tempfile.gettempdir()) / "pywire_runtime" / runtime_key
-        ).resolve()
-        self._runtime_dir.mkdir(parents=True, exist_ok=True)
+        self._runtime_dir = private_dir(
+            Path(tempfile.gettempdir()) / runtime_parent() / runtime_key
+        )
         self._upload_token_dir = self._runtime_dir / "upload_tokens"
         self._upload_token_dir.mkdir(parents=True, exist_ok=True)
+        self._upload_token_key: Optional[bytes] = None
         # Internal flag set by dev_server.py when running via 'pywire dev'
         self._is_dev_mode = False
 
         # Reconnection overlay config (passed to client via SPA metadata)
         self.reconnect_max_attempts = reconnect_max_attempts
         self.reconnect_overlay = reconnect_overlay
+        self.event_defaults = _check_event_defaults(event_defaults or {})
 
         # Gzip text responses (pages, client runtime, JSON, msgpack updates).
         # Turn off when a CDN or reverse proxy in front already compresses.
         self.compress = compress
+
+        # URL prefix the app is served under when a proxy strips it (see
+        # runtime/base_path.py). A host mount's root_path needs no setting.
+        self.base_path = normalize_base_path(
+            base_path if base_path is not None else os.environ.get("PYWIRE_BASE_PATH")
+        )
         self._gzip_static_cache: Dict[str, Tuple[bytes, bytes]] = {}
 
         # Custom reconnect overlay from the user's __reconnect__.wire, injected
@@ -329,6 +490,23 @@ class PyWire:
             pass
         else:
             set_stateless_tier(stateless)
+        secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
+        # Signs state a page hands the browser to send back (what a bound
+        # form rendered, a wizard's steps). Processes that serve the same
+        # pages must share it, and a short one could be guessed, so it is
+        # only used when it is at least 32 bytes.
+        strong = bool(secret) and len(str(secret).encode("utf-8")) >= 32
+        if secret and not strong and not stateless:
+            logger.warning(
+                "PyWire: secret_key is shorter than 32 bytes, so it doesn't "
+                "sign form state; forms posted without JavaScript are only "
+                "accepted by the process that rendered them. Generate one "
+                "with: python -c 'import secrets; print(secrets.token_hex(32))'"
+            )
+        self.signing_secret: bytes = (
+            str(secret).encode("utf-8") if strong else secrets.token_bytes(32)
+        )
+        self.signing_secret_shared = strong
         self._stateless_secret: bytes = b""
         self.stateless_handler: Optional[Any] = None
         # Seconds between re-reads of shared state on stateless pages (see
@@ -339,7 +517,6 @@ class PyWire:
         self.live_every = live_every
         self._live_warned: Set[str] = set()
         if stateless:
-            secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
             if not secret:
                 raise RuntimeError(
                     "PyWire(stateless=True) requires secret_key= or the "
@@ -382,8 +559,13 @@ class PyWire:
         self.upload_tokens: Set[str] = set()
         # Token metadata: token -> (bound_session_id, issued_ts)
         self._upload_token_meta: Dict[str, Tuple[Optional[str], float]] = {}
-        upload_manager.configure_storage(self._runtime_dir / "uploads")
-        upload_manager.max_upload_size = self.max_upload_size
+        # Where uploads wait for a handler. Several processes (workers,
+        # stateless instances) must share one store, e.g. an ObjectStore.
+        self.uploads = Staging(
+            upload_store
+            if upload_store is not None
+            else LocalStore(self._runtime_dir / "uploads")
+        )
 
         # Compile and register all pages. Prebuilt deploy bundles (FaaS and
         # Cloudflare) skip this: their entrypoint sets PYWIRE_PREBUILT, the
@@ -660,7 +842,18 @@ class PyWire:
 
     def _get_dispatch_target(self) -> Any:
         """Return the ASGI app for internal request dispatch."""
-        return self._root_app or self.app
+        return self._root_app or BasePathHeaders(self.app)
+
+    def _dispatch_scope(self, scope: Any) -> Dict[str, Any]:
+        """Base scope for an internal request made from ``scope``.
+
+        A host app sits above PyWire's mount, so a replay dispatched to it
+        starts from the host's root path, not PyWire's.
+        """
+        base = dict(scope)
+        if self._root_app is not None and "app_root_path" in scope:
+            base["root_path"] = scope["app_root_path"]
+        return base
 
     def as_asgi(self, host: Any = None) -> "PyWire":
         """Return this app as an ASGI application for mounting.
@@ -793,7 +986,10 @@ class PyWire:
             self._cleanup_upload_tokens()
             token_binding = self._load_upload_token(token)
             if token_binding is None:
-                if token in self.upload_tokens:
+                issued = self._signed_upload_token_ts(token)
+                if issued is not None:
+                    token_binding = (None, issued)
+                elif token in self.upload_tokens:
                     token_binding = (None, time.time())
                     self._store_upload_token(token, None, token_binding[1])
                 else:
@@ -814,60 +1010,41 @@ class PyWire:
             if bound_session_id is None and session_id:
                 self._store_upload_token(token, session_id, issued_ts)
 
-            # Fail-fast: Check Content-Length header
-            content_length = request.headers.get("content-length")
-            if content_length:
-                try:
-                    length = int(content_length)
-                    if length > self.max_upload_size:
-                        logger.warning(
-                            "Upload rejected. Content-Length %s exceeds configured limit %s.",
-                            length,
-                            self.max_upload_size,
+            # The body is counted as it arrives (a chunked request declares
+            # no length) and holds at most _MAX_FORM_FILES files; each file is
+            # held to max_upload_size as it is staged.
+            try:
+                form = await _read_form(request, self.max_upload_size)
+            except _FormBodyError as exc:
+                error = "Payload Too Large" if exc.status_code == 413 else exc.message
+                return JSONResponse({"error": error}, status_code=exc.status_code)
+            try:
+                response_data: Dict[str, List[str]] = {}
+                for field_name, file in form.multi_items():
+                    if isinstance(file, str):
+                        continue
+                    upload_id = await self.uploads.stage(
+                        part_chunks(file),
+                        filename=file.filename or "",
+                        content_type=file.content_type or "application/octet-stream",
+                        limit=self.max_upload_size,
+                        owner=token,
+                    )
+                    if upload_id is None:
+                        await self.uploads.discard(
+                            [i for ids in response_data.values() for i in ids]
                         )
                         return JSONResponse(
-                            {"error": "Payload Too Large"}, status_code=413
+                            {"error": "Payload Too Large", "field": field_name},
+                            status_code=413,
                         )
-                except ValueError:
-                    pass
-
-            form = await request.form()
-            response_data: Dict[str, Any] = {}
-            upload_errors: Dict[str, str] = {}
-            items_iter = (
-                form.multi_items() if hasattr(form, "multi_items") else form.items()
-            )
-            for field_name, file in items_iter:
-                if not hasattr(file, "filename"):
-                    continue
-                from starlette.datastructures import UploadFile
-
-                try:
-                    upload_id = upload_manager.save(
-                        cast(UploadFile, file), max_size=self.max_upload_size
-                    )
-                except ValueError:
-                    upload_errors[field_name] = "Payload Too Large"
-                    continue
-
-                existing = response_data.get(field_name)
-                if existing is None:
-                    response_data[field_name] = upload_id
-                    continue
-                if isinstance(existing, list):
-                    existing.append(upload_id)
-                    continue
-                response_data[field_name] = [existing, upload_id]
-
-            logger.debug(f"Upload successful. Returning: {response_data}")
-            if upload_errors:
-                return JSONResponse(
-                    {"uploads": response_data, "errors": upload_errors}, status_code=400
-                )
+                    response_data.setdefault(field_name, []).append(upload_id)
+            finally:
+                await form.close()
             return JSONResponse(response_data)
-        except Exception as e:
-            logger.error(f"Upload failed: {e}", exc_info=True)
-            return JSONResponse({"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("Upload failed")
+            return JSONResponse({"error": "Upload failed"}, status_code=500)
 
     async def _handle_debug_snapshot(self, request: Request) -> Response:
         """Decode and pretty-print a client-held snapshot (debug mode only).
@@ -1307,7 +1484,9 @@ class PyWire:
                             # Store for parent __init__
                             super().__init__(request, *args, **kwargs)
 
-                        async def render(self, init: bool = True) -> Any:
+                        async def render(
+                            self, init: bool = True, *, run_hooks: Optional[bool] = None
+                        ) -> Any:
                             # Check mode at render time (not registration time!)
                             # This allows dev_server.py to set _is_dev_mode after app init
                             if captured_app.debug or getattr(
@@ -1646,12 +1825,9 @@ class PyWire:
         """
         is_internal_relocate = request.headers.get("x-pywire-internal") == "relocate"
 
-        path = request.url.path
-        # When mounted at a prefix (e.g. /app), strip the root_path
-        # so PyWire's router matches against local paths (/ not /app/)
-        root_path = request.scope.get("root_path", "")
-        if root_path and path.startswith(root_path):
-            path = path[len(root_path) :] or "/"
+        # Under a prefix (mounted at /app, or base_path) the router matches
+        # app-relative paths: /app/x -> /x.
+        path = strip_base(request.url.path, prefix_of(request.scope))
         match = self.router.match(path)
         if not match:
             # Fallthrough mode: return bare 404 so host framework tries next
@@ -1696,14 +1872,18 @@ class PyWire:
         if resolved_user is not None:
             page.user = resolved_user
 
-        # In non-interactive mode, restore session state if available
+        # In non-interactive mode, restore session state if available. The
+        # session holds one snapshot, of the last page served: it is restored
+        # only into that same page, and identity always comes from the request.
         session_id = request.scope.get("pywire_session_id")
         if not self.interactive_server_mode and session_id:
             session_data = request.scope.get("pywire_session_data")
-            if session_data:
+            if session_data and session_data.get("route_path") == request.url.path:
                 from pywire.runtime.session_serializer import restore_page_state
 
-                restore_page_state(page, session_data)
+                restore_page_state(
+                    page, {k: v for k, v in session_data.items() if k != "user"}
+                )
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
@@ -1738,12 +1918,13 @@ class PyWire:
             and (
                 not self.interactive_server_mode
                 or getattr(page, "__no_interactive__", False)
+                or _is_form_content(request)
             )
         ):
             # Form POST → @submit handler. Non-interactive server mode routes
-            # every form POST here; in interactive mode only `!no_interactive`
-            # pages get here — the client skips wiring on them, so their forms
-            # submit natively (the no-JS floor).
+            # every form POST here. In interactive mode a native form POST
+            # (JS off, or a `!no_interactive` page the client skips) lands
+            # here too, so every bound form has the same no-JS floor.
             response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
             # Internal ASGI replay from WS handler — body-only, no client scripts
@@ -1811,11 +1992,12 @@ class PyWire:
                 )
 
             # Upload Token Injection
-            if getattr(page, "__has_uploads__", False):
-                import secrets
-
-                token = secrets.token_urlsafe(32)
-                self._store_upload_token(token, None, time.time())
+            if getattr(page, "__has_uploads__", False) or getattr(
+                page, "_pw_has_uploads", False
+            ):
+                # Signed, so a page view stores nothing; a token is only
+                # written down when an upload binds it to a session.
+                token = self._issue_upload_token()
                 # Token meta tag
                 injections.append(
                     f'<meta name="pywire-upload-token" content="{token}">'
@@ -1836,26 +2018,30 @@ class PyWire:
         return response
 
     async def _handle_form_post(self, request: Request, page: Any) -> Response:
-        """Handle a standard HTML form POST in non-interactive mode.
+        """Handle a native HTML form POST (any mode) through the event pipeline.
 
-        Handler dispatch: JS clients send the handler name via the
-        ``X-PyWire-Handler`` header (see ``httpFormSubmit`` in the client
-        bundle). Component-scoped handlers (e.g. built-in ``<Form />``) carry
-        the ``_comp:{component_key}:`` prefix, matching interactive-mode
-        event routing.
-
-        When the client submits with ``X-PyWire-Internal: form-submit`` the
-        response renders as a body fragment (init=False) so the client can
-        morph it in — same swap path as SPA link nav. Without the header,
-        a full HTML document is returned.
+        The page renders first, exactly as a GET would (hooks run, components
+        exist, bound fields record what they rendered read-only), then the
+        handler is dispatched through ``BasePage._dispatch_handler`` with a
+        ``submit`` event, so the compile-time allowlist and a bound form's
+        validation apply the same as over a socket.
 
         Handler name source: the ``X-PyWire-Handler`` header (JS path), or
-        the ``__pywire_handler`` hidden input codegen renders into @submit
-        forms on ``!no_interactive`` pages (no-JS path — a native browser
-        POST cannot set headers). The header wins when both are present;
-        the hidden field is never passed on as handler data.
+        the ``__pywire_handler`` hidden input codegen renders into bound
+        forms and into @submit forms on ``!no_interactive`` pages (no-JS
+        path; a native browser POST cannot set headers). The header wins
+        when both are present; the hidden field is never handler data.
+
+        Responses: 303 wherever the handler navigated; 422 with the page
+        re-rendered when a bound form was invalid; else the page. With
+        ``X-PyWire-Internal: form-submit`` the page renders as a body
+        fragment (init=False) for the client to morph in.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
+        if _is_cross_site(request):
+            return PlainTextResponse(
+                "PyWire: cross-site form POST refused", status_code=403
+            )
         # Auth guard BEFORE any dispatch — a forged handler name must never
         # reach user code on a protected page (mirrors BasePage.render()'s
         # short-circuit and its _pending_navigation mirror).
@@ -1869,140 +2055,153 @@ class PyWire:
                     page._pending_navigation = location
                 return denied
         try:
-            form_data = await request.form()
-            event_data: Dict[str, Any] = {
-                str(k): v for k, v in form_data.multi_items() if k != "__pywire_handler"
-            }
-
+            form_data = await _read_form(request, self.max_upload_size)
+        except _FormBodyError as exc:
+            return PlainTextResponse(exc.message, status_code=exc.status_code)
+        try:
             handler_name: Any = request.headers.get("x-pywire-handler") or (
                 form_data.get("__pywire_handler")
             )
             if not handler_name or not isinstance(handler_name, str):
+                if self.interactive_server_mode and not getattr(
+                    page, "__no_interactive__", False
+                ):
+                    # A plain POST to an interactive page with no handler:
+                    # nothing to dispatch, just show the page.
+                    return await page.render()
                 return PlainTextResponse(
                     "PyWire: form POST missing handler. Add "
                     "`@submit={handler_name}` to your <form>; the PyWire "
                     "client sends the X-PyWire-Handler header automatically, "
-                    "and `!no_interactive` pages render a `__pywire_handler` "
-                    "hidden input for no-JS submits.",
+                    "and bound forms and `!no_interactive` pages render a "
+                    "`__pywire_handler` hidden input for no-JS submits.",
                     status_code=400,
                 )
 
-            if handler_name.startswith("_comp:"):
-                # Component-scoped handler. We need `page._components`
-                # populated before dispatch — that only happens during
-                # `render()`. Accept the extra render cost; init hooks
-                # are expected to be idempotent.
-                await page.render()
-
-                payload = handler_name[len("_comp:") :]
-                comp_key, sep, remainder = payload.partition(":")
-                if not sep or not comp_key or not remainder:
-                    return PlainTextResponse(
-                        f"PyWire: malformed component handler '{handler_name}'",
-                        status_code=400,
-                    )
-
-                component = page._components.get(comp_key)
-                if component is None:
-                    return PlainTextResponse(
-                        f"PyWire: component '{comp_key}' not found",
-                        status_code=400,
-                    )
-
-                # Enforce the component's compile-time allowlist exactly like
-                # the page-level branch below — a client must not be able to
-                # invoke arbitrary component methods (e.g. "render") via the
-                # X-PyWire-Handler header.
-                comp_allowed = component.__class__.__event_handlers__
-                if comp_allowed is not None and remainder not in comp_allowed:
-                    return PlainTextResponse(
-                        f"PyWire: handler '{remainder}' is not a registered "
-                        "event handler",
-                        status_code=400,
-                    )
-                # Mirror BasePage._dispatch_handler: non-framework ``_``
-                # names are never invokable, even on permissive hand-rolled
-                # components (allowlist None).
-                is_framework_handler = remainder.startswith(
-                    "_handle_bind_"
-                ) or remainder.startswith("_handler_")
-                if not is_framework_handler and remainder.startswith("_"):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{remainder}' not allowed",
-                        status_code=400,
-                    )
-
-                # Populate the component's form ref (if any) so
-                # ``form_ref.data`` returns the POSTed fields — the
-                # built-in `<Form />` component reads this during
-                # validation.
-                form_ref_attr = getattr(component, "form_ref", None)
-                if form_ref_attr is not None and hasattr(form_ref_attr, "_update_data"):
-                    form_ref_attr._update_data(dict(event_data))
-
-                handler = getattr(component, remainder, None)
-                if handler is None or not callable(handler):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{remainder}' not found on component",
-                        status_code=400,
-                    )
-                if inspect.iscoroutinefunction(handler):
-                    await handler(event_data)
-                else:
-                    handler(event_data)
-            else:
-                handler = getattr(page, handler_name, None)
-                if handler is None or not callable(handler):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{handler_name}' not found on page",
-                        status_code=400,
-                    )
-                # Enforce the compile-time handler allowlist exactly like
-                # BasePage._dispatch_handler — a client must not be able to
-                # invoke arbitrary page methods (e.g. "render") via the
-                # X-PyWire-Handler header. Hand-rolled pages (allowlist
-                # None) keep the permissive behavior.
-                allowed = page.__class__.__event_handlers__
-                if allowed is not None and handler_name not in allowed:
-                    return PlainTextResponse(
-                        f"PyWire: handler '{handler_name}' is not a registered "
-                        "event handler",
-                        status_code=400,
-                    )
-                # Mirror BasePage._dispatch_handler: non-framework ``_``
-                # names are never invokable, even on permissive hand-rolled
-                # pages (allowlist None).
-                is_framework_handler = handler_name.startswith(
-                    "_handle_bind_"
-                ) or handler_name.startswith("_handler_")
-                if not is_framework_handler and handler_name.startswith("_"):
-                    return PlainTextResponse(
-                        f"PyWire: handler '{handler_name}' not allowed",
-                        status_code=400,
-                    )
-                if inspect.iscoroutinefunction(handler):
-                    await handler(event_data)
-                else:
-                    handler(event_data)
-
-            response = await page.render(init=not is_spa_submit)
-
-            if hasattr(page, "_pending_navigation") and page._pending_navigation:
+            # Render first, like the GET that served the form. Whatever stops
+            # a GET (a guard raising HTTPException, a failing @init) stops
+            # the POST the same way, and nothing is dispatched to a page
+            # whose @before_load asked to navigate away.
+            await page.render()
+            if getattr(page, "_pending_navigation", None):
                 from starlette.responses import RedirectResponse
 
                 redirect_path = page._pending_navigation
                 page._pending_navigation = None
                 return RedirectResponse(redirect_path, status_code=303)
 
-            return response
-        except Exception as e:
-            logger.error("Form POST error: %s", e, exc_info=True)
-            if hasattr(page, "_form_error"):
-                page._form_error = str(e)
+            target: Any = page
+            method = handler_name
+            while method.startswith("_comp:"):
+                comp_key, sep, rest = method[len("_comp:") :].partition(":")
+                if not sep or not comp_key or not rest:
+                    return PlainTextResponse(
+                        f"PyWire: malformed component handler '{handler_name}'",
+                        status_code=400,
+                    )
+                component = target._components.get(comp_key)
+                if component is None:
+                    return PlainTextResponse(
+                        f"PyWire: component '{comp_key}' not found",
+                        status_code=400,
+                    )
+                target, method = component, rest
+
+            refusal = _form_handler_refusal(target, method)
+            if refusal is not None:
+                return PlainTextResponse(refusal, status_code=400)
+
+            # Only now are file parts read into memory: a request for a
+            # handler that does not exist costs no more than its text fields.
+            fields: Dict[str, List[Any]] = {}
+            staged: List[str] = []
+            for key, value in form_data.multi_items():
+                if key == "__pywire_handler":
+                    continue
+                if not isinstance(value, str):
+                    if not value.filename:
+                        continue  # a file input with no file chosen
+                    upload_id = await self.uploads.stage(
+                        part_chunks(value),
+                        filename=value.filename,
+                        content_type=value.content_type or "application/octet-stream",
+                        limit=self.max_upload_size,
+                    )
+                    if upload_id is None:
+                        await self.uploads.discard(staged)
+                        return PlainTextResponse(
+                            "PyWire: uploaded file too large", status_code=413
+                        )
+                    staged.append(upload_id)
+                    value = {"_upload_id": upload_id}
+                fields.setdefault(str(key), []).append(value)
+            # Same shape the JS client sends: repeated names become lists.
+            payload = {k: v[0] if len(v) == 1 else v for k, v in fields.items()}
+            event_data: Dict[str, Any] = {"type": "submit", "formData": payload}
             try:
-                return await page.render(init=not is_spa_submit)
-            except Exception:
-                return PlainTextResponse("Internal Server Error", status_code=500)
+                await target._dispatch_handler(method, event_data)
+            except Exception as e:
+                # The guard and @init hooks already ran above, so showing the
+                # page again (without re-running them) leaks nothing a GET
+                # would not.
+                logger.error("Form POST error: %s", e, exc_info=True)
+                try:
+                    return await page.render(init=not is_spa_submit, run_hooks=False)
+                except Exception:
+                    return PlainTextResponse("Internal Server Error", status_code=500)
+
+            if getattr(page, "_pending_navigation", None):
+                from starlette.responses import RedirectResponse
+
+                redirect_path = page._pending_navigation
+                page._pending_navigation = None
+                return RedirectResponse(redirect_path, status_code=303)
+
+            invalid = bool(getattr(page, "_pw_form_invalid", False))
+            response = await page.render(init=not is_spa_submit, run_hooks=False)
+            if invalid:
+                response.status_code = 422
+                response.headers["x-pywire-form"] = "invalid"
+            return response
+        finally:
+            await form_data.close()
+
+    def _upload_key(self) -> bytes:
+        """The key page upload tokens are signed with.
+
+        Derived from ``secret_key`` when there is one. Otherwise a random key
+        kept in the private runtime folder, so every process serving these
+        pages on this machine accepts the others' tokens.
+        """
+        if self._upload_token_key is None:
+            if self.signing_secret_shared:
+                self._upload_token_key = hmac.new(
+                    self.signing_secret, b"pywire.upload", hashlib.sha256
+                ).digest()
+            else:
+                self._upload_token_key = machine_key(
+                    self._runtime_dir / "upload_token.key"
+                )
+        return self._upload_token_key
+
+    def _issue_upload_token(self) -> str:
+        body = f"{int(time.time()):x}_{secrets.token_hex(16)}"
+        mac = hmac.new(self._upload_key(), body.encode(), hashlib.sha256)
+        return f"{body}_{mac.hexdigest()}"
+
+    def _signed_upload_token_ts(self, token: str) -> Optional[float]:
+        """When a signed page token was issued, or None if it isn't one."""
+        parts = token.split("_")
+        if len(parts) != 3:
+            return None
+        body = f"{parts[0]}_{parts[1]}"
+        mac = hmac.new(self._upload_key(), body.encode(), hashlib.sha256)
+        if not hmac.compare_digest(mac.hexdigest(), parts[2]):
+            return None
+        try:
+            return float(int(parts[0], 16))
+        except ValueError:
+            return None
 
     def _cleanup_upload_tokens(self) -> None:
         cutoff = time.time() - self.upload_token_ttl_seconds
@@ -2063,6 +2262,8 @@ class PyWire:
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface."""
         logger.debug("Scope type: %s", scope["type"])
+        if self.base_path:
+            scope = apply_base_path(scope, self.base_path)
         if (
             scope["type"] == "webtransport"
             and self.interactive_server_mode
@@ -2071,13 +2272,12 @@ class PyWire:
             await self.web_transport_handler.handle(scope, receive, send)
             return
 
+        app: Any = BasePathHeaders(self.app)
         if self.compress:
             # Outermost HTTP layer, so middleware added later still sees
             # uncompressed bodies. Internal relocate replays target self.app.
-            await CompressionMiddleware(self.app)(scope, receive, send)
-            return
-
-        await self.app(scope, receive, send)
+            app = CompressionMiddleware(app)
+        await app(scope, receive, send)
 
     # --- Extensible Hooks ---
 

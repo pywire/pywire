@@ -116,9 +116,7 @@ def test_login_happy_path() -> None:
     # Seed user.
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(
-        idp.create_user(email="a@b.c", password="pw", name="Alice")
-    )
+    asyncio.run(idp.create_user(email="a@b.c", password="pw", name="Alice"))
     resp = client.post(
         "/auth/local/login",
         data={"email": "a@b.c", "password": "pw"},
@@ -132,9 +130,7 @@ def test_login_invalid_credentials() -> None:
     client, _store, idp, _ = _build()
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(
-        idp.create_user(email="a@b.c", password="pw")
-    )
+    asyncio.run(idp.create_user(email="a@b.c", password="pw"))
     resp = client.post(
         "/auth/local/login", data={"email": "a@b.c", "password": "wrong"}
     )

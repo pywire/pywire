@@ -377,6 +377,40 @@ def add(data):
     assert analyze_event_fields(source) == {"formData"}
 
 
+def test_iterating_the_form_needs_form_data():
+    source = """
+def add(data):
+    fields = dict(data.items())
+    names = [k for k in data]
+    for k in data:
+        pass
+"""
+    assert analyze_event_fields(source) == {"formData"}
+
+
+def test_unpacking_the_form_needs_form_data():
+    source = """
+def add(data):
+    save({**data, "source": "web"})
+"""
+    assert analyze_event_fields(source) == {"formData"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "return data",
+        "a, *b = data",
+        "print(f'{data}')",
+        "rows = [data]",
+        "if data:\n        pass",
+    ],
+)
+def test_event_escaping_sends_everything(body):
+    source = f"def add(data):\n    {body}\n"
+    assert analyze_event_fields(source) is None
+
+
 def test_param_with_default_is_not_the_event():
     source = """
 def handle(event, label="x"):

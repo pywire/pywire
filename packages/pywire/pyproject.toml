@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pywire"
-version = "0.16.0"
+version = "0.18.0"
 authors = [
     { name="Reece Holmdahl", email="reece@pywire.dev" },
 ]
@@ -31,7 +31,11 @@ dependencies = [
 
 [project.optional-dependencies]
 forms = [
-    "pydantic>=2.0.0",
+    "pydantic[email]>=2.0.0",
+]
+# pywire.storage.ObjectStore: uploads and files in S3, R2, GCS or Azure.
+storage = [
+    "obstore>=0.8.0",
 ]
 # pywire-parser is required for compiling .wire files (dev mode hot
 # reload, `pywire build`, syntax-error pages). Production deployments
@@ -49,7 +53,7 @@ cli = [
     "jinja2>=3.1.0",
 ]
 dev = [
-    "pywire[cli,forms]",
+    "pywire[cli,forms,storage]",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
@@ -123,10 +127,6 @@ rules = { no-matching-overload = "ignore", invalid-argument-type = "ignore" }
 [[tool.ty.overrides]]
 include = ["src/pywire/runtime/redis_store.py"]
 rules = { unresolved-import = "ignore", invalid-await = "ignore" }
-
-[[tool.ty.overrides]]
-include = ["src/pywire/runtime/pydantic_integration.py"]
-rules = { invalid-assignment = "ignore" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

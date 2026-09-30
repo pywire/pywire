@@ -73,3 +73,40 @@ def test_failed_event_reply_hides_the_exception_text(session_do) -> None:
         "error": "RuntimeError: An error occurred",
         "ack": 8,
     }
+
+
+def test_pages_resolve_under_base_path(session_do) -> None:
+    """Behind a Worker route like /demo/*, the client sends /demo/about."""
+    ns = session_do.__init__.__globals__
+    matched = []
+
+    class Page:
+        def __init__(self, request, **kwargs):
+            self.request = request
+
+    class Router:
+        def match(self, path):
+            matched.append(path)
+            return (Page, {}, "main") if path == "/about" else None
+
+    ns["app"] = types.SimpleNamespace(router=Router(), base_path="/demo")
+
+    page = ns["_resolve_page"]("/demo/about?tab=1")
+
+    assert matched == ["/about"]
+    assert page.request.scope["root_path"] == "/demo"
+    assert page.request.url.path == "/demo/about"
+    assert ns["_resolve_page"]("/elsewhere") is None
+
+
+def test_pages_resolve_at_the_root_without_base_path(session_do) -> None:
+    ns = session_do.__init__.__globals__
+    matched = []
+
+    class Router:
+        def match(self, path):
+            matched.append(path)
+
+    ns["app"] = types.SimpleNamespace(router=Router(), base_path="")
+    ns["_resolve_page"]("/about")
+    assert matched == ["/about"]

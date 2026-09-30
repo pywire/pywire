@@ -19,7 +19,6 @@ def make_page():
     p = _FakePage()
     p.count = wire(7)
     p.user = {"id": "u1", "token": "bearer-xyz"}
-    p.errors = {}
     p.loading = {}
     p._components = {}
     p._await_states = {}

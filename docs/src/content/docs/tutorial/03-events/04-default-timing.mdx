@@ -1,0 +1,59 @@
+---
+title: Default timing
+tutorial: Basic PyWire
+section: Event handlers
+description: Text input is sent after you pause typing; opt out with .immediate.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      typed = wire("")
+      events = wire(0)
+
+      def track(value):
+        typed.value = value
+        events.value += 1
+      ---
+      <div>
+        <h1>Typing</h1>
+
+        <input placeholder="Type quickly here" @input={track(event.value)} />
+
+        <p>Events received: {events}</p>
+        <p>Latest text: {typed}</p>
+      </div>
+    solution: |
+      ---
+      typed = wire("")
+      events = wire(0)
+
+      def track(value):
+        typed.value = value
+        events.value += 1
+      ---
+      <div>
+        <h1>Typing</h1>
+
+        <input placeholder="Type quickly here" @input.immediate={track(event.value)} />
+
+        <p>Events received: {events}</p>
+        <p>Latest text: {typed}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Add .immediate to @input'
+    target: pages/index.wire
+    pattern: '@input.immediate'
+pagesDir: pages
+hints:
+  - 'Type a word quickly, then compare the number of events to the number of letters.'
+---
+
+A handler on a text box would fire on every keystroke if PyWire sent every event. It doesn't: `input` on a text box, textarea or editable element is debounced by 250 ms, so the server gets one event after the user pauses. `scroll`, `wheel`, `resize` and pointer movement are throttled to one every 100 ms, always sending the last one. Clicks, submits and key presses go out at once, and they first send anything still waiting, so a button always runs on the latest text in the box next to it.
+
+### Your Task
+
+1.  Type a word quickly in the box and compare "Events received" with the number of letters. It should be much lower.
+2.  Change `@input` to `@input.immediate` and type again. Now every keystroke is one event.
+
+`.debounce.500ms` and `.throttle.100ms` set your own timing for one handler. To change a default for the whole app, pass `event_defaults` to `PyWire(...)`, for example `PyWire(event_defaults={"input": "debounce.400ms"})`.

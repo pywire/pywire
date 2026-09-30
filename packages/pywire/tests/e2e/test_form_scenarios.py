@@ -32,13 +32,13 @@ def test_comp_form_validation(page: Page, pywire_server):
     expect(page.locator("#comp-result")).to_have_text("User: alice (Age: 25)")
 
 
-def test_comp_form_manual_submit(page: Page, pywire_server):
+def test_comp_form_submit_from_outside(page: Page, pywire_server):
     page.goto(f"{pywire_server}/form_scenarios")
 
     page.fill("#comp-user", "bob")
     page.fill("#comp-age", "30")
 
-    # Submit via external button calling child_ref.do_submit()
+    # A <button form="user"> outside the form submits it natively
     page.click("#btn-manual-submit")
 
     expect(page.locator("#comp-result")).to_have_text("User: bob (Age: 30)")

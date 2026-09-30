@@ -486,9 +486,10 @@ async def run_dev_server(
                     f"🚀 PyWire: Running on [link=https://{display_host}:{port}][bold cyan]https://{display_host}:{port}[/][/link] (HTTP/3 + WebSocket)"
                 )
 
-                # Serve the starlette app wrapped in PyWire
+                # Serve through PyWire's own ASGI entry, as in production, so
+                # base_path, header rewriting and compression apply in dev.
                 tg.create_task(
-                    serve(pywire_app.app, config, shutdown_trigger=shutdown_event.wait)
+                    serve(pywire_app, config, shutdown_trigger=shutdown_event.wait)
                 )
             except Exception as e:
                 _dev_logger.error(f"PyWire: Failed to start Hypercorn: {e}")
@@ -511,7 +512,7 @@ async def run_dev_server(
                 ssl_options["ssl_keyfile"] = key_path
 
             uv_config = uvicorn.Config(
-                pywire_app.app,
+                pywire_app,
                 host=host,
                 port=port,
                 reload=False,

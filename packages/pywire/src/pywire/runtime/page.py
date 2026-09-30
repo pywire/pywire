@@ -18,6 +18,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Mapping,
     Optional,
     Set,
     Tuple,
@@ -30,7 +31,9 @@ from starlette.responses import Response
 if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
+from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
 from pywire.runtime.style_collector import StyleCollector
+from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
 from pywire.core.snippet import HeadBuffer, Snippet
 from pywire.core.wire import _owner_context, reset_owner_context, set_owner_context
 
@@ -176,6 +179,8 @@ class BasePage(metaclass=_PageMeta):
     # ``!live`` interval (ms, 0 = off) for re-reading shared state on the
     # stateless tier; ``None`` defers to ``PyWire(live_every=...)``.
     __live_every__: ClassVar[Optional[int]] = None
+    # URL prefix the app is served under; set per instance from the request.
+    base_path: str = ""
     _FRAMEWORK_PROP_KEYS: ClassVar[Set[str]] = {
         "request",
         "params",
@@ -220,6 +225,10 @@ class BasePage(metaclass=_PageMeta):
         **kwargs: Any,
     ) -> None:
         self.request = request
+        # URL prefix the app is served under ("" at the site root). Links,
+        # redirects and cookie paths get it added automatically; use it for
+        # URLs built in scripts.
+        self.base_path: str = prefix_of(getattr(request, "scope", None))
         self.params = DotDict(params or {})  # URL params from route
         self.query = DotDict(query or {})  # Query string params
         self.path = DotDict(path or {})
@@ -249,7 +258,6 @@ class BasePage(metaclass=_PageMeta):
             self.path["main"] = self.path.get("main", False)
 
         # Framework-managed state
-        self.errors: Dict[str, Any] = {}
         self.loading: Dict[str, bool] = {}
         self._pending_cookies: List[Dict[str, Any]] = []
         # Marks the wires this instance creates (see _PageMeta and _owning);
@@ -370,6 +378,16 @@ class BasePage(metaclass=_PageMeta):
         self._refs_by_id: Dict[str, Any] = {}  # registry for ref instances
         self._exposed_methods: Set[str] = getattr(self, "__exposed_methods__", set())
         self._pending_navigation: Optional[str] = None
+        # Set by a bound form's submit pipeline: a native POST answers 422.
+        self._pw_form_invalid = False
+        # Set when the page, or a component in it, renders a file input: the
+        # page then carries an upload token.
+        self._pw_has_uploads = False
+        if self._parent_page is not None and getattr(self, "__has_uploads__", False):
+            root = self._parent_page
+            while root._parent_page is not None:
+                root = root._parent_page
+            root._pw_has_uploads = True
         self._pending_dispatches: List[Dict[str, Any]] = []
         self._pending_intercepted_handlers: List[tuple[str, dict]] = []
         self._components: Dict[str, "BasePage"] = {}
@@ -381,7 +399,7 @@ class BasePage(metaclass=_PageMeta):
         """Return a callable that sets the pending navigation path."""
 
         def _navigate(path: str) -> None:
-            self._pending_navigation = path
+            self._pending_navigation = with_base(path, self.base_path)
 
         return _navigate
 
@@ -414,7 +432,7 @@ class BasePage(metaclass=_PageMeta):
                 "value": value,
                 "max_age": max_age,
                 "expires": expires,
-                "path": path,
+                "path": cookie_path(path, self.base_path),
                 "domain": domain,
                 "secure": secure,
                 "httponly": httponly,
@@ -434,7 +452,7 @@ class BasePage(metaclass=_PageMeta):
             {
                 "action": "delete",
                 "key": key,
-                "path": path,
+                "path": cookie_path(path, self.base_path),
                 "domain": domain,
             }
         )
@@ -468,7 +486,12 @@ class BasePage(metaclass=_PageMeta):
         - Dev: ?v={mtime} for instant invalidation
         - Prod with build: filename-based (logo.a1b2c3d4.png) for CDN caching
         - Prod without build: ?v={content_hash} fallback
+
+        The URL includes the app's URL prefix, so it also works in scripts.
         """
+        return with_base(self._asset_url(path), self.base_path)
+
+    def _asset_url(self, path: str) -> str:
         import hashlib
         import os
 
@@ -652,6 +675,11 @@ class BasePage(metaclass=_PageMeta):
         dep_versions: Dict[Tuple[Any, str], int] = {
             key: getattr(key[0], "_write_seq", 0) for key in captured
         }
+        # A nested component's output is part of this one's, so its wires
+        # invalidate this cache too (its own memo already includes its
+        # children's).
+        for child in comp._components.values():
+            dep_versions.update(getattr(child, "_pw_memo_dep_versions", None) or {})
 
         comp._pw_memo_props = props_snapshot  # type: ignore[attr-defined]
         comp._pw_memo_html = html  # type: ignore[attr-defined]
@@ -690,10 +718,17 @@ class BasePage(metaclass=_PageMeta):
         snapshot = self._component_state_snapshots.pop(key, None)
         if snapshot:
             from pywire.core.wire import WireBase  # noqa: PLC0415
+            from pywire.runtime.session_serializer import (  # noqa: PLC0415
+                HookedState,
+                restore_hooked,
+            )
 
             owners = instance._owner_tokens() | self._owner_tokens()
             for attr, value in snapshot.items():
                 current = getattr(instance, attr, None)
+                if isinstance(value, HookedState):
+                    restore_hooked(current, value.state)
+                    continue
                 if isinstance(current, WireBase) and (
                     current._locked or current._owner not in owners
                 ):
@@ -778,6 +813,23 @@ class BasePage(metaclass=_PageMeta):
             raise ValueError(f"Malformed component event '{event_name}'")
         return comp_key, remainder
 
+    def _pw_file_fields(self) -> Optional[Set[str]]:
+        """Names of the plain file inputs in this page and its components,
+        or None when one has a name only known at render time."""
+        root: BasePage = self
+        while root._parent_page is not None:
+            root = root._parent_page
+        names: Set[str] = set()
+        pending: List[BasePage] = [root]
+        while pending:
+            page = pending.pop()
+            fields = getattr(page, "__file_fields__", frozenset())
+            if fields is None:
+                return None
+            names |= fields
+            pending.extend(page._components.values())
+        return names
+
     async def _dispatch_handler(
         self, event_name: str, event_data: Dict[str, Any]
     ) -> None:
@@ -814,6 +866,17 @@ class BasePage(metaclass=_PageMeta):
                 event_name,
             )
             return
+
+        form_data = event_data.get("formData")
+        if isinstance(form_data, Mapping) and has_upload_refs(form_data):
+            # Files arrive as ids of staged uploads; handlers get Uploads.
+            # Only for a handler that may run, so a refused one costs no reads.
+            # A bound form keeps only its model's file fields; a plain handler
+            # gets files only under the names of file inputs the page has.
+            if event_name not in getattr(self, "__bound_handlers__", ()):
+                form_data = _only_file_fields(form_data, self._pw_file_fields())
+            event_data = dict(event_data)
+            event_data["formData"] = await resolve_uploads(staging_for(self), form_data)
 
         if event_name.startswith("_handle_bind_"):
             if inspect.iscoroutinefunction(handler):
@@ -1097,11 +1160,20 @@ class BasePage(metaclass=_PageMeta):
                     return True
         return False
 
-    async def render(self, init: bool = True) -> Response:
-        """Main render method - calls lifecycle hooks."""
+    async def render(
+        self, init: bool = True, *, run_hooks: Optional[bool] = None
+    ) -> Response:
+        """Main render method - calls lifecycle hooks.
+
+        ``init`` renders the full document (vs. a body fragment);
+        ``run_hooks`` (default: same as ``init``) runs @before_load/@init
+        and resets background work. A form POST renders the page once with
+        hooks, dispatches, then renders the result with ``run_hooks=False``.
+        """
+        hooks = init if run_hooks is None else run_hooks
 
         # Cleanup background tasks on new full load
-        if init:
+        if hooks:
             for task in self._background_tasks:
                 if not task.done():
                     task.cancel()
@@ -1128,11 +1200,11 @@ class BasePage(metaclass=_PageMeta):
                 return guard_response
 
         # Run @before_load hooks (pages only, before any page logic)
-        if init:
+        if hooks:
             await self._run_hooks(self.BEFORE_LOAD_HOOKS)
 
         # Run @init hooks only if requested (new page load — data fetching)
-        if init:
+        if hooks:
             await self._run_hooks(self.INIT_HOOKS)
 
         self._clear_wire_tracking()
@@ -1171,6 +1243,10 @@ class BasePage(metaclass=_PageMeta):
 
         # Flush {$head} contributions into the document head.
         html = self._inject_head_into(html)
+
+        # Under a URL prefix, root-relative links and assets point into the
+        # app: href="/chat" -> href="/demo/chat".
+        html = rewrite_html(html, self.base_path)
 
         # Inject styles. On init=True the document has a real ``</head>`` and
         # we target the first one that is not inside a <script>/<style> (user
@@ -1222,26 +1298,18 @@ class BasePage(metaclass=_PageMeta):
             except (AttributeError, KeyError):
                 pass  # no router available; SPA navigation will use sibling paths only
 
-            # ASGI mount prefix — when PyWire is mounted under e.g. /app on a
-            # host FastAPI/Starlette app, every URL we emit must be prefixed
-            # with it. Starlette sets scope["root_path"] on mounted sub-apps.
-            root_path: str = ""
-            try:
-                root_path = str(self.request.scope.get("root_path", "") or "")
-            except (AttributeError, KeyError):
-                pass
+            # URL prefix (host mount's root_path, or base_path): every URL
+            # the client uses must carry it.
+            root_path = self.base_path
 
             def _prefix(p: str) -> str:
-                if not root_path or not isinstance(p, str) or not p.startswith("/"):
-                    return p
-                if p.startswith(root_path + "/") or p == root_path:
-                    return p
-                return root_path + p
+                return with_base(p, root_path)
 
             if not no_spa and not is_component:
                 # Reconnect overlay config from PyWire app
                 reconnect_max_attempts = 10
                 reconnect_overlay_enabled = True
+                event_defaults: Dict[str, str] = {}
                 try:
                     pywire_app = self.request.app.state.pywire
                     _rma = getattr(pywire_app, "reconnect_max_attempts", 10)
@@ -1250,6 +1318,9 @@ class BasePage(metaclass=_PageMeta):
                     _roe = getattr(pywire_app, "reconnect_overlay", True)
                     if isinstance(_roe, bool):
                         reconnect_overlay_enabled = _roe
+                    _ed = getattr(pywire_app, "event_defaults", None)
+                    if isinstance(_ed, dict):
+                        event_defaults = _ed
                 except (AttributeError, KeyError):
                     pass
 
@@ -1295,6 +1366,7 @@ class BasePage(metaclass=_PageMeta):
                     "mount_path": root_path,
                     "reconnect_max_attempts": reconnect_max_attempts,
                     "reconnect_overlay": reconnect_overlay_enabled,
+                    "event_defaults": event_defaults,
                     "interactive": interactive_mode,
                     "stateless": stateless_mode,
                     # Per-page !no_interactive: WebSocket stays connected,
@@ -1651,11 +1723,14 @@ class BasePage(metaclass=_PageMeta):
         # written by the user's handler — UI freezes despite the wire
         # change. Marking the parent's root (None) dirty triggers a full
         # re-render, which is the safe outcome since the parent has no
-        # finer-grained subscription for this wire.
+        # finer-grained subscription for this wire. Every ancestor, not just
+        # the parent: a component nested in a component is re-rendered only
+        # when the page at the top is.
         parent = getattr(self, "_parent_page", None)
-        if parent is not None:
+        while parent is not None:
             parent._dirty_regions.add(None)
             parent._wire_write_seq += 1
+            parent = getattr(parent, "_parent_page", None)
 
     async def _dispatch_event(
         self, event_name: str, event_data: dict[str, Any]
@@ -1831,7 +1906,12 @@ class BasePage(metaclass=_PageMeta):
                         )
                         continue
                     self._region_output_cache[region_id] = region_html
-                    updates.append({"region": region_id, "html": region_html})
+                    updates.append(
+                        {
+                            "region": region_id,
+                            "html": rewrite_html(region_html, self.base_path),
+                        }
+                    )
 
                 if not has_root_dirty:
                     self._dirty_regions.clear()
@@ -2053,3 +2133,16 @@ class ErrorBasePage(BasePage):
     error_code: int
     error_message: str
     error_trace: str
+
+
+def _only_file_fields(
+    form_data: Mapping[str, Any], names: Optional[Set[str]]
+) -> Mapping[str, Any]:
+    """``form_data`` without upload references under other names."""
+    if names is None:
+        return form_data
+    return {
+        key: value
+        for key, value in form_data.items()
+        if key in names or not has_upload_refs({key: value})
+    }

@@ -7,9 +7,11 @@ import json
 import logging
 import uuid
 from typing import Any, Dict, Set, cast
+from urllib.parse import urlparse
 
+from pywire.runtime.base_path import prefix_of, strip_base
 from pywire.runtime.page import BasePage
-from pywire.runtime.protocol import event_ack, with_ack
+from pywire.runtime.protocol import dropped, event_ack, for_another_page, with_ack
 from pywire.runtime.session_serializer import restore_page_state
 
 logger = logging.getLogger(__name__)
@@ -120,6 +122,9 @@ class WebTransportHandler:
                 handler_name = data.get("handler")
                 event_data = data.get("data", {})
                 ack = event_ack(data)
+                if for_another_page(page, data.get("path")):
+                    await self._send_response(send, stream_id, dropped(ack))
+                    return
 
                 try:
                     if handler_name and isinstance(handler_name, str):
@@ -159,7 +164,9 @@ class WebTransportHandler:
             # Initialize page for this connection (similar to WS)
             # Parse path and instantiate page
             path = data.get("path", "/")
-            match = self.app.router.match(path)
+            match = self.app.router.match(
+                strip_base(urlparse(path).path, prefix_of(scope))
+            )
             if match:
                 page_class, params, variant_name = match
                 # Mock request object? Or extract from scope

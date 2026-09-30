@@ -22,9 +22,9 @@ Audit `docs/` (Astro + Starlight) against source and fix stale, stub or missing 
 | App class | `packages/pywire/src/pywire/runtime/app.py` |
 | Page lifecycle hooks | `packages/pywire/src/pywire/runtime/page.py` (e.g. `before_load`) |
 | Events / event data | `packages/pywire/src/pywire/runtime/events.py` |
-| Form validation | `packages/pywire/src/pywire/runtime/validation.py` |
+| Forms (`form()`, `$bind`) | `packages/pywire/src/pywire/forms/` |
 | Refs, expose, props | `packages/pywire/src/pywire/core/{refs,expose,props}.py` |
-| Built-in components | `packages/pywire/src/pywire/components/` |
+| Uploads, file storage | `packages/pywire/src/pywire/runtime/uploads.py`, `packages/pywire/src/pywire/storage.py`, `packages/pywire/src/pywire/forms/uploads.py` |
 | Auth | `packages/pywire/src/pywire/auth/`, `packages/pywire-auth/` |
 | Directives | `packages/pywire-parser/src/pywire_parser/directives/` (parse), `packages/pywire/src/pywire/compiler/directives/` (compile) |
 | CLI | `packages/pywire-cli/src/pywire_cli/main.py` |
