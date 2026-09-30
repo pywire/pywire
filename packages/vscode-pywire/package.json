@@ -23,6 +23,18 @@
   "extensionDependencies": [
     "ms-python.python"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace the language server only runs executables set in your user settings, never ones named by the workspace.",
+      "restrictedConfigurations": [
+        "pywire.pythonPath",
+        "pywire.tyPath",
+        "pywire.languageServer.customPath",
+        "pywire.languageServer.version"
+      ]
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -61,6 +73,7 @@
         "pywire.pythonPath": {
           "type": "string",
           "default": "python3",
+          "scope": "machine-overridable",
           "description": "Path to Python interpreter"
         },
         "pywire.trace.server": {
@@ -75,6 +88,7 @@
         },
         "pywire.tyPath": {
           "type": "string",
+          "scope": "machine-overridable",
           "description": "Path to the Ty language server executable. If not set, 'ty' is expected to be in the PATH."
         },
         "pywire.disableUpdateNotifications": {
@@ -89,6 +103,7 @@
         },
         "pywire.languageServer.customPath": {
           "type": "string",
+          "scope": "machine-overridable",
           "description": "Absolute path to a Python interpreter in a venv that already has pywire-language-server installed. When set, bypasses the extension-managed venv."
         }
       }
