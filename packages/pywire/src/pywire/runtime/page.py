@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
 
 from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
+from pywire.runtime.bind import forget_region_binds
 from pywire.runtime.handler_args import HandlerArgsError, sign_args, verify_args
 from pywire.runtime.style_collector import StyleCollector
 from pywire.runtime.uploads import has_upload_refs, resolve_uploads, staging_for
@@ -1306,6 +1307,7 @@ class BasePage(metaclass=_PageMeta):
         token = set_render_context(self, None)
         try:
             self._active_component_keys.clear()
+            forget_region_binds(self, None)
             html = await self._render_template()
             self._cleanup_components()
         finally:
@@ -1578,6 +1580,14 @@ class BasePage(metaclass=_PageMeta):
                 pass
 
     def _begin_region_render(self, region_id: str) -> None:
+        from pywire.core.wire import _render_context
+
+        # Which region this one renders inside, and a fresh start for what
+        # its elements (and those of regions inside it) accept via $bind.
+        context = _render_context.get()
+        parent = context[1] if context and context[0] is self else None
+        self.__dict__.setdefault("_pw_region_parent", {})[region_id] = parent
+        forget_region_binds(self, region_id)
         deps = self._region_dependencies.get(region_id)
         if deps:
             for dep in deps:
@@ -2369,6 +2379,7 @@ class BasePage(metaclass=_PageMeta):
 
     async def _render_and_cleanup(self) -> str:
         """Render template and remove stale child component instances."""
+        forget_region_binds(self, None)
         html = await self._render_template()
         self._cleanup_components()
         # At the root of the render tree (no parent page), flush accumulated
