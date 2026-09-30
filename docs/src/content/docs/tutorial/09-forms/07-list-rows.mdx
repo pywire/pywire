@@ -1,0 +1,106 @@
+---
+title: Adding and removing rows
+tutorial: Basic PyWire
+section: Forms
+description: Let people add and remove rows of a list field with two buttons.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Item(BaseModel):
+        name: str = Field(min_length=1)
+        qty: int = Field(ge=1)
+
+      class Order(BaseModel):
+        items: list[Item] = Field(max_length=4)
+
+      order = form(Order, initial={"items": [{"name": "Tea", "qty": 1}]})
+      result = wire("")
+
+      def place(data: Order):
+        result.value = f"{len(data.items)} lines, {sum(i.qty for i in data.items)} items"
+      ---
+      <div>
+        <h1>Order</h1>
+
+        <form $bind={order} @submit={place} novalidate>
+          <fieldset $for={row in order.items}>
+            <input $bind={row.name} />
+            <input $bind={row.qty} />
+            <span $if={row.name.error} style="color: red;">{row.name.error}</span>
+            <span $if={row.qty.error} style="color: red;">{row.qty.error}</span>
+            <!-- 2. Add a remove button here -->
+          </fieldset>
+
+          <!-- 1. Add an "Add item" button here -->
+
+          <button type="submit">Place order</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Item(BaseModel):
+        name: str = Field(min_length=1)
+        qty: int = Field(ge=1)
+
+      class Order(BaseModel):
+        items: list[Item] = Field(max_length=4)
+
+      order = form(Order, initial={"items": [{"name": "Tea", "qty": 1}]})
+      result = wire("")
+
+      def place(data: Order):
+        result.value = f"{len(data.items)} lines, {sum(i.qty for i in data.items)} items"
+      ---
+      <div>
+        <h1>Order</h1>
+
+        <form $bind={order} @submit={place} novalidate>
+          <fieldset $for={row in order.items}>
+            <input $bind={row.name} />
+            <input $bind={row.qty} />
+            <span $if={row.name.error} style="color: red;">{row.name.error}</span>
+            <span $if={row.qty.error} style="color: red;">{row.qty.error}</span>
+            <button {**row.remove_button}>Remove</button>
+          </fieldset>
+
+          <button {**order.items.add_button}>Add item</button>
+
+          <button type="submit">Place order</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Add a button with {**order.items.add_button}'
+    target: pages/index.wire
+    pattern: '{**order.items.add_button}'
+  - type: file_contains
+    description: 'Add a button with {**row.remove_button}'
+    target: pages/index.wire
+    pattern: '{**row.remove_button}'
+  - type: browser_route_text
+    route: '/'
+    description: 'Add a row, fill it in and place the order'
+    pattern: ' lines, '
+pagesDir: pages
+---
+
+The last step showed a list that had a fixed number of rows. To let people change the number, give the list two kinds of button.
+
+### Your Task
+
+1.  Below the rows, add a button that adds one: `<button {**order.items.add_button}>Add item</button>`.
+2.  Inside each row, add one that removes it: `<button {**row.remove_button}>Remove</button>`.
+3.  Add a few rows, fill them in, remove one from the middle and place the order.
+
+`{**...}` spreads the button's attributes onto it. Both buttons are submit buttons that skip the browser's own checks, so they work with JavaScript off too. The server keeps what has been typed so far, adds an empty row or drops the one you removed and moves the rows after it (with their errors) up by one. Nothing is validated and your handler isn't called. Adding stops at the list's `max_length`, which is 4 here.

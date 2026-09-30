@@ -54,11 +54,17 @@ def _decode(message):
 
 
 def _resolve_page(path):
+    # The client sends the path the browser shows. Behind a Worker route like
+    # example.com/demo/*, that includes base_path, which the router doesn't.
+    base = getattr({{ app_attr }}, "base_path", "") or ""
+    scope = {"root_path": base}
     try:
         # The app gives pages its upload staging and signing secret.
-        result = resolve_page({{ app_attr }}.router, path, app={{ app_attr }})
+        result = resolve_page(
+            {{ app_attr }}.router, path, base_scope=scope, app={{ app_attr }}
+        )
     except TypeError:  # pywire before resolve_page(app=...)
-        result = resolve_page({{ app_attr }}.router, path)
+        result = resolve_page({{ app_attr }}.router, path, base_scope=scope)
     if result is None:
         return None
     page, _params, _variant_name = result

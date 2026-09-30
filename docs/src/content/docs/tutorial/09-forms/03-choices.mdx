@@ -1,0 +1,124 @@
+---
+title: Choices and checkboxes
+tutorial: Basic PyWire
+section: Forms
+description: Bind selects, radios and checkboxes to model fields and let the model supply the options.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from typing import Literal
+      from pydantic import BaseModel
+      from pywire import form
+
+      class Signup(BaseModel):
+        plan: Literal["free", "pro", "team"] = "free"
+        newsletter: bool = False
+        terms: Literal[True]
+
+      signup = form(Signup)
+      result = wire("")
+
+      def join(data: Signup):
+        news = "with" if data.newsletter else "without"
+        result.value = f"Joined {data.plan} {news} the newsletter"
+      ---
+      <div>
+        <h1>Choices</h1>
+
+        <!-- 1. Bind the form, then bind each control below to its field -->
+        <form novalidate>
+          <div>
+            <label>Plan</label>
+            <select name="plan">
+              <option>free</option>
+              <option>pro</option>
+              <option>team</option>
+            </select>
+          </div>
+
+          <div>
+            <label><input type="checkbox" name="newsletter" /> Send me the newsletter</label>
+          </div>
+
+          <div>
+            <label><input type="checkbox" name="terms" /> I accept the terms</label>
+            <span $if={signup.terms.error} style="color: red;">{signup.terms.error}</span>
+          </div>
+
+          <button type="submit">Join</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from typing import Literal
+      from pydantic import BaseModel
+      from pywire import form
+
+      class Signup(BaseModel):
+        plan: Literal["free", "pro", "team"] = "free"
+        newsletter: bool = False
+        terms: Literal[True]
+
+      signup = form(Signup)
+      result = wire("")
+
+      def join(data: Signup):
+        news = "with" if data.newsletter else "without"
+        result.value = f"Joined {data.plan} {news} the newsletter"
+      ---
+      <div>
+        <h1>Choices</h1>
+
+        <form $bind={signup} @submit={join} novalidate>
+          <div>
+            <label for={signup.plan.html_id}>Plan</label>
+            <select $bind={signup.plan}></select>
+          </div>
+
+          <div>
+            <label><input $bind={signup.newsletter} /> Send me the newsletter</label>
+          </div>
+
+          <div>
+            <label><input $bind={signup.terms} /> I accept the terms</label>
+            <span $if={signup.terms.error} style="color: red;">{signup.terms.error}</span>
+          </div>
+
+          <button type="submit">Join</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Bind the form with $bind={signup}'
+    target: pages/index.wire
+    pattern: '$bind={signup}'
+  - type: file_contains
+    description: 'Bind the plan select'
+    target: pages/index.wire
+    pattern: '$bind={signup.plan}'
+  - type: file_contains
+    description: 'Bind the terms checkbox'
+    target: pages/index.wire
+    pattern: '$bind={signup.terms}'
+  - type: browser_route_text
+    route: '/'
+    description: 'Tick the terms box and submit to see the result'
+    pattern: 'Joined '
+pagesDir: pages
+---
+
+The model already lists the allowed values, so the form doesn't need to repeat them. A `Literal` or `Enum` field is a choice, a `bool` is a checkbox, and `Literal[True]` is a checkbox that has to be ticked.
+
+### Your Task
+
+1.  On the `<form>`, replace `novalidate` with `$bind={signup} @submit={join} novalidate`.
+2.  Replace the whole `<select>` with `<select $bind={signup.plan}></select>`. Leave it empty: PyWire writes one `<option>` per value in the `Literal`.
+3.  Replace each checkbox with `<input $bind={signup.newsletter} />` and `<input $bind={signup.terms} />`. The model supplies the `type` and `name`.
+4.  Submit once without ticking the terms box to see the error, then tick it and submit again.
+
+Radios work the same way. Write one `<input type="radio" value="pro" $bind={signup.plan} />` for each option; a radio needs its own `value` so PyWire knows which choice it stands for. Whichever control you use, the server refuses a value the model doesn't allow, whatever the HTML says.

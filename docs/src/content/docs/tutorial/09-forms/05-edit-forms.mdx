@@ -1,0 +1,102 @@
+---
+title: Edit forms
+tutorial: Basic PyWire
+section: Forms
+description: Prefill a form from existing data and keep fields the page doesn't render.
+files:
+  - path: pages/index.wire
+    initial: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Profile(BaseModel):
+        id: int
+        name: str = Field(min_length=2)
+        bio: str = ""
+
+      stored = Profile(id=42, name="Ada Lovelace", bio="Wrote the first program.")
+
+      # 1. Start the form from `stored`
+      profile = form(Profile)
+      result = wire("")
+
+      def save(data: Profile):
+        result.value = f"Saved profile {data.id} for {data.name}"
+      ---
+      <div>
+        <h1>Edit profile</h1>
+
+        <form $bind={profile} @submit={save} novalidate>
+          <div>
+            <label for={profile.name.html_id}>Name</label>
+            <input $bind={profile.name} />
+            <span $if={profile.name.error} style="color: red;">{profile.name.error}</span>
+          </div>
+          <div>
+            <label for={profile.bio.html_id}>Bio</label>
+            <textarea $bind={profile.bio}></textarea>
+          </div>
+          <button type="submit">Save</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+    solution: |
+      ---
+      from pydantic import BaseModel, Field
+      from pywire import form
+
+      class Profile(BaseModel):
+        id: int
+        name: str = Field(min_length=2)
+        bio: str = ""
+
+      stored = Profile(id=42, name="Ada Lovelace", bio="Wrote the first program.")
+
+      profile = form(Profile, initial=stored)
+      result = wire("")
+
+      def save(data: Profile):
+        result.value = f"Saved profile {data.id} for {data.name}"
+      ---
+      <div>
+        <h1>Edit profile</h1>
+
+        <form $bind={profile} @submit={save} novalidate>
+          <div>
+            <label for={profile.name.html_id}>Name</label>
+            <input $bind={profile.name} />
+            <span $if={profile.name.error} style="color: red;">{profile.name.error}</span>
+          </div>
+          <div>
+            <label for={profile.bio.html_id}>Bio</label>
+            <textarea $bind={profile.bio}></textarea>
+          </div>
+          <button type="submit">Save</button>
+        </form>
+
+        <p $if={result} style="color: green;">{result}</p>
+      </div>
+successCriteria:
+  - type: file_contains
+    description: 'Pass initial=stored to form()'
+    target: pages/index.wire
+    pattern: 'initial=stored'
+  - type: browser_route_text
+    route: '/'
+    description: 'Save the form to see the profile id'
+    pattern: 'Saved profile 42'
+pagesDir: pages
+---
+
+An edit form starts from data you already have. Pass it as `initial`, either a model instance or a plain dictionary, and the inputs show those values.
+
+### Your Task
+
+1.  Change the form to `profile = form(Profile, initial=stored)`.
+2.  Change the name and click Save.
+
+Look at the result. The model needs an `id`, but the template never renders one, and the save still reports profile 42. A submit only reads the fields the page rendered with `$bind`. Any other field keeps its initial value, whatever the request says, so a visitor can't change `id` by adding it to the request. The same holds for a field rendered `disabled` or `readonly`.
+
+To fill the form from a record you fetch when the page loads, call `profile.load(record)`. It replaces the initial values and clears any errors.
