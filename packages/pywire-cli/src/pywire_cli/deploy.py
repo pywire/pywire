@@ -63,10 +63,29 @@ def generate_cf_entry(project_root: Path, app_string: str = "main:app") -> str:
     )
 
 
-def generate_cf_edge_wrangler_toml(project_root: Path, project_name: str) -> str:
+def edge_worker_layout(project_root: Path, app_string: str) -> tuple[str, str]:
+    """Where the edge Worker's modules go, and the app as imported from there.
+
+    Wrangler uploads every ``.py`` file under the directory of ``main``. At
+    the project root that includes tests and pywrangler's ``.venv-workers``,
+    so for an app in a source folder (``src.main:app``, with ``src/`` not a
+    package) the Worker lives in ``src/`` and imports ``main:app``, the
+    layout Cloudflare's own Python template uses. Other apps stay at the root.
+    """
+    app_module, app_attr = _parse_app_string(app_string)
+    head, _, rest = app_module.partition(".")
+    folder = project_root / head
+    if rest and folder.is_dir() and not (folder / "__init__.py").exists():
+        return head, f"{rest}:{app_attr}"
+    return "", f"{app_module}:{app_attr}"
+
+
+def generate_cf_edge_wrangler_toml(
+    project_root: Path, project_name: str, main: str = "entry.py"
+) -> str:
     """Generate wrangler.toml for the stateless Cloudflare edge Worker (no DOs)."""
     return render_deploy_template(
-        "cloudflare_edge/wrangler.toml.j2", project_name=project_name
+        "cloudflare_edge/wrangler.toml.j2", project_name=project_name, main=main
     )
 
 

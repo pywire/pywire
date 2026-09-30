@@ -1,5 +1,5 @@
 name = "{{ project_name }}"
-main = "entry.py"
+main = "{{ main | default("entry.py") }}"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["python_workers"]
 workers_dev = false
