@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.8.0...pywire-parser-v0.9.0) (2026-09-30)
+
+
+### Features
+
+* **pywire:** stateless pages refresh shared state on an interval ([#369](https://github.com/pywire/pywire/issues/369)) ([a43d999](https://github.com/pywire/pywire/commit/a43d999136b67e890206804ef772df0fb4674d0b))
+
 ## [0.8.0](https://github.com/pywire/pywire/compare/pywire-parser-v0.7.1...pywire-parser-v0.8.0) (2026-09-29)
 
 
