@@ -15,7 +15,6 @@ const commonOptions = {
   target: 'node18',
   external: [
     'prettier',
-    // 'cosmiconfig',
     // '@iarna/toml',
     // '@wasm-fmt/ruff_fmt',
   ],
