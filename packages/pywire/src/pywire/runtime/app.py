@@ -33,6 +33,7 @@ from pywire.runtime.http_transport import HTTPTransportHandler
 from pywire.runtime.origin import is_cross_site, is_loopback_host
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
+from pywire.runtime.secret_key import GENERATE_HINT, weak_secret
 from pywire.runtime.uploads import (
     Staging,
     machine_key,
@@ -469,15 +470,17 @@ class PyWire:
         secret = secret_key or os.environ.get("PYWIRE_SECRET_KEY")
         # Signs state a page hands the browser to send back (what a bound
         # form rendered, a wizard's steps). Processes that serve the same
-        # pages must share it, and a short one could be guessed, so it is
-        # only used when it is at least 32 bytes.
-        strong = bool(secret) and len(str(secret).encode("utf-8")) >= 32
+        # pages must share it, and a guessable one lets anyone forge that
+        # state, so it is only used when it looks random and is 32+ bytes.
+        weakness = weak_secret(str(secret)) if secret else None
+        strong = bool(secret) and weakness is None
         if secret and not strong and not stateless:
             logger.warning(
-                "PyWire: secret_key is shorter than 32 bytes, so it doesn't "
-                "sign form state; forms posted without JavaScript are only "
-                "accepted by the process that rendered them. Generate one "
-                "with: python -c 'import secrets; print(secrets.token_hex(32))'"
+                "PyWire: secret_key is not used to sign form state because "
+                "%s; forms posted without JavaScript are only accepted by the "
+                "process that rendered them. %s",
+                weakness,
+                GENERATE_HINT,
             )
         self.signing_secret: bytes = (
             str(secret).encode("utf-8") if strong else secrets.token_bytes(32)
@@ -499,11 +502,11 @@ class PyWire:
                     "PYWIRE_SECRET_KEY env var — it signs client-held session "
                     "snapshots"
                 )
-            if len(secret.encode("utf-8")) < 32:
+            if weakness is not None:
                 raise RuntimeError(
-                    "PYWIRE_SECRET_KEY must be at least 32 bytes — anyone who "
-                    "guesses it can forge page state. Generate one with: "
-                    "python -c 'import secrets; print(secrets.token_hex(32))'"
+                    "PYWIRE_SECRET_KEY must be at least 32 random bytes, and "
+                    f"this one isn't: {weakness}. Anyone who guesses it can "
+                    f"read and forge page state. {GENERATE_HINT}"
                 )
             self._stateless_secret = secret.encode("utf-8")
 
@@ -784,6 +787,13 @@ class PyWire:
         """
         explicit = os.environ.get("PYWIRE_SESSION_SECRET")
         if explicit:
+            weakness = weak_secret(explicit)
+            if weakness is not None:
+                raise RuntimeError(
+                    "PYWIRE_SESSION_SECRET must be at least 32 random bytes, "
+                    f"and this one isn't: {weakness}. It signs session cookies. "
+                    f"{GENERATE_HINT}"
+                )
             return explicit
 
         if os.environ.get("PYWIRE_DEV_MODE") == "1":
@@ -1763,7 +1773,12 @@ class PyWire:
         if routes:
             url_helper = URLHelper(cast(dict[str, str], routes))
 
-        return page_class(request, params, query, path=path_info, url=url_helper)
+        page = page_class(request, params, query, path=path_info, url=url_helper)
+        if self.stateless:
+            from pywire.runtime.session_serializer import remember_initial_state
+
+            remember_initial_state(page)
+        return page
 
     def _live_every_ms(self, page: Any, *, strict: bool = True) -> int:
         """How often (ms) a stateless page re-reads shared state; 0 = never.

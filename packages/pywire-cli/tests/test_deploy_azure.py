@@ -103,7 +103,7 @@ def test_azure_build_generates_deployable_artifact_set() -> None:
         (pages / "index.wire").write_text("<p>hello</p>\n")
         (root / "azure_build_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test-signing-key-0123456789abcdef')\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(
@@ -261,7 +261,7 @@ def test_azure_build_produces_self_contained_deploy_dir(tmp_path: Path) -> None:
         )
         (root / "azure_isolated_app.py").write_text(
             "from pywire import PyWire\n"
-            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test' * 8)\n"
+            "app = PyWire(pages_dir='pages', stateless=True, secret_key='test-signing-key-0123456789abcdef')\n"
         )
         (root / "pyproject.toml").write_text("[project]\nname='test'\n")
         result = runner.invoke(

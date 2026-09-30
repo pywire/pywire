@@ -3,12 +3,12 @@ title: Stateless mode
 description: Use signed page snapshots, locked wires, and small request-scoped state on FaaS and edge runtimes.
 ---
 
-Stateless mode replaces server-held page sessions with a signed client-carried snapshot. The server performs one round-trip per event:
+Stateless mode replaces server-held page sessions with an encrypted, signed client-carried snapshot. The server performs one round-trip per event:
 
 1. The browser sends the snapshot, allowlisted handler name, event data, and current path to `POST /_pywire/stateless`.
-2. PyWire verifies the HMAC-SHA256 signature, inflates the zlib-compressed msgpack body, reconstructs the page, and resolves identity from the current request.
+2. PyWire verifies the HMAC-SHA256 signature, decrypts and inflates the zlib-compressed msgpack body, checks the snapshot's age, URL and user, reconstructs the page, and resolves identity from the current request.
 3. The handler runs and receives **unwrapped values, not live Wire objects**.
-4. PyWire renders dirty regions, signs the next snapshot, and returns both.
+4. PyWire renders dirty regions, seals the next snapshot, and returns both.
 
 `page.user` is never included in a snapshot. Authentication, middleware, and session cookies run on the same POST as a normal HTTP load.
 
@@ -17,12 +17,12 @@ Stateless mode replaces server-held page sessions with a signed client-carried s
 - Invalid signatures, corrupt data, and non-snapshot payloads fail with HTTP 400 before state mutation.
 - When the server rejects the page's snapshot (for example after a deploy or a key rotation) or it is over the size limit, the browser reloads the page, which embeds a fresh snapshot.
 - Handler dispatch uses a compile-time allowlist: the functions a template wires by name (`@click={save}`) plus the wrappers generated for expressions (`@click={charge(price)}`). A function reached only through an expression can't be called directly with arguments the client chose.
-- The endpoint only accepts `Content-Type: application/x-msgpack` from the same origin. Content types an HTML form can send are refused with HTTP 415, and requests the browser marks as cross-site with HTTP 403, so another site can't make a visitor's browser post a snapshot with their cookies.
-- Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. It must be at least 32 bytes; generate one with `python -c 'import secrets; print(secrets.token_hex(32))'`. Never auto-generate or commit it.
-- Snapshot integrity is not authorization. A bearer of a valid snapshot can replay its non-identity page state; authorization must still be enforced in handlers and request-derived identity.
-- Each snapshot is bound to the URL (path and query) it was rendered for. Posting it with any other path is rejected with HTTP 400.
+- The endpoint only accepts `Content-Type: application/x-msgpack` from the same origin. Content types an HTML form can send are refused with HTTP 415, and requests the browser marks as cross-site (`Sec-Fetch-Site`, or `Origin` in browsers without it) with HTTP 403, so another site can't make a visitor's browser post a snapshot with their cookies. The request body is capped as it streams in.
+- Keep a single strong `PYWIRE_SECRET_KEY` across every instance serving that app. It must be at least 32 random bytes: PyWire refuses short keys, keys that repeat a few characters (`"k" * 32`) and placeholders like `changeme`. Generate one with `python -c 'import secrets; print(secrets.token_hex(32))'`. Never auto-generate or commit it.
+- Snapshot integrity is not authorization. A bearer of a valid snapshot can replay its non-identity page state (roll a page back to an earlier snapshot) until it expires; authorization must still be enforced in handlers and request-derived identity, and state that must not roll back (balances, stock) belongs in your database.
+- Each snapshot is bound to the URL (path and query) it was rendered for and to the signed-in user it was issued to, and is accepted for 12 hours. Posting it with any other path, as another user (or after signing in or out), or later is rejected with HTTP 400, and the browser reloads the page.
 - `@before_load` and `@init` run on the page load that issues the snapshot, not on events. A check that must hold on every event belongs in the handler, or in `{$auth}` and `!auth`, which re-run on every request.
-- The snapshot is signed, not encrypted. Anyone who can load the page can decode every public page attribute, including plain frontmatter values like `api_key = os.environ["API_KEY"]`. Keep secrets and server-only data in locked wires: `api_key = wire(os.environ["API_KEY"]).lock()`.
+- The snapshot is encrypted as well as signed: the browser carries it but can't read it. Plain frontmatter values the page's code sets up (`api_key = os.environ["API_KEY"]`, a config object) aren't carried at all: rebuilding the page runs the frontmatter again, so only values a hook or handler changed travel. Its compressed length is visible, though, so still keep secrets and server-only data in locked wires: `api_key = wire(os.environ["API_KEY"]).lock()`.
 
 `{$auth}` works in stateless mode, but **verdicts are never snapshotted**. Each request re-evaluates the policy, so revocation takes effect on the next request.
 

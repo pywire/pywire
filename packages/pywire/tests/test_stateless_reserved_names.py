@@ -1,10 +1,5 @@
 """Stateless tier: request-bound names like ``query`` can't be page state (#333)."""
 
-import base64
-import hashlib
-import hmac
-import zlib
-
 import msgpack
 import pytest
 from starlette.testclient import TestClient
@@ -36,9 +31,13 @@ def _client(tmp_path, source: str) -> TestClient:
 
 
 def _sign(snapshot: dict) -> str:
-    body = zlib.compress(msgpack.packb(snapshot))
-    sig = hmac.new(SECRET.encode(), body, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(sig + body).decode("ascii")
+    """A snapshot sealed the way the server seals one, issued now to nobody."""
+    import time
+
+    from pywire.runtime.snapshot_codec import sign
+
+    stamped = {"iat": int(time.time()), "sub": "", **snapshot}
+    return sign(stamped, secret=SECRET.encode())
 
 
 @pytest.mark.parametrize("name", ["query", "params", "request"])

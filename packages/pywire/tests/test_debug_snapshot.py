@@ -7,11 +7,9 @@ blob is a 4xx, never a decode. The signing secret is never echoed.
 
 import asyncio
 import base64
-import zlib
 from pathlib import Path
 
 import msgpack
-import pytest
 from starlette.testclient import TestClient
 
 from pywire.runtime.app import PyWire
@@ -38,8 +36,9 @@ def _blob(html: str) -> str:
 
 
 def _raw_state(blob: str) -> dict:
-    body = zlib.decompress(base64.urlsafe_b64decode(blob)[32:])
-    return msgpack.unpackb(body, raw=False)
+    from pywire.runtime.snapshot_codec import verify
+
+    return verify(blob, secret=SECRET.encode())
 
 
 def test_debug_on_returns_decoded_client_snapshot():

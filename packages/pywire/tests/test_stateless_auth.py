@@ -136,10 +136,16 @@ def test_revocation_takes_effect_on_next_stateless_request():
         blob = _blob(html)
 
         _PRINCIPAL["value"] = None  # revoked
+        # The admin's snapshot is refused for anyone else (the client reloads)…
         r = _stateless_post(client, blob)
+        assert r.status_code == 400
+        assert msgpack.unpackb(r.content, raw=False) == {"error": "invalid snapshot"}
+        # …and the reloaded page, and its events, see the revocation.
+        html = client.get("/authy").text
+        assert "RESOLVED-False" in html and "RESOLVED-True" not in html
+        r = _stateless_post(client, _blob(html))
         assert r.status_code == 200
         body = _payload_text(msgpack.unpackb(r.content, raw=False))
-        assert "RESOLVED-False" in body, "cached verdict survived revocation"
         assert "RESOLVED-True" not in body
     finally:
         _PRINCIPAL["value"] = ADMIN

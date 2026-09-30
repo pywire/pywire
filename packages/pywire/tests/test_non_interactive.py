@@ -78,7 +78,9 @@ class TestSessionSecretEnvWiring:
     def test_shared_secret_accepts_cross_instance_cookie(self, monkeypatch):
         """Two apps started with the same PYWIRE_SESSION_SECRET should
         validate each other's session cookies — multi-worker deploy."""
-        monkeypatch.setenv("PYWIRE_SESSION_SECRET", "shared-deploy-secret")
+        monkeypatch.setenv(
+            "PYWIRE_SESSION_SECRET", "shared-deploy-secret-0123456789abcdef"
+        )
         app_a = _make_non_interactive_app()
         app_b = _make_non_interactive_app()
         try:

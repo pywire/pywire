@@ -144,6 +144,36 @@ def _is_serializable(value: Any) -> bool:
     return False
 
 
+def plain_attr_digest(value: Any) -> Optional[bytes]:
+    """A digest of a serializable plain value, to tell whether it changed."""
+    import hashlib
+
+    import msgpack
+
+    try:
+        packed = msgpack.packb(value)
+    except Exception:
+        return None
+    return hashlib.blake2b(packed, digest_size=16).digest()
+
+
+def remember_initial_state(page: Any) -> None:
+    """Note the plain attributes a freshly built page holds.
+
+    A client-held snapshot leaves out the ones still unchanged when it is
+    taken: rebuilding the page recreates them, and they often hold what the
+    browser must not see (keys and config read by the frontmatter).
+    """
+    page.__dict__["_pw_initial_digests"] = {
+        name: plain_attr_digest(value)
+        for name, value in page.__dict__.items()
+        if not name.startswith("_")
+        and name not in _FRAMEWORK_ATTRS
+        and not isinstance(value, WireBase)
+        and _is_serializable(value)
+    }
+
+
 def snapshot_page_state(page: Any, *, warn_size: int = 0) -> Dict[str, Any]:
     """Extract serializable user state from a BasePage instance.
 

@@ -1,10 +1,7 @@
 """Stateless (client-held state) mode: config, snapshot embedding, POST endpoint."""
 
 import base64
-import hashlib
-import hmac
 import re
-import zlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -53,9 +50,13 @@ def _error(r) -> str:
 
 
 def _sign(snapshot: dict) -> str:
-    body = zlib.compress(msgpack.packb(snapshot))
-    sig = hmac.new(SECRET.encode(), body, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(sig + body).decode("ascii")
+    """A snapshot sealed the way the server seals one, issued now to nobody."""
+    import time
+
+    from pywire.runtime.snapshot_codec import sign
+
+    stamped = {"iat": int(time.time()), "sub": "", **snapshot}
+    return sign(stamped, secret=SECRET.encode())
 
 
 def test_missing_secret_raises(monkeypatch):
@@ -64,14 +65,30 @@ def test_missing_secret_raises(monkeypatch):
         PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True)
 
 
-@pytest.mark.parametrize("secret", ["dev-only-insecure-fallback-key", "k" * 31])
-def test_short_secret_raises(monkeypatch, secret):
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "dev-only-insecure-fallback-key",
+        "k" * 31,
+        "k" * 64,
+        "abab" * 16,
+        "changeme-0123456789abcdefghijklmnop",
+        "django-insecure-0123456789abcdefghijk",
+    ],
+)
+def test_weak_secret_raises(monkeypatch, secret):
     monkeypatch.delenv("PYWIRE_SECRET_KEY", raising=False)
-    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+    with pytest.raises(RuntimeError, match="at least 32 random bytes"):
         PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True, secret_key=secret)
     monkeypatch.setenv("PYWIRE_SECRET_KEY", secret)
-    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+    with pytest.raises(RuntimeError, match="at least 32 random bytes"):
         PyWire(pages_dir=str(FIXTURE_PAGES), stateless=True)
+
+
+def test_weak_session_secret_raises(monkeypatch):
+    monkeypatch.setenv("PYWIRE_SESSION_SECRET", "x" * 40)
+    with pytest.raises(RuntimeError, match="PYWIRE_SESSION_SECRET"):
+        PyWire(pages_dir=str(FIXTURE_PAGES), interactive_server_mode=False)
 
 
 def test_secret_from_env(monkeypatch):
@@ -138,8 +155,9 @@ def test_tampered_snapshot_400(client):
 
 
 def test_user_never_restored_from_client(client):
-    body = base64.urlsafe_b64decode(_blob(client.get("/").text))[32:]
-    snap = msgpack.unpackb(zlib.decompress(body), raw=False)
+    from pywire.runtime.snapshot_codec import verify
+
+    snap = verify(_blob(client.get("/").text), secret=SECRET.encode())
     assert "user" not in snap
 
 
@@ -331,6 +349,70 @@ def test_sec_fetch_site_must_be_same_origin(client, site, status):
         },
     )
     assert r.status_code == status
+
+
+@pytest.mark.parametrize(
+    ("origin", "status"),
+    [("https://evil.example", 403), ("null", 403), ("http://testserver", 200)],
+)
+def test_origin_checked_without_sec_fetch_site(client, origin, status):
+    """Browsers without Sec-Fetch-Site still send Origin on a POST."""
+    blob = _blob(client.get("/").text)
+    body = msgpack.packb(
+        {"path": "/", "handler": "increment", "data": {}, "snapshot": blob}
+    )
+    r = client.post(
+        "/_pywire/stateless", content=body, headers={**_MSGPACK, "Origin": origin}
+    )
+    assert r.status_code == status
+
+
+def test_streamed_body_is_capped_as_it_arrives(client, monkeypatch):
+    """A chunked body declares no length; the cap counts what arrives."""
+    monkeypatch.setattr("pywire.runtime.stateless_handler.MAX_BODY_LEN", 1000)
+
+    def chunks():
+        for _ in range(10):
+            yield b"x" * 500
+
+    r = client.post("/_pywire/stateless", content=chunks(), headers=_MSGPACK)
+    assert r.status_code == 413
+
+
+def test_frontmatter_constants_stay_out_of_the_snapshot(tmp_path):
+    from pywire.runtime.snapshot_codec import verify
+
+    (tmp_path / "index.wire").write_text(
+        "---\n"
+        'API_KEY = "sk_live_must_not_leak"\n'
+        "picked = ''\n"
+        "count = wire(0)\n\n"
+        "def pick():\n"
+        "    self.picked = 'row-3'\n"
+        "    count.value += 1\n"
+        "---\n"
+        "<p>{count}</p><button @click={pick}>go</button>\n"
+    )
+    app = PyWire(pages_dir=str(tmp_path), stateless=True, secret_key=SECRET)
+    with TestClient(app) as c:
+        html = c.get("/").text
+        snap = verify(_blob(html), secret=SECRET.encode())
+        assert "API_KEY" not in snap["attrs"] and "sk_live" not in str(snap)
+        r = _post(c, _blob(html), handler="pick")
+        assert r.status_code == 200
+        blob = msgpack.unpackb(r.content, raw=False)["snapshot"]
+        snap = verify(blob, secret=SECRET.encode())
+        assert "API_KEY" not in snap["attrs"]
+        assert snap["attrs"]["picked"] == "row-3"
+        # The carried value survives the next rebuild.
+        r = _post(c, blob, handler="pick")
+        assert (
+            verify(
+                msgpack.unpackb(r.content, raw=False)["snapshot"],
+                secret=SECRET.encode(),
+            )["attrs"]["count"]
+            == 2
+        )
 
 
 def test_malformed_body_400(client):

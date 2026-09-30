@@ -17,18 +17,47 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pywire.core.wire import WireBase
+from pywire.runtime.origin import is_cross_site
 from pywire.runtime.page_resolver import resolve_page
 from pywire.runtime.protocol import build_update_payload
-from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.session_serializer import (
+    remember_initial_state,
+    restore_page_state,
+)
 from pywire.runtime.snapshot_codec import (
     MAX_SNAPSHOT_LEN,
     SnapshotError,
     decode_snapshot,
     encode_snapshot,
     snapshot_route,
+    snapshot_subject,
 )
 
 logger = logging.getLogger(__name__)
+
+# The largest request body this endpoint reads: a snapshot at its cap plus
+# the event around it.
+MAX_BODY_LEN = MAX_SNAPSHOT_LEN + 2048
+
+
+class _TooLarge(Exception):
+    pass
+
+
+async def _read_body(request: Request) -> bytes:
+    """The request body, refusing to buffer more than ``MAX_BODY_LEN``.
+
+    Counted as it streams in, so a chunked body with no Content-Length (or a
+    false one) can't make the server hold more.
+    """
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_LEN:
+            raise _TooLarge
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _drop_unchanged_live(
@@ -74,6 +103,7 @@ class StatelessHandler:
         if result is None:
             return None
         page, _params, _variant_name = result
+        remember_initial_state(page)
         snapshot.pop("user", None)  # defense in depth: identity never from client
         restore_page_state(page, snapshot)
         # Identity ALWAYS from the request (middleware/session), never the client
@@ -83,25 +113,27 @@ class StatelessHandler:
         return page
 
     async def handle_event(self, request: Request) -> Response:
-        # CSRF: snapshots aren't bound to a user, so a cross-site page could
-        # mint one and make a victim's browser post it with their cookies.
-        # A form or no-cors fetch can't send this content type, and a CORS
-        # fetch that does needs a preflight this endpoint never answers.
+        # CSRF: a cross-site page could post a snapshot it loaded (anonymous
+        # ones are anyone's) with the victim's cookies. A form or no-cors
+        # fetch can't send this content type, a CORS fetch that does needs a
+        # preflight this endpoint never answers, and the browser's
+        # Sec-Fetch-Site / Origin say where the request came from.
         content_type = request.headers.get("content-type", "")
         if content_type.split(";")[0].strip().lower() != "application/x-msgpack":
             return self._err(415, "expected application/x-msgpack")
-        if request.headers.get("sec-fetch-site", "same-origin") not in (
-            "same-origin",
-            "none",
-        ):
+        if is_cross_site(request.headers):
             return self._err(403, "cross-site request")
-        # Defense in depth: a declared length over the snapshot cap cannot
-        # hold a valid request — reject before buffering the body at all.
+        # A declared length over the cap is a cheap reject; the stream is
+        # counted too, for bodies that declare none (or lie).
         declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > MAX_SNAPSHOT_LEN + 2048:
+        if declared.isdigit() and int(declared) > MAX_BODY_LEN:
             return self._err(413, "request body too large")
         try:
-            data = msgpack.unpackb(await request.body(), raw=False)
+            body = await _read_body(request)
+        except _TooLarge:
+            return self._err(413, "request body too large")
+        try:
+            data = msgpack.unpackb(body, raw=False)
             if not isinstance(data, dict):
                 raise ValueError("body is not a mapping")
         except Exception:
@@ -142,6 +174,11 @@ class StatelessHandler:
             return self._err(400, "invalid snapshot")
         if page is None:
             return self._err(404, "no route")
+        # Issued to someone else (or before a sign-in or sign-out): this
+        # page's state was loaded for that user, not the one asking now.
+        if snapshot.get("sub") != snapshot_subject(page):
+            logger.warning("stateless: snapshot issued to another user")
+            return self._err(400, "invalid snapshot")
 
         try:
             # WS-connect parity: a discarded render registers wire→region
