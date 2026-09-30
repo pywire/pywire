@@ -236,6 +236,51 @@ def test_worker_layout() -> None:
     assert worker_layout(root, "missing.main") == ("", "missing.main:app")
 
 
+def test_snapshot_imports_lists_libraries_not_the_app(tmp_path: Path) -> None:
+    """Libraries the app imports go in the deploy snapshot; the app's own
+    modules don't, because they read settings from env when imported."""
+    from pywire_cli.deploy import snapshot_imports
+
+    (tmp_path / "main.py").write_text(
+        "from pywire import PyWire\nfrom shop.settings import settings\n"
+    )
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "__init__.py").write_text("")
+    (tmp_path / "shop" / "settings.py").write_text(
+        "import os\nfrom pydantic import BaseModel\nfrom . import models\n"
+        "from shop import models as m\n"
+    )
+    (tmp_path / "_pywire_build" / "pages").mkdir(parents=True)
+    (tmp_path / "_pywire_build" / "pages" / "index.py").write_text(
+        "import httpx\nfrom _pywire_build.pages import other\nfrom js import Object\n"
+        "from workers import Response\nfrom shop import settings\nfrom typing import *\n"
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("import pytest\n")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "site.py").write_text("import numpy\n")
+    (tmp_path / "broken.py").write_text("def (:\n")
+
+    assert snapshot_imports(tmp_path) == [
+        ("httpx", ""),
+        ("os", ""),
+        ("pydantic", "BaseModel"),
+        ("pywire", "PyWire"),
+    ]
+
+
+def test_snapshot_imports_load_in_the_edge_entry(tmp_path: Path) -> None:
+    from pywire_cli.deploy import generate_cf_edge_entry, generate_cf_durable_object
+
+    preload = [("pydantic", "BaseModel"), ("httpx", "")]
+    for source in (
+        generate_cf_edge_entry(tmp_path, "main:app", preload),
+        generate_cf_durable_object(tmp_path, "main:app", preload),
+    ):
+        compile(source, "entry.py", "exec")
+        assert '    ("pydantic", "BaseModel"),\n    ("httpx", ""),\n' in source
+
+
 def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
     """Run the generated entry.py against a real app with a stub `workers`."""
     pages = tmp_path / "pages"

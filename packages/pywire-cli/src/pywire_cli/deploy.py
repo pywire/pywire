@@ -7,6 +7,7 @@ that feeds the right context variables to each template.
 
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -90,11 +91,71 @@ def generate_cf_edge_wrangler_toml(
     )
 
 
-def generate_cf_edge_entry(project_root: Path, app_string: str = "main:app") -> str:
+# Directories under the Worker root that aren't the app's code.
+_NOT_APP_DIRS = {"python_modules", "node_modules", "tests", "test", "__pycache__"}
+# Modules the Workers runtime provides, or that must not run at deploy time.
+_NO_SNAPSHOT = {"__future__", "js", "pyodide", "workers", "asgi"}
+
+
+def _app_sources(worker_root: Path):
+    for path in sorted(worker_root.rglob("*.py")):
+        rel = path.relative_to(worker_root).parts
+        if any(p.startswith(".") or p in _NOT_APP_DIRS for p in rel[:-1]):
+            continue
+        yield path
+
+
+def snapshot_imports(worker_root: Path) -> list[tuple[str, str]]:
+    """Library imports in the app's code, for the Worker's memory snapshot.
+
+    A Python Worker runs its top-level code once at deploy time and snapshots
+    the result, so a module imported there costs a new isolate nothing. The
+    app itself can't be imported there: its code reads settings and secrets
+    from ``env``, which only exists inside a request. Its imports can: every
+    ``import x`` and ``from x import y`` in the Worker root (the generated
+    pages included) whose top-level package isn't the app's own. Each entry
+    is ``(module, name)``; the name is loaded too, because libraries such as
+    pydantic import their parts on first attribute access.
+    """
+    own = {
+        p.stem if p.is_file() else p.name
+        for p in worker_root.iterdir()
+        if p.suffix == ".py" or (p.is_dir() and not p.name.startswith("."))
+    }
+    found: set[tuple[str, str]] = set()
+    for path in _app_sources(worker_root):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                found.update((alias.name, "") for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                found.update(
+                    (node.module, alias.name)
+                    for alias in node.names
+                    if alias.name != "*"
+                )
+    return sorted(
+        (module, name)
+        for module, name in found
+        if module.split(".")[0] not in own | _NO_SNAPSHOT
+    )
+
+
+def generate_cf_edge_entry(
+    project_root: Path,
+    app_string: str = "main:app",
+    preload: list[tuple[str, str]] | None = None,
+) -> str:
     """Generate entry.py for the stateless Cloudflare edge Worker."""
     app_module, app_attr = _parse_app_string(app_string)
     return render_deploy_template(
-        "cloudflare_edge/entry.py.j2", app_module=app_module, app_attr=app_attr
+        "cloudflare_edge/entry.py.j2",
+        app_module=app_module,
+        app_attr=app_attr,
+        preload=preload or [],
     )
 
 
@@ -164,11 +225,18 @@ def generate_aws_lambda_readme(project_root: Path, project_name: str) -> str:
     )
 
 
-def generate_cf_durable_object(project_root: Path, app_string: str = "main:app") -> str:
+def generate_cf_durable_object(
+    project_root: Path,
+    app_string: str = "main:app",
+    preload: list[tuple[str, str]] | None = None,
+) -> str:
     """Generate pywire_do.py — the Durable Object that runs the whole app."""
     app_module, app_attr = _parse_app_string(app_string)
     return render_deploy_template(
-        "pywire_do.py.j2", app_module=app_module, app_attr=app_attr
+        "pywire_do.py.j2",
+        app_module=app_module,
+        app_attr=app_attr,
+        preload=preload or [],
     )
 
 
