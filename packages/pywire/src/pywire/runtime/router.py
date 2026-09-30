@@ -40,7 +40,7 @@ class Route:
     def _compile_pattern(self, pattern: str) -> re.Pattern:
         """Convert '/projects/:id:int' to regex."""
         if pattern == "/":
-            return re.compile(r"^/$")
+            return re.compile(r"/\Z")
 
         # Helper to generate regex for a type
         def get_type_regex(type_name: str) -> str:
@@ -86,12 +86,12 @@ class Route:
                 # Literal
                 regex_parts.append(re.escape(part))
 
-        regex_str = "^/" + "/".join(regex_parts) + "$"
+        regex_str = "/" + "/".join(regex_parts) + r"\Z"
         return re.compile(regex_str)
 
     def match(self, path: str) -> Optional[dict[str, Any]]:
         """Try to match path, return params if successful."""
-        match = self.regex.match(path)
+        match = self.regex.fullmatch(path)
         if match:
             # We need to convert types!
             params = match.groupdict()

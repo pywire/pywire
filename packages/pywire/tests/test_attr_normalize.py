@@ -125,3 +125,82 @@ sty = {"color": "red", "font-size": "12px"}
     html = await page._render_template()
     assert "color:red" in html
     assert "font-size:12px" in html
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "javascript:alert(1)",
+        "  JavaScript:alert(1)",
+        "java\tscript:alert(1)",
+        "\x01javascript:alert(1)",
+        "vbscript:msgbox(1)",
+        "data:text/html,<script>alert(1)</script>",
+    ],
+)
+def test_script_urls_blocked_in_href(value):
+    assert normalize_attr("href", value) == "about:invalid#blocked"
+    assert normalize_attr("formaction", value) == "about:invalid#blocked"
+
+
+def test_ordinary_urls_pass():
+    for value in ("/a?x=javascript:1", "https://example.com", "mailto:a@b.c", "#top"):
+        assert normalize_attr("href", value) == value
+    # An image may be a data: URL; script schemes still aren't.
+    assert normalize_attr("src", "data:image/png;base64,AAAA").startswith("data:")
+    assert normalize_attr("src", "javascript:alert(1)") == "about:invalid#blocked"
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        {"background": "url(//attacker.example/x)"},
+        {"width": "expression(alert(1))"},
+        {"color": "red;background:url(//attacker.example)"},
+        {"color": "red}</style><script>"},
+        {"color;x": "red"},
+        {"color": "\\75rl(//attacker.example)"},
+    ],
+)
+def test_unsafe_style_declarations_dropped(style):
+    assert normalize_attr("style", {"margin": "0", **style}) == "margin:0"
+
+
+def test_css_custom_properties_allowed():
+    assert normalize_attr("style", {"--gap": "4px"}) == "--gap:4px"
+
+
+def test_spread_attribute_names_are_checked():
+    from pywire.runtime.helpers import render_attrs
+
+    html = render_attrs(
+        {"class": "a"},
+        {
+            'x onmouseover="alert(1)"': "y",
+            "onmouseover": "alert(1)",
+            "OnClick": "alert(1)",
+            "><script>": "1",
+            "data-id": "7",
+            "aria-label": "ok",
+            "@click": "open = true",
+            "href": "javascript:alert(1)",
+        },
+    )
+    assert "onmouseover" not in html and "OnClick" not in html
+    assert "<script" not in html
+    assert 'data-id="7"' in html and 'aria-label="ok"' in html
+    assert '@click="open = true"' in html
+    assert 'href="about:invalid#blocked"' in html
+
+
+@pytest.mark.asyncio
+async def test_codegen_href_binding_blocks_script_url():
+    src = """---
+link = "javascript:alert(document.cookie)"
+---
+<a href={link}>x</a>
+"""
+    cls = _compile_source(src, "href_binding")
+    page = cls(_make_request(), {}, {})
+    html = await page._render_template()
+    assert 'href="about:invalid#blocked"' in html
