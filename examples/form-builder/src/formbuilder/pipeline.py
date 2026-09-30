@@ -10,14 +10,14 @@ signed snapshot.
 The steps:
 
 1. **check** (Jev): is this a form request, and is it one we won't build?
-2. **draft** (Groq, gpt-oss-120b): title, intro, and each field's name,
+2. **draft** (OpenRouter): title, intro, and each field's name,
    label, help and options, as JSON matching a strict schema.
 3. **decide** (Jev): for every field, which kind of answer it takes (a
    choice between the ``spec.KINDS``) and whether it's required. Each
    decision comes back with a probability.
 4. **validate** (code): cap and clean everything, refuse sensitive fields.
-   Choice fields without options get one **options** step (Groq,
-   gpt-oss-20b); any still without become short text.
+   Choice fields without options get one **options** step
+   (OpenRouter); any still without become short text.
 """
 
 from __future__ import annotations
@@ -25,14 +25,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from formbuilder import spec as specs
-from formbuilder.ai import AIError, Groq, Jev, noul
+from formbuilder.ai import AIError, Jev, OpenRouter, noul
 
 MAX_REQUEST = 400
 
-WRITER = "Groq"
+WRITER = "OpenRouter"
 DECIDER = "Jev"
 CODE = "Code"
 
@@ -54,10 +54,9 @@ STEP_ENGINES = {
 
 @dataclass
 class Services:
-    groq: Groq
+    writer: OpenRouter
     jev: Jev
-    writer_model: str
-    helper_model: str
+    writer_models: Tuple[str, ...]
 
 
 def start(request: str, *, instruction: str = "", base: Optional[dict] = None) -> dict:
@@ -205,8 +204,8 @@ async def _draft(run: dict, services: Services) -> str:
         )
     else:
         user = "Design a form for: " + run["request"]
-    raw = await services.groq.json(
-        services.writer_model, DRAFT_SYSTEM, user, "form", DRAFT_SCHEMA
+    raw = await services.writer.json(
+        services.writer_models, DRAFT_SYSTEM, user, "form", DRAFT_SCHEMA
     )
     spec = specs.clean_draft(raw, previous=run["base"])
     run["spec"] = spec
@@ -304,8 +303,8 @@ async def _options(run: dict, services: Services) -> str:
         for f in spec["fields"]
         if f["name"] in missing
     ]
-    raw = await services.groq.json(
-        services.helper_model,
+    raw = await services.writer.json(
+        services.writer_models,
         "You write answer options for form fields. Reply with JSON only. Give "
         "each field 2 to 8 short options, in the language of its label.",
         f"Form: {spec['title']}\nFields: {json.dumps(wanted)}",
@@ -369,8 +368,8 @@ async def sample(spec: dict, services: Services) -> dict:
         }
         for f in spec["fields"]
     ]
-    raw = await services.groq.json(
-        services.helper_model,
+    raw = await services.writer.json(
+        services.writer_models,
         "You fill in forms with realistic example answers. Reply with JSON only. "
         "One entry per field. values holds one answer, or several for "
         "multi_choice. Use only the given options for choice fields, ISO dates "

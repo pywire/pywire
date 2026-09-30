@@ -1,4 +1,4 @@
-"""The step machine, against fake Groq and Jev."""
+"""The step machine, against fake OpenRouter and Jev."""
 
 from __future__ import annotations
 
@@ -34,13 +34,18 @@ def test_a_run_takes_one_model_call_per_step(services, fake_ai):
     steps = [(e["step"], e["engine"]) for e in run["log"]]
     assert steps == [
         ("check", "Jev"),
-        ("draft", "Groq"),
+        ("draft", "OpenRouter"),
         ("decide", "Jev"),
         ("validate", "Code"),
-        ("options", "Groq"),  # the meal choice came without options
+        ("options", "OpenRouter"),  # the meal choice came without options
         ("validate", "Code"),
     ]
-    assert [c["service"] for c in fake_ai.calls] == ["jev", "groq", "jev", "groq"]
+    assert [c["service"] for c in fake_ai.calls] == [
+        "jev",
+        "openrouter",
+        "jev",
+        "openrouter",
+    ]
     fields = {f["name"]: f for f in run["spec"]["fields"]}
     assert fields["meal"]["options"] == ["Beef", "Fish", "Veg"]
     assert fields["notes"]["kind"] == "long_text"
@@ -53,7 +58,7 @@ def test_the_writer_gets_a_strict_schema_and_jev_gets_typed_questions(
 ):
     run_all(services, pipeline.start("RSVP for a wedding"))
     draft = fake_ai.calls[1]["body"]
-    assert draft["model"] == "openai/gpt-oss-120b"
+    assert draft["model"] == "free/model:free"
     assert draft["response_format"]["json_schema"]["strict"] is True
     decide = fake_ai.calls[2]["body"]
     assert decide["model"] == "jev-latest"
@@ -102,6 +107,35 @@ def test_usage_and_key_errors_say_the_author_is_out_of_usage(services, fake_ai, 
     run = run_all(services, pipeline.start("RSVP"))
     assert run["error"] == OUT_OF_USAGE
     assert run["log"][-1]["ok"] is False
+
+
+def test_a_limited_model_falls_through_to_the_next(services, fake_ai):
+    fake_ai.models["free/model:free"] = httpx.Response(429)
+    run = run_all(services, pipeline.start("RSVP for a wedding"))
+    assert not run["error"]
+    tried = [c["body"]["model"] for c in fake_ai.calls if c["service"] == "openrouter"]
+    assert tried[:2] == ["free/model:free", "paid/model"]
+
+
+def test_a_reply_that_isnt_json_falls_through_to_the_next(services, fake_ai):
+    fake_ai.models["free/model:free"] = "not json"
+    run = run_all(services, pipeline.start("RSVP for a wedding"))
+    assert not run["error"]
+    assert run["spec"]["fields"]
+
+
+def test_every_model_limited_says_the_author_is_out_of_usage(services, fake_ai):
+    fake_ai.models["free/model:free"] = httpx.Response(429)
+    fake_ai.models["paid/model"] = httpx.Response(402)
+    run = run_all(services, pipeline.start("RSVP"))
+    assert run["error"] == OUT_OF_USAGE
+
+
+def test_a_refused_key_stops_without_trying_other_models(services, fake_ai):
+    fake_ai.models["free/model:free"] = httpx.Response(401)
+    run = run_all(services, pipeline.start("RSVP"))
+    assert run["error"] == OUT_OF_USAGE
+    assert "paid/model" not in [c["body"].get("model") for c in fake_ai.calls]
 
 
 def test_other_upstream_errors_are_reported_plainly(services, fake_ai):

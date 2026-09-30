@@ -1,7 +1,9 @@
 """Two kinds of model behind two small HTTP clients.
 
-- Groq runs a chat model (gpt-oss) that *writes*: it drafts the form's
-  wording and options as JSON that must match a schema.
+- OpenRouter runs a chat model that *writes*: it drafts the form's wording
+  and options as JSON that must match a schema. It tries a list of models in
+  order, free ones first, so a free model going away or hitting its limit
+  falls through to the next.
 - Jev (TypeSafe's System One API) *decides*: it takes some state and typed
   questions (yes/no, pick one, score) and returns probabilities, not text.
 
@@ -14,11 +16,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import httpx
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 JEV_URL = "https://api.typesafe.ai/v1/systemone"
 
 
@@ -61,15 +63,26 @@ def _check(service: str, response: httpx.Response) -> Any:
         raise AIError(f"{service} returned something that isn't JSON.") from None
 
 
+def _reply_json(data: Any) -> dict:
+    """The JSON object in a chat reply, allowing for a ```json fence."""
+    content = data["choices"][0]["message"]["content"].strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+    value = json.loads(content)
+    if not isinstance(value, dict):
+        raise ValueError("not an object")
+    return value
+
+
 @dataclass
-class Groq:
+class OpenRouter:
     api_key: str
     transport: Optional[httpx.AsyncBaseTransport] = None
     timeout: float = 30.0
 
     async def json(
         self,
-        model: str,
+        models: Sequence[str],
         system: str,
         user: str,
         schema_name: str,
@@ -77,39 +90,61 @@ class Groq:
         *,
         max_tokens: int = 2000,
     ) -> dict:
-        """One chat completion whose reply must match ``schema`` (strict)."""
-        body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {"name": schema_name, "strict": True, "schema": schema},
-            },
-            # gpt-oss reasons before it answers. Keep that short: the free
-            # plan counts reasoning tokens against the per-minute budget.
-            "reasoning_effort": "low",
-            "max_completion_tokens": max_tokens,
-            "temperature": 0.3,
-        }
+        """One chat completion whose reply must match ``schema``.
+
+        Tries ``models`` in order. A model that's rate limited, gone, down or
+        answers with something that isn't JSON passes the request on to the
+        next. A refused key stops at once; if every model was out of usage,
+        so is the demo.
+        """
+        out_of_usage: Optional[OutOfUsage] = None
         async with httpx.AsyncClient(
             transport=self.transport, timeout=self.timeout
         ) as client:
-            try:
-                response = await client.post(
-                    GROQ_URL,
-                    json=body,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                )
-            except httpx.HTTPError:
-                raise AIError("Couldn't reach Groq.") from None
-        data = _check("Groq", response)
-        try:
-            return json.loads(data["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError, ValueError):
-            raise AIError("Groq's reply didn't match the form schema.") from None
+            for model in models:
+                body = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": schema_name,
+                            "strict": True,
+                            "schema": schema,
+                        },
+                    },
+                    # Reasoning models think before they answer; keep it
+                    # short so a build stays quick and cheap.
+                    "reasoning": {"effort": "low", "exclude": True},
+                    "max_tokens": max_tokens,
+                    "temperature": 0.3,
+                }
+                try:
+                    response = await client.post(
+                        OPENROUTER_URL,
+                        json=body,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "HTTP-Referer": "https://demo.pywire.dev/form-builder/",
+                            "X-Title": "pywire form builder",
+                        },
+                    )
+                    data = _check("OpenRouter", response)
+                    return _reply_json(data)
+                except OutOfUsage as error:
+                    if error.status in (401, 403):
+                        raise
+                    out_of_usage = error
+                except (AIError, httpx.HTTPError):
+                    pass
+                except (KeyError, IndexError, TypeError, ValueError):
+                    pass
+        if out_of_usage is not None:
+            raise out_of_usage
+        raise AIError("None of the models could write the form. Try again.")
 
 
 @dataclass

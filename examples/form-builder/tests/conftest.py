@@ -1,4 +1,4 @@
-"""Test setup: fake Groq and Jev, and one browser tab driver per mode.
+"""Test setup: fake OpenRouter and Jev, and one browser tab driver per mode.
 
 The fakes answer through ``httpx.MockTransport``, so the real clients (URL,
 headers, body, error handling) run unchanged; only the network is fake.
@@ -21,7 +21,7 @@ import pytest
 from starlette.testclient import TestClient
 
 os.environ.setdefault("PYWIRE_SECRET_KEY", "test-only-" + "x" * 32)
-os.environ["GROQ_API_KEY"] = "test-groq"
+os.environ["OPENROUTER_API_KEY"] = "test-openrouter"
 os.environ["TYPESAFE_API_KEY"] = "test-typesafe"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -54,23 +54,32 @@ REQUIRED = {"full_name", "email", "guests", "meal", "agree"}
 
 
 class FakeAI:
-    """Answers Groq and Jev like the real APIs; records every call."""
+    """Answers OpenRouter and Jev like the real APIs; records every call."""
 
     def __init__(self) -> None:
         self.calls: List[Dict[str, Any]] = []
         self.failure: Optional[httpx.Response] = None
         self.overrides: Dict[str, Any] = {}
+        # Per OpenRouter model: a response to send instead, or "not json".
+        self.models: Dict[str, Any] = {}
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
-        service = "jev" if "typesafe" in request.url.host else "groq"
+        service = "jev" if "typesafe" in request.url.host else "openrouter"
         self.calls.append({"service": service, "body": body})
         if self.failure is not None:
             return self.failure
         if service == "jev":
             return httpx.Response(200, json=self._jev(body))
+        broken = self.models.get(body["model"])
+        if isinstance(broken, httpx.Response):
+            return broken
+        if broken == "not json":
+            return httpx.Response(
+                200, json={"choices": [{"message": {"content": "Sure! Here it is"}}]}
+            )
         name = body["response_format"]["json_schema"]["name"]
-        content = self.overrides.get(name) or self._groq(name, body)
+        content = self.overrides.get(name) or self._writer(name, body)
         return httpx.Response(
             200, json={"choices": [{"message": {"content": json.dumps(content)}}]}
         )
@@ -103,7 +112,7 @@ class FakeAI:
                 raise AssertionError(f"unexpected question {key}")
         return {"model": "jev-test", "answers": answers, "usage": {}}
 
-    def _groq(self, name: str, body: dict) -> dict:
+    def _writer(self, name: str, body: dict) -> dict:
         if name == "form":
             return DRAFT
         if name == "options":
@@ -126,17 +135,16 @@ class FakeAI:
 @pytest.fixture()
 def fake_ai(monkeypatch) -> FakeAI:
     import formbuilder
-    from formbuilder.ai import Groq, Jev
+    from formbuilder.ai import Jev, OpenRouter
     from formbuilder.limits import MemoryLimiter
     from formbuilder.pipeline import Services
 
     fake = FakeAI()
     transport = httpx.MockTransport(fake)
     services = Services(
-        groq=Groq("test-groq", transport=transport),
+        writer=OpenRouter("test-openrouter", transport=transport),
         jev=Jev("test-typesafe", transport=transport),
-        writer_model="openai/gpt-oss-120b",
-        helper_model="openai/gpt-oss-20b",
+        writer_models=("free/model:free", "paid/model"),
     )
     monkeypatch.setattr(formbuilder, "services", lambda: services)
     monkeypatch.setattr(formbuilder, "limiter", MemoryLimiter())
