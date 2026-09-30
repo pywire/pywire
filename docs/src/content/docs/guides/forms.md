@@ -314,7 +314,7 @@ async def save(data: Profile):
 | `max_size`  | Bytes, or a string like `"500 KB"`, `"2 MB"` or `"1 MiB"` (KB is 1000 bytes, KiB 1024) | `fileTooLarge` |
 | `max_files` | The most files a `list[Upload]` takes (a post carries at most 10)                      | `tooManyFiles` |
 
-`accept` is checked against the declared content type and the filename, as the browser does. It says nothing about what the bytes really are, so check the content yourself before you trust it (for example, open an image with Pillow).
+`accept` is checked against the filename and the type, as the browser does, but the server takes the type from the file's first bytes when they are a format it recognizes (PNG, JPEG, GIF, WebP, AVIF, PDF, ZIP, common audio and video): a type pattern like `"image/*"` or `"application/pdf"` needs a file whose bytes are that type. A file that is an HTML page or SVG is refused unless `accept` names its type or extension outright (`"image/svg+xml"`, `".svg"`); `"image/*"` never admits SVG, which can carry script. That still isn't proof the file is well formed, so parse it before you trust it (for example, open an image with Pillow).
 
 With JavaScript on, a file is uploaded as soon as it is picked, while the user fills in the rest. The browser checks `accept`, `max_size` and `max_files` first and shows the same message the server would. On a form with `novalidate` it leaves them to the server, so the message appears wherever the page shows the field's error. A `<progress data-pw-progress-for="...">` naming the input's id fills as the file goes up, and the input carries `data-pw-uploading` and `aria-busy` meanwhile so you can style it. Submitting waits for uploads still running. Without JavaScript, the files are posted with the form.
 
@@ -323,13 +323,14 @@ The handler receives each file as an `Upload`:
 | Member                     | Description                                                                                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `filename`, `content_type` | What the browser said. Treat both as hints.                                                                                                 |
+| `sniffed_type`             | What the file's first bytes say it is (`"image/png"`), or `""` when they aren't a recognized format                                         |
 | `extension`                | The filename's extension, lowercased (`".png"`), or `""`                                                                                    |
 | `size`                     | Counted from the bytes the server received                                                                                                  |
 | `await read()`             | The whole file as `bytes`                                                                                                                   |
 | `stream()`                 | The file in chunks: `async for chunk in upload.stream()`                                                                                    |
 | `await save(to, key=None)` | Copy it into a `FileStore` and return the key: a random one with the file's extension, unless you pass `key`. `to` can also be a file path. |
 
-The browser's filename is never used as a key or path unless you pass it yourself. A file value can only come from an upload: a string posted under a file field's name is ignored. Files larger than `PyWire(max_upload_size=...)` (10 MB by default) are refused with a 413, whatever the model says.
+The browser's filename is never used as a key or path unless you pass it yourself. `save()` stores the type the bytes say (or, failing that, the declared one) and a random key's extension matches it; an HTML page or SVG is always stored as `application/octet-stream` with no extension, so a store served to browsers never renders an upload as a page. A file value can only come from an upload: a string posted under a file field's name is ignored. Files larger than `PyWire(max_upload_size=...)` (10 MB by default) are refused with a 413, whatever the model says.
 
 ### Where files are kept
 
@@ -406,7 +407,7 @@ async def create(data: Signup):
 
 Submitting a step validates that step only and moves to the next. The last step validates the whole model and calls the handler with it, so a `model_validator` that compares fields on different steps runs there; if a field on an earlier step fails, the wizard goes back to that step. `back_button` goes back a step without validating and keeps what was typed.
 
-A wizard works with JavaScript off and in stateless mode. What earlier steps held travels with the form in a hidden input, signed so it can't be altered; processes that serve the same app must share `PyWire(secret_key=...)` to accept each other's forms. It is signed, not encrypted, so the browser can read it, and it is accepted for an hour after the step was shown, like a staged upload. That's why secret fields (`SecretStr`) are never carried: they must be on the last step, where they are posted with the final submit, and `wizard()` raises a `TypeError` for a model that puts one earlier. Files picked on earlier steps travel as upload references and reach the handler as `Upload`s.
+A wizard works with JavaScript off and in stateless mode. What earlier steps held travels with the form in a hidden input, encrypted and signed so the browser can neither read nor alter it; processes that serve the same app must share `PyWire(secret_key=...)` to accept each other's forms. It is accepted for an hour after the step was shown, like a staged upload. Secret fields (`SecretStr`) are never carried even so: they must be on the last step, where they are posted with the final submit, and `wizard()` raises a `TypeError` for a model that puts one earlier. Files picked on earlier steps travel as upload references and reach the handler as `Upload`s.
 
 | Wizard member          | Description                                          |
 | ---------------------- | ---------------------------------------------------- |
