@@ -26,10 +26,10 @@ def app_dev(tmp_path: Path) -> PyWire:
 
 
 def test_source_relocation_endpoint(app_dev: PyWire, tmp_path: Path) -> None:
-    client = TestClient(app_dev.app)
+    client = TestClient(app_dev.app, base_url="http://localhost")
 
     # Test /_pywire/source
-    test_file = tmp_path / "test.py"
+    test_file = tmp_path / "pages" / "test.py"
     test_file.write_text("print('hello')")
 
     response = client.get(f"/_pywire/source?path={test_file}")
@@ -49,7 +49,7 @@ def test_source_relocation_endpoint(app_dev: PyWire, tmp_path: Path) -> None:
 
 
 def test_source_relocation_security(app_dev: PyWire) -> None:
-    client = TestClient(app_dev.app)
+    client = TestClient(app_dev.app, base_url="http://localhost")
 
     # Should 404 if debug is off
     app_dev.debug = False
@@ -90,3 +90,35 @@ def test_spa_relocation_failure_forces_reload(app_dev: PyWire) -> None:
         data = msgpack.unpackb(data_bytes, raw=False)
 
         assert data["type"] == "reload"
+
+
+def test_relocate_never_sends_a_non_html_body(app_dev: PyWire, tmp_path: Path) -> None:
+    """A relocate to a debug endpoint must not return file contents over the socket.
+
+    The body of a non-HTML response (here /_pywire/source) is not a page:
+    the client is told to reload so the browser fetches it itself.
+    """
+    test_file = tmp_path / "pages" / "secret.py"
+    test_file.write_text("TOKEN = 'do-not-leak'")
+    client = TestClient(app_dev.app, base_url="http://localhost")
+
+    with client.websocket_connect("/_pywire/ws") as websocket:
+        websocket.receive_bytes()
+        websocket.send_bytes(
+            msgpack.packb(
+                {"type": "relocate", "path": f"/_pywire/source?path={test_file}"}
+            )
+        )
+        raw = websocket.receive_bytes()
+        assert b"do-not-leak" not in raw
+        assert msgpack.unpackb(raw, raw=False) == {"type": "reload"}
+
+
+def test_relocate_to_page_still_sends_html(app_dev: PyWire) -> None:
+    client = TestClient(app_dev.app, base_url="http://localhost")
+    with client.websocket_connect("/_pywire/ws") as websocket:
+        websocket.receive_bytes()
+        websocket.send_bytes(msgpack.packb({"type": "relocate", "path": "/a"}))
+        data = msgpack.unpackb(websocket.receive_bytes(), raw=False)
+        assert data["type"] == "update"
+        assert "<h1>Index</h1>" in data["html"]

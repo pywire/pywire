@@ -126,14 +126,20 @@ error = self.query.get("error") if hasattr(self, "query") else None
     <input type="email" name="email" required />
     <input type="password" name="password" required />
     <input type="text" name="name" placeholder="Display name" />
-    <!-- Optional: grant an initial claim -->
-    <input type="text" name="role" placeholder="admin / editor" />
-    <input type="checkbox" name="email_verified" /> email_verified
     <button type="submit">Register</button>
 </form>
 ```
 
-Register accepts `email`, `password`, `name`, `role`, `email_verified` (checkbox) and any `next` / `error_next` redirect targets.
+Register reads `email`, `password`, `name` and the `next` / `error_next` redirect targets. It never takes claims from the form: a field such as `role` or `email_verified` is ignored, since anyone can post it. The new user's only claims are `sub` and `email`.
+
+Grant roles and other claims on the server, once your own check has passed (an invite code, a record in your database), with [`AuthActions`](./live-auth/) from a handler of the signed-in user's page:
+
+```python
+# e.g. in the handler that redeems an invite, after checking it
+await app.state.auth.grant(self.user, self.request, "role", "editor")
+```
+
+Mark an email as verified the same way, and only after the user has proved they control it (for example, by opening a link you emailed them).
 
 ## First-time DB setup checklist
 

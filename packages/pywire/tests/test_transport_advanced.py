@@ -21,6 +21,8 @@ class TestTransportAdvanced:
         request = AsyncMock()
         request.json.return_value = {"path": "/"}
         request.query_params = {}
+        request.headers = {}
+        request.scope = {"type": "http", "path": "/_pywire/session", "headers": []}
 
         page_class = MagicMock()
         self.app.router.match.return_value = (page_class, {}, "main")
@@ -38,6 +40,7 @@ class TestTransportAdvanced:
 
     async def test_websocket_error_handling(self) -> None:
         ws = AsyncMock()
+        ws.headers = {}
         ws.receive_bytes.side_effect = Exception("Connection lost")
 
         # Should catch exception and not crash

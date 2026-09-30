@@ -52,11 +52,11 @@ def test_app_mode_gating_dev(tmp_path) -> None:
     (tmp_path / "pages").mkdir()
     app = PyWire(debug=True, pages_dir=str(tmp_path / "pages"))
     app._is_dev_mode = True
-    client = TestClient(app.app)
+    client = TestClient(app.app, base_url="http://localhost")
 
-    # Source route should work — use a temp file so the path is stable
-    # regardless of virtualenv or worktree layout
-    src_file = tmp_path / "sample.py"
+    # Source route should work — use a file in the pages dir so the path is
+    # stable regardless of virtualenv or worktree layout
+    src_file = tmp_path / "pages" / "sample.py"
     src_file.write_text("# test_app_mode_gating_dev marker")
     response = client.get(f"/_pywire/source?path={src_file}")
     assert response.status_code == 200
