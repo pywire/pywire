@@ -538,6 +538,10 @@ class PyWire:
 
         # Backward-compatible token allowlist
         self.upload_tokens: Set[str] = set()
+        # Bytes each client address staged through /_pywire/upload in the
+        # current hour: (window start, bytes). Tokens come with any page
+        # view, so this, not the token, bounds what one client can stage.
+        self._upload_usage: Dict[str, Tuple[float, int]] = {}
         # Token metadata: token -> (bound_session_id, issued_ts)
         self._upload_token_meta: Dict[str, Tuple[Optional[str], float]] = {}
         # Where uploads wait for a handler. Several processes (workers,
@@ -1022,11 +1026,20 @@ class PyWire:
             except _FormBodyError as exc:
                 error = "Payload Too Large" if exc.status_code == 413 else exc.message
                 return JSONResponse({"error": error}, status_code=exc.status_code)
+            client = request.client.host if request.client else ""
             try:
                 response_data: Dict[str, List[str]] = {}
                 for field_name, file in form.multi_items():
                     if isinstance(file, str):
                         continue
+                    if not self._upload_budget_left(client, file.size or 0):
+                        await self.uploads.discard(
+                            [i for ids in response_data.values() for i in ids]
+                        )
+                        return JSONResponse(
+                            {"error": "Too many uploads; try again later"},
+                            status_code=429,
+                        )
                     upload_id = await self.uploads.stage(
                         part_chunks(file),
                         filename=file.filename or "",
@@ -1751,6 +1764,16 @@ class PyWire:
         )
         return HTMLResponse(html_content, status_code=500)
 
+    def _client_error(self, exc: BaseException) -> str:
+        """What a browser is told about a failed event.
+
+        The exception text can carry internals (a query, a connection URL, a
+        path), so it is only sent with ``debug=True``; the log always has it.
+        """
+        if self.debug:
+            return f"{type(exc).__name__}: {exc}"
+        return "An error occurred"
+
     def _instantiate_page(
         self,
         page_class: Any,
@@ -1916,7 +1939,8 @@ class PyWire:
                 logger.warning("Refused an event: %s", e)
                 return JSONResponse({"error": REFUSED}, status_code=400)
             except Exception as e:
-                return JSONResponse({"error": str(e)}, status_code=500)
+                logger.exception("Event handler failed")
+                return JSONResponse({"error": self._client_error(e)}, status_code=500)
         elif (
             request.method == "POST"
             and "X-PyWire-Event" not in request.headers
@@ -2210,6 +2234,25 @@ class PyWire:
             else:
                 self._args_key = machine_key(self._runtime_dir / "handler_args.key")
         return self._args_key
+
+    # Bytes one client address may stage per hour, in max_upload_size units.
+    upload_budget_files = 20
+
+    def _upload_budget_left(self, client: str, size: int) -> bool:
+        """Count ``size`` bytes against ``client``'s hourly staging budget;
+        False (and nothing counted) when it would go over."""
+        now = time.time()
+        if len(self._upload_usage) > 10_000:
+            self._upload_usage = {
+                c: u for c, u in self._upload_usage.items() if now - u[0] < 3600
+            }
+        start, used = self._upload_usage.get(client, (now, 0))
+        if now - start >= 3600:
+            start, used = now, 0
+        if used + size > self.upload_budget_files * self.max_upload_size:
+            return False
+        self._upload_usage[client] = (start, used + size)
+        return True
 
     def _issue_upload_token(self) -> str:
         body = f"{int(time.time()):x}_{secrets.token_hex(16)}"

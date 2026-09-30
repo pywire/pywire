@@ -37,6 +37,26 @@ def _blob(html: str) -> str:
     return html.split('_pywire_snapshot" type="text/plain">')[1].split("</script>")[0]
 
 
+def test_one_client_can_only_stage_so_much(client):
+    app = client.app
+    app.max_upload_size = 100
+    app.upload_budget_files = 2  # 200 bytes an hour per client
+    token = _token(client.get("/upload").text)
+
+    def upload(size: int):
+        return client.post(
+            "/_pywire/upload",
+            files={"doc": ("a.txt", b"x" * size, "text/plain")},
+            headers={"X-Upload-Token": token},
+        )
+
+    assert upload(90).status_code == 200
+    assert upload(90).status_code == 200
+    # A fresh token from another page view doesn't reset the budget.
+    token = _token(client.get("/upload").text)
+    assert upload(90).status_code == 429
+
+
 def test_upload_route_mounted_in_stateless_mode(client):
     paths = {getattr(r, "path", None) for r in client.app.app.routes}
     assert "/_pywire/upload" in paths

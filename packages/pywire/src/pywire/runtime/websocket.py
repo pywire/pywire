@@ -374,16 +374,16 @@ class WebSocketHandler:
         ``ack`` is the id of the client event that failed, echoed so the
         client settles exactly that event's optimistic prediction.
         """
-        # Gate on debug mode + dev mode
-        # If not in dev mode, send generic error message only
-        if not (getattr(self.app, "_is_dev_mode", False)):
+        # The exception text and trace can carry internals (queries, paths,
+        # source), so they are only sent under `pywire dev` with debug=True.
+        if not (
+            getattr(self.app, "debug", False)
+            and getattr(self.app, "_is_dev_mode", False)
+        ):
             await websocket.send_bytes(
                 msgpack.packb(
                     with_ack(
-                        {
-                            "type": "error",
-                            "error": f"{type(error).__name__}: An error occurred",
-                        },
+                        {"type": "error", "error": "An error occurred"},
                         ack,
                     )
                 )

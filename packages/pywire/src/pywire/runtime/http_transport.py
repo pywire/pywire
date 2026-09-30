@@ -36,6 +36,8 @@ class HTTPSession:
     session_id: str
     path: str
     page: Optional[BasePage] = None
+    # Who opened it (the client address), for the per-client cap.
+    client: str = ""
     pending_updates: List[Dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     last_poll: datetime = field(default_factory=datetime.now)
@@ -47,12 +49,40 @@ class HTTPSession:
 
 
 class HTTPTransportHandler:
-    """Handles HTTP long-polling connections for PyWire fallback transport."""
+    """Handles HTTP long-polling connections for PyWire fallback transport.
+
+    Every session holds a page instance, and opening one needs no sign-in, so
+    their number is capped: per client address and overall. Opening one past
+    a cap drops the session polled longest ago (its client opens a new one).
+    """
+
+    max_sessions = 1000
+    max_sessions_per_client = 20
 
     def __init__(self, app: Any) -> None:
         self.app = app
         self.sessions: Dict[str, HTTPSession] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
+
+    def _make_room(self, client: str) -> None:
+        """Drop sessions until one more fits under both caps."""
+        mine = [s for s in self.sessions.values() if s.client == client]
+        while len(mine) >= self.max_sessions_per_client:
+            oldest = min(mine, key=lambda s: s.last_poll)
+            mine.remove(oldest)
+            self._drop(oldest.session_id)
+        if len(self.sessions) >= self.max_sessions:
+            for sid in [s for s, sess in self.sessions.items() if sess.is_expired()]:
+                self._drop(sid)
+        while len(self.sessions) >= self.max_sessions:
+            oldest = min(self.sessions.values(), key=lambda s: s.last_poll)
+            self._drop(oldest.session_id)
+
+    def _drop(self, session_id: str) -> None:
+        session = self.sessions.pop(session_id, None)
+        if session is not None:
+            # A poll waiting on it returns now; the next one gets a 404.
+            session.update_event.set()
 
     def start_cleanup_task(self) -> None:
         """Start background task to clean up expired sessions."""
@@ -79,6 +109,16 @@ class HTTPTransportHandler:
         page = result[0]
         await self._set_user(page, request)
         return page
+
+    @staticmethod
+    async def _start(page: BasePage) -> None:
+        """Render the page once and run its @mount hooks, as a WebSocket init
+        does: the render registers which regions each wire feeds (without it
+        an event's update carries no regions) and what elements, $bind
+        targets included, the page shows."""
+        async with page._update_cycle():
+            await page.render(init=True)
+        await page._run_hooks(page.MOUNT_HOOKS)
 
     async def _set_user(self, page: BasePage, request: Request) -> None:
         """Act as the principal of this request (each event carries cookies).
@@ -131,8 +171,10 @@ class HTTPTransportHandler:
         if not isinstance(path, str):
             path = "/"
 
+        client = request.client.host if request.client else ""
+        self._make_room(client)
         session_id = str(uuid.uuid4())
-        session = HTTPSession(session_id=session_id, path=path)
+        session = HTTPSession(session_id=session_id, path=path, client=client)
 
         # A page its !auth guard refuses is not kept: the first event
         # rebuilds it and is refused again, with a navigate.
@@ -140,6 +182,7 @@ class HTTPTransportHandler:
         if page is not None:
             try:
                 await enforce_auth(page)
+                await self._start(page)
                 session.page = page
             except AuthDenied:
                 pass
@@ -223,6 +266,14 @@ class HTTPTransportHandler:
                         status_code=404,
                         media_type="application/x-msgpack",
                     )
+                try:
+                    await enforce_auth(page)
+                    await self._start(page)
+                except AuthDenied as denied:
+                    return Response(
+                        msgpack.packb({"type": "navigate", "path": denied.location}),
+                        media_type="application/x-msgpack",
+                    )
             else:
                 await self._set_user(page, request)
 
@@ -270,8 +321,9 @@ class HTTPTransportHandler:
                 media_type="application/x-msgpack",
             )
         except Exception as e:
+            logger.exception("Long-poll event failed")
             return Response(
-                msgpack.packb({"type": "error", "error": str(e)}),
+                msgpack.packb({"type": "error", "error": self.app._client_error(e)}),
                 status_code=500,
                 media_type="application/x-msgpack",
             )

@@ -14,6 +14,7 @@ class TestTransportAdvanced:
         self.app.router = MagicMock()
         self.app.session_persister = MagicMock()
         self.http_handler = HTTPTransportHandler(self.app)
+        self.http_handler._start = AsyncMock()  # type: ignore[method-assign]
         self.ws_handler = WebSocketHandler(self.app)
 
     async def test_http_session_cleanup(self) -> None:
