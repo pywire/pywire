@@ -1,0 +1,21 @@
+# Cloudflare Worker for demo.pywire.dev/form-builder, deployed from main by the
+# Deploy Examples workflow. `pywire build --platform cloudflare-edge` writes
+# src/entry.py and the assets; this file is ours. Its route and DNS live in
+# pywire/pywire.dev's Terraform. Secrets (PYWIRE_SECRET_KEY, API keys) are
+# set once with `wrangler secret put`.
+name = "pywire-demo-form-builder"
+main = "src/entry.py"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["python_workers"]
+workers_dev = false
+preview_urls = false
+
+[assets]
+directory = "./.pywire/deploy/public"
+binding = "ASSETS"
+
+[vars]
+PYWIRE_BASE_PATH = "/form-builder"
+# Cloudflare sets CF-Connecting-IP itself, so the rate limiter can trust it.
+CLIENT_IP_HEADER = "cf-connecting-ip"
+

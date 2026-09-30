@@ -542,7 +542,7 @@ toml = [
 
 [[package]]
 name = "create-pywire-app"
-version = "0.13.1"
+version = "0.13.2"
 source = { editable = "packages/create-pywire-app" }
 dependencies = [
     { name = "jinja2" },
@@ -681,23 +681,25 @@ name = "example-edge-stateless"
 version = "0.1.0"
 source = { virtual = "examples/edge-stateless" }
 dependencies = [
-    { name = "pywire", extra = ["cli"] },
+    { name = "pywire" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
+    { name = "pywire", extra = ["cli"] },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pywire", extras = ["cli"], editable = "packages/pywire" }]
+requires-dist = [{ name = "pywire", editable = "packages/pywire" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx" },
     { name = "pytest", specifier = ">=8" },
+    { name = "pywire", extras = ["cli"], editable = "packages/pywire" },
     { name = "ruff" },
 ]
 
@@ -707,24 +709,26 @@ version = "0.1.0"
 source = { virtual = "examples/form-builder" }
 dependencies = [
     { name = "httpx" },
-    { name = "pywire", extra = ["cli", "forms"] },
+    { name = "pywire", extra = ["forms"] },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pywire", extra = ["cli"] },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "pywire", extras = ["cli", "forms"], editable = "packages/pywire" },
+    { name = "pywire", extras = ["forms"], editable = "packages/pywire" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8" },
+    { name = "pywire", extras = ["cli"], editable = "packages/pywire" },
     { name = "ruff" },
 ]
 
@@ -2018,7 +2022,7 @@ provides-extras = ["google", "github", "microsoft", "facebook", "apple", "auth0"
 
 [[package]]
 name = "pywire-cli"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/pywire-cli" }
 dependencies = [
     { name = "jinja2" },
@@ -2058,7 +2062,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pywire-language-server"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "packages/pywire-language-server" }
 dependencies = [
     { name = "pygls" },

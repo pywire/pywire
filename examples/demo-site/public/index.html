@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pywire demos</title>
+<meta name="description" content="Example apps built with pywire, running from the main branch.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/demo.css">
+</head>
+<body>
+<main>
+  <header>
+    <p class="brand"><a href="https://pywire.dev">pywire</a></p>
+    <h1>Demos</h1>
+    <p>Example apps built with pywire. Each one runs the latest code on the main branch, so it can be ahead of the release on PyPI.</p>
+  </header>
+
+  <ul class="demos">
+    <li>
+      <h2><a href="/form-builder/">Form builder</a></h2>
+      <p>Describe a form in a sentence and get a working one. Groq writes the fields, Jev picks each field's type and whether it's required, and pywire builds a Pydantic model and a live form from the result.</p>
+      <p class="meta">Stateless, on Cloudflare Workers. <a href="https://github.com/pywire/pywire/tree/main/examples/form-builder">Source</a></p>
+    </li>
+    <li>
+      <h2><a href="/edge-stateless/">Stateless mode</a></h2>
+      <p>The page state travels with the browser in a signed snapshot, so any server can answer the next request. Includes keyed regions, optimistic updates and polling.</p>
+      <p class="meta">Stateless, on Cloudflare Workers. <a href="https://github.com/pywire/pywire/tree/main/examples/edge-stateless">Source</a></p>
+    </li>
+  </ul>
+
+  <h2>Stateless or stateful</h2>
+  <p>A stateful pywire app keeps each page on the server and talks to the browser over a WebSocket. Shared state, like a chat room, updates every open tab at once. A stateless app keeps nothing between requests, so it runs on serverless platforms and scales without sticky sessions, at the cost of polling for shared changes. <a href="https://pywire.dev/docs/guides/stateless-mode/">Read more about stateless mode</a>.</p>
+
+  <p>More examples, including a FastAPI app with a database and a realtime chat, are in <a href="https://github.com/pywire/pywire/tree/main/examples">the examples folder</a>.</p>
+</main>
+</body>
+</html>

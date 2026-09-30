@@ -1,0 +1,93 @@
+name: Deploy Examples
+
+# demo.pywire.dev: the landing page and the stateless examples, each its own
+# Cloudflare Worker. Routes and DNS are in pywire/pywire.dev's Terraform; this
+# only uploads the code. The examples run the pywire on main (not PyPI), so a
+# core change redeploys them too. Examples aren't released, so release-please
+# isn't involved.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/demo-site/**'
+      - 'examples/edge-stateless/**'
+      - 'examples/form-builder/**'
+      - 'packages/pywire/src/**'
+      - 'packages/pywire-cli/src/**'
+      - 'packages/pywire-templates/src/**'
+      - '.github/workflows/deploy-examples.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  site:
+    name: Deploy demo-site
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-examples-site
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Deploy
+        working-directory: examples/demo-site
+        run: npx --yes wrangler@4 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  example:
+    name: Deploy ${{ matrix.example }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [edge-stateless, form-builder]
+    # One deploy per example at a time, so an older build can't finish last.
+    concurrency:
+      group: deploy-examples-${{ matrix.example }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.13"
+          enable-cache: false
+
+      # The client bundle isn't committed; the Worker's assets use this one.
+      - name: Build the pywire client
+        run: |
+          pnpm install
+          pnpm --dir packages/pywire/src/pywire/client build
+
+      - name: Build
+        working-directory: examples/${{ matrix.example }}
+        run: uv run pywire build --platform cloudflare-edge
+        env:
+          # Build-time only: importing the app needs a key, and assets go
+          # under the Worker's base path. The real key is a Worker secret.
+          PYWIRE_SECRET_KEY: build-only-not-a-secret-000000000000
+          PYWIRE_BASE_PATH: /${{ matrix.example }}
+
+      - name: Deploy
+        working-directory: examples/${{ matrix.example }}
+        run: uv run --with workers-py pywrangler deploy
+        env:
+          # Vendor a copy of the workspace pywire, not a link back to it.
+          UV_NO_EDITABLE: '1'
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
