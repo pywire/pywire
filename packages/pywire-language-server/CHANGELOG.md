@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.9.0...pywire-language-server-v0.10.0) (2026-09-30)
+
+
+### Features
+
+* **pywire:** stateless pages refresh shared state on an interval ([#369](https://github.com/pywire/pywire/issues/369)) ([a43d999](https://github.com/pywire/pywire/commit/a43d999136b67e890206804ef772df0fb4674d0b))
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump floors to pywire 0.19.0 ([#411](https://github.com/pywire/pywire/issues/411)) ([9e0b919](https://github.com/pywire/pywire/commit/9e0b919cba11835caa8c3624d6c210cb311d74e7))
+* **pywire,pywire-language-server:** bump floors to pywire-parser 0.9.0 ([#408](https://github.com/pywire/pywire/issues/408)) ([7e47024](https://github.com/pywire/pywire/commit/7e4702415eb5025a73b3c7eeeb0ab0b20258a37f))
+
 ## [0.9.0](https://github.com/pywire/pywire/compare/pywire-language-server-v0.8.0...pywire-language-server-v0.9.0) (2026-09-29)
 
 
