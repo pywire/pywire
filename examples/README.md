@@ -30,11 +30,12 @@ Secrets are set once per Worker, after Terraform has created it, and never by th
 ```sh
 npx wrangler secret put PYWIRE_SECRET_KEY --name pywire-demo-edge-stateless
 npx wrangler secret put PYWIRE_SECRET_KEY --name pywire-demo-form-builder
+npx wrangler secret put PYWIRE_SECRET_KEY --name pywire-demo-realtime
 npx wrangler secret put OPENROUTER_API_KEY --name pywire-demo-form-builder
 npx wrangler secret put TYPESAFE_API_KEY --name pywire-demo-form-builder
 ```
 
-realtime and taskboard aren't on the demo site yet. realtime needs the shared Durable Object target (#393), and taskboard needs a database.
+realtime runs on one Cloudflare Durable Object for every visitor (`PYWIRE_PLACEMENT = "global"`), so everyone shares the poll and the chat. taskboard needs a database, so it isn't on the demo site yet.
 
 For the practices these examples follow, see [Building real apps](https://pywire.dev/docs/guides/best-practices/).
 

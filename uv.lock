@@ -737,23 +737,25 @@ name = "example-realtime"
 version = "0.1.0"
 source = { virtual = "examples/realtime" }
 dependencies = [
-    { name = "pywire", extra = ["cli"] },
+    { name = "pywire" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
+    { name = "pywire", extra = ["cli"] },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pywire", extras = ["cli"], editable = "packages/pywire" }]
+requires-dist = [{ name = "pywire", editable = "packages/pywire" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx" },
     { name = "pytest", specifier = ">=8" },
+    { name = "pywire", extras = ["cli"], editable = "packages/pywire" },
     { name = "ruff" },
 ]
 

@@ -50,9 +50,13 @@ def generate_railway_json(project_root: Path) -> str:
     return render_deploy_template("railway.json.j2")
 
 
-def generate_wrangler_toml(project_root: Path, project_name: str) -> str:
+def generate_wrangler_toml(
+    project_root: Path, project_name: str, main: str = "entry.py"
+) -> str:
     """Generate wrangler.toml content for Cloudflare Workers with Durable Objects."""
-    return render_deploy_template("wrangler.toml.j2", project_name=project_name)
+    return render_deploy_template(
+        "wrangler.toml.j2", project_name=project_name, main=main
+    )
 
 
 def generate_cf_entry(project_root: Path) -> str:
@@ -60,8 +64,8 @@ def generate_cf_entry(project_root: Path) -> str:
     return render_deploy_template("entry.py.j2")
 
 
-def edge_worker_layout(project_root: Path, app_string: str) -> tuple[str, str]:
-    """Where the edge Worker's modules go, and the app as imported from there.
+def worker_layout(project_root: Path, app_string: str) -> tuple[str, str]:
+    """Where a Cloudflare Worker's modules go, and the app as imported from there.
 
     Wrangler uploads every ``.py`` file under the directory of ``main``. At
     the project root that includes tests and pywrangler's ``.venv-workers``,

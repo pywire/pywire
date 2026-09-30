@@ -18,6 +18,11 @@
 
   <ul class="demos">
     <li>
+      <h2><a href="/realtime/">Realtime</a></h2>
+      <p>A poll, a list of who's here, a chat room and a server clock, shared by everyone on the page right now. Open it in two windows and watch both update.</p>
+      <p class="meta">Stateful, on a Cloudflare Durable Object. <a href="https://github.com/pywire/pywire/tree/main/examples/realtime">Source</a></p>
+    </li>
+    <li>
       <h2><a href="/form-builder/">Form builder</a></h2>
       <p>Describe a form in a sentence and get a working one. An open model writes the fields, Jev picks each field's type and whether it's required, and pywire builds a Pydantic model and a live form from the result.</p>
       <p class="meta">Stateless, on Cloudflare Workers. <a href="https://github.com/pywire/pywire/tree/main/examples/form-builder">Source</a></p>
@@ -32,7 +37,7 @@
   <h2>Stateless or stateful</h2>
   <p>A stateful pywire app keeps each page on the server and talks to the browser over a WebSocket. Shared state, like a chat room, updates every open tab at once. A stateless app keeps nothing between requests, so it runs on serverless platforms and scales without sticky sessions, at the cost of polling for shared changes. <a href="https://pywire.dev/docs/guides/stateless-mode/">Read more about stateless mode</a>.</p>
 
-  <p>More examples, including a FastAPI app with a database and a realtime chat, are in <a href="https://github.com/pywire/pywire/tree/main/examples">the examples folder</a>.</p>
+  <p>More examples, including a FastAPI app with a database, are in <a href="https://github.com/pywire/pywire/tree/main/examples">the examples folder</a>.</p>
 </main>
 </body>
 </html>

@@ -1,0 +1,28 @@
+# Cloudflare Worker for demo.pywire.dev/realtime, deployed from main by the
+# Deploy Examples workflow. `pywire build --platform cloudflare` writes
+# src/entry.py, src/pywire_do.py and the assets; this file is ours. Its route
+# and DNS live in pywire/pywire.dev's Terraform. PYWIRE_SECRET_KEY is set once
+# with `wrangler secret put`.
+name = "pywire-demo-realtime"
+main = "src/entry.py"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["python_workers"]
+workers_dev = false
+preview_urls = false
+
+[assets]
+directory = "./.pywire/deploy/public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "PYWIRE_APP"
+class_name = "PyWireAppDO"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PyWireAppDO"]
+
+[vars]
+PYWIRE_BASE_PATH = "/realtime"
+# One app object for every visitor, so everyone shares the poll and the chat.
+PYWIRE_PLACEMENT = "global"
