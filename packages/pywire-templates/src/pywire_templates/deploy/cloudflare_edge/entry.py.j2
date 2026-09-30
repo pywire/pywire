@@ -1,4 +1,5 @@
 """PyWire edge worker — stateless, no Durable Objects."""
+import importlib
 import os
 import sys
 from urllib.parse import urlparse
@@ -6,6 +7,32 @@ from urllib.parse import urlparse
 from workers import Response, WorkerEntrypoint
 
 from pywire.adapters.oneshot import OneShotASGIAdapter
+
+# Modules every request needs but nothing above imports. Imported here, they
+# go into the deploy-time memory snapshot instead of being loaded by each new
+# isolate's first request. The app itself can't be: it reads its secret from
+# `env`, which only exists inside a request.
+for _name in (
+    "anyio._backends._asyncio",
+    "anyio.lowlevel",
+    "anyio.streams.memory",
+    "anyio.streams.stapled",
+    "starlette.middleware.base",
+    "pywire.runtime.attrs",
+    "pywire.runtime.escape",
+    "pywire.runtime.helpers",
+    "pywire.runtime.loader",
+    "pywire.runtime.page_resolver",
+    "pywire.runtime.session_persist",
+    "pywire.runtime.session_store",
+    "pywire.runtime.snapshot_codec",
+    "pywire.runtime.stateless_handler",
+    "pywire.shell",
+):
+    try:
+        importlib.import_module(_name)
+    except ImportError:  # renamed in another version: only a slower first request
+        pass
 
 # Like `pywire dev`: for an app at src.main, both the bundle root and src/
 # are importable, so main.py can import its sibling packages.
