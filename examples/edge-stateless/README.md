@@ -8,10 +8,9 @@ A minimal PyWire app that showcases the "edge stateless" features:
    only that row's HTML.
 3. **Optimistic UI** — instant click feedback with automatic reconciliation,
    including auto-revert of wrong predictions.
-4. **`@poll` background jobs** — a fake "LLM generation" whose progress is
-   filled by an in-process `asyncio` task into a process-global store and read
-   back by a polled element every 400 ms. When the job completes, a
-   conditional render unmounts the polled element — which stops the polling.
+4. **`@poll` background jobs** — a fake "LLM generation" whose progress a
+   polled element reads every 400 ms. When the job completes, a conditional
+   render unmounts the polled element, which stops the polling.
 
 (`{$await}` is a stateful-tier feature — it does not build in stateless apps.
 The stateless idiom for background work is `@poll` — see the `/poll` page
@@ -77,15 +76,14 @@ tick over HTTP, one event frame over WebSocket. For long-running work in
 stateless mode it replaces `{$await}` with an "external store + poll" shape
 (see `src/pages/poll.wire`):
 
-- **The progress lives in a process-global store** — the `Jobs` class
-  attribute dict — NOT in wires. A background task runs outside any request;
-  in stateless mode the wires it would mutate live in the client's snapshot,
-  not in server memory. (A top-level `JOBS = {}` in the frontmatter would not
-  work either: it compiles to a per-instance attribute that is rebuilt on
-  every POST. A class attribute compiles to module level — one dict for the
-  whole process.)
-- **The poll reads the store into wires** on every tick (`tick(job_id)`);
-  that is the whole channel from background work back to the page.
+- **The progress lives outside the page.** A real job writes it to a store
+  every instance can read: a database, KV or Redis. It can't live in the
+  page's process: a serverless host such as Cloudflare Workers stops running
+  your code once the response is sent, and the next tick may reach another
+  instance. The demo computes progress from the job's start time instead, so
+  it needs no store.
+- **The poll reads the progress into wires** on every tick (`tick()`); that
+  is the whole channel from background work back to the page.
 - **The stop condition is a conditional render.** There is no `.while`
   modifier: the polled element is wrapped in
   `{$if status == 'running'} ... {/if}`. When the job flips `status`, the
@@ -158,15 +156,16 @@ Open DevTools (Network + Elements side by side) and walk down the page.
    initial frontmatter state. In the Durable-Object/WebSocket tier the
    server-side session would still remember your counter.
 
-6. **Background job — poll + global store.** Open **Background jobs (poll)**
-   in the nav and click **Start generation**. In Network, one
-   `POST /_pywire/stateless` per 400 ms tick appears — the same msgpack
-   round-trip as a click — while the progress text climbs 0 → 100%. When the
-   job completes, the polled element disappears from Elements **and the POSTs
-   stop dead**: unmounting the element cleared the timer. Watch closely and
-   you'll see the job's progress being *read* out of a module-level dict by
-   `tick()` (in `src/pages/poll.wire`) — the `asyncio` task filling that dict
-   touches no wires at all.
+6. **Background job with a poll.** Open **Background jobs (poll)** in the
+   nav and click **Start generation**. Network shows one
+   `POST /_pywire/stateless` per 400 ms tick, the same msgpack round trip as a
+   click, while the progress climbs from 0 to 100%. If a response takes longer
+   than 400 ms, the next tick is skipped rather than sent on top of it. When
+   the job finishes, the polled element leaves the page and the POSTs stop.
+   A real job would keep its progress in a store every instance can read
+   (a database, KV or Redis), because a serverless host stops your code once
+   the response is sent. The demo computes progress from the job's start time
+   instead (see `tick()` in `src/pages/poll.wire`).
 
 ## v1 ceilings
 
