@@ -93,6 +93,3 @@ gha-creds-*.json
 .pi/agent-memory-local/
 .superpowers/
 .worktrees/
-
-# Built Workers for demo.pywire.dev (examples/scripts/deploy-demo)
-examples/.deploy/

@@ -17,7 +17,13 @@ examples/scripts/check           # format, lint, pywire check and tests for all 
 
 ## demo.pywire.dev
 
-The stateless examples run at demo.pywire.dev/<name>, with a landing page from [demo-site](demo-site). The [Deploy Examples](../.github/workflows/deploy-examples.yml) workflow redeploys them from `main` whenever an example or pywire itself changes, so the demos always run the latest code. Each is a Cloudflare Worker built by `examples/scripts/deploy-demo <name>`, which you can also run locally to build one into `examples/.deploy/<name>/`.
+The stateless examples run at demo.pywire.dev/<name>, with a landing page from [demo-site](demo-site). The [Deploy Examples](../.github/workflows/deploy-examples.yml) workflow redeploys them from `main` whenever an example or pywire itself changes, so the demos always run the latest code. Each deployed example has its own `wrangler.toml`; the routes and DNS are in pywire/pywire.dev's Terraform. To run one in Cloudflare's local runtime:
+
+```sh
+cd examples/form-builder
+PYWIRE_SECRET_KEY=... PYWIRE_BASE_PATH=/form-builder uv run pywire build --platform cloudflare-edge
+UV_NO_EDITABLE=1 uv run --with workers-py pywrangler dev   # secrets from .dev.vars
+```
 
 Secrets are set once per Worker, not by the workflow:
 
@@ -28,7 +34,7 @@ npx wrangler secret put GROQ_API_KEY --name pywire-demo-form-builder
 npx wrangler secret put TYPESAFE_API_KEY --name pywire-demo-form-builder
 ```
 
-realtime and taskboard aren't on the demo site yet. realtime needs the shared Durable Object target (#385), and taskboard needs a database.
+realtime and taskboard aren't on the demo site yet. realtime needs the shared Durable Object target (#393), and taskboard needs a database.
 
 For the practices these examples follow, see [Building real apps](https://pywire.dev/docs/guides/best-practices/).
 

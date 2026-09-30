@@ -1,11 +1,10 @@
-# demo.pywire.dev: this static page, with each example on its own Worker
-# at demo.pywire.dev/<name> (see examples/scripts/deploy-demo). Cloudflare
-# sends a request to the most specific route, so the examples win.
+# demo.pywire.dev: this static page. Each example is its own Worker at
+# demo.pywire.dev/<name>. The routes and DNS live in pywire/pywire.dev's
+# Terraform, which sends the more specific example routes to the examples.
 name = "pywire-demo"
 compatibility_date = "2026-09-01"
 workers_dev = false
 preview_urls = false
-routes = [{ pattern = "demo.pywire.dev/*", zone_name = "pywire.dev" }]
 
 [assets]
 directory = "./public"

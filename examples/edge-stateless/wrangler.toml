@@ -1,0 +1,19 @@
+# Cloudflare Worker for demo.pywire.dev/edge-stateless, deployed from main by the
+# Deploy Examples workflow. `pywire build --platform cloudflare-edge` writes
+# src/entry.py and the assets; this file is ours. Its route and DNS live in
+# pywire/pywire.dev's Terraform. Secrets (PYWIRE_SECRET_KEY, API keys) are
+# set once with `wrangler secret put`.
+name = "pywire-demo-edge-stateless"
+main = "src/entry.py"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["python_workers"]
+workers_dev = false
+preview_urls = false
+
+[assets]
+directory = "./.pywire/deploy/public"
+binding = "ASSETS"
+
+[vars]
+PYWIRE_BASE_PATH = "/edge-stateless"
+
