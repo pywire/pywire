@@ -96,32 +96,46 @@ def _create_proxy(
 class WireBase:
     """Base class for all reactive wires and proxies."""
 
+    # Set in one ``__dict__.update`` in ``__init__``; declared here for types.
+    _pages: Optional[ReferenceType | WeakSet]
+    _subscribers: Optional[WeakSet]
+    _subscription_effects: Optional[list]
+    _parent: Optional["WireBase"]
+    _field: Optional[str]
+    _owner: Optional[object]
+    _frozen: bool
+    _locked: bool
+    _write_seq: int
+
     def __init__(
         self, parent: Optional["WireBase"] = None, field: Optional[str] = None
     ):
-        # Pages that read this wire. List pages hold one proxy per row, so
-        # keep this small: None, then a weakref to the one page (the usual
-        # case), and a WeakSet only once a second page reads it.
-        self._pages: Optional[ReferenceType | WeakSet] = None
-        # Derived/Effect subscribers, created on first subscription.
-        self._subscribers: Optional[WeakSet] = None
-        # Strong refs to Effects created via .subscribe() — without these,
-        # the Effect is only tracked in the WeakSet of subscribers and
-        # gets garbage-collected before the next write.
-        self._subscription_effects: Optional[list] = None
-        self._parent = parent
-        self._field = field
-        # Owner token of the page that created this wire (see _owner_context);
-        # row proxies inherit their container's.
-        self._owner: Optional[object] = (
-            parent._owner if parent is not None else _owner_context.get()
+        # One dict update: WireDict overrides __setattr__, which makes ten
+        # separate assignments per row proxy the dominant cost of building
+        # a long list's proxies.
+        self.__dict__.update(
+            # Pages that read this wire. List pages hold one proxy per row,
+            # so keep this small: None, then a weakref to the one page (the
+            # usual case), and a WeakSet only once a second page reads it.
+            _pages=None,
+            # Derived/Effect subscribers, created on first subscription.
+            _subscribers=None,
+            # Strong refs to Effects created via .subscribe() — without
+            # these, the Effect is only tracked in the WeakSet of
+            # subscribers and gets garbage-collected before the next write.
+            _subscription_effects=None,
+            _parent=parent,
+            _field=field,
+            # Owner token of the page that created this wire (see
+            # _owner_context); row proxies inherit their container's.
+            _owner=parent._owner if parent is not None else _owner_context.get(),
+            _frozen=False,
+            _locked=False,
+            # Per-wire write counter. Bumped on every `_notify_write`. Used
+            # by component-level memoization to invalidate only when wires
+            # this specific component reads have been written.
+            _write_seq=0,
         )
-        self._frozen = False
-        self._locked = False
-        # Per-wire write counter. Bumped on every `_notify_write`. Used
-        # by component-level memoization to invalidate only when wires
-        # this specific component reads have been written.
-        self._write_seq: int = 0
 
     def _track_read(self, field: str = "value") -> None:
         if self._frozen:

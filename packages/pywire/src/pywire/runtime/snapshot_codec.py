@@ -12,6 +12,7 @@ from urllib.parse import unquote
 import msgpack
 
 from pywire.runtime.session_serializer import snapshot_page_state
+from pywire.runtime.subscriptions import export_subscriptions
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ def encode_snapshot(
     ``route`` (from ``snapshot_route``) is signed into the body so the
     stateless endpoint only rebuilds the page the snapshot was rendered for.
     ``live`` maps each shared-state region to a digest of the HTML the client
-    shows for it, so a poll can skip regions that haven't changed.
+    shows for it, so a poll can skip regions that haven't changed. ``subs``
+    (see ``subscriptions``) lets the endpoint skip the discard render.
     """
     snap = snapshot_page_state(page)
     # Never trust the client with identity — re-resolved per request.
@@ -59,6 +61,9 @@ def encode_snapshot(
     snap["route"] = route
     if live:
         snap["live"] = live
+    subs = export_subscriptions(page)
+    if subs is not None:
+        snap["subs"] = subs
     raw = msgpack.packb(snap)
     if warn_size > 0 and len(raw) > warn_size:
         logger.warning(

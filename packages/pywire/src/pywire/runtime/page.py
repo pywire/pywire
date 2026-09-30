@@ -1208,6 +1208,28 @@ class BasePage(metaclass=_PageMeta):
                     return True
         return False
 
+    async def _run_auth_guard(self) -> Optional[Response]:
+        """Reject an unauthorized request; None when the page may render.
+
+        Runs on BOTH init=True (hard load) and init=False (SPA relocate via
+        internal ASGI replay); skipping on relocate would let an anonymous
+        SPA nav reach a protected page. Lazy-imported so unprotected pages
+        don't pull in the auth submodule.
+        """
+        if not getattr(self.__class__, "__auth_required__", False):
+            return None
+        from pywire.auth.guard import run_auth_guard
+
+        guard_response = await run_auth_guard(self)
+        if guard_response is not None:
+            location = guard_response.headers.get("location")
+            if location:
+                # Mirror on _pending_navigation so the WS transport's
+                # existing drain sends a navigate message instead of
+                # update HTML.
+                self._pending_navigation = location
+        return guard_response
+
     async def render(
         self, init: bool = True, *, run_hooks: Optional[bool] = None
     ) -> Response:
@@ -1228,24 +1250,11 @@ class BasePage(metaclass=_PageMeta):
             self._background_tasks.clear()
             self._await_states.clear()
 
-        # Auth guard — must short-circuit before any user code runs so
-        # unauthorized requests never trigger side effects. Runs on BOTH
-        # init=True (hard load) and init=False (SPA relocate via internal
-        # ASGI replay); skipping on relocate would let an anonymous SPA
-        # nav reach a protected page. Lazy-imported so unprotected pages
-        # don't pull in the auth submodule.
-        if getattr(self.__class__, "__auth_required__", False):
-            from pywire.auth.guard import run_auth_guard
-
-            guard_response = await run_auth_guard(self)
-            if guard_response is not None:
-                location = guard_response.headers.get("location")
-                if location:
-                    # Mirror on _pending_navigation so the WS transport's
-                    # existing drain sends a navigate message instead of
-                    # update HTML.
-                    self._pending_navigation = location
-                return guard_response
+        # Must short-circuit before any user code runs so unauthorized
+        # requests never trigger side effects.
+        guard_response = await self._run_auth_guard()
+        if guard_response is not None:
+            return guard_response
 
         # Run @before_load hooks (pages only, before any page logic)
         if hooks:
