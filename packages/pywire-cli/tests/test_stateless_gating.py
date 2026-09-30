@@ -121,7 +121,7 @@ def test_build_short_secret_is_explained(
         result = runner.invoke(cli, ["build", "--platform", platform])
     assert result.exit_code == 1
     output = _norm(result.output)
-    assert "at least 32 bytes" in output
+    assert "at least 32 random bytes" in output
     assert "secrets.token_hex(32)" in output
     assert "Traceback" not in output
 
