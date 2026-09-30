@@ -62,7 +62,7 @@ railway login && railway init
 railway up
 ```
 
-**Cloudflare Workers** — generates `wrangler.toml`, `entry.py`, and `pywire_do.py`:
+**Cloudflare Workers** — generates `wrangler.toml`, `entry.py`, and `pywire_do.py`. For a `src.main:app` layout, `entry.py` and `pywire_do.py` go in `src/` (with the build output from `pywire build --platform cloudflare`), so wrangler uploads only your app, not your tests or virtual environments. After the first run, `wrangler.toml` is yours: `pywire build` leaves it alone and warns if it lacks the app's Durable Object binding.
 
 ```sh
 pywire deploy --platform cloudflare

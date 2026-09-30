@@ -139,6 +139,62 @@ class TestBuildCloudflareEdge:
             assert not (public / "static").exists()
 
 
+class TestBuildCloudflareDurableObject:
+    @patch("pywire.compiler.build.build_project")
+    def test_src_layout_worker_lives_in_src(self, mock_build: MagicMock) -> None:
+        """The Durable Object target uses the same src/ layout as the edge one."""
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, static_assets=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            _make_app_dir()
+            Path("src").mkdir()
+            Path("main.py").rename("src/main.py")
+            sys.modules.pop("main", None)
+            try:
+                result = runner.invoke(
+                    cli, ["build", "src.main:app", "--platform", "cloudflare"]
+                )
+            finally:
+                sys.modules.pop("main", None)
+                sys.modules.pop("src.main", None)
+            assert result.exit_code == 0, result.output
+
+            wrangler = Path("wrangler.toml").read_text()
+            assert 'main = "src/entry.py"' in wrangler
+            assert 'name = "PYWIRE_APP"' in wrangler
+            assert Path("src/entry.py").exists()
+            assert "from main import app" in Path("src/pywire_do.py").read_text()
+            assert Path("src/_routes.py").exists()
+            assert not Path("entry.py").exists()
+            assert not Path("pywire_do.py").exists()
+
+    @patch("pywire.compiler.build.build_project")
+    def test_an_old_wrangler_toml_gets_a_warning(self, mock_build: MagicMock) -> None:
+        """A wrangler.toml from before the app object keeps working config but
+        says what it lacks, instead of failing at request time."""
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, static_assets=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            _make_app_dir()
+            old = 'name = "app"\nmain = "entry.py"\n'
+            Path("wrangler.toml").write_text(old)
+            sys.modules.pop("main", None)
+            try:
+                result = runner.invoke(
+                    cli, ["build", "main:app", "--platform", "cloudflare"]
+                )
+            finally:
+                sys.modules.pop("main", None)
+            assert result.exit_code == 0, result.output
+            assert Path("wrangler.toml").read_text() == old
+            assert "PYWIRE_APP" in result.output
+            assert "PyWireAppDO" in result.output
+
+
 class TestDeployCloudflareEdge:
     @patch("pywire.compiler.build.build_project")
     def test_deploy_writes_stateless_configs(self, mock_build: MagicMock) -> None:
@@ -156,28 +212,28 @@ class TestDeployCloudflareEdge:
             assert not Path("pywire_do.py").exists()
 
 
-def test_edge_worker_layout() -> None:
-    from pywire_cli.deploy import edge_worker_layout
+def test_worker_layout() -> None:
+    from pywire_cli.deploy import worker_layout
 
     root = Path(__file__).parent
     # A source folder that isn't a package holds the Worker.
     (src := root / "_layout_src").mkdir(exist_ok=True)
     try:
-        assert edge_worker_layout(root, "_layout_src.main:app") == (
+        assert worker_layout(root, "_layout_src.main:app") == (
             "_layout_src",
             "main:app",
         )
         (src / "__init__.py").write_text("")
         # A package is imported by its full name from the root.
-        assert edge_worker_layout(root, "_layout_src.main:app") == (
+        assert worker_layout(root, "_layout_src.main:app") == (
             "",
             "_layout_src.main:app",
         )
     finally:
         (src / "__init__.py").unlink(missing_ok=True)
         src.rmdir()
-    assert edge_worker_layout(root, "main:app") == ("", "main:app")
-    assert edge_worker_layout(root, "missing.main") == ("", "missing.main:app")
+    assert worker_layout(root, "main:app") == ("", "main:app")
+    assert worker_layout(root, "missing.main") == ("", "missing.main:app")
 
 
 def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:

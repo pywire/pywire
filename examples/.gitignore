@@ -1,8 +1,9 @@
-# Cloudflare Worker build output (pywire build --platform cloudflare-edge,
-# pywrangler). Each example's wrangler.toml is committed.
+# Cloudflare Worker build output (pywire build --platform cloudflare or
+# cloudflare-edge, pywrangler). Each example's wrangler.toml is committed.
 _pywire_build/
 _routes.py
 entry.py
+pywire_do.py
 python_modules/
 pylock.toml
 .venv-workers/

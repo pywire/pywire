@@ -1,7 +1,7 @@
 name: Deploy Examples
 
-# demo.pywire.dev: the landing page and the stateless examples, each its own
-# Cloudflare Worker. Routes and DNS are in pywire/pywire.dev's Terraform; this
+# demo.pywire.dev: the landing page and the examples, each its own Cloudflare
+# Worker. realtime runs on a Durable Object; the others are stateless. Routes and DNS are in pywire/pywire.dev's Terraform; this
 # only uploads the code. The examples run the pywire on main (not PyPI), so a
 # core change redeploys them too. Examples aren't released, so release-please
 # isn't involved.
@@ -12,6 +12,7 @@ on:
       - 'examples/demo-site/**'
       - 'examples/edge-stateless/**'
       - 'examples/form-builder/**'
+      - 'examples/realtime/**'
       - 'packages/pywire/src/**'
       - 'packages/pywire-cli/src/**'
       - 'packages/pywire-templates/src/**'
@@ -47,6 +48,10 @@ jobs:
       fail-fast: false
       matrix:
         example: [edge-stateless, form-builder]
+        platform: [cloudflare-edge]
+        include:
+          - example: realtime
+            platform: cloudflare
     # One deploy per example at a time, so an older build can't finish last.
     concurrency:
       group: deploy-examples-${{ matrix.example }}
@@ -76,7 +81,7 @@ jobs:
 
       - name: Build
         working-directory: examples/${{ matrix.example }}
-        run: uv run pywire build --platform cloudflare-edge
+        run: uv run pywire build --platform ${{ matrix.platform }}
         env:
           # Build-time only: importing the app needs a key, and assets go
           # under the Worker's base path. The real key is a Worker secret.
