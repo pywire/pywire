@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/pywire/pywire/compare/pywire-templates-v0.4.0...pywire-templates-v0.5.0) (2026-09-30)
+
+
+### Features
+
+* **pywire-cli,examples:** realtime demo on the app Durable Object, in a src/ Worker ([#405](https://github.com/pywire/pywire/issues/405)) ([0c2ef24](https://github.com/pywire/pywire/commit/0c2ef24e4bc3386332816aa4d6f70607b2c405ab))
+
+
+### Bug Fixes
+
+* **pywire-cli:** Cloudflare deploys work under base_path and on the current Workers runtime ([#384](https://github.com/pywire/pywire/issues/384)) ([6f55aa8](https://github.com/pywire/pywire/commit/6f55aa8a0377206e12e8f64a1f3c8a53601d7adf))
+* **pywire-cli:** edge Worker uploads only the app, and builds keep wrangler.toml ([#400](https://github.com/pywire/pywire/issues/400)) ([b132ef6](https://github.com/pywire/pywire/commit/b132ef6039b5e4cac058eb2f02dac73b286d78ef))
+* **pywire-templates:** run Cloudflare apps in regional Durable Objects ([#393](https://github.com/pywire/pywire/issues/393)) ([2a0833c](https://github.com/pywire/pywire/commit/2a0833ca53c62d691a18970a204661baafbb84f8))
+
 ## [0.4.0](https://github.com/pywire/pywire/compare/pywire-templates-v0.3.0...pywire-templates-v0.4.0) (2026-09-29)
 
 
