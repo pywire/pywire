@@ -422,6 +422,71 @@ def test_release_component_from_branch(branch, expected):
     assert mg.release_component_from_branch(branch) == expected
 
 
+def _pr(branch, *, number=1, fork=False, labels=("autorelease: pending",), author="releaser"):
+    return {
+        "number": number,
+        "headRefName": branch,
+        "isCrossRepository": fork,
+        "labels": [{"name": name} for name in labels],
+        "author": {"login": author},
+    }
+
+
+RELEASE_BRANCH = "release-please--branches--main--components--pywire"
+
+
+@pytest.mark.parametrize(
+    ("pr", "author", "expected"),
+    [
+        (_pr(RELEASE_BRANCH), None, True),
+        (_pr(RELEASE_BRANCH), "releaser", True),
+        (_pr(RELEASE_BRANCH, fork=True), None, False),  # fork PR picking the branch name
+        (_pr(RELEASE_BRANCH, labels=()), None, False),
+        (_pr(RELEASE_BRANCH, labels=("autorelease: tagged",)), None, False),
+        (_pr(RELEASE_BRANCH, author="someone"), "releaser", False),
+        (_pr("feature/thing"), None, False),
+        ({"headRefName": RELEASE_BRANCH, "labels": [{"name": "autorelease: pending"}]}, None, False),
+    ],
+)
+def test_is_release_pr(pr, author, expected):
+    assert mg.is_release_pr(pr, author) is expected
+
+
+def test_release_prs_only_trusts_same_repo_labelled_prs():
+    prs = [
+        _pr("release-please--branches--main--components--pywire-cli", number=1),
+        _pr("release-please--branches--main--components--pywire", number=2, fork=True),
+        _pr("release-please--branches--main--components--pywire-auth", number=3, labels=()),
+        _pr("release-please--branches--main--components--pywire-parser", number=4, author="someone"),
+        _pr("feature/thing", number=5),
+    ]
+    components, ignored = mg.release_prs(prs)
+    assert components == ["pywire-cli", "pywire-parser"]
+    assert [pr["number"] for pr in ignored] == [2, 3]
+
+    components, ignored = mg.release_prs(prs, author="releaser")
+    assert components == ["pywire-cli"]
+    assert [pr["number"] for pr in ignored] == [2, 3, 4]
+
+
+def test_cmd_release_order_ignores_fork_release_branches(tmp_path, monkeypatch, capsys):
+    mono = mg.load(make_repo(tmp_path))
+    rows = [
+        _pr("release-please--branches--main--components--down", number=1),
+        _pr("release-please--branches--main--components--upstream", number=2, fork=True),
+    ]
+
+    def fake_run(cmd, **kwargs):
+        assert "isCrossRepository" in cmd[-1] and "labels" in cmd[-1]
+        return mg.subprocess.CompletedProcess(cmd, 0, stdout=mg.json.dumps(rows), stderr="")
+
+    monkeypatch.setattr(mg.subprocess, "run", fake_run)
+    assert mg._cmd_release_order(mono, [], None) == 0
+    out = capsys.readouterr()
+    assert out.out.split() == ["packages/down"]
+    assert "ignoring PR #2" in out.err
+
+
 # --- check-scripts ---
 
 

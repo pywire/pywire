@@ -38,13 +38,30 @@ jobs:
       examples: ${{ steps.filter.outputs.examples }}
       pywire-docs: ${{ steps.filter.outputs.pywire-docs }}
     steps:
+      # A merged release-please PR only bumps versions and changelogs, so
+      # its commit on main skips the package checks. The message alone
+      # proves nothing (any PR can be titled "chore(main): release …"), so
+      # the commit must also come from a merged release-please PR: branch in
+      # this repo, with an autorelease label (only triage+ accounts label).
       - name: Check if release commit
         id: release-check
+        if: >-
+          github.event_name == 'push'
+          && startsWith(github.event.head_commit.message, 'chore(main): release ')
         env:
-          MSG: ${{ github.event.head_commit.message }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
         run: |
-          if [[ "$MSG" == "chore(main): release "* ]]; then
-            echo "is_release=true" >> $GITHUB_OUTPUT
+          if gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            | jq -e --arg repo "$GITHUB_REPOSITORY" 'any(.[];
+                (.head.ref | startswith("release-please--"))
+                and (.head.repo.full_name // "") == $repo
+                and .merged_at != null
+                and any(.labels[]; .name == "autorelease: pending" or .name == "autorelease: tagged"))' \
+            > /dev/null; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Commit message looks like a release, but no same-repo release-please PR merged it; running CI"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.release-check.outputs.is_release != 'true'

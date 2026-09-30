@@ -43,6 +43,13 @@ async function findOrDownloadWasm(destPath) {
     // Package not resolvable
   }
 
+  // A release VSIX only ships the lockfile-installed (integrity-checked) copy.
+  if (production) {
+    throw new Error(
+      'ruff_fmt_bg.wasm not found in node_modules; run pnpm install --frozen-lockfile'
+    )
+  }
+
   // Fallback: download from unpkg
   console.log('WASM not found locally, downloading from unpkg...')
   const url = 'https://unpkg.com/@wasm-fmt/ruff_fmt@0.9.7/ruff_fmt_bg.wasm'
@@ -123,17 +130,19 @@ async function main() {
 
                 const modulesToCopy = ['prettier', 'prettier-plugin-pywire']
                 for (const moduleName of modulesToCopy) {
-                  let sourceDir = join(projectRoot, 'node_modules', moduleName)
+                  const sourceDir = join(projectRoot, 'node_modules', moduleName)
 
-                  // Special case for our workspace: if prettier-plugin-pywire is missing in node_modules
-                  // (e.g. installed from Git but not built), check if it exists as a sibling in the workspace.
-                  if (moduleName === 'prettier-plugin-pywire') {
-                    const localSibling = join(projectRoot, '..', 'prettier-plugin-pywire')
-                    // If local sibling exists and has a dist folder, prefer it
-                    if (existsSync(join(localSibling, 'dist', 'index.cjs'))) {
-                      console.log(`Using local sibling for ${moduleName}: ${localSibling}`)
-                      sourceDir = localSibling
-                    }
+                  // prettier-plugin-pywire is the workspace package (link:), so
+                  // the VSIX ships the plugin built from this checkout. Never
+                  // package it unbuilt.
+                  if (
+                    moduleName === 'prettier-plugin-pywire' &&
+                    production &&
+                    !existsSync(join(sourceDir, 'dist', 'index.cjs'))
+                  ) {
+                    throw new Error(
+                      'prettier-plugin-pywire is not built; run `pnpm --dir ../prettier-plugin-pywire run build` first'
+                    )
                   }
 
                   if (!existsSync(sourceDir)) {
