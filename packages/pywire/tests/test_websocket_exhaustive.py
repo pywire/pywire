@@ -39,6 +39,7 @@ class TestWebSocketExhaustive:
     def create_mock_ws(self) -> AsyncMock:
         ws = AsyncMock()
         ws.scope = {"type": "websocket", "path": "/ws"}
+        ws.headers = {}
         return ws
 
     @pytest.mark.asyncio

@@ -30,6 +30,7 @@ from pywire.runtime.base_path import (
 )
 from pywire.runtime.compression import CompressionMiddleware, gzip_bytes
 from pywire.runtime.http_transport import HTTPTransportHandler
+from pywire.runtime.origin import is_cross_site, is_loopback_host
 from pywire.runtime.page import ErrorBasePage
 from pywire.runtime.router import Router
 from pywire.runtime.uploads import (
@@ -63,6 +64,9 @@ async def RequestContextMiddleware(scope, receive, send, app):
 
 _FORM_CONTENT_TYPES = ("application/x-www-form-urlencoded", "multipart/form-data")
 
+# What the dev-only source endpoints serve: the files error frames point at.
+_SOURCE_SUFFIXES = frozenset({".py", ".wire"})
+
 
 def _is_form_content(request: Request) -> bool:
     ctype = request.headers.get("content-type", "").split(";", 1)[0]
@@ -72,35 +76,6 @@ def _is_form_content(request: Request) -> bool:
 def _is_multipart(request: Request) -> bool:
     ctype = request.headers.get("content-type", "").split(";", 1)[0]
     return ctype.strip().lower() == "multipart/form-data"
-
-
-def _is_cross_site(request: Request) -> bool:
-    """True when a browser says this POST came from another site.
-
-    ``Sec-Fetch-Site`` is set by the browser itself; ``Origin`` is the
-    fallback for browsers without it. A request with neither did not come
-    from a browser form, so CSRF does not apply.
-    """
-    site = request.headers.get("sec-fetch-site")
-    if site is not None:
-        return site.lower() not in ("same-origin", "none")
-    origin = request.headers.get("origin")
-    if origin is None:
-        return False
-    if origin == "null":
-        return True
-    from urllib.parse import urlsplit
-
-    def hostname(netloc: str) -> str:
-        # Ports are left out: cookies are shared across ports anyway, and
-        # proxies often drop the port from Host.
-        return (urlsplit("//" + netloc.strip()).hostname or "").lower()
-
-    hosts = {hostname(request.headers.get("host", ""))}
-    forwarded = request.headers.get("x-forwarded-host")
-    if forwarded:
-        hosts.update(hostname(h) for h in forwarded.split(","))
-    return (urlsplit(origin).hostname or "").lower() not in hosts
 
 
 # A native form POST is read into memory before anything is known about its
@@ -295,6 +270,7 @@ class PyWire:
     ) -> None:
         caller_dir = self._get_caller_dir()
         project_root = self._get_project_root(caller_dir)
+        self._project_root = project_root.resolve()
 
         # NOTE: We do NOT use CWD or caller_dir for auto-discovery to avoid
         # security risks (e.g. serving ~/static if running from home dir).
@@ -1068,7 +1044,7 @@ class PyWire:
         The HMAC gate stays in front: a tampered blob is a 400, never a
         decode. The signing secret is never echoed.
         """
-        if not (self._is_dev_mode and self.debug):
+        if not self._dev_route_allowed(request):
             # Same gate as _handle_source/_handle_file/_handle_devtools_json:
             # no inspector outside dev mode, even with debug=True.
             return Response("Not Found", status_code=404)
@@ -1095,72 +1071,72 @@ class PyWire:
             json.dumps(snap, indent=2, default=repr), media_type="application/json"
         )
 
+    def _dev_route_allowed(self, request: Request) -> bool:
+        """Gate for the dev-only debug endpoints.
+
+        Requires both ``debug=True`` and ``pywire dev`` (so ``pywire run``
+        never exposes them), and a loopback ``Host``: a DNS-rebinding page
+        (``evil.example`` re-pointed at 127.0.0.1) sends its own hostname.
+        """
+        return self._is_dev_mode and self.debug and is_loopback_host(request.headers)
+
+    def _read_source(self, path_str: str) -> Optional[str]:
+        """The text of a source file the debug endpoints may serve, if any.
+
+        Only Python and ``.wire`` sources (what error frames point at) under
+        the project root or the pages directory; never ``.env``, keys, or
+        anything elsewhere on the machine.
+        """
+        try:
+            path = Path(path_str).resolve()
+            if path.suffix not in _SOURCE_SUFFIXES or not path.is_file():
+                return None
+            roots = (self._project_root, self.pages_dir)
+            if not any(path.is_relative_to(root) for root in roots):
+                return None
+            return path.read_text(encoding="utf-8")
+        except (OSError, RuntimeError, ValueError):
+            # Unreadable, a symlink loop, undecodable bytes, a NUL in the path.
+            logger.debug("debug source %r not served", path_str, exc_info=True)
+            return None
+
     async def _handle_source(self, request: Request) -> Response:
-        """Serve source code for debugging. Requires both debug=True AND _is_dev_mode=True."""
-        if not (self._is_dev_mode and self.debug):
+        """Serve a page or module source to the dev error overlay."""
+        if not self._dev_route_allowed(request):
             return Response("Not Found", status_code=404)
 
         path_str = request.query_params.get("path")
-        logger.debug("_handle_source path=%s", path_str)
         if not path_str:
             return Response("Missing path", status_code=400)
-
-        try:
-            path = Path(path_str).resolve()
-            logger.debug(
-                "_handle_source resolved path=%s, exists=%s", path, path.exists()
-            )
-            # Path existence check
-            if not path.exists():
-                return Response("File not found", status_code=404)
-
-            content = path.read_text(encoding="utf-8")
-            return Response(content, media_type="text/plain")
-        except Exception as e:
-            logger.debug(f"_handle_source exception: {e}")
-            return Response(str(e), status_code=500)
+        content = self._read_source(path_str)
+        if content is None:
+            return Response("File not found", status_code=404)
+        return Response(content, media_type="text/plain")
 
     async def _handle_file(self, request: Request) -> Response:
         """Serve source file by base64-encoded path (for DevTools source mapping)."""
-        if not (self._is_dev_mode and self.debug):
+        if not self._dev_route_allowed(request):
             return Response("Not Found", status_code=404)
 
         import base64
+        import binascii
 
-        encoded_path = request.path_params.get("encoded", "")
-
-        # If the path contains a slash, it means we appended the filename for Chrome's benefit
-        # e.g., "BASE64STRING/my_file.py"
-        # We only care about the first part
-        if "/" in encoded_path:
-            encoded = encoded_path.split("/")[0]
-        else:
-            encoded = encoded_path
-
+        # "BASE64STRING/my_file.py": the filename is appended for Chrome's
+        # benefit; only the first segment is the (URL-safe base64) path.
+        encoded = request.path_params.get("encoded", "").split("/")[0]
+        encoded += "=" * (-len(encoded) % 4)
         try:
-            # Decode the base64 path (URL-safe variant)
-            # Restore padding
-            padding = 4 - (len(encoded) % 4)
-            if padding != 4:
-                encoded += "=" * padding
-            # Restore standard base64 chars
-            encoded = encoded.replace("-", "+").replace("_", "/")
-            path_str = base64.b64decode(encoded).decode("utf-8")
-
-            path = Path(path_str).resolve()
-            if not path.is_file():
-                return Response("File not found", status_code=404)
-
-            content = path.read_text(encoding="utf-8")
-            # Return as JavaScript so browser DevTools can parse it
-            return Response(content, media_type="text/plain")
-        except Exception as e:
-            logger.debug(f"_handle_file exception: {e}")
-            return Response(str(e), status_code=500)
+            path_str = base64.urlsafe_b64decode(encoded).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError):
+            return Response("File not found", status_code=404)
+        content = self._read_source(path_str)
+        if content is None:
+            return Response("File not found", status_code=404)
+        return Response(content, media_type="text/plain")
 
     async def _handle_devtools_json(self, request: Request) -> JSONResponse:
         """Serve Chrome DevTools project settings for automatic workspace folders."""
-        if not (self._is_dev_mode and self.debug):
+        if not self._dev_route_allowed(request):
             return JSONResponse({}, status_code=404)
 
         import hashlib
@@ -1903,21 +1879,11 @@ class PyWire:
 
         # Check if this is an event request (interactive mode JSON events)
         if request.method == "POST" and "X-PyWire-Event" in request.headers:
-            # Auth guard BEFORE any dispatch — a forged handler name must
-            # never reach user code on a protected page (mirrors
-            # BasePage.render()'s short-circuit). The redirect reaches the
-            # client with SPA-nav semantics, matching the WS/stateless
-            # transports' navigate message.
-            if getattr(page.__class__, "__auth_required__", False):
-                from pywire.auth.guard import run_auth_guard
+            from pywire.auth.guard import AuthDenied
 
-                denied = await run_auth_guard(page)
-                if denied is not None:
-                    location = denied.headers.get("location")
-                    if location:
-                        page._pending_navigation = location
-                    return JSONResponse({"type": "navigate", "path": location or "/"})
-            # Handle event
+            # handle_event runs the !auth guard before any dispatch; a
+            # denial reaches the client with SPA-nav semantics, matching
+            # the WS/stateless transports' navigate message.
             try:
                 event_data = await request.json()
                 update = await page.handle_event(
@@ -1926,6 +1892,8 @@ class PyWire:
                 if isinstance(update, dict):
                     return JSONResponse(update)
                 response = cast(Response, update)
+            except AuthDenied as denied:
+                return JSONResponse({"type": "navigate", "path": denied.location})
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
         elif (
@@ -2055,7 +2023,7 @@ class PyWire:
         fragment (init=False) for the client to morph in.
         """
         is_spa_submit = request.headers.get("x-pywire-internal") == "form-submit"
-        if _is_cross_site(request):
+        if is_cross_site(request.headers):
             return PlainTextResponse(
                 "PyWire: cross-site form POST refused", status_code=403
             )
