@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/pywire/pywire/compare/pywire-auth-v0.3.6...pywire-auth-v0.4.0) (2026-09-30)
+
+
+### Features
+
+* **pywire:** stateless pages refresh shared state on an interval ([#369](https://github.com/pywire/pywire/issues/369)) ([a43d999](https://github.com/pywire/pywire/commit/a43d999136b67e890206804ef772df0fb4674d0b))
+
+
+### Bug Fixes
+
+* **pywire-auth,pywire-cli,pywire-language-server:** bump floors to pywire 0.19.0 ([#411](https://github.com/pywire/pywire/issues/411)) ([9e0b919](https://github.com/pywire/pywire/commit/9e0b919cba11835caa8c3624d6c210cb311d74e7))
+
 ## [0.3.6](https://github.com/pywire/pywire/compare/pywire-auth-v0.3.5...pywire-auth-v0.3.6) (2026-09-29)
 
 
