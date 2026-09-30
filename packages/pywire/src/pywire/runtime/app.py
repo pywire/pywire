@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import secrets
+import sys
 import traceback
 import inspect
 import hashlib
@@ -202,10 +203,14 @@ class PyWire:
     def _get_caller_dir(self) -> Path:
         """Find the directory of the code that instantiated PyWire."""
         try:
-            # Find first frame outside of pywire internals
-            stack = inspect.stack()
-            for frame_info in stack:
-                filename = frame_info.filename
+            # Find first frame outside of pywire internals. Walk the raw
+            # frames: inspect.stack() reads every frame's source file, which
+            # costs a cold Python Worker ~100 ms on its first request.
+            frame = sys._getframe(1)
+            while frame is not None:
+                filename = frame.f_code.co_filename
+                name = frame.f_globals.get("__name__", "")
+                frame = frame.f_back
                 if not filename or filename == "<string>":
                     continue
 
@@ -222,15 +227,12 @@ class PyWire:
                 if "pywire/tests" in filename and is_test_file:
                     continue
 
-                module = inspect.getmodule(frame_info.frame)
-                if module:
-                    name = getattr(module, "__name__", "")
-                    if name and (
-                        name.startswith("pywire.runtime")
-                        or name.startswith("pywire.compiler")
-                        or name == "pywire"
-                    ):
-                        continue
+                if name and (
+                    name.startswith("pywire.runtime")
+                    or name.startswith("pywire.compiler")
+                    or name == "pywire"
+                ):
+                    continue
 
                 # Skip common test runners
                 if (
