@@ -1,0 +1,92 @@
+:root {
+    color-scheme: light dark;
+    --fg: #1d232a;
+    --muted: #5d6874;
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --line: #dde2e8;
+    --accent: #0e7c86;
+    --error: #b42318;
+    --ok: #177245;
+    --warn-bg: #fff4e0;
+    --groq: #f55036;
+    --jev: #5b4bdb;
+    --code: #5d6874;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --fg: #e6eaef;
+        --muted: #9aa5b1;
+        --bg: #12161b;
+        --card: #1a2027;
+        --line: #2c343d;
+        --accent: #4cc3cc;
+        --error: #f97066;
+        --ok: #47cd89;
+        --warn-bg: #3a2c12;
+        --groq: #ff7a63;
+        --jev: #9d92ff;
+        --code: #9aa5b1;
+    }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+a { color: var(--accent); }
+main { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem; }
+footer { max-width: 72rem; margin: 0 auto; padding: 0 1rem 2rem; font-size: 0.875rem; }
+h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+h3 { font-size: 1rem; margin: 0 0 0.5rem; }
+header { margin-bottom: 1rem; }
+.muted { color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.row input { flex: 1; min-width: 12rem; }
+
+label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+label.check { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
+input, select, textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.45rem 0.6rem; width: 100%; }
+input[type="checkbox"] { width: auto; }
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--error); }
+fieldset { border: 0; padding: 0; margin: 0; }
+legend { font-weight: 600; margin-bottom: 0.25rem; padding: 0; }
+
+button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 6px; padding: 0.45rem 0.9rem; cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.secondary { background: transparent; color: var(--accent); }
+button.link { background: none; border: 0; color: var(--accent); padding: 0.45rem 0.25rem; text-decoration: underline; }
+button.chip { background: transparent; color: var(--fg); border-color: var(--line); border-radius: 999px; padding: 0.2rem 0.7rem; font-size: 0.875rem; }
+.examples { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.75rem; }
+
+.notice { background: var(--warn-bg); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 0.75rem 0 0; }
+.error { color: var(--error); margin: 0.25rem 0 0; font-size: 0.9rem; }
+.help { color: var(--muted); margin: 0.2rem 0 0; font-size: 0.875rem; }
+.req { color: var(--error); margin-left: 0.2rem; }
+
+.steps { list-style: none; margin: 0; padding: 0; }
+.step { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.25rem 0.75rem; padding: 0.35rem 0; border-top: 1px solid var(--line); }
+.step:first-child { border-top: 0; }
+.step .note { grid-column: 2 / 4; color: var(--muted); font-size: 0.875rem; }
+.step .note:empty { display: none; }
+.step .ms { color: var(--muted); font-variant-numeric: tabular-nums; }
+.step.failed .what { color: var(--error); }
+.step.pending .what { color: var(--muted); }
+.engine { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; align-self: center; }
+.engine.groq { color: var(--groq); }
+.engine.jev { color: var(--jev); }
+.engine.code { color: var(--code); }
+
+.result { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
+@media (max-width: 800px) { .result { grid-template-columns: 1fr; } }
+.field { margin-bottom: 0.9rem; }
+
+.decisions { margin-bottom: 1rem; }
+.decision { display: grid; grid-template-columns: 1fr auto auto; gap: 0.75rem; padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.9rem; }
+.decision small { color: var(--muted); }
+.decision.unsure { background: var(--warn-bg); }
+
+.accepted { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: 1rem; }
+.accepted dl { margin: 0; }
+.accepted dl div { display: grid; grid-template-columns: minmax(8rem, 1fr) 2fr; gap: 0.75rem; padding: 0.2rem 0; }
+.accepted dt { color: var(--muted); }
+.accepted dd { margin: 0; overflow-wrap: anywhere; }

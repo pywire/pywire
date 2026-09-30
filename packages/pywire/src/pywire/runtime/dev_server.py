@@ -76,6 +76,36 @@ def _import_app(app_str: str) -> Any:
         raise SystemExit(1)
 
 
+def _resolve_apps(target: Any) -> Tuple[Any, Any]:
+    """``(pywire_app, app_to_serve)`` for the object named on the command line.
+
+    A PyWire app is served itself, so base_path applies. A host app (FastAPI, Starlette) is served
+    whole, so its own routes and middleware keep working, and the PyWire app
+    mounted in it (``host.mount("/", pywire.as_asgi(host))``) drives reloads.
+    """
+    from pywire.runtime.app import PyWire
+
+    if isinstance(target, PyWire):
+        return target, target
+
+    for route in getattr(target, "routes", []):
+        mounted = getattr(route, "app", None)
+        if isinstance(mounted, PyWire):
+            return mounted, target
+
+    import pywire
+
+    ambient = pywire.app
+    if ambient is not None and ambient._root_app is target:
+        return ambient, target
+
+    _dev_logger.error(
+        "PyWire: the app is neither a PyWire app nor an ASGI app with one "
+        "mounted (host.mount('/', pywire.as_asgi(host)))."
+    )
+    sys.exit(1)
+
+
 def _generate_cert() -> Tuple[str, str, bytes]:
     """Generate self-signed certificate for localhost."""
     import datetime
@@ -187,8 +217,9 @@ async def run_dev_server(
     # upfront — the import triggers __init__ immediately.
     os.environ.setdefault("PYWIRE_DEV_MODE", "1")
 
-    # Load app to get config
-    pywire_app = _import_app(app_str)
+    # Load app to get config. It is either the PyWire app itself or a host
+    # ASGI app (FastAPI, Starlette) with PyWire mounted in it.
+    pywire_app, served_app = _resolve_apps(_import_app(app_str))
 
     # Enable dev mode flag to unlock source endpoints
     pywire_app._is_dev_mode = True
@@ -489,7 +520,7 @@ async def run_dev_server(
                 # Serve through PyWire's own ASGI entry, as in production, so
                 # base_path, header rewriting and compression apply in dev.
                 tg.create_task(
-                    serve(pywire_app, config, shutdown_trigger=shutdown_event.wait)
+                    serve(served_app, config, shutdown_trigger=shutdown_event.wait)
                 )
             except Exception as e:
                 _dev_logger.error(f"PyWire: Failed to start Hypercorn: {e}")
@@ -512,7 +543,7 @@ async def run_dev_server(
                 ssl_options["ssl_keyfile"] = key_path
 
             uv_config = uvicorn.Config(
-                pywire_app,
+                served_app,
                 host=host,
                 port=port,
                 reload=False,

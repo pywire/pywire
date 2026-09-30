@@ -215,7 +215,8 @@ class WebSocketHandler:
                     on_update = getattr(page, "_on_update", None)
                     if on_update is not None:
                         try:
-                            await on_update()
+                            async with page._update_cycle():
+                                await on_update()
                         except Exception:
                             logger.warning(
                                 "live-auth: broadcast_update failed", exc_info=True
@@ -234,7 +235,9 @@ class WebSocketHandler:
         self._pong_events.pop(websocket, None)
 
         self.active_connections.discard(websocket)
-        self.connection_pages.pop(websocket, None)
+        page = self.connection_pages.pop(websocket, None)
+        if page is not None:
+            page._unmount()
         self._connection_in_error.discard(websocket)
         # Keep session in store (TTL handles cleanup) — enables reconnect.
         # Write state the throttle is still holding so a reconnect sees it.
@@ -484,6 +487,9 @@ class WebSocketHandler:
             if resolved_user is not None:
                 page.user = resolved_user
 
+            previous = self.connection_pages.get(websocket)
+            if previous is not None and previous is not page:
+                previous._unmount()
             self.connection_pages[websocket] = page
             self.session_ids[websocket] = session_id
 
@@ -492,7 +498,7 @@ class WebSocketHandler:
                 update = await page.render_update(init=False)
                 await self._send_update_payload(websocket, update)
 
-            page._on_update = broadcast_update
+            page._attach_push(broadcast_update)
             if getattr(self.app, "debug", False):
                 logger.debug(
                     f"[{page._instance_id}] Setting _on_update in _handle_init"
@@ -507,7 +513,8 @@ class WebSocketHandler:
                 logger.debug(
                     f"[{page._instance_id}] Calling page.render(init=True) in _handle_init"
                 )
-            await page.render(init=True)
+            async with page._update_cycle():
+                await page.render(init=True)
             if getattr(self.app, "debug", False):
                 logger.debug(
                     f"[{page._instance_id}] Done with page.render(init=True) in _handle_init"
@@ -591,33 +598,30 @@ class WebSocketHandler:
                 update = await page.render_update(init=False)
                 await self._send_update_payload(websocket, update)
 
-            page._on_update = broadcast_update
+            page._attach_push(broadcast_update)
 
-            # Call handler
-            try:
+            async with page._update_cycle():
                 if handler_name:
                     update = await page.handle_event(
                         cast(str, handler_name), event_data
                     )
                 else:
                     update = await page.render_update(init=False)
-            except Exception as e:
-                raise e
 
-            # Check for pending navigation
-            if page._pending_navigation:
-                await websocket.send_bytes(
-                    msgpack.packb(
-                        with_ack(
-                            {"type": "navigate", "path": page._pending_navigation},
-                            ack,
+                # Check for pending navigation
+                if page._pending_navigation:
+                    await websocket.send_bytes(
+                        msgpack.packb(
+                            with_ack(
+                                {"type": "navigate", "path": page._pending_navigation},
+                                ack,
+                            )
                         )
                     )
-                )
-                page._pending_navigation = None
-                return
+                    page._pending_navigation = None
+                    return
 
-            await self._send_update_payload(websocket, update, ack)
+                await self._send_update_payload(websocket, update, ack)
 
             # Run @after_update hooks after re-render sent to client
             await page._run_hooks(page.AFTER_UPDATE_HOOKS)
@@ -761,6 +765,8 @@ class WebSocketHandler:
                         new_page.user = resolved_user
 
                 # Replace page instance for this connection
+                if old_page is not None:
+                    old_page._unmount()
                 self.connection_pages[websocket] = new_page
 
                 # Set update hook for async state changes
@@ -768,26 +774,23 @@ class WebSocketHandler:
                     update = await new_page.render_update(init=False)
                     await self._send_update_payload(websocket, update)
 
-                new_page._on_update = broadcast_update
+                new_page._attach_push(broadcast_update)
 
-                # Run @mount hooks
-                await new_page._run_hooks(new_page.MOUNT_HOOKS)
-
-                # Prime wire-subscriber tracking on this local instance.
-                # The internal dispatch rendered a DIFFERENT page instance
-                # to produce the HTML we just sent; this local one is what
-                # handles subsequent events. Without a render call here,
-                # `register_read` never fires for its wires → no region
-                # subscriptions → handler writes invalidate nothing →
-                # `render_update` returns empty regions → UI looks frozen.
+                # Prime this local instance. The internal dispatch rendered a
+                # DIFFERENT page instance to produce the HTML we just sent;
+                # this one handles subsequent events, so it runs the page's
+                # @before_load/@init hooks too (as the WS init does after a
+                # full load), and renders once so `register_read` records
+                # which regions read which wires. Without that, handler
+                # writes invalidate nothing and the UI looks frozen.
                 try:
-                    await new_page.render(init=False)
+                    async with new_page._update_cycle():
+                        await new_page.render(init=False, run_hooks=True)
                 except Exception:
-                    logger.debug(
-                        "relocate: priming render on %s failed",
-                        path,
-                        exc_info=True,
-                    )
+                    logger.exception("relocate: priming render on %s failed", path)
+
+                # Run @mount hooks, after @init as on a full load
+                await new_page._run_hooks(new_page.MOUNT_HOOKS)
 
                 # Persist session state
                 session_id = self.session_ids.get(websocket)
@@ -1155,7 +1158,7 @@ class WebSocketHandler:
                             update = await _page.render_update(init=False)
                             await self._send_update_payload(_ws, update)
 
-                        new_page._on_update = broadcast_update
+                        new_page._attach_push(broadcast_update)
 
                         # Render with new code but preserved state (init=False avoids re-injecting client scripts)
                         response = await new_page.render(init=False)
@@ -1174,6 +1177,8 @@ class WebSocketHandler:
                         # the old DOM dispatch against the new page instance
                         # (which may have different handler names).
                         self.connection_pages[connection] = new_page
+                        if old_page is not None:
+                            old_page._detach_push()
 
                         logger.info(
                             "Hot reload (state preserved) for %s",

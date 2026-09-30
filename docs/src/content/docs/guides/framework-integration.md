@@ -36,6 +36,64 @@ When a request arrives:
 3. PyWire renders the matching `.wire` page
 4. If PyWire has no match either, `fallthrough_404=True` returns a bare 404
 
+## Lifespan
+
+A host app doesn't run the lifespan of apps mounted inside it, so PyWire's startup and shutdown (connecting its session store, flushing sessions on exit) would never run. Enter it from the host's lifespan:
+
+```python
+from contextlib import asynccontextmanager
+
+ui = PyWire(pages_dir="src/pages", fallthrough_404=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.create_tables()
+    async with ui.lifespan():
+        yield
+    await db.engine.dispose()
+
+
+app = FastAPI(lifespan=lifespan)
+app.mount("/", ui.as_asgi(app))
+```
+
+## Running it
+
+Point the CLI at the host app. `pywire dev` finds the PyWire instance mounted inside it for hot reload and serves the whole FastAPI app:
+
+```sh
+pywire dev src.main:app
+pywire run src.main:app --workers 1
+```
+
+## Pages and API together
+
+Give pages and routes one service layer to call, and one set of Pydantic models:
+
+```python
+# schemas.py: FastAPI's request body and the page's form(TaskIn)
+class TaskIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+# api.py
+@router.post("/boards/{board_id}/tasks", status_code=201)
+async def create_task(board_id: int, data: TaskIn, actor: Me, db: Db) -> TaskOut:
+    return await services.create_task(db, actor, board_id, data)
+```
+
+```python
+# pages/boards/[board_id].wire
+task_form = form(TaskIn)
+
+async def add_task(data: TaskIn):
+    async with db.session() as s:
+        await services.create_task(s, actor_from(self.user), board_id, data)
+    task_form.reset()
+```
+
+Pages use the session cookie (`self.user`); give the API bearer tokens so it doesn't depend on cookies. Plain FastAPI routes, including `@app.websocket(...)` routes, work next to pywire's own WebSocket. [Building Real Apps](/docs/guides/best-practices/) covers the service layer, live updates and access checks in more detail, and the [taskboard example](https://github.com/pywire/pywire/tree/main/examples/taskboard) is a complete app built this way.
+
 ## Mounting in Starlette
 
 ```python

@@ -32,9 +32,7 @@ def _render_code_gen(attr: str) -> str:
 
 
 def _modifiers_line(code: str) -> str:
-    return next(
-        line for line in code.splitlines() if "data-modifiers-click" in line
-    )
+    return next(line for line in code.splitlines() if "data-modifiers-click" in line)
 
 
 def test_optimistic_modifier_emits_data_attribute() -> None:
@@ -48,12 +46,9 @@ def test_optimistic_class_token_emitted() -> None:
 
 
 def test_multiple_optimistic_class_tokens_emitted() -> None:
-    code = _render_code_gen(
-        "@click.optimistic-class-done.optimistic-class-dim={h}"
-    )
+    code = _render_code_gen("@click.optimistic-class-done.optimistic-class-dim={h}")
     assert (
-        "'data-modifiers-click'] = 'optimistic-class-done optimistic-class-dim'"
-        in code
+        "'data-modifiers-click'] = 'optimistic-class-done optimistic-class-dim'" in code
     )
 
 

@@ -1,0 +1,74 @@
+!auth {"redirect": "/login"}
+---
+from pywire import form
+from taskboard import db, services
+from taskboard.errors import ServiceError
+from taskboard.identity import API_TOKEN_TTL, actor_from, api_token
+from taskboard.schemas import ProfileIn
+
+from components.avatar import Avatar
+
+profile = form(ProfileIn)
+avatar_key = wire("")
+saved = wire(False)
+token = wire("")
+
+
+@init
+async def load():
+    async with db.session() as s:
+        current = await services.get_profile(s, actor_from(self.user))
+    profile.load({"display_name": current.display_name})
+    avatar_key.value = current.avatar_key or ""
+
+
+async def save(data: ProfileIn):
+    # data.avatar is an Upload the browser already sent in the background;
+    # the service checks what it really is before keeping it.
+    saved.value = False
+    try:
+        async with db.session() as s:
+            current = await services.save_profile(s, actor_from(self.user), data)
+    except ServiceError as e:
+        if e.field:
+            profile[e.field].error = e.message
+        else:
+            profile.error = e.message
+        return
+    avatar_key.value = current.avatar_key or ""
+    profile.load({"display_name": current.display_name})
+    saved.value = True
+
+
+def new_token():
+    token.value = api_token(actor_from(self.user))
+---
+<h1>Profile</h1>
+
+<form class="stack card" $bind={profile} @submit={save}>
+    <div class="row">
+        <Avatar name={profile.display_name.value or "?"} avatar_key={avatar_key or None} size={56} />
+        <div class="stack grow">
+            <label for={profile.display_name.html_id}>Name</label>
+            <input $bind={profile.display_name} autocomplete="name" />
+            <p class="error" id={profile.display_name.error_id} $if={profile.display_name.error}>{profile.display_name.error}</p>
+        </div>
+    </div>
+    <label for={profile.avatar.html_id}>Picture</label>
+    <input type="file" $bind={profile.avatar} />
+    <p class="muted">PNG, JPEG or WebP, up to 1 MB.</p>
+    <p class="error" id={profile.avatar.error_id} $if={profile.avatar.error}>{profile.avatar.error}</p>
+    <p class="error" $if={profile.error}>{profile.error}</p>
+    <p class="ok" $if={saved} role="status">Saved.</p>
+    <div class="row"><button type="submit">Save</button></div>
+</form>
+
+<section class="card stack">
+    <h2>API access</h2>
+    <p>The JSON API under <code>/api</code> takes a bearer token instead of your session cookie. Tokens last {API_TOKEN_TTL // 60} minutes.</p>
+    <div class="row"><button class="secondary" @click={new_token}>Create a token</button></div>
+    <div $if={token} class="stack">
+        <input readonly value={token} aria-label="API token" />
+        <code>curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/boards</code>
+    </div>
+</section>

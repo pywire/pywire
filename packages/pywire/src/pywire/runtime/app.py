@@ -869,6 +869,22 @@ class PyWire:
             self._root_app = host
         return self
 
+    def lifespan(self) -> Any:
+        """Startup and shutdown for a PyWire app mounted in a host app.
+
+        A host framework doesn't run the lifespan of apps it mounts, so
+        without this the session store never connects and pending session
+        writes are lost on shutdown. Enter it from the host's lifespan::
+
+            @asynccontextmanager
+            async def lifespan(api):
+                async with ui.lifespan():
+                    yield
+
+            api = FastAPI(lifespan=lifespan)
+        """
+        return self.app.router.lifespan_context(self.app)
+
     @property
     def state(self) -> Any:
         """Shortcut for ``self.app.state`` — Starlette's per-app state bag.
@@ -1883,8 +1899,9 @@ class PyWire:
             # here too, so every bound form has the same no-JS floor.
             response = await self._handle_form_post(request, page)
         elif is_internal_relocate:
-            # Internal ASGI replay from WS handler — body-only, no client scripts
-            response = await page.render(init=False)
+            # Internal ASGI replay from WS handler — body-only, no client
+            # scripts, but a fresh page all the same: run @before_load/@init.
+            response = await page.render(init=False, run_hooks=True)
         else:
             # Normal render
             response = await page.render()

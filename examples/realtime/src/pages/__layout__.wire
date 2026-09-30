@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Realtime example</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+    <nav>
+        <a href="/">Poll</a>
+        <a href="/chat">Chat</a>
+        <a href="/race">Races</a>
+    </nav>
+    <main>
+        {$render children}
+    </main>
+</body>
+</html>

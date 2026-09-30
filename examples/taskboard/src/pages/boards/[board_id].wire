@@ -1,0 +1,385 @@
+!auth {"redirect": "/login"}
+---
+import secrets
+
+from pywire import DialogElement, derived, effect, form, ref
+from taskboard import db, live, services
+from taskboard.errors import ServiceError
+from taskboard.identity import actor_from, socket_token
+from taskboard.schemas import InviteIn, Status, TaskIn
+
+from components.avatar import Avatar
+
+COLUMNS = list(Status)
+LEFT = {Status.doing: Status.todo, Status.done: Status.doing}
+RIGHT = {Status.todo: Status.doing, Status.doing: Status.done}
+
+# Private (underscore) attributes stay on the server: they aren't rendered
+# unless the template asks, and pywire leaves them out of session snapshots.
+_board_id = 0
+_feed = None  # live.BoardFeed, set only after the access check in @init
+_watch = None  # the activity @effect, disposed in @unmount
+_visitor = secrets.token_hex(8)  # this tab, for the "here now" list
+
+found = wire(False)
+title = wire("")
+owner = wire(False)
+me = wire("")
+
+# Per-tab view state: filters change what this tab shows and nothing else.
+search = wire("")
+mine_only = wire(False)
+notice = wire({})  # latest change by someone else
+problem = wire("")  # a move or delete that was refused
+
+task_form = form(TaskIn)
+edit_form = form(TaskIn)
+editing = wire(0)  # id of the task in the dialog
+edit_dialog = ref[DialogElement]()
+inviting = wire(False)
+invite_form = form(InviteIn)
+
+
+def _actor():
+    # From the session on every call, never cached: if the user signs out in
+    # another tab, pywire-auth updates self.user and the next call fails.
+    return actor_from(self.user)
+
+
+@init
+async def load():
+    global _board_id, _feed, _watch
+    try:
+        board_id = int(params.board_id)
+        async with db.session() as s:
+            board = await services.get_board(s, _actor(), board_id)
+            is_owner = await services.is_owner(s, _actor(), board_id)
+    except (ValueError, ServiceError):
+        return  # renders "not found"; see the template
+    _board_id = board.id
+    found.value = True
+    title.value = board.name
+    owner.value = is_owner
+    me.value = _actor().id
+    # Only now, with access checked, touch the shared feed.
+    _feed = await live.load(board.id)
+    _watch = effect(_announce)
+
+
+def _announce():
+    # An @effect runs again whenever a wire it read changes. Here that is the
+    # board's shared `activity`, written by whoever made the change, so this
+    # runs inside *their* handler: keep it quick, and only touch this tab.
+    latest = dict(_feed.activity)
+    if latest and latest["actor_id"] != me.value:
+        notice.value = latest
+
+
+@mount
+def arrive():
+    if _feed is not None:
+        _feed.viewers[_visitor] = _actor().name
+
+
+@unmount
+def leave():
+    # Runs when the tab closes or navigates away. Anything this page put in
+    # shared state, or subscribed to it, has to be taken back here.
+    if _feed is not None:
+        _feed.viewers.pop(_visitor, None)
+    if _watch is not None:
+        _watch.dispose()
+
+
+# --- Derived view ---------------------------------------------------------
+
+
+@derived
+def people():
+    return {m["user_id"]: m for m in _feed.members} if _feed else {}
+
+
+@derived
+def here_now():
+    return sorted(set(_feed.viewers.values())) if _feed else []
+
+
+@derived
+def columns():
+    # Recomputed when the shared task list, the search text or the filter
+    # changes; every other render reuses the last result.
+    board = {status: [] for status in COLUMNS}
+    if _feed is None:
+        return board
+    text = search.value.strip().lower()
+    for task in _feed.tasks:
+        if text and text not in task["title"].lower() and text not in task["notes"].lower():
+            continue
+        if mine_only.value and task["assignee_id"] != me.value:
+            continue
+        board[Status(task["status"])].append(task)
+    return board
+
+
+def cursor_ticket():
+    return socket_token(_actor(), _board_id) if found.value else ""
+
+
+# --- Handlers -------------------------------------------------------------
+# Each one opens a session, calls one service and handles ServiceError. The
+# page never writes the shared feed itself: services publish after commit and
+# live reloads the board for every viewer, this one included.
+
+
+def _show(f, error):
+    if error.field:
+        f[error.field].error = error.message
+    else:
+        f.error = error.message
+
+
+async def add_task(data: TaskIn):
+    try:
+        async with db.session() as s:
+            await services.create_task(s, _actor(), _board_id, data)
+    except ServiceError as e:
+        _show(task_form, e)
+        return
+    task_form.reset()
+
+
+async def move(task_id, status):
+    # Both arguments were rendered into the page and came back from the
+    # browser: parse them, and let the service decide whether this user may.
+    problem.value = ""
+    try:
+        async with db.session() as s:
+            await services.move_task(s, _actor(), int(task_id), Status(status))
+    except (ValueError, ServiceError) as e:
+        problem.value = getattr(e, "message", "That move isn't possible.")
+
+
+async def remove(task_id):
+    problem.value = ""
+    try:
+        async with db.session() as s:
+            await services.delete_task(s, _actor(), int(task_id))
+    except (ValueError, ServiceError) as e:
+        problem.value = getattr(e, "message", "That task can't be deleted.")
+
+
+def open_edit(task_id):
+    task = next((t for t in _feed.tasks if t["id"] == int(task_id)), None)
+    if task is None:
+        return
+    editing.value = task["id"]
+    edit_form.load(TaskIn.model_validate(task))
+    edit_dialog.show_modal()
+
+
+def close_edit():
+    editing.value = 0
+    edit_dialog.close()
+
+
+async def save_edit(data: TaskIn):
+    try:
+        async with db.session() as s:
+            await services.update_task(s, _actor(), editing.value, data)
+    except ServiceError as e:
+        _show(edit_form, e)
+        return
+    close_edit()
+
+
+async def invite(data: InviteIn):
+    try:
+        async with db.session() as s:
+            await services.add_member(s, _actor(), _board_id, data.email)
+    except ServiceError as e:
+        _show(invite_form, e)
+        return
+    invite_form.reset()
+    inviting.value = False
+---
+<section $if={not found}>
+    <h1>Board not found</h1>
+    <p>It doesn't exist, or you aren't on it. <a href="/boards">Back to your boards</a></p>
+</section>
+
+<section $if={found} class="board-page">
+    <div class="row">
+        <h1>{title}</h1>
+        <p class="muted here" $if={here_now}>Here now: {", ".join(here_now.value)}</p>
+    </div>
+
+    <p class="notice" $if={notice} id={f"notice-{notice['seq']}"} role="status">{notice["text"]}</p>
+    <p class="error" $if={problem} role="alert">{problem}</p>
+
+    <form class="add card" $bind={task_form} @submit={add_task}>
+        <input $bind={task_form.title} placeholder="Add a task" aria-label="Title" />
+        <select $bind={task_form.assignee_id} aria-label="Assignee">
+            <option value="">Nobody</option>
+            <option $for={m in people.value.values()} value={m["user_id"]}>{m["name"]}</option>
+        </select>
+        <input $bind={task_form.due} aria-label="Due date" />
+        <button type="submit">Add</button>
+        <p class="error" id={task_form.title.error_id} $if={task_form.title.error}>{task_form.title.error}</p>
+        <p class="error" id={task_form.assignee_id.error_id} $if={task_form.assignee_id.error}>{task_form.assignee_id.error}</p>
+        <p class="error" $if={task_form.error}>{task_form.error}</p>
+    </form>
+
+    <div class="row filters">
+        <input type="search" $bind={search} placeholder="Search tasks" aria-label="Search tasks" />
+        <label><input type="checkbox" $bind={mine_only} /> Only mine</label>
+    </div>
+
+    <div id="board" class="columns">
+        <section class="column" $for={status in COLUMNS}>
+            <h2>{status.label} <span class="count">{len(columns.value[status])}</span></h2>
+            {$for task in columns.value[status], key=task["id"]}
+            <article class="task">
+                <h3>{task["title"]}</h3>
+                <p class="muted notes" $if={task["notes"]}>{task["notes"]}</p>
+                <div class="meta">
+                    <span $if={task["assignee_id"] in people.value}>
+                        <Avatar name={people.value[task["assignee_id"]]["name"]} avatar_key={people.value[task["assignee_id"]]["avatar_key"]} size={22} />
+                    </span>
+                    <span class="muted" $if={task["due"]}>Due {task["due"]}</span>
+                </div>
+                <div class="actions">
+                    <button class="small secondary" $if={status in LEFT} @click={move(task["id"], LEFT[status].value)} aria-label={f"Move to {LEFT.get(status, status).label}"}>←</button>
+                    <button class="small secondary" @click={open_edit(task["id"])}>Edit</button>
+                    <button class="small secondary" @click={remove(task["id"])}>Delete</button>
+                    <button class="small secondary" $if={status in RIGHT} @click={move(task["id"], RIGHT[status].value)} aria-label={f"Move to {RIGHT.get(status, status).label}"}>→</button>
+                </div>
+            </article>
+            {/for}
+            <p class="muted empty" $if={not columns.value[status]}>Nothing here.</p>
+        </section>
+        <!-- Drawn by the script below, not by pywire: $permanent tells the
+             morph to leave this element's children alone. -->
+        <div id="cursors" $permanent aria-hidden="true"></div>
+    </div>
+    <span id="cursor-ticket" hidden data-board={_board_id} data-token={cursor_ticket()}></span>
+
+    <aside class="card members">
+        <h2>People</h2>
+        <ul>
+            <li $for={m in people.value.values()}>
+                <Avatar name={m["name"]} avatar_key={m["avatar_key"]} />
+                {m["name"]} <span class="muted" $if={m["role"] == "owner"}>(owner)</span>
+            </li>
+        </ul>
+        <button class="secondary" $if={owner and not inviting} @click={inviting.value = True}>Add someone</button>
+        <form class="stack" $if={owner and inviting} $bind={invite_form} @submit={invite}>
+            <input $bind={invite_form.email} placeholder="teammate@example.com" aria-label="Email" />
+            <p class="error" id={invite_form.email.error_id} $if={invite_form.email.error}>{invite_form.email.error}</p>
+            <p class="error" $if={invite_form.error}>{invite_form.error}</p>
+            <div class="row">
+                <button type="button" class="secondary" @click={inviting.value = False}>Cancel</button>
+                <button type="submit">Add</button>
+            </div>
+        </form>
+    </aside>
+
+    <!-- open= mirrors the server's idea of the dialog, so a re-render while
+         it's open doesn't strip the attribute showModal() added. -->
+    <dialog $ref={edit_dialog} open={bool(editing)} class="card" @close={close_edit}>
+        <form class="stack" $bind={edit_form} @submit={save_edit}>
+            <h2>Edit task</h2>
+            <label for={edit_form.title.html_id}>Title</label>
+            <input $bind={edit_form.title} />
+            <p class="error" id={edit_form.title.error_id} $if={edit_form.title.error}>{edit_form.title.error}</p>
+            <label for={edit_form.notes.html_id}>Notes</label>
+            <textarea $bind={edit_form.notes} rows="4"></textarea>
+            <label for={edit_form.status.html_id}>Status</label>
+            <select $bind={edit_form.status}></select>
+            <label for={edit_form.due.html_id}>Due</label>
+            <input $bind={edit_form.due} />
+            <label for={edit_form.assignee_id.html_id}>Assignee</label>
+            <select $bind={edit_form.assignee_id}>
+                <option value="">Nobody</option>
+                <option $for={m in people.value.values()} value={m["user_id"]}>{m["name"]}</option>
+            </select>
+            <p class="error" id={edit_form.assignee_id.error_id} $if={edit_form.assignee_id.error}>{edit_form.assignee_id.error}</p>
+            <p class="error" $if={edit_form.error}>{edit_form.error}</p>
+            <div class="row">
+                <button type="button" class="secondary" @click={close_edit}>Cancel</button>
+                <button type="submit">Save</button>
+            </div>
+        </form>
+    </dialog>
+</section>
+
+<script>
+// Live cursors over a plain WebSocket served by FastAPI (see taskboard/api.py).
+// pywire runs inline scripts again after each update that includes them, so
+// this sets itself up once per board and tears down on navigation.
+(() => {
+    const ticket = document.getElementById("cursor-ticket");
+    const board = ticket?.dataset.board;
+    if (!board || !ticket.dataset.token) return;
+    if (window.taskboardCursors?.board === board) return;
+    window.taskboardCursors?.stop();
+
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const marks = new Map();
+    let socket = null;
+    let stopped = false;
+    let last = 0;
+
+    function connect() {
+        // Read the ticket each time: it expires, and every render renews it.
+        const token = document.getElementById("cursor-ticket")?.dataset.token || "";
+        socket = new WebSocket(`${proto}://${location.host}/api/boards/${board}/cursors?token=${encodeURIComponent(token)}`);
+        socket.onmessage = (event) => draw(JSON.parse(event.data));
+        socket.onclose = (event) => {
+            if (!stopped && event.code !== 1008) setTimeout(connect, 2000);
+        };
+    }
+
+    function draw(cursor) {
+        const layer = document.getElementById("cursors");
+        let mark = marks.get(cursor.id);
+        if (cursor.gone || !layer) {
+            mark?.remove();
+            marks.delete(cursor.id);
+            return;
+        }
+        if (!mark) {
+            mark = document.createElement("span");
+            mark.className = "cursor";
+            mark.textContent = cursor.name;
+            marks.set(cursor.id, mark);
+        }
+        if (!mark.isConnected) layer.append(mark);
+        mark.style.left = `${cursor.x * 100}%`;
+        mark.style.top = `${cursor.y * 100}%`;
+    }
+
+    function onMove(event) {
+        const area = document.getElementById("board");
+        const now = performance.now();
+        if (!area || socket?.readyState !== WebSocket.OPEN || now - last < 50) return;
+        last = now;
+        const box = area.getBoundingClientRect();
+        const x = (event.clientX - box.left) / box.width;
+        const y = (event.clientY - box.top) / box.height;
+        if (x >= 0 && x <= 1 && y >= 0 && y <= 1) socket.send(JSON.stringify({ x, y }));
+    }
+
+    function stop() {
+        stopped = true;
+        socket?.close();
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pywire:beforenavigate", stop);
+        window.taskboardCursors = null;
+    }
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pywire:beforenavigate", stop);
+    window.taskboardCursors = { board, stop };
+    connect();
+})();
+</script>

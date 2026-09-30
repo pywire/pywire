@@ -390,10 +390,14 @@ async def test_per_iteration_claims_evaluate_independently():
         resolved = await page._render_template()
 
         free_li = resolved[
-            resolved.index("<li>free:") : resolved.index("</li>", resolved.index("<li>free:"))
+            resolved.index("<li>free:") : resolved.index(
+                "</li>", resolved.index("<li>free:")
+            )
         ]
         beta_li = resolved[
-            resolved.index("<li>beta:") : resolved.index("</li>", resolved.index("<li>beta:"))
+            resolved.index("<li>beta:") : resolved.index(
+                "</li>", resolved.index("<li>beta:")
+            )
         ]
         assert "[off]" in free_li, (
             f"free iteration should be denied (user lacks tier=free); got: {free_li}"

@@ -1,0 +1,275 @@
+---
+import logging
+import os
+
+import formbuilder
+from formbuilder import pipeline
+from formbuilder import spec as specs
+from formbuilder.ai import OUT_OF_USAGE, AIError
+from formbuilder.limits import visitor_keys
+from formbuilder.settings import settings
+from pywire import form
+
+EXAMPLES = [
+    "RSVP for a wedding with a meal choice",
+    "Bug report for a mobile app",
+    "Volunteer sign-up for a beach clean-up",
+]
+
+# Everything below is this visitor's page state. In stateless mode it
+# travels in the signed snapshot, so it must stay plain data: the run and
+# the spec are dicts, and the pydantic model is rebuilt from the spec.
+request_text = wire("")
+instruction = wire("")
+run = wire(None)        # the pipeline run in progress, or the last one
+current = wire(None)    # the spec the preview shows
+sample = wire(None)     # sample answers to prefill, or None
+accepted = wire(None)   # what the last valid submit held, as rows
+notice = wire("")
+
+
+@derived
+def preview():
+    if current.value is None:
+        return None
+    return form(specs.build_model(current.value), initial=sample.value, id="preview")
+
+
+def busy():
+    return pipeline.running(run.value)
+
+
+def kind_of(name):
+    for field in current.value["fields"]:
+        if field["name"] == name:
+            return field["kind"]
+    return "text"
+
+
+def percent(value):
+    return "" if value is None else f"{value:.0%}"
+
+
+def _ready():
+    """Both keys set and this visitor has a unit left to spend."""
+    if not settings.configured:
+        logging.getLogger("formbuilder").warning(
+            "GROQ_API_KEY and TYPESAFE_API_KEY must both be set"
+        )
+        notice.value = (
+            "Set GROQ_API_KEY and TYPESAFE_API_KEY in .env (see .env.example)."
+            if os.environ.get("PYWIRE_DEV_MODE") == "1"
+            else OUT_OF_USAGE
+        )
+        return False
+    visitor, ip = visitor_keys(request, settings.client_ip_header)
+    window = settings.limit_window
+    wait = formbuilder.limiter.take(visitor, settings.visitor_limit, window)
+    if wait is None:
+        wait = formbuilder.limiter.take(ip, settings.ip_limit, window)
+    if wait is not None:
+        minutes = max(1, round(wait / 60))
+        notice.value = (
+            f"You've used this demo a lot in the last few minutes. "
+            f"Try again in about {minutes} minute{'s' if minutes > 1 else ''}."
+        )
+        return False
+    notice.value = ""
+    return True
+
+
+def use_example(text):
+    request_text.value = str(text)[: pipeline.MAX_REQUEST]
+
+
+def build(data):
+    text = str(data.get("request") or request_text.value or "").strip()
+    if busy():
+        return
+    if not text:
+        notice.value = "Describe the form you want first."
+        return
+    request_text.value = str(text)[: pipeline.MAX_REQUEST]
+    if _ready():
+        run.value = pipeline.start(text)
+
+
+def refine(data):
+    text = str(data.get("instruction") or instruction.value or "").strip()
+    if busy() or current.value is None:
+        return
+    if not text:
+        notice.value = "Say what to change first."
+        return
+    instruction.value = text[: pipeline.MAX_REQUEST]
+    if _ready():
+        run.value = pipeline.start(
+            run.value["request"] if run.value else request_text.value,
+            instruction=text,
+            base=current.value,
+        )
+
+
+async def step():
+    # One poll tick: one model call at most.
+    if not busy():
+        return
+    done = await pipeline.advance(run.value, formbuilder.services())
+    run.value = done
+    if not pipeline.running(done) and not done["error"]:
+        current.value = done["spec"]
+        sample.value = None
+        accepted.value = None
+        instruction.value = ""
+
+
+async def fill():
+    if current.value is None or busy() or not _ready():
+        return
+    try:
+        sample.value = await pipeline.sample(current.value, formbuilder.services())
+    except AIError as exc:
+        notice.value = str(exc)
+        return
+    accepted.value = None
+
+
+def send(data):
+    labels = {f["name"]: f["label"] for f in current.value["fields"]}
+    rows = specs.jsonable(data.model_dump(mode="json"))
+    accepted.value = [[labels.get(name, name), text] for name, text in rows]
+
+
+def clear_sample():
+    sample.value = None
+    accepted.value = None
+
+
+def start_over():
+    run.value = None
+    current.value = None
+    sample.value = None
+    accepted.value = None
+    notice.value = ""
+---
+<div class="page">
+    <header>
+        <h1>Form builder</h1>
+        <p class="muted">Describe a form in a sentence. Groq writes the fields, Jev decides what type each one is and whether it's required, and pywire turns the result into a form you can fill in and send.</p>
+    </header>
+
+    <section class="card" id="describe">
+        <form @submit={build}>
+            <label for="request">What should the form collect?</label>
+            <textarea id="request" name="request" rows="2" maxlength="400"
+                placeholder="RSVP for a wedding with a meal choice"
+                $bind={request_text}></textarea>
+            <div class="row">
+                <button type="submit" disabled={busy()}>Build the form</button>
+                <button type="button" class="link" $if={current.value is not None}
+                    @click={start_over}>Start over</button>
+            </div>
+        </form>
+        <div class="examples">
+            <span class="muted">Try:</span>
+            {$for text in EXAMPLES}
+            <button type="button" class="chip" @click={use_example(text)}>{text}</button>
+            {/for}
+        </div>
+        <p class="notice" id="notice" $if={notice.value}>{notice.value}</p>
+    </section>
+
+    <section class="card" id="steps" $if={run.value is not None}>
+        <h2>Steps</h2>
+        <ol class="steps">
+            {$for entry in run.value["log"]}
+            <li class={"step ok" if entry["ok"] else "step failed"}>
+                <span class={"engine " + entry["engine"].lower()}>{entry["engine"]}</span>
+                <span class="what">{entry["label"]}</span>
+                <span class="ms">{entry["ms"]} ms</span>
+                <span class="note">{entry["note"]}</span>
+            </li>
+            {/for}
+            {$if busy()}
+            <li class="step pending" id="next-step" @poll.every-150={step}>
+                <span class={"engine " + pipeline.STEP_ENGINES[run.value["todo"][0]].lower()}>{pipeline.STEP_ENGINES[run.value["todo"][0]]}</span>
+                <span class="what">{pipeline.STEP_LABELS[run.value["todo"][0]]}&hellip;</span>
+            </li>
+            {/if}
+        </ol>
+        <p class="error" id="run-error" $if={run.value["error"]}>{run.value["error"]}</p>
+    </section>
+
+    <div class="result" $if={current.value is not None}>
+        <section class="card" id="preview-card">
+            <h2>{current.value["title"]}</h2>
+            <p class="muted" $if={current.value["intro"]}>{current.value["intro"]}</p>
+            <form $bind={preview.value} @submit={send} novalidate>
+                {$for f in preview.value.fields}
+                <div class="field">
+                    {$if kind_of(f.html_name) == "checkbox"}
+                    <label class="check"><input type="checkbox" $bind={f} /> {f.label}</label>
+                    {$elif kind_of(f.html_name) == "multi_choice"}
+                    <fieldset>
+                        <legend>{f.label}</legend>
+                        {$for option in f.options}
+                        <label class="check"><input type="checkbox" value={option.value} $bind={f} /> {option.label}</label>
+                        {/for}
+                    </fieldset>
+                    {$else}
+                    <label for={f.html_id}>{f.label}<span class="req" $if={f.required}> *</span></label>
+                    {$if kind_of(f.html_name) == "long_text"}
+                    <textarea rows="3" $bind={f}></textarea>
+                    {$elif kind_of(f.html_name) == "choice"}
+                    <select $bind={f}></select>
+                    {$else}
+                    <input $bind={f} />
+                    {/if}
+                    {/if}
+                    <p class="help" $if={f.help}>{f.help}</p>
+                    <p class="error" id={f.error_id} $if={f.error}>{f.error}</p>
+                </div>
+                {/for}
+                <div class="row">
+                    <button type="submit">Send</button>
+                    <button type="button" class="secondary" disabled={busy()}
+                        @click={fill}>Fill with sample answers</button>
+                    <button type="button" class="link" $if={sample.value is not None}
+                        @click={clear_sample}>Clear</button>
+                </div>
+            </form>
+            <div class="accepted" id="accepted" $if={accepted.value is not None}>
+                <h3>The server accepted it</h3>
+                <dl>
+                    {$for row in accepted.value}
+                    <div><dt>{row[0]}</dt><dd>{row[1]}</dd></div>
+                    {/for}
+                </dl>
+                <p class="muted">Checked against the generated model on the server. Nothing is stored.</p>
+            </div>
+        </section>
+
+        <section class="card" id="decisions">
+            <h2>Jev's decisions</h2>
+            <p class="muted">The type and required flag of each field, with how sure Jev was. Rows under 60% are marked.</p>
+            <div class="decisions">
+                {$for f in current.value["fields"], key=f["name"]}
+                <div class={"decision unsure" if (f["kind_confidence"] or 0) < 0.6 else "decision"}>
+                    <span class="what">{f["label"]}</span>
+                    <span>{specs.KIND_LABELS[f["kind"]]} <small>{percent(f["kind_confidence"])}</small></span>
+                    <span>{"Required" if f["required"] else "Optional"} <small>{percent(f["required_score"])}</small></span>
+                </div>
+                {/for}
+            </div>
+            <form @submit={refine}>
+                <label for="instruction">Change something</label>
+                <div class="row">
+                    <input id="instruction" name="instruction" maxlength="400"
+                        placeholder="Add a field for dietary needs"
+                        $bind={instruction} />
+                    <button type="submit" disabled={busy()}>Refine</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>

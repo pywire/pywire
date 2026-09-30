@@ -29,9 +29,11 @@ def stateless_posts(page: Page):
     posts: list[str] = []
     page.on(
         "request",
-        lambda r: posts.append(r.url)
-        if r.method == "POST" and "/_pywire/stateless" in r.url
-        else None,
+        lambda r: (
+            posts.append(r.url)
+            if r.method == "POST" and "/_pywire/stateless" in r.url
+            else None
+        ),
     )
     yield posts
 

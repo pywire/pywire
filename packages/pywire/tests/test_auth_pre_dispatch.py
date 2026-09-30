@@ -116,9 +116,7 @@ def test_allowed_form_post_still_dispatches(tmp_path):
     _ToggleApp.auth_on = True
     app, test_dir = _make_app({"guard": _auth_page(probe)}, cls=_ToggleApp)
     try:
-        r = _client(app).post(
-            "/guard", data={"__pywire_handler": "do_thing", "q": "1"}
-        )
+        r = _client(app).post("/guard", data={"__pywire_handler": "do_thing", "q": "1"})
         assert r.status_code == 200
         assert probe.exists(), "authenticated dispatch was blocked"
     finally:

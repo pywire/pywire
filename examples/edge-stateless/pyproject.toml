@@ -1,0 +1,15 @@
+[project]
+name = "example-edge-stateless"
+version = "0.1.0"
+description = "Stateless mode: signed client-held state, keyed regions, optimistic UI and @poll."
+requires-python = ">=3.11"
+dependencies = ["pywire[cli]"]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx", "ruff"]
+
+[tool.uv.sources]
+pywire = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

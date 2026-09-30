@@ -562,9 +562,7 @@ class TestHttpOnlyCookieStaysAuthoritative:
         # HttpOnly session cookie, page reloaded → new WS connection whose
         # handshake carries the cookie in the request headers.
         headers = {"cookie": "secret=ok"}
-        with self.client.websocket_connect(
-            "/_pywire/ws", headers=headers
-        ) as ws:
+        with self.client.websocket_connect("/_pywire/ws", headers=headers) as ws:
             _ws_init(ws, "/")
 
             # First relocate after login. document.cookie is empty because

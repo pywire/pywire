@@ -67,3 +67,37 @@ describe('DOMUpdater — bind echo keeps focused inputs user-owned', () => {
     expect(field().value).toBe('server-state')
   })
 })
+
+describe('DOMUpdater — selects follow the server when it changes the selection', () => {
+  let updater: DOMUpdater
+
+  const region = (selected: string): string =>
+    `<div data-pw-region="r1"><select id="pick" name="pick">` +
+    ['', 'a', 'b']
+      .map(
+        (v) => `<option value="${v}"${v === selected ? ' selected' : ''}>${v || 'none'}</option>`
+      )
+      .join('') +
+    `</select></div>`
+
+  const pick = (): HTMLSelectElement => document.getElementById('pick') as HTMLSelectElement
+
+  beforeEach(() => {
+    updater = new DOMUpdater()
+    document.body.innerHTML = region('')
+  })
+
+  it('keeps what the user picked when the server re-renders the same selection', () => {
+    pick().value = 'b'
+
+    updater.updateRegion('r1', region(''))
+
+    expect(pick().value).toBe('b')
+  })
+
+  it('shows a selection the server loaded (an edit form)', () => {
+    updater.updateRegion('r1', region('a'))
+
+    expect(pick().value).toBe('a')
+  })
+})

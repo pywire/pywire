@@ -1,0 +1,37 @@
+---
+import random
+
+import live
+
+my_name = random.choice(["Ada", "Grace", "Guido", "Linus", "Barbara", "Ken"])
+draft = wire("")
+
+def send():
+    live.post(my_name, draft.value)
+    # Clearing the wire clears the input: $bind syncs both ways.
+    draft.value = ""
+---
+<h1>Chat</h1>
+<p class="muted">One room for everyone connected to this server process. Messages live in a module-level wire, so they are gone when the server restarts.</p>
+
+<section class="card chat">
+    <ol class="messages">
+        {$for m in live.messages, key=m["id"]}
+            <li>
+                <strong>{m["author"]}</strong> <span class="muted">{m["at"]}</span>
+                <p>{m["text"]}</p>
+            </li>
+        {/for}
+        <li $if={not live.messages} class="muted">No messages yet.</li>
+    </ol>
+    <form @submit.prevent={send}>
+        <input
+            $bind={draft}
+            aria-label="Message"
+            placeholder={f"Message as {my_name}"}
+            maxlength={live.MAX_LENGTH}
+            autocomplete="off"
+        />
+        <button type="submit">Send</button>
+    </form>
+</section>
