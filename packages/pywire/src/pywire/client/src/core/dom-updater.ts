@@ -66,6 +66,14 @@ function keepClientValue(
   return server !== '' && (client.startsWith(server) || server.startsWith(client))
 }
 
+/** The options the server rendered as `selected`: its intent for a select. */
+function serverSelection(select: HTMLSelectElement): string {
+  return Array.from(select.options)
+    .filter((o) => o.defaultSelected)
+    .map((o) => o.value)
+    .join('\u0000')
+}
+
 /**
  * Bound forms the server reset (`form.reset()` or `load()`) in the morph under
  * way: it bumps `data-pw-reset`, and its fields then show the server's values
@@ -565,11 +573,14 @@ export class DOMUpdater {
                 toEl.value = fromEl.value
               }
 
-              // Select: preserve selected option
+              // Select: preserve the user's choice unless the server reset
+              // the form or changed which options it renders `selected`
+              // (a load), the same rule as text inputs above.
               if (
                 fromEl instanceof HTMLSelectElement &&
                 toEl instanceof HTMLSelectElement &&
-                !(fromEl.form && resetForms.has(fromEl.form))
+                !(fromEl.form && resetForms.has(fromEl.form)) &&
+                serverSelection(fromEl) === serverSelection(toEl)
               ) {
                 // Preserve by value (more robust than index)
                 if (
@@ -583,6 +594,20 @@ export class DOMUpdater {
                 ) {
                   toEl.selectedIndex = fromEl.selectedIndex
                 }
+              } else if (
+                fromEl instanceof HTMLSelectElement &&
+                toEl instanceof HTMLSelectElement &&
+                !toEl.multiple
+              ) {
+                // The server changed its selection: show it now, even over a
+                // choice the user made (a browser keeps a user's choice when
+                // only the `selected` attributes change).
+                fromEl.value = toEl.value
+              }
+
+              // An upload's progress bar keeps what the client drew.
+              if (fromEl instanceof HTMLProgressElement && toEl instanceof HTMLProgressElement) {
+                keepUploadProgress(fromEl, toEl)
               }
 
               // An upload's progress bar keeps what the client drew.

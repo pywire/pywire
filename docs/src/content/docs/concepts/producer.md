@@ -101,7 +101,9 @@ unsub()
 
 ## Sharing across pages
 
-Like every reactive primitive, a module-level `producer` is shared across all pages and components that import it. The producer starts on the first read from any page, and continues pushing until `dispose()` is called or the process exits.
+Like every reactive primitive, a module-level `producer` is shared across all pages and components that import it. The producer starts on the first read from any page, and continues pushing until `dispose()` is called or the process exits. Every page connected over WebSocket that shows the value re-renders on each push, even when that client is idle.
+
+`set_value` may be called from a worker thread, as below: the write is handed to the server's event loop before any page updates.
 
 **`src/state.py`:**
 

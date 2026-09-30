@@ -1,0 +1,59 @@
+---
+# Frontmatter runs once per page instance: once per visitor per tab.
+# Names defined here are that visitor's own state. Shared state is imported.
+import random
+import uuid
+
+import live
+
+me = uuid.uuid4().hex
+my_name = random.choice(["Ada", "Grace", "Guido", "Linus", "Barbara", "Ken"])
+my_vote = wire("")
+
+@mount
+def arrive():
+    # @mount runs after the first render reached the browser. Writing a
+    # shared wire here re-renders the presence list on every open page.
+    live.join(me, my_name)
+
+@unmount
+def depart():
+    # Runs when this tab closes or navigates to another page.
+    live.leave(me)
+
+def cast(option):
+    live.vote(option)
+    my_vote.value = option
+
+def reset():
+    live.reset_votes()
+    my_vote.value = ""
+
+def percent(option):
+    total = live.total_votes.value
+    return round(100 * live.votes[option] / total) if total else 0
+---
+<h1>{live.QUESTION}</h1>
+<p class="muted">Open this page in two windows. Votes, the list of people here and the clock update in both, without either window doing anything.</p>
+
+<section class="card">
+    <ul class="poll">
+        <li $for={option in live.OPTIONS}>
+            <button @click={cast(option)} class={{"chosen": my_vote == option}}>{option}</button>
+            <span class="bar"><span style={f"width: {percent(option)}%"}></span></span>
+            <span class="count">{live.votes[option]}</span>
+        </li>
+    </ul>
+    <p class="muted">{live.total_votes} votes. <span $if={my_vote}>You voted for {my_vote}. </span><button class="link" @click={reset}>Reset</button></p>
+</section>
+
+<section class="card">
+    <h2>Here now ({len(live.online)})</h2>
+    <ul class="people">
+        {$for visitor, name in live.online.items(), key=visitor}
+            <li class={{"me": visitor == me}}>{name}</li>
+        {/for}
+    </ul>
+</section>
+
+<p class="muted">Server time {live.server_time}</p>

@@ -123,6 +123,7 @@ export default defineConfig({
             { label: 'Forms & Validation', slug: 'guides/forms' },
             { label: 'Middleware', slug: 'guides/middleware' },
             { label: 'Framework Integration', slug: 'guides/framework-integration' },
+            { label: 'Building Real Apps', slug: 'guides/best-practices' },
           ],
         },
         {

@@ -19,11 +19,10 @@ workspace = { members = [
     "packages/pywire-templates",
     "packages/create-pywire-app",
     "packages/tree-sitter-pywire",
-    "examples/demo-app",
-    "examples/demo-components",
-    "examples/demo-routing",
-    "examples/demo-snippets",
-    "examples/v04-validation",
+    "examples/realtime",
+    "examples/edge-stateless",
+    "examples/taskboard",
+    "examples/form-builder",
 ] }
 
 [tool.uv.sources]

@@ -158,22 +158,12 @@ class TestWireTrackingNoLayout:
 # Layout tests (the actual bug scenario)
 # ---------------------------------------------------------------------------
 
-# Paths to the demo-hot-reload example that has a __layout__.wire
-_DEMO_DIR = (
-    Path(__file__).resolve().parent.parent.parent.parent
-    / "examples"
-    / "demo-hot-reload"
-    / "src"
-    / "pages"
-)
+# A page with a __layout__.wire
+_DEMO_DIR = Path(__file__).resolve().parent / "fixtures" / "hot_reload_layout"
 _INDEX_WIRE = _DEMO_DIR / "index.wire"
 _LAYOUT_WIRE = _DEMO_DIR / "__layout__.wire"
 
 
-@pytest.mark.skipif(
-    not _INDEX_WIRE.exists() or not _LAYOUT_WIRE.exists(),
-    reason="demo-hot-reload example not present",
-)
 class TestWireTrackingWithLayout:
     """Wire tracking after hot reload migration — page WITH layout.
 

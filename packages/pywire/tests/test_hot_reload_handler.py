@@ -110,6 +110,12 @@ class _FakePage:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
+    def _attach_push(self, on_update):  # type: ignore[no-untyped-def]
+        self._on_update = on_update
+
+    def _detach_push(self) -> None:
+        self._on_update = None
+
 
 class TestBroadcastReloadOrdering(unittest.TestCase):
     """Verify connection_pages is updated only after send."""

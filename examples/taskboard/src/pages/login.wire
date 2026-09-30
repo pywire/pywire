@@ -1,0 +1,16 @@
+---
+# Plain HTML forms posting to pywire-auth's routes: sign-in works without
+# JavaScript, and the session cookie it sets is what self.user reads.
+# On failure the route redirects back here with ?error=<code>.
+ERRORS = {"invalid": "That email and password don't match.", "missing": "Enter your email and password."}
+error = ERRORS.get(query.get("error") or "", "")
+---
+<h1>Sign in</h1>
+<p class="error" $if={error}>{error}</p>
+<form class="stack" method="post" action="/auth/local/login">
+    <input type="hidden" name="next" value="/boards" />
+    <label>Email <input type="email" name="email" required autocomplete="email" /></label>
+    <label>Password <input type="password" name="password" required autocomplete="current-password" /></label>
+    <button type="submit">Sign in</button>
+</form>
+<p>No account? <a href="/register">Create one</a>.</p>

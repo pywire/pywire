@@ -1,0 +1,57 @@
+!auth {"redirect": "/login"}
+---
+from pywire import wizard
+from taskboard import db, services
+from taskboard.errors import ServiceError
+from taskboard.identity import actor_from
+from taskboard.schemas import NewBoard
+
+# One step per field of NewBoard: basics, then team. Each step is validated
+# on its own; the last submit validates the whole model and calls create().
+new_board = wizard(NewBoard)
+
+async def create(data: NewBoard):
+    try:
+        async with db.session() as s:
+            board = await services.create_board(s, actor_from(self.user), data)
+    except ServiceError as e:
+        # A rule the model can't know (does this email have an account?).
+        new_board.error = f"{e.message}." if not e.field else f"{e.message}: {_email_at(e.field, data)}"
+        return
+    navigate(f"/boards/{board.id}")
+
+def _email_at(field, data):
+    index = int(field.split(".")[2])
+    return data.team.invites[index].email
+---
+<h1>New board</h1>
+<form class="stack card" $bind={new_board} @submit={create}>
+    <ol class="steps">
+        <li $for={step in new_board.steps} class={{"current": step.html_name == new_board.step}}>{step.label}</li>
+    </ol>
+
+    <div class="stack" $if={new_board.step == "basics"}>
+        <label for={new_board.basics.name.html_id}>Name</label>
+        <input $bind={new_board.basics.name} />
+        <p class="error" id={new_board.basics.name.error_id} $if={new_board.basics.name.error}>{new_board.basics.name.error}</p>
+        <label for={new_board.basics.description.html_id}>Description</label>
+        <textarea $bind={new_board.basics.description} rows="3"></textarea>
+        <p class="error" id={new_board.basics.description.error_id} $if={new_board.basics.description.error}>{new_board.basics.description.error}</p>
+    </div>
+
+    <div class="stack" $if={new_board.step == "team"}>
+        <p class="muted">Invite people who already have an account. You can add more later.</p>
+        <div class="invite" $for={row in new_board.team.invites}>
+            <input $bind={row.email} placeholder="teammate@example.com" aria-label="Email" />
+            <button {**row.remove_button}>Remove</button>
+            <p class="error" id={row.email.error_id} $if={row.email.error}>{row.email.error}</p>
+        </div>
+        <button class="secondary" {**new_board.team.invites.add_button}>Add a person</button>
+    </div>
+
+    <p class="error" $if={new_board.error}>{new_board.error}</p>
+    <div class="row">
+        <button class="secondary" $if={not new_board.on_first_step} {**new_board.back_button}>Back</button>
+        <button type="submit">{"Create board" if new_board.on_last_step else "Next"}</button>
+    </div>
+</form>

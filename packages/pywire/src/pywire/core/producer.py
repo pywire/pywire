@@ -7,7 +7,8 @@ call, and continues running until `.dispose()` is called.
 
 The `start_fn` receives a `set_value(val)` callback to push new values.
 It may optionally return a no-arg cleanup function that runs on
-`.dispose()`.
+`.dispose()`. `set_value` is safe to call from a worker thread: when the
+producer was first read on an event loop, the write is handed to that loop.
 
 Producers participate in the same render-context tracking as `wire()`,
 so accessing `producer.value` inside a `.wire` template makes the
@@ -25,6 +26,7 @@ Migration from the removed Svelte-style stores API:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable, Optional
 
 from pywire.core.wire import WireBase
@@ -43,17 +45,37 @@ class Producer(WireBase):
         self._start_fn = start_fn
         self._stop_fn: Optional[Callable[[], None]] = None
         self._started = False
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def _maybe_start(self) -> None:
         if self._started or self._start_fn is None:
             return
         self._started = True
+        try:
+            # Reactive state belongs to the event loop that first read it.
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
 
-        def setter(val: Any) -> None:
+        def apply(val: Any) -> None:
             if self._value == val:
                 return
             self._value = val
             self._notify_write()
+
+        def setter(val: Any) -> None:
+            loop = self._loop
+            if loop is not None and not loop.is_closed():
+                try:
+                    on_loop = asyncio.get_running_loop() is loop
+                except RuntimeError:
+                    on_loop = False
+                if not on_loop:
+                    # Called from a worker thread: hand the write to the
+                    # loop so derived/effect/page updates run there.
+                    loop.call_soon_threadsafe(apply, val)
+                    return
+            apply(val)
 
         result = self._start_fn(setter)
         if callable(result):

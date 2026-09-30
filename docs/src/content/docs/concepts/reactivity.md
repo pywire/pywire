@@ -215,5 +215,32 @@ State defined in a `.wire` file is **scoped to the component instance**.
 
 To share state between components or users, you should use standard Python patterns:
 
-- **Global Variables**: Define `wire()` objects in a separate `.py` module and import them. This creates global, singleton state shared by _all_ users (be careful!).
+- **Module-level wires**: Define `wire()` objects in a separate `.py` module and import them. This is one value shared by _every_ session in the server process. When any session writes it, every page connected over WebSocket that shows it re-renders, including idle ones (long-polling and WebTransport clients see it on their next event, [#361](https://github.com/pywire/pywire/issues/361)).
 - **Databases/Sessions**: For user-specific persistent data, save to a database and load it into `wire()` variables in an `@init` lifecycle hook.
+
+```python
+# src/live.py
+from pywire import wire
+
+votes = wire({"yes": 0, "no": 0})
+```
+
+```pywire
+---
+from live import votes
+
+def vote(choice):
+    votes[choice] += 1
+---
+<button @click={vote("yes")}>Yes ({votes["yes"]})</button>
+<button @click={vote("no")}>No ({votes["no"]})</button>
+```
+
+#### Concurrency
+
+Pages run on one asyncio event loop per server process, and each connection handles its events one at a time. That gives module-level wires simple rules:
+
+- **A handler that doesn't `await` is atomic.** `votes[choice] += 1` above can't interleave with another session's handler, so no lock is needed.
+- **A read-modify-write across an `await` can lose updates.** If a handler reads a shared wire, awaits (a database call, an HTTP request), then writes back, another session may have written in between. Hold an `asyncio.Lock` around the whole sequence, or re-read after the await.
+- **Write from the event loop.** A `producer`'s `set_value` is safe to call from a thread. For a plain `wire()`, hop to the loop first with `loop.call_soon_threadsafe(...)`, or use an asyncio task instead of a thread.
+- **Module state is per process.** With `pywire run --workers 4`, each worker has its own copy, and stateless (edge) deployments keep nothing between requests. State that must be the same for every user in production belongs in a database or Redis; use module-level wires for per-process caches, presence, and live views of data stored elsewhere.

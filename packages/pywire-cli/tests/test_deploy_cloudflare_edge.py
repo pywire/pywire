@@ -64,6 +64,51 @@ class TestBuildCloudflareEdge:
             assert not Path("pywire_do.py").exists()
 
     @patch("pywire.compiler.build.build_project")
+    def test_build_keeps_an_existing_wrangler_toml(self, mock_build: MagicMock) -> None:
+        """Routes and vars live in the app's wrangler.toml; a build mustn't
+        replace it."""
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, static_assets=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            _make_app_dir()
+            mine = 'name = "mine"\nroutes = [{ pattern = "example.com/app/*" }]\n'
+            Path("wrangler.toml").write_text(mine)
+            result = runner.invoke(cli, ["build", "--platform", "cloudflare-edge"])
+            assert result.exit_code == 0, result.output
+            assert Path("wrangler.toml").read_text() == mine
+            assert Path("entry.py").exists()
+
+    @patch("pywire.compiler.build.build_project")
+    def test_src_layout_worker_lives_in_src(self, mock_build: MagicMock) -> None:
+        """Wrangler uploads every .py under main's folder, so a src/ app's
+        Worker goes in src/ and leaves tests/ and .venv-workers out."""
+        mock_build.return_value = MagicMock(
+            pages=0, layouts=0, components=0, static_assets=0, out_dir=".pywire/build"
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            _make_app_dir()
+            Path("src").mkdir()
+            Path("main.py").rename("src/main.py")
+            sys.modules.pop("main", None)
+            try:
+                result = runner.invoke(
+                    cli, ["build", "src.main:app", "--platform", "cloudflare-edge"]
+                )
+            finally:
+                sys.modules.pop("main", None)
+                sys.modules.pop("src.main", None)
+            assert result.exit_code == 0, result.output
+
+            assert 'main = "src/entry.py"' in Path("wrangler.toml").read_text()
+            assert '"main".split' in Path("src/entry.py").read_text()
+            assert Path("src/_routes.py").exists()
+            assert Path("src/_pywire_build").is_dir()
+            assert not Path("entry.py").exists()
+
+    @patch("pywire.compiler.build.build_project")
     def test_assets_go_under_base_path(self, mock_build: MagicMock) -> None:
         """Behind a Worker route like /demo/*, the assets binding sees
         /demo/static/app.css, so the files have to live under public/demo/."""
@@ -109,6 +154,30 @@ class TestDeployCloudflareEdge:
             assert "OneShotASGIAdapter" in Path("entry.py").read_text()
             assert "durable_objects" not in Path("wrangler.toml").read_text()
             assert not Path("pywire_do.py").exists()
+
+
+def test_edge_worker_layout() -> None:
+    from pywire_cli.deploy import edge_worker_layout
+
+    root = Path(__file__).parent
+    # A source folder that isn't a package holds the Worker.
+    (src := root / "_layout_src").mkdir(exist_ok=True)
+    try:
+        assert edge_worker_layout(root, "_layout_src.main:app") == (
+            "_layout_src",
+            "main:app",
+        )
+        (src / "__init__.py").write_text("")
+        # A package is imported by its full name from the root.
+        assert edge_worker_layout(root, "_layout_src.main:app") == (
+            "",
+            "_layout_src.main:app",
+        )
+    finally:
+        (src / "__init__.py").unlink(missing_ok=True)
+        src.rmdir()
+    assert edge_worker_layout(root, "main:app") == ("", "main:app")
+    assert edge_worker_layout(root, "missing.main") == ("", "missing.main:app")
 
 
 def test_edge_entry_serves_stateless_app(tmp_path: Path, monkeypatch) -> None:
