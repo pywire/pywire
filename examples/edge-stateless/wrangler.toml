@@ -17,3 +17,7 @@ binding = "ASSETS"
 [vars]
 PYWIRE_BASE_PATH = "/edge-stateless"
 
+
+# Workers Logs: each request's CPU and wall time, in the dashboard.
+[observability]
+enabled = true
