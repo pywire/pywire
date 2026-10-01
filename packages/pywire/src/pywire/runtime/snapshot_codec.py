@@ -61,7 +61,7 @@ def encode_snapshot(
     snap["route"] = route
     if live:
         snap["live"] = live
-    subs = export_subscriptions(page)
+    subs = export_subscriptions(page, snap["wire_tags"].keys() & snap["attrs"].keys())
     if subs is not None:
         snap["subs"] = subs
     raw = msgpack.packb(snap)

@@ -262,3 +262,26 @@ def test_fast_path_still_enforces_page_auth(tmp_path, renders):
         msg = msgpack.unpackb(r.content, raw=False)
         assert msg.get("type") == "navigate"
         assert renders == []
+
+
+def test_page_reading_a_wire_the_snapshot_skips_keeps_discard_render(tmp_path):
+    # A wire whose value the snapshot can't serialize is rebuilt by the
+    # frontmatter, not the snapshot, so an address into it could name a
+    # different row on the next request.
+    app = _app(
+        tmp_path,
+        opaque=(
+            "---\n"
+            "rows = wire([{'n': k, 'handle': object()} for k in range(3)])\n"
+            "count = wire(0)\n"
+            "---\n"
+            "{$for row in rows.value, key=row['n']}<i>{row['n']}</i>{/for}"
+            "<p>{count}</p>\n"
+        ),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        r = client.get("/opaque")
+        assert r.status_code == 200
+        snap = decode_snapshot(_blob(r.text), secret=app._stateless_secret)
+        assert "rows" not in snap["attrs"]
+        assert "subs" not in snap

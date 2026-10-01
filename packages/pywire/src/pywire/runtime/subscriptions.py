@@ -12,7 +12,7 @@ state still takes the discard render.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 from pywire.core.wire import WireBase, WireDict, WireList, WireNamespace
 
@@ -24,26 +24,19 @@ _Path = List[Any]
 _Entry = List[Any]  # [path, field, sorted regions]
 
 
-def _attr_roots(page: Any) -> Dict[int, str]:
-    """``id(wire)`` -> attribute name, for the wires the snapshot restores."""
-    from pywire.runtime.session_serializer import _FRAMEWORK_ATTRS, _owned_by
+def _index_wires(page: Any, restored: Collection[str]) -> Dict[int, _Path]:
+    """``id(wire)`` -> address, for every wire the snapshot restores (the
+    ``restored`` page attributes) and every row proxy under one.
 
-    owned = _owned_by(page)
-    roots: Dict[int, str] = {}
-    for name, value in page.__dict__.items():
-        if name.startswith("_") or name in _FRAMEWORK_ATTRS:
-            continue
-        if isinstance(value, WireBase) and not value._locked and owned(value):
-            roots[id(value)] = name
-    return roots
-
-
-def _index_wires(page: Any, roots: Dict[int, str]) -> Dict[int, _Path]:
-    """``id(wire)`` -> address, for every root wire and row proxy under it."""
+    Any other wire (locked, shared, a producer or ref, a value the snapshot
+    could not serialize) is rebuilt by the frontmatter, not the snapshot, so
+    an address into it might name something else on the next request.
+    """
     paths: Dict[int, _Path] = {}
     pending: List[Tuple[WireBase, _Path]] = []
-    for name, value in page.__dict__.items():
-        if roots.get(id(value)) == name:
+    for name in restored:
+        value = page.__dict__.get(name)
+        if isinstance(value, WireBase):
             pending.append((value, [name]))
     while pending:
         node, path = pending.pop()
@@ -76,13 +69,17 @@ def _simple(page: Any) -> bool:
     )
 
 
-def export_subscriptions(page: Any) -> Optional[List[_Entry]]:
-    """The page's subscription map, or None when it can't be restored."""
+def export_subscriptions(
+    page: Any, restored: Collection[str]
+) -> Optional[List[_Entry]]:
+    """The page's subscription map, or None when it can't be restored.
+
+    ``restored`` names the wire attributes the snapshot carries.
+    """
     subscribers = getattr(page, "_wire_subscribers", None)
     if not subscribers or not _simple(page):
         return None
-    roots = _attr_roots(page)
-    paths = _index_wires(page, roots)
+    paths = _index_wires(page, restored)
     entries: List[_Entry] = []
     for (source, field), regions in subscribers.items():
         # Namespace reads register on the namespace by field name; their
