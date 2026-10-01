@@ -30,6 +30,7 @@ from starlette.responses import Response
 
 if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
+    from pywire.runtime.subscriptions import RowSubscriptions
 
 from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
 from pywire.runtime.style_collector import StyleCollector
@@ -349,6 +350,9 @@ class BasePage(metaclass=_PageMeta):
         self._wire_subscribers: Dict[Tuple[Any, str], FrozenSet[str]] = {}
         self._region_sets: Dict[FrozenSet[str], FrozenSet[str]] = {}
         self._region_dependencies: Dict[str, Set[Tuple[Any, str]]] = defaultdict(set)
+        # Keyed-loop rows a stateless snapshot restored as rules instead of
+        # map entries (see runtime.subscriptions); a full render drops them.
+        self._row_subscriptions: Optional["RowSubscriptions"] = None
         self._dirty_regions: Set[str] = set()
 
         # Error state for error pages
@@ -1530,6 +1534,7 @@ class BasePage(metaclass=_PageMeta):
         self._wire_subscribers.clear()
         self._region_sets.clear()
         self._region_dependencies.clear()
+        self._row_subscriptions = None
         self._dirty_regions.clear()
         # Also drop the output-equality cache so the next full render emits
         # fresh markup (the previous cache belonged to a pre-hot-reload
@@ -1562,6 +1567,8 @@ class BasePage(metaclass=_PageMeta):
                             regions - {region_id}
                         )
         self._region_dependencies[region_id] = set()
+        if self._row_subscriptions is not None:
+            self._row_subscriptions.region_rendered(region_id)
 
     def _render_expr(self, static_id: str, compute_func: Callable[[], Any]) -> Any:
         # Generate instance ID based on execution count
@@ -1767,6 +1774,8 @@ class BasePage(metaclass=_PageMeta):
         key = (wire_obj, field)
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
+        if self._row_subscriptions is not None:
+            regions |= self._row_subscriptions.regions(wire_obj, field)
 
         logger.debug(
             "INVALIDATE: page=%s wire=%s key=%s affected_regions=%s",

@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import logging
 import zlib
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import unquote
 
 import msgpack
@@ -46,6 +46,7 @@ def encode_snapshot(
     route: str,
     warn_size: int = 0,
     live: Optional[Dict[str, str]] = None,
+    components: Optional[Dict[str, Any]] = None,
 ) -> str:
     """base64(HMAC-SHA256(body) + body), body = zlib(msgpack(snapshot)).
 
@@ -54,8 +55,13 @@ def encode_snapshot(
     ``live`` maps each shared-state region to a digest of the HTML the client
     shows for it, so a poll can skip regions that haven't changed. ``subs``
     (see ``subscriptions``) lets the endpoint skip the discard render.
+    ``components`` is component state to carry over when the page rendered
+    no components this request (that render was skipped, so it is
+    unchanged).
     """
     snap = snapshot_page_state(page)
+    if components and not page._components:
+        snap["component_snapshots"] = components
     # Never trust the client with identity — re-resolved per request.
     snap.pop("user", None)
     snap["route"] = route
