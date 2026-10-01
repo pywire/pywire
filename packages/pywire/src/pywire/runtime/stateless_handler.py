@@ -20,6 +20,7 @@ from pywire.core.wire import WireBase
 from pywire.runtime.page_resolver import resolve_page
 from pywire.runtime.protocol import build_update_payload
 from pywire.runtime.session_serializer import restore_page_state
+from pywire.runtime.subscriptions import restore_subscriptions
 from pywire.runtime.snapshot_codec import (
     MAX_SNAPSHOT_LEN,
     SnapshotError,
@@ -143,12 +144,24 @@ class StatelessHandler:
         if page is None:
             return self._err(404, "no route")
 
+        handler_name = data.get("handler")
         try:
-            # WS-connect parity: a discarded render registers wire→region
-            # subscriptions; without it render_update cannot emit region diffs
-            # (fresh page has no _wire_subscribers yet). init=False skips
-            # @init/@before_load hooks — state comes from the snapshot.
-            await page.render(init=False)
+            # render_update emits region diffs only for wires mapped to the
+            # regions that read them, and a fresh page has no such map. The
+            # snapshot carries it; otherwise a discarded render registers it
+            # (WS-connect parity). A component event needs its component,
+            # which only a render builds. init=False skips @init/@before_load
+            # hooks — state comes from the snapshot.
+            subs = snapshot.get("subs")
+            skip_render = (
+                subs is not None
+                and not str(handler_name or "").startswith("_comp:")
+                and restore_subscriptions(page, subs)
+            )
+            if skip_render:
+                await page._run_auth_guard()
+            else:
+                await page.render(init=False)
             nav = self._take_navigation(page)
             if nav is not None:  # auth guard rejected the rebuilt page
                 return nav
@@ -160,7 +173,6 @@ class StatelessHandler:
             page._dirty_regions.update(live)
             shared_seqs = self._shared_write_seqs(page)
 
-            handler_name = data.get("handler")
             if handler_name:
                 # Pre-check the allowlist (like _handle_form_post) so probing
                 # clients get a clean 400 while business ValueErrors raised
@@ -194,6 +206,7 @@ class StatelessHandler:
             route=route,
             warn_size=self.app.session_warn_size,
             live=live_digests,
+            components=snapshot.get("component_snapshots") if skip_render else None,
         )
         return self._msg(payload)
 

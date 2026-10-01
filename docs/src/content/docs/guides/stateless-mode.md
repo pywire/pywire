@@ -31,7 +31,7 @@ Stateless mode replaces server-held page sessions with a signed client-carried s
 Snapshot size grows with the number of public wires and their values. Do not copy a large result set into page state for every request.
 
 :::caution[Every event pays for the whole page]
-The snapshot travels in both directions on every event, and the server rebuilds the page with a full render before running the handler, so per-event cost grows with page state even when the update is one row. Measured on one server core with a 1,000-row keyed list held in a public wire: the snapshot is 3.3 KB (zlib-compressed from 28 KB) and each toggle takes about 20 ms, against about 0.5 ms for a counter. At 5,000 rows it is about 100 ms. Keep bulk data in locked wires, as below.
+The snapshot travels in both directions on every event, and the server rebuilds the page from it before running the handler, so per-event cost grows with page state even when the update is one row. A page that only reads its own wires also ships a map of which wire feeds which region, stated once per list rather than once per row, so the server skips rendering the page to rebuild it. A layout or component that reads no wires doesn't get in the way, but a page with refs, snippets, `{$dynamic}` or `{$await}` regions, shared state, or a component that reads wires still renders the whole page first. Measured on one server core with a 1,000-row keyed list held in a public wire: the snapshot is about 3.4 KB (zlib-compressed) and each toggle takes about 5 ms end to end, against about 2 ms for a counter. Keep bulk data in locked wires, as below.
 :::
 
 Use a locked wire as a request-local handle and fetch the current data from the store:

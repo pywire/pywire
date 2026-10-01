@@ -30,6 +30,7 @@ from starlette.responses import Response
 
 if TYPE_CHECKING:
     from pywire.runtime.router import URLHelper
+    from pywire.runtime.subscriptions import RowSubscriptions
 
 from pywire.runtime.base_path import cookie_path, prefix_of, rewrite_html, with_base
 from pywire.runtime.style_collector import StyleCollector
@@ -349,6 +350,9 @@ class BasePage(metaclass=_PageMeta):
         self._wire_subscribers: Dict[Tuple[Any, str], FrozenSet[str]] = {}
         self._region_sets: Dict[FrozenSet[str], FrozenSet[str]] = {}
         self._region_dependencies: Dict[str, Set[Tuple[Any, str]]] = defaultdict(set)
+        # Keyed-loop rows a stateless snapshot restored as rules instead of
+        # map entries (see runtime.subscriptions); a full render drops them.
+        self._row_subscriptions: Optional["RowSubscriptions"] = None
         self._dirty_regions: Set[str] = set()
 
         # Error state for error pages
@@ -1208,6 +1212,28 @@ class BasePage(metaclass=_PageMeta):
                     return True
         return False
 
+    async def _run_auth_guard(self) -> Optional[Response]:
+        """Reject an unauthorized request; None when the page may render.
+
+        Runs on BOTH init=True (hard load) and init=False (SPA relocate via
+        internal ASGI replay); skipping on relocate would let an anonymous
+        SPA nav reach a protected page. Lazy-imported so unprotected pages
+        don't pull in the auth submodule.
+        """
+        if not getattr(self.__class__, "__auth_required__", False):
+            return None
+        from pywire.auth.guard import run_auth_guard
+
+        guard_response = await run_auth_guard(self)
+        if guard_response is not None:
+            location = guard_response.headers.get("location")
+            if location:
+                # Mirror on _pending_navigation so the WS transport's
+                # existing drain sends a navigate message instead of
+                # update HTML.
+                self._pending_navigation = location
+        return guard_response
+
     async def render(
         self, init: bool = True, *, run_hooks: Optional[bool] = None
     ) -> Response:
@@ -1228,24 +1254,11 @@ class BasePage(metaclass=_PageMeta):
             self._background_tasks.clear()
             self._await_states.clear()
 
-        # Auth guard — must short-circuit before any user code runs so
-        # unauthorized requests never trigger side effects. Runs on BOTH
-        # init=True (hard load) and init=False (SPA relocate via internal
-        # ASGI replay); skipping on relocate would let an anonymous SPA
-        # nav reach a protected page. Lazy-imported so unprotected pages
-        # don't pull in the auth submodule.
-        if getattr(self.__class__, "__auth_required__", False):
-            from pywire.auth.guard import run_auth_guard
-
-            guard_response = await run_auth_guard(self)
-            if guard_response is not None:
-                location = guard_response.headers.get("location")
-                if location:
-                    # Mirror on _pending_navigation so the WS transport's
-                    # existing drain sends a navigate message instead of
-                    # update HTML.
-                    self._pending_navigation = location
-                return guard_response
+        # Must short-circuit before any user code runs so unauthorized
+        # requests never trigger side effects.
+        guard_response = await self._run_auth_guard()
+        if guard_response is not None:
+            return guard_response
 
         # Run @before_load hooks (pages only, before any page logic)
         if hooks:
@@ -1521,6 +1534,7 @@ class BasePage(metaclass=_PageMeta):
         self._wire_subscribers.clear()
         self._region_sets.clear()
         self._region_dependencies.clear()
+        self._row_subscriptions = None
         self._dirty_regions.clear()
         # Also drop the output-equality cache so the next full render emits
         # fresh markup (the previous cache belonged to a pre-hot-reload
@@ -1553,6 +1567,8 @@ class BasePage(metaclass=_PageMeta):
                             regions - {region_id}
                         )
         self._region_dependencies[region_id] = set()
+        if self._row_subscriptions is not None:
+            self._row_subscriptions.region_rendered(region_id)
 
     def _render_expr(self, static_id: str, compute_func: Callable[[], Any]) -> Any:
         # Generate instance ID based on execution count
@@ -1758,6 +1774,8 @@ class BasePage(metaclass=_PageMeta):
         key = (wire_obj, field)
         if key in self._wire_subscribers:
             regions |= self._wire_subscribers[key]
+        if self._row_subscriptions is not None:
+            regions |= self._row_subscriptions.regions(wire_obj, field)
 
         logger.debug(
             "INVALIDATE: page=%s wire=%s key=%s affected_regions=%s",

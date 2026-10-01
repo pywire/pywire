@@ -13,6 +13,7 @@ class FakePage(Page):
         self._wire_subscribers = {}
         self._region_sets = {}
         self._region_dependencies = defaultdict(set)
+        self._row_subscriptions = None
         self._capturing_deps = False
         self._captured_deps = set()
         self._wire_write_seq = 0
